@@ -1,0 +1,35 @@
+/* Web-target reset: strip the browser's default chrome on <button>/<input> so the SHARED
+ * stylesheet is the single source of truth and the browser preview matches the native QML
+ * render (which has no user-agent styles). Without this, UA borders/backgrounds make the web
+ * output diverge from the engine output. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  outline: none;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+button {
+  cursor: pointer;
+}

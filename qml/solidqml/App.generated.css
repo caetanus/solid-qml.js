@@ -1,0 +1,494 @@
+/* Shared styling for the small examples — a light, neutral theme (dark text on white) so the web
+   reference is clean and legible; the native QML render uses the same sheet. */
+.qml-window {
+  background: #eef2f7;
+  /* Base text defaults, inherited by anonymous text nodes (raw text in a div/button). These used to
+     ride on the `text {}` type selector, but raw text no longer matches type selectors (it's a text
+     node, not a <text> element) — so the defaults live here and cascade down, while an explicit
+     ancestor (e.g. .hello-core font-size) still overrides via inheritance. */
+  color: #1f2328;
+  font-size: 16px;
+}
+
+.gallery {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Full-window hero gradient, painted behind everything (declared first → lowest paint order).
+   Rendered only for the Hello view (gated by <Show> in gallery.tsx). */
+.hero-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(99, 179, 237, 0.28), transparent 28%),
+    linear-gradient(135deg, #eef2f7 0%, #d8e4ed 48%, #f7f0df 100%);
+}
+
+.nav {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  background: transparent;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 20px;
+  padding: 16px;
+}
+
+text,
+span {
+  font-size: 16px;
+  color: #1f2328;
+}
+
+.h1 {
+  font-size: 28px;
+  font-weight: 600;
+  color: #1f2328;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2328;
+}
+
+.bio {
+  font-size: 14px;
+  color: #57606a;
+}
+
+/* <bio> as a text primitive — distinct from <h1> so <Dynamic component={tag()}> visibly toggles. */
+bio {
+  font-size: 14px;
+  font-style: italic;
+  color: #57606a;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+}
+
+.counter {
+  display: flex;
+}
+
+button {
+  height: 36px;
+  padding: 0 16px;
+  background: #f3f4f6;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  color: #1f2328;
+  font-size: 15px;
+}
+
+button:hover {
+  background: #eaecef;
+}
+
+
+/* The original "hello world": a Q mark with orbiting sparks (animated) + headline + counter.
+   Classes are `hello-` prefixed so the gallery's shared sheet and other examples don't collide. */
+
+/* The Q logo's font is a downloaded web font — no system install needed. The engine fetches
+   and caches the TTF, then registers it so `font-family: "Titillium Web"` resolves. */
+@font-face {
+  font-family: "Titillium Web";
+  src: url("https://github.com/google/fonts/raw/main/ofl/titilliumweb/TitilliumWeb-Regular.ttf") format("truetype");
+  font-weight: 400;
+}
+
+/* Transparent stage that fills the Hello view and centres the card — the hero gradient itself
+   lives on .hero-bg (gallery level) so it spans the whole window, behind the nav. */
+.hello-stage {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.hello-panel {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 44px;
+  margin: 24px;
+  padding: 40px;
+  border: 1px solid rgba(22, 33, 42, 0.1);
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 22px 70px rgba(55, 69, 80, 0.18);
+}
+
+.hello-mark {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 110px;
+  background: #182531;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.hello-orbit {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  right: 24px;
+  bottom: 24px;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  border-radius: 100px;
+  animation: spin 3.6s linear infinite;
+}
+
+.hello-spark {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 9px;
+}
+
+.hello-spark-a {
+  top: -9px;
+  left: calc(50% - 9px);
+  background: #63b3ed;
+}
+
+.hello-spark-b {
+  right: 12px;
+  bottom: 20px;
+  background: #f2c94c;
+}
+
+.hello-spark-c {
+  left: 18px;
+  bottom: 28px;
+  background: #6fcf97;
+}
+
+.hello-core {
+  width: 88px;
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 22px;
+  color: #ffffff;
+  background: #41cd52;
+  font-family: "Titillium Web";
+  font-size: 56px;
+  font-weight: 400;
+}
+
+.hello-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hello-eyebrow {
+  color: #2f6f92;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.hello-headline {
+  color: #14202a;
+  font-size: 40px;
+  font-weight: 700;
+}
+
+.hello-copy {
+  max-width: 360px;
+  color: #4d5f6d;
+  font-size: 17px;
+}
+
+.hello-cta {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 8px;
+  padding: 12px 20px;
+  border: 0;
+  border-radius: 14px;
+  color: #ffffff;
+  background: #176b87;
+  box-shadow: 0 12px 28px rgba(23, 107, 135, 0.24);
+}
+
+/* The label wins white via its OWN class — a class selector beats the `text {}`/`span {}` type
+   defaults, so it never falls back to the dark base text colour on the teal button. */
+.hello-cta-label {
+  color: #ffffff;
+}
+
+.hello-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  color: #12303c;
+  background: #ffffff;
+  font-weight: 800;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+/* GitHub user fetch example. Classes are `fetch-` prefixed so they don't collide with the
+   gallery's shared sheet or other examples (which also define .app / .card / .h1 / .bio). */
+
+.fetch-app {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 420px;
+  margin: 24px;
+  padding: 20px;
+  background: #ffffff;
+  border: 1px solid #ededed;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.fetch-h1 {
+  font-size: 40px;
+  font-weight: 200;
+  color: #24292f;
+}
+
+.fetch-search {
+  height: 40px;
+  padding: 0 12px;
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 16px;
+  color: #24292f;
+}
+
+.fetch-loading,
+.fetch-empty {
+  font-size: 16px;
+  color: #57606a;
+  padding: 8px 0;
+}
+
+.fetch-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+
+.fetch-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 48px;
+  border: 1px solid #d0d7de;
+}
+
+.fetch-name {
+  font-size: 22px;
+  font-weight: 600;
+  color: #24292f;
+}
+
+.fetch-bio {
+  font-size: 15px;
+  color: #57606a;
+}
+
+.fetch-repos {
+  font-size: 13px;
+  color: #0969da;
+}
+
+
+/* A small TodoMVC-flavoured sheet for examples/todomvc.tsx. Classes are `todo-` prefixed and the
+   button rules are scoped under `.todo-app` so nothing leaks into the gallery or other examples. */
+
+.todo-app {
+  display: flex;
+  flex-direction: column;
+  width: 460px;
+  margin: 24px;
+  padding: 0;
+  background: #ffffff;
+  border: 1px solid #ededed;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08), 0 24px 48px rgba(0, 0, 0, 0.10);
+}
+
+.todo-h1 {
+  font-size: 64px;
+  font-weight: 200;
+  color: #b83f45;
+  text-align: center;
+  padding: 12px;
+}
+
+/* input row */
+.todo-newline {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #ededed;
+}
+
+.todo-new {
+  flex: 1;
+  height: 44px;
+  padding: 0 12px;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  font-size: 18px;
+  color: #2b2b2b;
+}
+
+/* Scoped to this example: every <button> inside .todo-app (a class like .todo-add still wins). */
+.todo-app button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #777777;
+}
+
+.todo-add {
+  width: 72px;
+  height: 44px;
+  padding: 0;
+  background: #b83f45;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* list */
+.todo-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.todo-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  height: 52px;
+  padding: 0 16px;
+  border-top: 1px solid #ededed;
+}
+
+.todo-row.completed .todo-title {
+  color: #c8c8c8;
+}
+
+.todo-toggle {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #d0d0d0;
+  border-radius: 14px;
+  color: #5dc2af;
+  font-size: 16px;
+  line-height: 28px;
+}
+
+.todo-title {
+  flex: 1;
+  font-size: 18px;
+  color: #4d4d4d;
+}
+
+.todo-remove {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: #cc9a9a;
+  font-size: 18px;
+}
+
+/* footer */
+.todo-footer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-top: 1px solid #ededed;
+}
+
+.todo-count {
+  font-size: 14px;
+  color: #777777;
+}
+
+.todo-filters {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+
+.todo-empty {
+  padding: 24px;
+  text-align: center;
+  font-size: 16px;
+  color: #aaaaaa;
+}
+
+/* Hover (handy for debugging: highlights each button's real clickable bounds). */
+.todo-app button:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+.todo-add:hover {
+  background: #a3353a;
+}
+.todo-toggle:hover {
+  border-color: #5dc2af;
+  background: rgba(93, 194, 175, 0.15);
+}
+.todo-remove:hover {
+  color: #af5b5b;
+  background: rgba(204, 154, 154, 0.18);
+}

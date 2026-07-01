@@ -1,0 +1,106 @@
+/* Shared styling for the small examples — a light, neutral theme (dark text on white) so the web
+   reference is clean and legible; the native QML render uses the same sheet. */
+.qml-window {
+  background: #eef2f7;
+  /* Base text defaults, inherited by anonymous text nodes (raw text in a div/button). These used to
+     ride on the `text {}` type selector, but raw text no longer matches type selectors (it's a text
+     node, not a <text> element) — so the defaults live here and cascade down, while an explicit
+     ancestor (e.g. .hello-core font-size) still overrides via inheritance. */
+  color: #1f2328;
+  font-size: 16px;
+}
+
+.gallery {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Full-window hero gradient, painted behind everything (declared first → lowest paint order).
+   Rendered only for the Hello view (gated by <Show> in gallery.tsx). */
+.hero-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(99, 179, 237, 0.28), transparent 28%),
+    linear-gradient(135deg, #eef2f7 0%, #d8e4ed 48%, #f7f0df 100%);
+}
+
+.nav {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  background: transparent;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 20px;
+  padding: 16px;
+}
+
+text,
+span {
+  font-size: 16px;
+  color: #1f2328;
+}
+
+.h1 {
+  font-size: 28px;
+  font-weight: 600;
+  color: #1f2328;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2328;
+}
+
+.bio {
+  font-size: 14px;
+  color: #57606a;
+}
+
+/* <bio> as a text primitive — distinct from <h1> so <Dynamic component={tag()}> visibly toggles. */
+bio {
+  font-size: 14px;
+  font-style: italic;
+  color: #57606a;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+}
+
+.counter {
+  display: flex;
+}
+
+button {
+  height: 36px;
+  padding: 0 16px;
+  background: #f3f4f6;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  color: #1f2328;
+  font-size: 15px;
+}
+
+button:hover {
+  background: #eaecef;
+}

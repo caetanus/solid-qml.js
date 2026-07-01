@@ -1,0 +1,38 @@
+{
+  "name": "solid-qml-native",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "security": {
+    "postinstall": "disabled",
+    "npmLifecycleScripts": "ignored via .npmrc"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "qmldev": "vite --mode qmldev",
+    "build": "vite build",
+    "test:transpiler": "node --import tsx --test transpiler/test/*.test.ts",
+    "dev:native": "node --import tsx scripts/dev-native.mjs",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@vitejs/plugin-basic-ssl": "^2.1.0",
+    "js-base64": "^3.8.0",
+    "solid-js": "^1.9.10",
+    "vite": "^7.2.7",
+    "wrap-ansi": "^10.0.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/plugin-transform-react-jsx": "^7.29.7",
+    "@babel/preset-env": "^7.29.7",
+    "@babel/preset-typescript": "^7.29.7",
+    "@babel/traverse": "^7.29.7",
+    "@babel/types": "^7.29.7",
+    "babel-plugin-transform-async-to-promises": "^0.8.18",
+    "core-js": "^3.49.0",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.3",
+    "vite-plugin-solid": "^2.11.8"
+  }
+}

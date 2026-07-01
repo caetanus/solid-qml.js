@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "solid-qml",
+      "request": "attach",
+      "name": "Debug main.tsx (via QML)",
+      "host": "127.0.0.1",
+      "port": 12150,
+      "tsxSource": "${workspaceFolder}/src/main.tsx",
+      "generatedQml": "${workspaceFolder}/qml/solidqml/App.generated.qml"
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+/* A small TodoMVC-flavoured sheet for examples/todomvc.tsx. Classes are `todo-` prefixed and the
+   button rules are scoped under `.todo-app` so nothing leaks into the gallery or other examples. */
+
+.todo-app {
+  display: flex;
+  flex-direction: column;
+  width: 460px;
+  margin: 24px;
+  padding: 0;
+  background: #ffffff;
+  border: 1px solid #ededed;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08), 0 24px 48px rgba(0, 0, 0, 0.10);
+}
+
+.todo-h1 {
+  font-size: 64px;
+  font-weight: 200;
+  color: #b83f45;
+  text-align: center;
+  padding: 12px;
+}
+
+/* input row */
+.todo-newline {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #ededed;
+}
+
+.todo-new {
+  flex: 1;
+  height: 44px;
+  padding: 0 12px;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  font-size: 18px;
+  color: #2b2b2b;
+}
+
+/* Scoped to this example: every <button> inside .todo-app (a class like .todo-add still wins). */
+.todo-app button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #777777;
+}
+
+.todo-add {
+  width: 72px;
+  height: 44px;
+  padding: 0;
+  background: #b83f45;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* list */
+.todo-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.todo-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  height: 52px;
+  padding: 0 16px;
+  border-top: 1px solid #ededed;
+}
+
+.todo-row.completed .todo-title {
+  color: #c8c8c8;
+}
+
+.todo-toggle {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #d0d0d0;
+  border-radius: 14px;
+  color: #5dc2af;
+  font-size: 16px;
+  line-height: 28px;
+}
+
+.todo-title {
+  flex: 1;
+  font-size: 18px;
+  color: #4d4d4d;
+}
+
+.todo-remove {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: #cc9a9a;
+  font-size: 18px;
+}
+
+/* footer */
+.todo-footer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-top: 1px solid #ededed;
+}
+
+.todo-count {
+  font-size: 14px;
+  color: #777777;
+}
+
+.todo-filters {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+
+.todo-empty {
+  padding: 24px;
+  text-align: center;
+  font-size: 16px;
+  color: #aaaaaa;
+}
+
+/* Hover (handy for debugging: highlights each button's real clickable bounds). */
+.todo-app button:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+.todo-add:hover {
+  background: #a3353a;
+}
+.todo-toggle:hover {
+  border-color: #5dc2af;
+  background: rgba(93, 194, 175, 0.15);
+}
+.todo-remove:hover {
+  color: #af5b5b;
+  background: rgba(204, 154, 154, 0.18);
+}

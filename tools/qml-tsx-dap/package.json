@@ -1,0 +1,45 @@
+{
+  "name": "solid-qml-tsx-debug",
+  "displayName": "Solid-QML TSX Debug (proxy)",
+  "description": "Debug main.tsx in VS Code via the QML engine — a DAP proxy that remaps breakpoints/stops main.tsx <-> App.generated.qml through the transpiler's source map, on top of the qml-debug adapter.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Debuggers"],
+  "main": "./extension.js",
+  "activationEvents": ["onDebugResolve:solid-qml"],
+  "contributes": {
+    "debuggers": [
+      {
+        "type": "solid-qml",
+        "label": "Solid-QML (debug main.tsx via QML)",
+        "configurationAttributes": {
+          "attach": {
+            "required": ["port", "tsxSource", "generatedQml"],
+            "properties": {
+              "host": { "type": "string", "default": "127.0.0.1" },
+              "port": { "type": "number", "description": "Port the app's V4 debug server listens on (-qmljsdebugger=port:N)." },
+              "tsxSource": { "type": "string", "description": "Absolute path to the authored TSX (main.tsx)." },
+              "generatedQml": { "type": "string", "description": "Absolute path to the generated QML (loaded by the app as a filesystem path)." },
+              "sourceMap": { "type": "string", "description": "Path to the .qml.map (defaults to generatedQml + '.map')." },
+              "innerAdapter": { "type": "string", "description": "Path to qml-debug's out/debug-adapter.js (auto-detected if the qml-debug extension is installed)." },
+              "paths": { "type": "object", "description": "qrc:/ -> directory map, forwarded to qml-debug (only needed if the app loads the QML from qrc rather than the filesystem)." },
+              "trace": { "type": "boolean", "default": false }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "solid-qml",
+            "request": "attach",
+            "name": "Debug main.tsx (via QML)",
+            "host": "127.0.0.1",
+            "port": 12150,
+            "tsxSource": "${workspaceFolder}/src/main.tsx",
+            "generatedQml": "${workspaceFolder}/qml/solidqml/App.generated.qml"
+          }
+        ]
+      }
+    ]
+  }
+}

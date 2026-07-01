@@ -1,0 +1,284 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { normalize } from "../src/babel/transform.ts";
+import { findRender } from "../src/ast/find.ts";
+import { analyzeSignals, analyzeContexts, analyzeProvider } from "../src/model/symbols.ts";
+import { emitQml } from "../src/emit/qml.ts";
+import { emitComponentType } from "../src/emit/component.ts";
+import type { Scope } from "../src/emit/expr.ts";
+import * as t from "@babel/types";
+
+async function qml(src: string): Promise<string> {
+  const { ast } = await normalize(src, "f.tsx");
+  const render = findRender(ast);
+  if (!render) throw new Error("no render");
+  let fn: t.Function | null = null;
+  for (const node of (ast as t.File).program.body) {
+    if (t.isExportNamedDeclaration(node) && node.declaration && t.isFunctionDeclaration(node.declaration)) fn = node.declaration;
+    if (t.isFunctionDeclaration(node)) fn = node;
+  }
+  const scope: Scope = { table: fn ? analyzeSignals(fn) : new Map(), mode: "binding" };
+  return emitQml(render, scope).join("\n");
+}
+
+test("emitQml: div -> CssRect with cssClass and cssPrimitive", async () => {
+  const out = await qml(`export function F(){ return <div class="box"></div>; }`);
+  assert.match(out, /Css\.CssRect \{/);
+  assert.match(out, /cssPrimitive: "div"/);
+  assert.match(out, /cssClass: \["box"\]/);
+});
+
+test("emitQml: literal text child -> CssText", async () => {
+  const out = await qml(`export function F(){ return <div><text>hello</text></div>; }`);
+  assert.match(out, /Css\.CssText \{/);
+  assert.match(out, /text: "hello"/);
+});
+
+test("emitQml: nested elements nest", async () => {
+  const out = await qml(`export function F(){ return <div class="a"><div class="b"></div></div>; }`);
+  assert.match(out, /cssClass: \["a"\][\s\S]*cssClass: \["b"\]/);
+});
+
+test("emitQml: interpolation child reads the signal as a bound expression", async () => {
+  const out = await qml(`export function F(){ const [count,setCount]=createSignal(0); return <text>count: {count()}</text>; }`);
+  assert.match(out, /text: "count: " \+ \(count\)/);
+});
+
+test("emitQml: button -> CssFill + label CssText + MouseArea with onClicked", async () => {
+  const out = await qml(`export function F(){ const [count,setCount]=createSignal(0); return <button onClick={() => setCount(count() + 1)}>go</button>; }`);
+  assert.match(out, /Css\.CssFill \{/);
+  assert.match(out, /cssPrimitive: "button"/);
+  assert.match(out, /Css\.CssText \{[\s\S]*text: "go"/);
+  assert.match(out, /MouseArea \{[\s\S]*onClicked: count = count \+ 1/);
+});
+
+test("emitQml: a component instance is instantiated with prop bindings", async () => {
+  const { ast } = await normalize(`export function App(){ return <Greeting name="ada" />; }`, "f.tsx");
+  const render = findRender(ast)!;
+  const scope: Scope = { table: new Map(), mode: "binding", components: new Map([["Greeting", "Greeting"]]) };
+  const out = emitQml(render, scope).join("\n");
+  assert.match(out, /Greeting \{/);
+  assert.match(out, /name: "ada"/);
+});
+
+test("emitQml: an instance emits its children into the default slot", async () => {
+  const { ast } = await normalize(`export function App(){ return <Card><text>hi</text></Card>; }`, "f.tsx");
+  const render = findRender(ast)!;
+  const scope: Scope = { table: new Map(), mode: "binding", components: new Map([["Card", "Card"]]) };
+  const out = emitQml(render, scope).join("\n");
+  assert.match(out, /Card \{/);
+  assert.match(out, /Css\.CssText \{[\s\S]*text: "hi"/); // child mounts inside the instance
+});
+
+test("emitComponentType: {props.children} at the root is dropped (mounted via default property)", async () => {
+  const { ast } = await normalize(`export function Card(props){ return <div class="card">{props.children}</div>; }`, "c.tsx");
+  const fn = (ast as any).program.body.find((n: any) => n.type === "ExportNamedDeclaration").declaration;
+  const render = findRender(ast)!;
+  const lines = emitComponentType(fn, render, new Map()).join("\n");
+  assert.doesNotMatch(lines, /property var children/);  // not a plain prop
+  assert.doesNotMatch(lines, /text: .*children/);        // not emitted as text
+  assert.match(lines, /cssClass: \["card"\]/);
+});
+
+test("emitComponentType: {props.children} outside the root errors (explicit slot is a later plan)", async () => {
+  const { ast } = await normalize(`export function Bad(props){ return <div><span>{props.children}</span></div>; }`, "b.tsx");
+  const fn = (ast as any).program.body.find((n: any) => n.type === "ExportNamedDeclaration").declaration;
+  const render = findRender(ast)!;
+  assert.throws(() => emitComponentType(fn, render, new Map()), /props\.children outside the root/);
+});
+
+test("emitQml: ref={x} gives the element an id and resolves x to it", async () => {
+  const { ast } = await normalize(`export function R(){ let box; return <div ref={box}><text>hi</text></div>; }`, "r.tsx");
+  const render = findRender(ast)!;
+  const scope: Scope = { table: new Map(), mode: "binding", components: new Map() };
+  const out = emitQml(render, scope).join("\n");
+  assert.match(out, /id: _ref_box/);
+});
+
+test("emitQml: <Index> emits a Repeater; item() -> modelData, index param -> index", async () => {
+  const { ast } = await normalize(
+    `export function L(){ return <Index each={xs}>{(item, i) => <text>{i}: {item()}</text>}</Index>; }`, "l.tsx");
+  const render = findRender(ast)!;
+  const scope: Scope = { table: new Map(), mode: "binding", components: new Map() };
+  const out = emitQml(render, scope).join("\n");
+  assert.match(out, /Repeater \{/);
+  assert.match(out, /model: xs/);
+  assert.match(out, /modelData/);  // item() resolved to modelData
+  assert.match(out, /index/);      // i resolved to the Repeater index
+});
+
+test("emitQml: a button with an element child emits the label + the nested element", async () => {
+  const { ast } = await normalize(
+    `export function B(){ return <button class="cta" onClick={() => x()}>go<div class="badge">1</div></button>; }`, "b.tsx");
+  const render = findRender(ast)!;
+  const scope: Scope = { table: new Map(), mode: "binding", components: new Map() };
+  const out = emitQml(render, scope).join("\n");
+  assert.match(out, /cssPrimitive: "button"/);
+  assert.match(out, /text: "go"/);                 // text child → label
+  assert.match(out, /cssClass: \["badge"\][\s\S]*cssPrimitive: "div"/); // element child → nested
+});
+
+// --- Option 1: same-name prop+signal collapse ---
+
+/** Helper: emit a CounterProvider-like component and return the joined QML lines. */
+async function emitProvider(src: string): Promise<string> {
+  const { ast } = await normalize(src, "ctx.tsx");
+  const file = ast as t.File;
+  const contexts = analyzeContexts(file);
+  let fn: t.Function | null = null;
+  for (const node of file.program.body) {
+    if (t.isFunctionDeclaration(node)) fn = node;
+    if (t.isExportNamedDeclaration(node) && node.declaration && t.isFunctionDeclaration(node.declaration)) fn = node.declaration;
+  }
+  if (!fn) throw new Error("no fn");
+  const table = analyzeSignals(fn);
+  const provider = analyzeProvider(fn, table, contexts);
+  let render: t.CallExpression | null = null;
+  for (const s of (fn.body as t.BlockStatement).body) {
+    if (t.isReturnStatement(s) && s.argument && t.isCallExpression(s.argument)) render = s.argument;
+  }
+  if (!render) throw new Error("no render");
+  return emitComponentType(fn, render, new Map(), contexts, provider).join("\n");
+}
+
+test("emitComponentType: same-name prop+signal with || default → emits the default only (Option 1)", async () => {
+  const out = await emitProvider(`
+    const Ctx = createContext();
+    function P(props) {
+      const [count, setCount] = createSignal(props.count || 0);
+      return <Ctx.Provider value={{ count }}>{props.children}</Ctx.Provider>;
+    }
+  `);
+  // Must NOT produce a self-referential binding
+  assert.doesNotMatch(out, /count: count/);
+  // Must emit the default (right-hand side) only
+  assert.match(out, /property var count: 0/);
+});
+
+test("emitComponentType: same-name prop+signal with ?? default → emits the default only (Option 1)", async () => {
+  const out = await emitProvider(`
+    const Ctx = createContext();
+    function P(props) {
+      const [val, setVal] = createSignal(props.val ?? 42);
+      return <Ctx.Provider value={{ val }}>{props.children}</Ctx.Provider>;
+    }
+  `);
+  assert.doesNotMatch(out, /val: val/);
+  assert.match(out, /property var val: 42/);
+});
+
+test("emitComponentType: same-name prop+signal with exact prop ref → emits undefined (Option 1)", async () => {
+  const out = await emitProvider(`
+    const Ctx = createContext();
+    function P(props) {
+      const [label, setLabel] = createSignal(props.label);
+      return <Ctx.Provider value={{ label }}>{props.children}</Ctx.Provider>;
+    }
+  `);
+  assert.match(out, /property var label: undefined/);
+});
+
+test("emitComponentType: non-colliding signal init is unchanged (Option 1 does not affect other signals)", async () => {
+  const out = await emitProvider(`
+    const Ctx = createContext();
+    function P(props) {
+      const [score, setScore] = createSignal(props.initial || 0);
+      return <Ctx.Provider value={{ score }}>{props.children}</Ctx.Provider>;
+    }
+  `);
+  // 'score' != 'initial', so no collapse — emits the full expression
+  assert.match(out, /property var score: initial \|\| 0/);
+});
+
+test("emitQml: <img class='a' src={u} /> -> Css.CssImage with source binding", async () => {
+  const out = await qml(`export function F(){ const [u,setU]=createSignal(""); return <img class="a" src={u()} />; }`);
+  assert.match(out, /Css\.CssImage \{/);
+  assert.match(out, /cssClass: \["a"\]/);
+  assert.match(out, /source: u \|\| ""/);
+});
+
+// --- Task 3: <input> ---
+
+async function qmlType(src: string): Promise<string> {
+  const { ast } = await normalize(src, "f.tsx");
+  const file = ast as t.File;
+  let fn: t.Function | null = null;
+  for (const node of file.program.body) {
+    if (t.isFunctionDeclaration(node)) fn = node;
+    if (t.isExportNamedDeclaration(node) && node.declaration && t.isFunctionDeclaration(node.declaration)) fn = node.declaration;
+  }
+  if (!fn) throw new Error("no fn");
+  const render = findRender(ast)!;
+  return emitComponentType(fn, render, new Map()).join("\n");
+}
+
+test("emitQml: <input class='x' value={s()} onInput={...} /> -> CssFill + TextInput + Connections", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [s, setS] = createSignal("");
+      return <input class="x" value={s()} onInput={(e) => setS(e.currentTarget.value)} />;
+    }
+  `);
+  // Outer wrapper
+  assert.match(out, /Css\.CssFill \{/);
+  assert.match(out, /cssClass: \["x"\]/);
+  // TextInput with an id
+  assert.match(out, /TextInput \{/);
+  assert.match(out, /id: __input0/);
+  // Styling
+  assert.match(out, /anchors\.fill: parent/);
+  assert.match(out, /verticalAlignment: TextInput\.AlignVCenter/);
+  // Initial value
+  assert.match(out, /Component\.onCompleted: text = s/);
+  // onTextEdited handler: e.currentTarget.value -> text
+  assert.match(out, /onTextEdited: \{ s = text \}/);
+  // Two-way Connections
+  assert.match(out, /Connections \{/);
+  assert.match(out, /target: __self/);
+  assert.match(out, /function onSChanged\(\) \{ if \(__input0\.text !== s\) __input0\.text = s \}/);
+});
+
+// --- Task 3: classList={{ cls: expr }} ---
+
+test("emitQml: classList={{ completed: done() }} with signal -> reactive cssClass concat", async () => {
+  const out = await qml(`
+    export function F() {
+      const [done, setDone] = createSignal(false);
+      return <div class="row" classList={{ completed: done() }}>hi</div>;
+    }
+  `);
+  // Reactive concat form — condition is bare (binding mode, QML tracks dep on `done`)
+  assert.match(out, /cssClass: \["row"\]\.concat\(done \? \["completed"\] : \[\]\)/);
+  // Must NOT use __self. inside the concat (that would break QML binding tracking)
+  assert.doesNotMatch(out, /__self\.done/);
+});
+
+test("emitQml: classList with multiple entries chains multiple .concat()", async () => {
+  const out = await qml(`
+    export function F() {
+      const [active, setActive] = createSignal(false);
+      const [disabled, setDisabled] = createSignal(false);
+      return <div class="btn" classList={{ active: active(), disabled: disabled() }}>x</div>;
+    }
+  `);
+  // Two concat chains, one per classList entry
+  assert.match(out, /cssClass: \["btn"\]\.concat\(active \? \["active"\] : \[\]\)\.concat\(disabled \? \["disabled"\] : \[\]\)/);
+});
+
+test("emitQml: div without classList keeps the original static cssClass form (goldens unchanged)", async () => {
+  const out = await qml(`export function F(){ return <div class="box"></div>; }`);
+  // Must be the original static form, not a concat expression
+  assert.match(out, /cssClass: \["box"\]/);
+  assert.doesNotMatch(out, /\.concat\(/);
+});
+
+test("emitQml: classList without a static class uses empty base array", async () => {
+  const out = await qml(`
+    export function F() {
+      const [active, setActive] = createSignal(false);
+      return <div classList={{ active: active() }}>x</div>;
+    }
+  `);
+  // Base array is empty [], conditional appended
+  assert.match(out, /cssClass: \[\]\.concat\(active \? \["active"\] : \[\]\)/);
+});

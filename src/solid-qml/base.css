@@ -1,0 +1,46 @@
+/* Cross-platform base ("user-agent") stylesheet — sensible defaults applied BELOW the app's
+ * sheet, on both the native (QML) and web targets, so common elements look right out of the box
+ * and the two renders match. Authored rules (a class/id) always win over these type defaults. */
+
+/* A default font so web (whose UA default is serif) matches the native render and the heading
+ * looks intentional. An authored font-family still wins. */
+* {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+hr {
+  width: 100%;
+  height: 0;
+  border: none;
+  border-top: 1px solid #ededed;
+  margin: 8px 0;
+}
+
+/* A button is a flex box that centres its label both axes — browsers centre button text via
+ * their UA sheet; we do it explicitly so the native render matches. An authored display/align
+ * still wins. */
+button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+/* Heading defaults so a bare <h1>…<h6> reads as a heading on both targets (web's UA sizes,
+ * mirrored). Text-level primitives — styled directly by their type selector now they emit as
+ * CssText, not a wrapping box. */
+h1 { font-size: 2em;    font-weight: bold; }
+h2 { font-size: 1.5em;  font-weight: bold; }
+h3 { font-size: 1.17em; font-weight: bold; }
+h4 { font-size: 1em;    font-weight: bold; }
+h5 { font-size: 0.83em; font-weight: bold; }
+h6 { font-size: 0.67em; font-weight: bold; }
+
+/* Web target: a text primitive emits as `<span data-qml-type="CssText">`, but an inline span
+ * ignores width / max-width, so a `max-width` paragraph wouldn't wrap (it does on the native target,
+ * where CssText is sized by the flex/grid layout). Make text primitives block-level so box metrics
+ * apply on both targets; the inline variant (span()) opts back out with `.inline`. */
+[data-qml-type="CssText"] { display: block; }
+[data-qml-type="CssText"].inline { display: inline; }
+
+cite { font-style: italic; }

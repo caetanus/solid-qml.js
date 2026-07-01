@@ -1,0 +1,6 @@
+option(
+  'qml_debug',
+  type: 'boolean',
+  value: true,
+  description: 'Compile in QML/JS debugging support (the -qmljsdebugger arg / V4 debug server). Dev only.',
+)
