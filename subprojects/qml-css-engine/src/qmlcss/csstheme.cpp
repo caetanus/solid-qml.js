@@ -986,7 +986,9 @@ QVariantMap CssTheme::resolve(const QString &id, const QStringList &classes, con
 QVariantMap CssTheme::resolveWith(const QString &contextId, const QString &id, const QStringList &classes,
                                   const QString &pseudoElement) const
 {
-    return resolveImpl(contextId, id, classes, pseudoElement);
+    // The single `id` doubles as the primitive: `resolveWith("workspaces", "button")` must
+    // match `#workspaces button` (a type selector) as well as `#workspaces #button`.
+    return resolveImpl(contextId, id, classes, pseudoElement, id);
 }
 
 QVariantMap CssTheme::resolveImpl(const QString &contextId, const QString &id, const QStringList &classes,

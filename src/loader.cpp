@@ -1,5 +1,4 @@
-#include "qmlcss/csslayout.h"
-#include "qmlcss/csstheme.h"
+#include "qmlcss/QMLCss.h"
 #include "shims/jspolyfill.h"
 #include "shims/nodeshims.h"
 #include "shims/webfetch.h"
@@ -193,6 +192,10 @@ int main(int argc, char **argv)
     const QUrl url = qmlUrl(qmlPath);
 
     CssLayoutEngine cssLayout(&cssTheme);
+
+    // The CSS primitives are C++ QQuickItems since the qml/ dir was retired; generated QML
+    // does `import qmlcss 1.0 as Css`.
+    QmlCss::registerTypes();
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &cssTheme);

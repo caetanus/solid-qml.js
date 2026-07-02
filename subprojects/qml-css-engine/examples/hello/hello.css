@@ -1,0 +1,19 @@
+/* A standalone stylesheet for the hello-world. Exercises the engine's CSS parser, the
+   flexbox layout engine (centering) and the paint path (rounded fill + text). */
+#card {
+  background-color: #313244;
+  border-radius: 12px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+#greeting {
+  color: #cdd6f4;
+  font-family: "Sans Serif";
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}

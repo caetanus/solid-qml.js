@@ -2,6 +2,7 @@
 
 #include "csstheme.h"
 
+#include <QMetaMethod>
 #include <QQuickItem>
 #include <QRegularExpression>
 #include <QTimer>
@@ -95,8 +96,14 @@ void CssLayoutEngine::notifyParentLayout(QQuickItem *item)
         return;
     QQuickItem *holder = item->parentItem();
     QQuickItem *parentBox = holder ? holder->parentItem() : nullptr;
-    if (parentBox)
-        QMetaObject::invokeMethod(parentBox, "requestRelayout");
+    if (!parentBox)
+        return;
+    // Duck-typed like the QML original (`if (holder.parent.requestRelayout) ...`): only boxes
+    // (CssRect/CssFill) have requestRelayout(); plain-Item ancestors are skipped silently.
+    const QMetaObject *mo = parentBox->metaObject();
+    const int idx = mo->indexOfMethod("requestRelayout()");
+    if (idx >= 0)
+        mo->method(idx).invoke(parentBox);
 }
 
 void CssLayoutEngine::flush()

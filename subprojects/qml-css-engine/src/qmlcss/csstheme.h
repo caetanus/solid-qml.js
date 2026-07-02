@@ -100,7 +100,10 @@ public:
     Q_INVOKABLE QVariantMap resolve(const QString &id, const QStringList &classes = {},
                                     const QString &pseudoElement = {}, const QString &primitive = {}) const;
 
-    // Resolve with ancestor context — matches descendant selectors like "#workspaces button.focused"
+    // Resolve with ancestor context — matches descendant selectors like "#workspaces button.focused".
+    // `id` names the element being resolved and matches BOTH `#id` rules and type selectors
+    // (`#workspaces button` for id "button") — the convenience API has one name, so it doubles
+    // as the primitive. The strict cssPrimitive matching of the loadCss path is unaffected.
     Q_INVOKABLE QVariantMap resolveWith(const QString &contextId, const QString &id, const QStringList &classes = {},
                                         const QString &pseudoElement = {}) const;
 
