@@ -21,11 +21,11 @@ const STATS = [
   { label: "Uptime", value: "99.98%", delta: "+0.01%", up: true },
 ];
 
-// Image sources resolve relative to the generated .qml (qml/solidqml/), hence ../../assets.
+// Image sources: "assets/…" works on BOTH targets — vite serves it via public/assets,
 const SLIDES = [
-  { src: "../../assets/photo-mountain.jpg", caption: "Ridge — object-fit: cover on a real photo" },
-  { src: "../../assets/photo-forest.jpg", caption: "Riverbend — native Image decode" },
-  { src: "../../assets/photo-city.jpg", caption: "Fog city — carousel crossfade" },
+  { src: "assets/photo-mountain.jpg", caption: "Ridge — object-fit: cover on a real photo" },
+  { src: "assets/photo-forest.jpg", caption: "Riverbend — native Image decode" },
+  { src: "assets/photo-city.jpg", caption: "Fog city — carousel crossfade" },
 ];
 
 const FEED = [
