@@ -169,6 +169,7 @@
 }
 .theme-toggle:hover { background: #eef4f9; }
 .theme-toggle.on { background: #16212e; border: 1px solid #2e4256; }
+.theme-toggle.fancy.on { background: #41cd52; border: 1px solid #2e9e3e; }
 .theme-toggle-t { color: #445263; font-size: 15px; }
 .theme-toggle.on .theme-toggle-t { color: #f2c94c; }
 

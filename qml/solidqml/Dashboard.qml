@@ -10,14 +10,18 @@ Css.CssRect {
     property var userOpen: false
     property var order: ["qml-css-engine", "transpiler v2", "npm mirror", "AOT C++ target"]
     property var darkTheme: false
+    property var fancy: false
     readonly property var __const_MENU: [({ id: "overview", label: "Overview", icon: "▤", badge: "" }), ({ id: "analytics", label: "Analytics", icon: "◔", badge: "3" }), ({ id: "projects", label: "Projects", icon: "▦", badge: "12" }), ({ id: "activity", label: "Activity", icon: "≡", badge: "24" }), ({ id: "settings", label: "Settings", icon: "✦", badge: "" })]
     readonly property var __const_STATS: [({ label: "Revenue", value: "48.2k", delta: "+12.4%", up: true }), ({ label: "Active users", value: "1 284", delta: "+3.1%", up: true }), ({ label: "Churn", value: "2.4%", delta: "-0.8%", up: false }), ({ label: "Uptime", value: "99.98%", delta: "+0.01%", up: true })]
     readonly property var __const_SLIDES: [({ src: "assets/photo-mountain.jpg", caption: "Ridge — object-fit: cover on a real photo" }), ({ src: "assets/photo-forest.jpg", caption: "Riverbend — native Image decode" }), ({ src: "assets/photo-city.jpg", caption: "Fog city — carousel crossfade" })]
     readonly property var __const_FEED: [({ who: "AC", name: "Ana Costa", what: "deployed dashboard v2 to production", when: "2 min", tag: "deploy", ok: true }), ({ who: "RM", name: "Rui Matos", what: "opened PR #142 — carousel easing", when: "18 min", tag: "review", ok: true }), ({ who: "LS", name: "Lia Souza", what: "pipeline failed on test-css step", when: "41 min", tag: "ci", ok: false }), ({ who: "JP", name: "João Prado", what: "published qml-css-engine 0.2.0", when: "1 h", tag: "release", ok: true })]
     readonly property var __const_PROJECTS: [({ name: "qml-css-engine", desc: "CSS cascade, paint & layout in C++", pct: "p80", status: "active" }), ({ name: "transpiler v2", desc: "Solid JSX → structural QML", pct: "p65", status: "active" }), ({ name: "npm mirror", desc: "node modules on the V4 engine", pct: "p45", status: "beta" }), ({ name: "AOT C++ target", desc: "QtQuick C++ 1:1 generation", pct: "p10", status: "design" })]
     readonly property var __const_DARK_CSS: "\n.dash { background: #10161f; }\n.dash-top { background: #16212e; border-bottom: 1px solid #223140; }\n.dash-title { color: #e8eef5; }\n.dash-user-n { color: #b9c7d4; }\n.dash-user:hover { background: #1d2a38; }\n.dash-user.open { background: #223140; }\n.stat { background: linear-gradient(180deg, #16212e 0%, #131c27 100%); border: 1px solid #223140; border-top: 3px solid #41cd52; }\n.stat:hover { border: 1px solid #2e4256; border-top: 3px solid #4fe063; }\n.stat-label { color: #7d92a5; }\n.stat-value { color: #e8eef5; }\n.feed { background: #16212e; border: 1px solid #223140; }\n.feed-h { color: #e8eef5; }\n.feed-row:hover { background: #1d2a38; }\n.feed-avatar { background: #223140; }\n.feed-avatar-t { color: #b9c7d4; }\n.feed-name { color: #e8eef5; }\n.feed-what { color: #7d92a5; }\n.feed-tag { background: #223140; }\n.feed-tag-t { color: #b9c7d4; }\n.feed-when { color: #4d6274; }\n.panel { background: #16212e; border: 1px solid #223140; }\n.panel-h { color: #e8eef5; }\n.prog-name { color: #b9c7d4; }\n.prog-track { background: #223140; }\n.axis { color: #4d6274; }\n.proj-card { background: #16212e; border: 1px solid #223140; }\n.proj-card:hover { border: 1px solid #2e4256; }\n.proj-name { color: #e8eef5; }\n.proj-desc { color: #7d92a5; }\n.proj-hint { color: #4d6274; }\n.set-row { border-bottom: 1px solid #223140; }\n.set-label { color: #b9c7d4; }\n.set-input { background: #131c27; border: 1px solid #223140; color: #e8eef5; }\n.set-opt { background: #16212e; border: 1px solid #223140; }\n.set-opt text { color: #b9c7d4; }\n.set-opt:hover { background: #1d2a38; }\n.user-card { background: #16212e; border: 1px solid #2e4256; }\n.user-card-name { color: #e8eef5; }\n.user-kv-v { color: #e8eef5; }\n.user-card-row { border-bottom: 1px solid #223140; }\n"
+    readonly property var __const_FANCY_CSS: "\n.dash-badge { background: linear-gradient(135deg, #41cd52, #176b87); }\n.stat-delta { background: linear-gradient(90deg, rgba(65,205,82,0.30), rgba(23,107,135,0.18)); }\n.feed-tag { background: linear-gradient(90deg, #eaf1f8, #d7e6f2); }\n.user-tag { background: linear-gradient(90deg, rgba(65,205,82,0.30), rgba(65,205,82,0.10)); }\n.proj-pill { background: linear-gradient(90deg, rgba(65,205,82,0.30), rgba(65,205,82,0.10)); }\n.prog-track { box-shadow: inset 0 1px 3px rgba(23,34,44,0.25); }\n.set-opt { border-left: 3px solid #41cd52; }\n.feed-avatar { background: linear-gradient(135deg, #e5ecf4, #cddcEB); }\n.dash-item.active { background: linear-gradient(90deg, #176b87, #1d7fa0); }\n"
     readonly property var __const_LOG: [({ who: "AC", what: "deployed dashboard v2 to production", tag: "deploy", ok: true }), ({ who: "RM", what: "opened PR #142 — carousel easing curves", tag: "review", ok: true }), ({ who: "LS", what: "pipeline failed on test-css step", tag: "ci", ok: false }), ({ who: "JP", what: "published qml-css-engine 0.2.0", tag: "release", ok: true }), ({ who: "MB", what: "rewrote the flex shrink pass in C++", tag: "engine", ok: true }), ({ who: "AC", what: "fixed ancestor-scoped hover rules", tag: "engine", ok: true }), ({ who: "TS", what: "added Flickable-backed overflow scroll", tag: "engine", ok: true }), ({ who: "RM", what: "benchmarked 1100 nodes/page after lazy effects", tag: "perf", ok: true }), ({ who: "LS", what: "nightly run red: fetch shim on HTTP/2", tag: "ci", ok: false }), ({ who: "JP", what: "mirrored js-base64 onto the V4 engine", tag: "npm", ok: true }), ({ who: "MB", what: "landed grid-template-areas mapping", tag: "engine", ok: true }), ({ who: "AC", what: "shipped the collapsible sidebar", tag: "ui", ok: true }), ({ who: "TS", what: "traced the RHI layer runaway to stale builds", tag: "perf", ok: true }), ({ who: "RM", what: "reviewed the transpiler precedence fix", tag: "review", ok: true }), ({ who: "LS", what: "flaky: keyframes driver timing on CI", tag: "ci", ok: false }), ({ who: "JP", what: "documented QMLCss.h one-call registration", tag: "docs", ok: true }), ({ who: "MB", what: "ported Contrast.js to a C++ singleton", tag: "engine", ok: true }), ({ who: "AC", what: "wired hover tracking for any :hover rule", tag: "engine", ok: true }), ({ who: "TS", what: "added text background Shape underlay", tag: "engine", ok: true }), ({ who: "RM", what: "merged display:none binding preservation", tag: "review", ok: true }), ({ who: "LS", what: "green across 43 engine tests", tag: "ci", ok: true }), ({ who: "JP", what: "released the dashboard stress page", tag: "release", ok: true }), ({ who: "MB", what: "profiled badge-pulse frame production", tag: "perf", ok: true }), ({ who: "AC", what: "tuned the sidebar width transition", tag: "ui", ok: true })]
-    function toggleTheme() { darkTheme = !darkTheme; cssTheme.loadLayeredString(darkTheme ? __const_DARK_CSS : ""); }
+    function applyOverrides() { cssTheme.loadLayeredString((darkTheme ? __const_DARK_CSS : "") + (fancy ? __const_FANCY_CSS : "")); }
+    function toggleTheme() { darkTheme = !darkTheme; applyOverrides(); }
+    function toggleFancy() { fancy = !fancy; applyOverrides(); }
     function proj(n) { var hit = __const_PROJECTS.filter(function(x_) { return x_.name === n }); return hit.length > 0 ? hit[0] : __const_PROJECTS[0]; }
     function reorder(list, src, dst) { if (src === dst) { return list; } var out = list.filter(function(x_) { return x_ !== src }); out.splice(out.indexOf(dst), 0, src); return out; }
     property var __cleanups: []
@@ -151,8 +155,25 @@ Css.CssRect {
                 }
             }
             Css.CssRect {
-                cssClass: ["dash-user"].concat(userOpen ? ["open"] : [])
+                cssClass: ["theme-toggle", "fancy"].concat(fancy ? ["on"] : [])
                 cssState: __hover3.containsMouse ? ["hover"] : []
+                cssPrimitive: "div"
+                Css.CssText {
+                    cssClass: ["theme-toggle-t"]
+                    cssPrimitive: "text"
+                    text: "✨"
+                }
+                MouseArea {
+                    id: __hover3
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: toggleFancy()
+                }
+            }
+            Css.CssRect {
+                cssClass: ["dash-user"].concat(userOpen ? ["open"] : [])
+                cssState: __hover4.containsMouse ? ["hover"] : []
                 cssPrimitive: "div"
                 Css.CssRect {
                     cssClass: ["dash-avatar-ring"]
@@ -263,26 +284,11 @@ Css.CssRect {
                         cssPrimitive: "div"
                         Css.CssFill {
                             cssClass: ["user-btn"]
-                            cssState: __hover4.containsMouse ? ["hover"] : []
-                            cssPrimitive: "button"
-                            Css.CssText {
-                                cssPrimitive: "text"
-                                text: "Profile"
-                            }
-                            MouseArea {
-                                id: __hover4
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                            }
-                        }
-                        Css.CssFill {
-                            cssClass: ["user-btn", "ghost"]
                             cssState: __hover5.containsMouse ? ["hover"] : []
                             cssPrimitive: "button"
                             Css.CssText {
                                 cssPrimitive: "text"
-                                text: "Sign out"
+                                text: "Profile"
                             }
                             MouseArea {
                                 id: __hover5
@@ -291,10 +297,25 @@ Css.CssRect {
                                 cursorShape: Qt.PointingHandCursor
                             }
                         }
+                        Css.CssFill {
+                            cssClass: ["user-btn", "ghost"]
+                            cssState: __hover6.containsMouse ? ["hover"] : []
+                            cssPrimitive: "button"
+                            Css.CssText {
+                                cssPrimitive: "text"
+                                text: "Sign out"
+                            }
+                            MouseArea {
+                                id: __hover6
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                        }
                     }
                 }
                 MouseArea {
-                    id: __hover3
+                    id: __hover4
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
@@ -365,14 +386,14 @@ Css.CssRect {
                         }
                         Css.CssFill {
                             cssClass: ["c-nav", "c-prev"]
-                            cssState: __hover6.containsMouse ? ["hover"] : []
+                            cssState: __hover7.containsMouse ? ["hover"] : []
                             cssPrimitive: "button"
                             Css.CssText {
                                 cssPrimitive: "text"
                                 text: "‹"
                             }
                             MouseArea {
-                                id: __hover6
+                                id: __hover7
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
@@ -381,14 +402,14 @@ Css.CssRect {
                         }
                         Css.CssFill {
                             cssClass: ["c-nav", "c-next"]
-                            cssState: __hover7.containsMouse ? ["hover"] : []
+                            cssState: __hover8.containsMouse ? ["hover"] : []
                             cssPrimitive: "button"
                             Css.CssText {
                                 cssPrimitive: "text"
                                 text: "›"
                             }
                             MouseArea {
-                                id: __hover7
+                                id: __hover8
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
@@ -402,10 +423,10 @@ Css.CssRect {
                                 model: __const_SLIDES
                                 Css.CssRect {
                                     cssClass: ["dot"].concat(slide === index ? ["on"] : [])
-                                    cssState: __hover8.containsMouse ? ["hover"] : []
+                                    cssState: __hover9.containsMouse ? ["hover"] : []
                                     cssPrimitive: "div"
                                     MouseArea {
-                                        id: __hover8
+                                        id: __hover9
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
@@ -623,11 +644,11 @@ Css.CssRect {
                                 Css.CssRect {
                                     cssClass: ["proj-card"]
                                     property var __dragData: modelData
-                                    Drag.active: __drag9.drag.active
+                                    Drag.active: __drag10.drag.active
                                     Drag.hotSpot.x: width / 2
                                     Drag.hotSpot.y: height / 2
-                                    z: __drag9.drag.active ? 1000 : 0
-                                    id: __drag9_root
+                                    z: __drag10.drag.active ? 1000 : 0
+                                    id: __drag10_root
                                     cssPrimitive: "div"
                                     Css.CssRect {
                                         cssClass: ["proj-head"]
@@ -661,15 +682,15 @@ Css.CssRect {
                                         }
                                     }
                                     MouseArea {
-                                        id: __drag9
+                                        id: __drag10
                                         anchors.fill: parent
-                                        drag.target: __drag9_root
+                                        drag.target: __drag10_root
                                         cursorShape: Qt.OpenHandCursor
-                                        onReleased: { __drag9_root.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(__drag9_root) }
+                                        onReleased: { __drag10_root.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(__drag10_root) }
                                     }
                                     DropArea {
                                         anchors.fill: parent
-                                        enabled: !__drag9.drag.active
+                                        enabled: !__drag10.drag.active
                                         onDropped: (drop) => { order = reorder(order, drop.source.__dragData, modelData) }
                                     }
                                 }
@@ -804,26 +825,11 @@ Css.CssRect {
                                 cssPrimitive: "div"
                                 Css.CssFill {
                                     cssClass: ["set-opt", "active"]
-                                    cssState: __hover10.containsMouse ? ["hover"] : []
-                                    cssPrimitive: "button"
-                                    Css.CssText {
-                                        cssPrimitive: "text"
-                                        text: "dark"
-                                    }
-                                    MouseArea {
-                                        id: __hover10
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                    }
-                                }
-                                Css.CssFill {
-                                    cssClass: ["set-opt"]
                                     cssState: __hover11.containsMouse ? ["hover"] : []
                                     cssPrimitive: "button"
                                     Css.CssText {
                                         cssPrimitive: "text"
-                                        text: "light"
+                                        text: "dark"
                                     }
                                     MouseArea {
                                         id: __hover11
@@ -838,10 +844,25 @@ Css.CssRect {
                                     cssPrimitive: "button"
                                     Css.CssText {
                                         cssPrimitive: "text"
-                                        text: "system"
+                                        text: "light"
                                     }
                                     MouseArea {
                                         id: __hover12
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                    }
+                                }
+                                Css.CssFill {
+                                    cssClass: ["set-opt"]
+                                    cssState: __hover13.containsMouse ? ["hover"] : []
+                                    cssPrimitive: "button"
+                                    Css.CssText {
+                                        cssPrimitive: "text"
+                                        text: "system"
+                                    }
+                                    MouseArea {
+                                        id: __hover13
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
@@ -859,14 +880,14 @@ Css.CssRect {
                             }
                             Css.CssFill {
                                 cssClass: ["set-opt", "active"]
-                                cssState: __hover13.containsMouse ? ["hover"] : []
+                                cssState: __hover14.containsMouse ? ["hover"] : []
                                 cssPrimitive: "button"
                                 Css.CssText {
                                     cssPrimitive: "text"
                                     text: "on"
                                 }
                                 MouseArea {
-                                    id: __hover13
+                                    id: __hover14
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor

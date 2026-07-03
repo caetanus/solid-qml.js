@@ -87,6 +87,20 @@ const DARK_CSS = `
 .user-card-row { border-bottom: 1px solid #223140; }
 `;
 
+// Second runtime override: pushes SHAPE-demanding styles onto elements that normally take
+// the cheap Rectangle path — a live proof that the Shape x Rectangle policy swaps per apply.
+const FANCY_CSS = `
+.dash-badge { background: linear-gradient(135deg, #41cd52, #176b87); }
+.stat-delta { background: linear-gradient(90deg, rgba(65,205,82,0.30), rgba(23,107,135,0.18)); }
+.feed-tag { background: linear-gradient(90deg, #eaf1f8, #d7e6f2); }
+.user-tag { background: linear-gradient(90deg, rgba(65,205,82,0.30), rgba(65,205,82,0.10)); }
+.proj-pill { background: linear-gradient(90deg, rgba(65,205,82,0.30), rgba(65,205,82,0.10)); }
+.prog-track { box-shadow: inset 0 1px 3px rgba(23,34,44,0.25); }
+.set-opt { border-left: 3px solid #41cd52; }
+.feed-avatar { background: linear-gradient(135deg, #e5ecf4, #cddcEB); }
+.dash-item.active { background: linear-gradient(90deg, #176b87, #1d7fa0); }
+`;
+
 const LOG = [
   { who: "AC", what: "deployed dashboard v2 to production", tag: "deploy", ok: true },
   { who: "RM", what: "opened PR #142 — carousel easing curves", tag: "review", ok: true },
@@ -121,9 +135,17 @@ export function Dashboard() {
   const [userOpen, setUserOpen] = createSignal(false);
   const [order, setOrder] = createSignal(["qml-css-engine", "transpiler v2", "npm mirror", "AOT C++ target"]);
   const [darkTheme, setDarkTheme] = createSignal(false);
+  const [fancy, setFancy] = createSignal(false);
+  function applyOverrides() {
+    cssTheme.loadLayeredString((darkTheme() ? DARK_CSS : "") + (fancy() ? FANCY_CSS : ""));
+  }
   function toggleTheme() {
     setDarkTheme(!darkTheme());
-    cssTheme.loadLayeredString(darkTheme() ? DARK_CSS : "");
+    applyOverrides();
+  }
+  function toggleFancy() {
+    setFancy(!fancy());
+    applyOverrides();
   }
   onCleanup(() => cssTheme.loadLayeredString(""));
   function proj(n) {
@@ -172,6 +194,9 @@ export function Dashboard() {
           </div>
           <div class="theme-toggle" classList={{ on: darkTheme() }} onClick={() => toggleTheme()}>
             <text class="theme-toggle-t">{darkTheme() ? "☀" : "☾"}</text>
+          </div>
+          <div class="theme-toggle fancy" classList={{ on: fancy() }} onClick={() => toggleFancy()}>
+            <text class="theme-toggle-t">✨</text>
           </div>
           <div class="dash-user" classList={{ open: userOpen() }} onClick={() => setUserOpen(!userOpen())}>
             <div class="dash-avatar-ring">
