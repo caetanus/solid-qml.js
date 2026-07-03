@@ -376,6 +376,8 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
   onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null;
   onKeyDownFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null;
   disabled: boolean; readOnly: boolean; maxLength: string | null;
+  // Phase 3: toggle/radio attrs
+  role: string; name: string | null; checkedExpr: string | null;
 } {
   let type = "text";
   let valueExpr: string | null = null;
@@ -387,6 +389,9 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
   let disabled = false;
   let readOnly = false;
   let maxLength: string | null = null;
+  let role = "";
+  let name: string | null = null;
+  let checkedExpr: string | null = null;
 
   if (propsArg && t.isObjectExpression(propsArg)) {
     for (const p of propsArg.properties) {
@@ -401,6 +406,9 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
           if (sym?.kind === "signal") signalName = sym.name;
         }
       }
+      // `checked={sig()}` — boolean controlled value for checkboxes, radios, switches.
+      if (key === "checked" && t.isExpression(p.value))
+        checkedExpr = emitExpr(p.value, { ...scope, mode: "binding" });
       if (key === "placeholder" && t.isStringLiteral(p.value)) placeholder = p.value.value;
       if (key === "onInput" && t.isExpression(p.value)
           && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
@@ -418,9 +426,13 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
         if (t.isNumericLiteral(p.value)) maxLength = String(p.value.value);
         else if (t.isExpression(p.value)) maxLength = emitExpr(p.value, { ...scope, mode: "binding" });
       }
+      // `role` — "switch" on a checkbox promotes T.CheckBox to T.Switch.
+      if (key === "role" && t.isStringLiteral(p.value)) role = p.value.value;
+      // `name` — radio group name; radios sharing a name join the same T.ButtonGroup.
+      if (key === "name" && t.isStringLiteral(p.value)) name = p.value.value;
     }
   }
-  return { type, valueExpr, signalName, placeholder, onInputFn, onChangeFn, onKeyDownFn, disabled, readOnly, maxLength };
+  return { type, valueExpr, signalName, placeholder, onInputFn, onChangeFn, onKeyDownFn, disabled, readOnly, maxLength, role, name, checkedExpr };
 }
 
 /** Emit the color + font bindings that bridge the CssFill parent's CSS-inherited properties into a
@@ -456,8 +468,15 @@ function emitInput(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
   // Mark that this component uses QtQuick.Templates so the header emits the import.
   if (scope.usedWidgets) scope.usedWidgets.flag = true;
 
-  const { type, valueExpr, signalName, placeholder, onInputFn, onChangeFn, onKeyDownFn, disabled, readOnly, maxLength }
-    = readWidgetProps(propsArg, scope);
+  const wp = readWidgetProps(propsArg, scope);
+  const { type, role } = wp;
+
+  // Phase 3: dispatch checkbox/switch/radio to dedicated emitters before the T.TextField path.
+  if (type === "checkbox" && role === "switch") return emitSwitchToggle(props, scope, level, guard, ctlId, wp);
+  if (type === "checkbox") return emitCheckboxToggle(props, scope, level, guard, ctlId, wp);
+  if (type === "radio") return emitRadioButton(props, scope, level, guard, ctlId, wp);
+
+  const { valueExpr, signalName, placeholder, onInputFn, onChangeFn, onKeyDownFn, disabled, readOnly, maxLength } = wp;
 
   // cssState: `:focus` when the control has keyboard focus; `:disabled` when not enabled.
   const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
@@ -612,6 +631,233 @@ function emitTextarea(propsArg: t.Node | undefined, props: Props, scope: Scope, 
       `${i(2)}target: ${ctlId}`,
       `${i(2)}property: "text"`,
       `${i(2)}value: ${valueExpr}`,
+      `${i(2)}restoreMode: Binding.RestoreNone`,
+      `${i(1)}}`,
+    );
+  }
+
+  lines.push(`${pad}}`);
+  return lines;
+}
+
+/** Translate an onChange arrow handler for toggle controls (checkbox, switch, radio).
+ *  Like translateInputHandler but maps e.target.checked / e.target.value → <ctlId>.checked
+ *  instead of the text field's `text`. Used by onToggled handlers in all three toggle types. */
+function translateToggleHandler(fn: t.ArrowFunctionExpression | t.FunctionExpression, ctlId: string, scope: Scope): string {
+  const paramName = fn.params[0] && t.isIdentifier(fn.params[0]) ? fn.params[0].name : null;
+  const inner: Scope = { ...scope, mode: "handler", locals: { ...(scope.locals ?? {}), ...(paramName ? { [paramName]: "__ev" } : {}) } };
+  let body: string;
+  if (t.isBlockStatement(fn.body)) {
+    body = fn.body.body.map((s) => {
+      if (t.isExpressionStatement(s)) return `${emitExpr(s.expression, inner)};`;
+      if (t.isReturnStatement(s) && s.argument) return `return ${emitExpr(s.argument, inner)};`;
+      return "";
+    }).join(" ");
+  } else {
+    body = emitExpr(fn.body, inner);
+  }
+  // Map the browser-DOM patterns that toggle handlers typically use.
+  return body
+    .replace(/__ev\.(?:currentTarget|target)\.checked/g, `${ctlId}.checked`)
+    .replace(/__ev\.(?:currentTarget|target)\.value/g, `${ctlId}.checked`);
+}
+
+/** <input type="checkbox"> → wrapper CssFill + T.CheckBox.
+ *  The indicator slot hosts a Css.CssFill (20×20) with a centred glyph (✓) visible when checked.
+ *  Indicator is NOT inside a Css container, so CSS geometry does NOT apply to it — width/height
+ *  are hardcoded at 20px (glyph colour/background ARE CSS-styleable via .indicator rules).
+ *  cssState on both wrapper and indicator carries "checked"/"disabled" for author pseudo-classes. */
+function emitCheckboxToggle(props: Props, scope: Scope, level: number, guard: string | undefined, ctlId: string, wp: ReturnType<typeof readWidgetProps>): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  const classLine = buildCssClassLine(props, scope, i(1));
+  const { checkedExpr, onChangeFn, disabled } = wp;
+  const checkState = `(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+
+  const lines: string[] = [
+    `${pad}Css.CssFill {`,
+    ...classLine,
+    ...guardLine(guard, level),
+    `${i(1)}cssPrimitive: "input"`,
+    `${i(1)}cssState: ${checkState}`,
+    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
+    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
+    `${i(1)}T.CheckBox {`,
+    `${i(2)}id: ${ctlId}`,
+    `${i(2)}anchors.fill: parent`,
+    `${i(2)}background: null`,
+    `${i(2)}contentItem: null`,
+    // indicator: a fixed-size Css item (not in a Css layout container — geometry is hardcoded).
+    `${i(2)}indicator: Css.CssFill {`,
+    `${i(3)}cssPrimitive: "span"`,
+    `${i(3)}cssClass: ["indicator"]`,
+    `${i(3)}cssState: ${checkState}`,
+    `${i(3)}width: 20`,
+    `${i(3)}height: 20`,
+    `${i(3)}implicitWidth: 20`,
+    `${i(3)}implicitHeight: 20`,
+    `${i(3)}Css.CssText {`,
+    `${i(4)}cssPrimitive: ""`,
+    `${i(4)}cssClass: ["indicator-glyph"]`,
+    `${i(4)}text: "✓"`,
+    `${i(4)}visible: ${ctlId}.checked`,
+    // anchors.centerIn keeps the glyph centred regardless of font size; CSS flex cannot do this
+    // here because the indicator is not inside a Css container (it's inside T.CheckBox).
+    `${i(4)}anchors.centerIn: parent`,
+    `${i(3)}}`,
+    `${i(2)}}`,
+  ];
+
+  if (disabled) lines.push(`${i(2)}enabled: false`);
+  if (onChangeFn) lines.push(`${i(2)}onToggled: { ${translateToggleHandler(onChangeFn, ctlId, scope)} }`);
+
+  lines.push(`${i(1)}}`);
+
+  if (checkedExpr !== null) {
+    lines.push(
+      `${i(1)}Binding {`,
+      `${i(2)}target: ${ctlId}`,
+      `${i(2)}property: "checked"`,
+      `${i(2)}value: ${checkedExpr}`,
+      `${i(2)}restoreMode: Binding.RestoreNone`,
+      `${i(1)}}`,
+    );
+  }
+
+  lines.push(`${pad}}`);
+  return lines;
+}
+
+/** <input type="checkbox" role="switch"> → wrapper CssFill + T.Switch.
+ *  The indicator slot hosts a track CssFill (36×20) containing a knob CssRect (16×16) whose
+ *  x position is animated by T.Switch.visualPosition (0→1). The Behavior on x gives a 120 ms
+ *  slide without requiring a CSS transition (CSS animations are not yet wired). */
+function emitSwitchToggle(props: Props, scope: Scope, level: number, guard: string | undefined, ctlId: string, wp: ReturnType<typeof readWidgetProps>): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  const classLine = buildCssClassLine(props, scope, i(1));
+  const { checkedExpr, onChangeFn, disabled } = wp;
+  const switchState = `(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+
+  const lines: string[] = [
+    `${pad}Css.CssFill {`,
+    ...classLine,
+    ...guardLine(guard, level),
+    `${i(1)}cssPrimitive: "input"`,
+    `${i(1)}cssState: ${switchState}`,
+    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
+    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
+    `${i(1)}T.Switch {`,
+    `${i(2)}id: ${ctlId}`,
+    `${i(2)}anchors.fill: parent`,
+    `${i(2)}background: null`,
+    `${i(2)}contentItem: null`,
+    `${i(2)}indicator: Css.CssFill {`,
+    `${i(3)}cssPrimitive: "span"`,
+    `${i(3)}cssClass: ["track"]`,
+    `${i(3)}cssState: ${switchState}`,
+    `${i(3)}width: 36`,
+    `${i(3)}height: 20`,
+    `${i(3)}implicitWidth: 36`,
+    `${i(3)}implicitHeight: 20`,
+    `${i(3)}Css.CssRect {`,
+    `${i(4)}cssClass: ["knob"]`,
+    `${i(4)}width: 16`,
+    `${i(4)}height: 16`,
+    `${i(4)}y: (parent.height - height) / 2`,
+    // visualPosition goes 0→1 as the switch toggles; multiply by the remaining track width.
+    `${i(4)}x: ${ctlId}.visualPosition * (parent.width - width)`,
+    `${i(4)}Behavior on x { NumberAnimation { duration: 120 } }`,
+    `${i(3)}}`,
+    `${i(2)}}`,
+  ];
+
+  if (disabled) lines.push(`${i(2)}enabled: false`);
+  if (onChangeFn) lines.push(`${i(2)}onToggled: { ${translateToggleHandler(onChangeFn, ctlId, scope)} }`);
+
+  lines.push(`${i(1)}}`);
+
+  if (checkedExpr !== null) {
+    lines.push(
+      `${i(1)}Binding {`,
+      `${i(2)}target: ${ctlId}`,
+      `${i(2)}property: "checked"`,
+      `${i(2)}value: ${checkedExpr}`,
+      `${i(2)}restoreMode: Binding.RestoreNone`,
+      `${i(1)}}`,
+    );
+  }
+
+  lines.push(`${pad}}`);
+  return lines;
+}
+
+/** <input type="radio" name="g"> → wrapper CssFill + T.RadioButton.
+ *  Radios sharing the same `name` join one T.ButtonGroup (emitted at the component root by
+ *  emitComponentType after reading scope.buttonGroups). The attached property
+ *  T.ButtonGroup.group on the T.RadioButton wires up exclusivity at the Qt level.
+ *  Indicator (20×20): a CssFill with inner dot (CssRect, 8×8) visible only when checked;
+ *  border-radius via CSS makes both circular. Geometry is hardcoded (not in a Css container). */
+function emitRadioButton(props: Props, scope: Scope, level: number, guard: string | undefined, ctlId: string, wp: ReturnType<typeof readWidgetProps>): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  const classLine = buildCssClassLine(props, scope, i(1));
+  const { checkedExpr, onChangeFn, disabled, name } = wp;
+  const radioState = `(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+
+  // Register this group name so emitComponentType can emit T.ButtonGroup { id: __group_<name> }.
+  if (name && scope.buttonGroups) scope.buttonGroups.add(name);
+  const groupId = name ? `__group_${safeName(name)}` : null;
+
+  const lines: string[] = [
+    `${pad}Css.CssFill {`,
+    ...classLine,
+    ...guardLine(guard, level),
+    `${i(1)}cssPrimitive: "input"`,
+    `${i(1)}cssState: ${radioState}`,
+    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
+    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
+    `${i(1)}T.RadioButton {`,
+    `${i(2)}id: ${ctlId}`,
+    `${i(2)}anchors.fill: parent`,
+    `${i(2)}background: null`,
+    `${i(2)}contentItem: null`,
+  ];
+
+  // Attach to the group if a name was given; the group is declared at root level by emitComponentType.
+  if (groupId) lines.push(`${i(2)}T.ButtonGroup.group: ${groupId}`);
+
+  lines.push(
+    `${i(2)}indicator: Css.CssFill {`,
+    `${i(3)}cssPrimitive: "span"`,
+    `${i(3)}cssClass: ["indicator"]`,
+    `${i(3)}cssState: ${radioState}`,
+    `${i(3)}width: 20`,
+    `${i(3)}height: 20`,
+    `${i(3)}implicitWidth: 20`,
+    `${i(3)}implicitHeight: 20`,
+    // Inner dot: a CssRect (border-radius via CSS makes it circular); centred with anchors.
+    `${i(3)}Css.CssRect {`,
+    `${i(4)}cssClass: ["indicator-dot"]`,
+    `${i(4)}visible: ${ctlId}.checked`,
+    `${i(4)}anchors.centerIn: parent`,
+    `${i(4)}width: 8`,
+    `${i(4)}height: 8`,
+    `${i(3)}}`,
+    `${i(2)}}`,
+  );
+
+  if (disabled) lines.push(`${i(2)}enabled: false`);
+  if (onChangeFn) lines.push(`${i(2)}onToggled: { ${translateToggleHandler(onChangeFn, ctlId, scope)} }`);
+
+  lines.push(`${i(1)}}`);
+
+  if (checkedExpr !== null) {
+    lines.push(
+      `${i(1)}Binding {`,
+      `${i(2)}target: ${ctlId}`,
+      `${i(2)}property: "checked"`,
+      `${i(2)}value: ${checkedExpr}`,
       `${i(2)}restoreMode: Binding.RestoreNone`,
       `${i(1)}}`,
     );

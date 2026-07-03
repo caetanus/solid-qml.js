@@ -59,6 +59,9 @@ export interface Scope {
   /** Mutable flag set by widget emitters (emitInput, emitTextarea) when a T.* control is
    *  emitted. emitComponentType reads it after the render pass to prepend the Templates import. */
   usedWidgets?: { flag: boolean };
+  /** Button group names collected by emitRadioButton; emitComponentType reads this after
+   *  the render pass to emit one T.ButtonGroup { id: __group_<name> } per unique name. */
+  buttonGroups?: Set<string>;
 }
 
 /** A reactive cell / prop / mutable-local name as a QML reference: always BARE — it's a property on

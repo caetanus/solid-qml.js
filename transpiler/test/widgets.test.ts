@@ -329,3 +329,222 @@ test("widgets: Templates import is NOT emitted for a button (no widget)", async 
   `);
   assert.doesNotMatch(out, /QtQuick\.Templates/);
 });
+
+// ---------------------------------------------------------------------------
+// Phase 3: <input type="checkbox"> — checkbox toggle
+// ---------------------------------------------------------------------------
+
+test("widgets: <input type='checkbox'> emits wrapper CssFill + T.CheckBox inside", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" />; }`);
+  assert.match(out, /Css\.CssFill \{/);
+  assert.match(out, /cssPrimitive: "input"/);
+  assert.match(out, /T\.CheckBox \{/);
+  assert.match(out, /id: __input0/);
+  assert.match(out, /anchors\.fill: parent/);
+  assert.match(out, /background: null/);
+  assert.match(out, /contentItem: null/);
+});
+
+test("widgets: checkbox wrapper cssState carries 'checked' and 'disabled' pseudo-classes", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" />; }`);
+  // Both wrapper and indicator carry the same checked/disabled expression.
+  assert.match(out, /__input0\.checked \? \["checked"\] : \[\]/);
+  assert.match(out, /!__input0\.enabled \? \["disabled"\] : \[\]/);
+});
+
+test("widgets: checkbox indicator CssFill has explicit width/height 20 + implicitWidth/Height 20", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" />; }`);
+  assert.match(out, /cssClass: \["indicator"\]/);
+  // All four size props hardcoded — CSS geometry won't apply (indicator is inside T.CheckBox,
+  // not a Css container), but author can still override via CSS colour/background rules.
+  assert.match(out, /width: 20/);
+  assert.match(out, /height: 20/);
+  assert.match(out, /implicitWidth: 20/);
+  assert.match(out, /implicitHeight: 20/);
+});
+
+test("widgets: checkbox indicator contains a CssText glyph visible when checked", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" />; }`);
+  assert.match(out, /cssClass: \["indicator-glyph"\]/);
+  assert.match(out, /text: "✓"/);
+  assert.match(out, /visible: __input0\.checked/);
+  assert.match(out, /anchors\.centerIn: parent/);
+});
+
+test("widgets: checkbox checked={sig()} emits Binding on property 'checked'", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [isOn, setIsOn] = createSignal(false);
+      return <input type="checkbox" checked={isOn()} />;
+    }
+  `);
+  assert.match(out, /Binding \{/);
+  assert.match(out, /target: __input0/);
+  assert.match(out, /property: "checked"/);
+  assert.match(out, /value: isOn/);
+  assert.match(out, /restoreMode: Binding\.RestoreNone/);
+});
+
+test("widgets: checkbox onChange wires onToggled with e.target.checked translated to ctl.checked", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [isOn, setIsOn] = createSignal(false);
+      return <input type="checkbox" checked={isOn()} onChange={(e) => setIsOn(e.target.checked)} />;
+    }
+  `);
+  assert.match(out, /onToggled: \{ isOn = __input0\.checked \}/);
+});
+
+test("widgets: checkbox disabled prop sets enabled: false on T.CheckBox", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" disabled />; }`);
+  assert.match(out, /enabled: false/);
+});
+
+test("widgets: checkbox without checked does NOT emit a Binding", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" />; }`);
+  assert.doesNotMatch(out, /Binding \{/);
+});
+
+test("widgets: checkbox Templates import is prepended", async () => {
+  const out = await qmlType(`export function F(){ return <input type="checkbox" />; }`);
+  assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3: <input type="checkbox" role="switch"> — switch toggle
+// ---------------------------------------------------------------------------
+
+test("widgets: switch emits T.Switch + track CssFill (cssClass 'track') + knob CssRect", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
+  assert.match(out, /T\.Switch \{/);
+  assert.match(out, /cssClass: \["track"\]/);
+  assert.match(out, /cssClass: \["knob"\]/);
+});
+
+test("widgets: switch track is 36x20 and knob is 16x16 (hardcoded — not in Css container)", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
+  assert.match(out, /width: 36/);
+  assert.match(out, /height: 20/);
+  assert.match(out, /implicitWidth: 36/);
+  assert.match(out, /implicitHeight: 20/);
+  assert.match(out, /width: 16/);
+  assert.match(out, /height: 16/);
+});
+
+test("widgets: switch knob x uses visualPosition binding for animated slide", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
+  assert.match(out, /x: __input0\.visualPosition \* \(parent\.width - width\)/);
+});
+
+test("widgets: switch knob has Behavior on x with NumberAnimation 120ms", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
+  assert.match(out, /Behavior on x \{ NumberAnimation \{ duration: 120 \} \}/);
+});
+
+test("widgets: switch checked={sig()} emits Binding on property 'checked'", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [sw, setSw] = createSignal(false);
+      return <input type="checkbox" role="switch" checked={sw()} />;
+    }
+  `);
+  assert.match(out, /Binding \{/);
+  assert.match(out, /property: "checked"/);
+  assert.match(out, /value: sw/);
+});
+
+test("widgets: switch onChange wires onToggled with translated handler", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [sw, setSw] = createSignal(false);
+      return <input type="checkbox" role="switch" checked={sw()} onChange={(e) => setSw(e.target.checked)} />;
+    }
+  `);
+  assert.match(out, /onToggled: \{ sw = __input0\.checked \}/);
+});
+
+test("widgets: switch wrapper cssState carries checked/disabled", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
+  assert.match(out, /cssState: \(__input0\.checked \? \["checked"\] : \[\]\)\.concat\(!__input0\.enabled \? \["disabled"\] : \[\]\)/);
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3: <input type="radio" name="…"> — radio button + ButtonGroup
+// ---------------------------------------------------------------------------
+
+test("widgets: <input type='radio'> emits T.RadioButton + indicator CssFill + indicator-dot", async () => {
+  const out = await qml(`export function F(){ return <input type="radio" name="g" />; }`);
+  assert.match(out, /T\.RadioButton \{/);
+  assert.match(out, /cssClass: \["indicator"\]/);
+  assert.match(out, /cssClass: \["indicator-dot"\]/);
+});
+
+test("widgets: radio indicator-dot is visible when checked and centred", async () => {
+  const out = await qml(`export function F(){ return <input type="radio" name="g" />; }`);
+  assert.match(out, /visible: __input0\.checked/);
+  assert.match(out, /anchors\.centerIn: parent/);
+  // Dot size: 8x8
+  assert.match(out, /width: 8/);
+  assert.match(out, /height: 8/);
+});
+
+test("widgets: radio references its ButtonGroup via T.ButtonGroup.group", async () => {
+  const out = await qml(`export function F(){ return <input type="radio" name="a" />; }`);
+  assert.match(out, /T\.ButtonGroup\.group: __group_a/);
+});
+
+test("widgets: two radios with name='a' share ONE T.ButtonGroup declaration", async () => {
+  const out = await qmlType(`
+    export function F() {
+      return <div><input type="radio" name="a" /><input type="radio" name="a" /></div>;
+    }
+  `);
+  // Only one ButtonGroup for name "a"
+  const groupDeclCount = (out.match(/T\.ButtonGroup \{ id: __group_a \}/g) ?? []).length;
+  assert.equal(groupDeclCount, 1, "exactly one T.ButtonGroup declaration for name='a'");
+  // Both radios reference the same group
+  const groupRefCount = (out.match(/T\.ButtonGroup\.group: __group_a/g) ?? []).length;
+  assert.equal(groupRefCount, 2, "both radios reference __group_a");
+});
+
+test("widgets: two radios with different names get separate T.ButtonGroup declarations", async () => {
+  const out = await qmlType(`
+    export function F() {
+      return <div>
+        <input type="radio" name="a" />
+        <input type="radio" name="b" />
+      </div>;
+    }
+  `);
+  assert.match(out, /T\.ButtonGroup \{ id: __group_a \}/);
+  assert.match(out, /T\.ButtonGroup \{ id: __group_b \}/);
+  const totalGroups = (out.match(/T\.ButtonGroup \{/g) ?? []).length;
+  assert.equal(totalGroups, 2, "two distinct ButtonGroup declarations for two names");
+});
+
+test("widgets: radio checked={sig()} emits Binding on property 'checked'", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [sel, setSel] = createSignal(false);
+      return <input type="radio" name="x" checked={sel()} />;
+    }
+  `);
+  assert.match(out, /Binding \{/);
+  assert.match(out, /property: "checked"/);
+  assert.match(out, /value: sel/);
+});
+
+test("widgets: radio onChange wires onToggled with e.target.checked translated", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [sel, setSel] = createSignal(false);
+      return <input type="radio" name="x" checked={sel()} onChange={(e) => setSel(e.target.checked)} />;
+    }
+  `);
+  assert.match(out, /onToggled: \{ sel = __input0\.checked \}/);
+});
+
+test("widgets: radio Templates import is prepended", async () => {
+  const out = await qmlType(`export function F(){ return <input type="radio" name="x" />; }`);
+  assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
+});

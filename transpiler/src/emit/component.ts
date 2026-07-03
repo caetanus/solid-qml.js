@@ -50,6 +50,9 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   // Mutable flag: set to true by emitInput/emitTextarea when a T.* widget is emitted.
   // Read after the render pass to decide whether to prepend the Templates import.
   const usedWidgets = { flag: false };
+  // Radio button group names collected by emitRadioButton; each unique name becomes one
+  // T.ButtonGroup { id: __group_<name> } child of the root item (emitted into lifecycle below).
+  const buttonGroups = new Set<string>();
   // Module-level `const NAME = <pure literal>` data tables (menus, slides, feeds…) referenced by
   // this component. QML property names cannot start with an upper-case letter (and these usually
   // do), so each one is surfaced as `__const_NAME` and the identifier is aliased in scope.
@@ -69,7 +72,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   for (const name of moduleConstDecls.keys()) constAliases[name] = `__const_${safeName(name)}`;
   const scope: Scope = {
     table, mode: "binding", propsParam: props.param ?? undefined, propAliases, components, contexts, refs: collectedRefs,
-    inputCounter, hoverCounter, usedWidgets, resources: resources.map((r) => r.name), jsImports,
+    inputCounter, hoverCounter, usedWidgets, buttonGroups, resources: resources.map((r) => r.name), jsImports,
     ...(moduleConstDecls.size > 0 ? { locals: { ...constAliases } } : {}),
     ...(mutableLocals ? { mutableLocals } : {}),
     ...(helpers ? { helpers } : {}),
@@ -291,6 +294,10 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     }
   }
   const lifecycle: string[] = [];
+  // One T.ButtonGroup per unique radio `name`; attached property on each T.RadioButton wires exclusivity.
+  for (const gname of buttonGroups) {
+    lifecycle.push(`${INDENT}T.ButtonGroup { id: __group_${safeName(gname)} }`);
+  }
   if (onCompletedBody.length) {
     lifecycle.push(`${INDENT}property var __cleanups: []`);
     lifecycle.push(`${INDENT}Component.onCompleted: { ${onCompletedBody.join(" ")} }`);
