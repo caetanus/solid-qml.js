@@ -86,40 +86,44 @@ import qmlcss
 Item {
     id: r
 
-    // --- inputs pushed by C++ (the resolved CSS values) --------------------------------
-    property string radiusStr: ""
-    property real radiusFallback: 0
-    property color solid: "transparent"
-    property real fillAlpha: 1
-    property bool hasGradient: false
-    property var gradient: ({})
-    property var orderedLayers: []
-    property bool borderVisible: false
-    property color borderColorOpaque: "transparent"
-    property real borderWidth: 0
-    property real borderAlpha: 1
-    property bool hasSideBorder: false
-    property var topB: ({})
-    property var rightB: ({})
-    property var bottomB: ({})
-    property var leftB: ({})
-    property bool hasOutsetShadow: false
-    property color shadowFillColor: "#ffffff"
-    property real shadowSrcOpacity: 1
-    property color shadowColorOpaque: "transparent"
-    property real shadowOpacity: 0
-    property real shadowX: 0
-    property real shadowY: 0
-    property real shadowBlur: 0
-    property bool insetBevel: false
-    property color insetDark: "transparent"
-    property color insetLight: Qt.rgba(1, 1, 1, 0.30)
-    property bool insetEdge: false
-    property real insetEdgeX: 0
-    property real insetEdgeY: 0
-    property color insetEdgeColor: "transparent"
-    property int transitionMs: 0
-    property int transitionEasing: Easing.InOutQuad
+    // --- inputs pushed by C++ — ONE map, written in a single setProperty per style apply.
+    // Per-property pushes re-ran every dependent JS binding once PER PROPERTY (35 writes ->
+    // hundreds of evaluations per element during page creation); off one map, each derived
+    // binding re-evaluates exactly once per apply.
+    property var cssIn: ({})
+    readonly property string radiusStr: cssIn.radiusStr !== undefined ? cssIn.radiusStr : ""
+    readonly property real radiusFallback: cssIn.radiusFallback !== undefined ? cssIn.radiusFallback : 0
+    readonly property color solid: cssIn.solid !== undefined ? cssIn.solid : "transparent"
+    readonly property real fillAlpha: cssIn.fillAlpha !== undefined ? cssIn.fillAlpha : 1
+    readonly property bool hasGradient: cssIn.hasGradient !== undefined ? cssIn.hasGradient : false
+    readonly property var gradient: cssIn.gradient !== undefined ? cssIn.gradient : ({})
+    readonly property var orderedLayers: cssIn.orderedLayers !== undefined ? cssIn.orderedLayers : []
+    readonly property bool borderVisible: cssIn.borderVisible !== undefined ? cssIn.borderVisible : false
+    readonly property color borderColorOpaque: cssIn.borderColorOpaque !== undefined ? cssIn.borderColorOpaque : "transparent"
+    readonly property real borderWidth: cssIn.borderWidth !== undefined ? cssIn.borderWidth : 0
+    readonly property real borderAlpha: cssIn.borderAlpha !== undefined ? cssIn.borderAlpha : 1
+    readonly property bool hasSideBorder: cssIn.hasSideBorder !== undefined ? cssIn.hasSideBorder : false
+    readonly property var topB: cssIn.topB !== undefined ? cssIn.topB : ({})
+    readonly property var rightB: cssIn.rightB !== undefined ? cssIn.rightB : ({})
+    readonly property var bottomB: cssIn.bottomB !== undefined ? cssIn.bottomB : ({})
+    readonly property var leftB: cssIn.leftB !== undefined ? cssIn.leftB : ({})
+    readonly property bool hasOutsetShadow: cssIn.hasOutsetShadow !== undefined ? cssIn.hasOutsetShadow : false
+    readonly property color shadowFillColor: cssIn.shadowFillColor !== undefined ? cssIn.shadowFillColor : "#ffffff"
+    readonly property real shadowSrcOpacity: cssIn.shadowSrcOpacity !== undefined ? cssIn.shadowSrcOpacity : 1
+    readonly property color shadowColorOpaque: cssIn.shadowColorOpaque !== undefined ? cssIn.shadowColorOpaque : "transparent"
+    readonly property real shadowOpacity: cssIn.shadowOpacity !== undefined ? cssIn.shadowOpacity : 0
+    readonly property real shadowX: cssIn.shadowX !== undefined ? cssIn.shadowX : 0
+    readonly property real shadowY: cssIn.shadowY !== undefined ? cssIn.shadowY : 0
+    readonly property real shadowBlur: cssIn.shadowBlur !== undefined ? cssIn.shadowBlur : 0
+    readonly property bool insetBevel: cssIn.insetBevel !== undefined ? cssIn.insetBevel : false
+    readonly property color insetDark: cssIn.insetDark !== undefined ? cssIn.insetDark : "transparent"
+    readonly property color insetLight: cssIn.insetLight !== undefined ? cssIn.insetLight : Qt.rgba(1, 1, 1, 0.30)
+    readonly property bool insetEdge: cssIn.insetEdge !== undefined ? cssIn.insetEdge : false
+    readonly property real insetEdgeX: cssIn.insetEdgeX !== undefined ? cssIn.insetEdgeX : 0
+    readonly property real insetEdgeY: cssIn.insetEdgeY !== undefined ? cssIn.insetEdgeY : 0
+    readonly property color insetEdgeColor: cssIn.insetEdgeColor !== undefined ? cssIn.insetEdgeColor : "transparent"
+    readonly property int transitionMs: cssIn.transitionMs !== undefined ? cssIn.transitionMs : 0
+    readonly property int transitionEasing: cssIn.transitionEasing !== undefined ? cssIn.transitionEasing : Easing.InOutQuad
 
     // --- pure geometry (no cssTheme) ---------------------------------------------------
     function parseCssLength(value, fallback) {
@@ -836,43 +840,47 @@ void CssRect::recompute()
     const int transitionEasing = transition.contains(QStringLiteral("easing"))
         ? transition.value(QStringLiteral("easing")).toInt() : static_cast<int>(QEasingCurve::InOutQuad);
 
-    // --- push everything onto the composed render root ---
+    // --- push everything onto the composed render root — ONE write (see cssIn) ---
+    QVariantMap in;
     QQuickItem *g = m_render;
-    g->setProperty("radiusStr", str("border-radius"));
-    g->setProperty("radiusFallback", m_radius);
-    g->setProperty("solid", opaque(solid));
-    g->setProperty("fillAlpha", fillAlpha);
-    g->setProperty("hasGradient", hasGradient);
-    g->setProperty("gradient", gradient);
-    g->setProperty("orderedLayers", orderedLayers);
-    g->setProperty("borderVisible", borderVisible);
-    g->setProperty("borderColorOpaque", opaque(borderColor));
-    g->setProperty("borderWidth", borderWidth);
-    g->setProperty("borderAlpha", borderColor.alphaF());
-    g->setProperty("hasSideBorder", hasSideBorder);
-    g->setProperty("topB", topB);
-    g->setProperty("rightB", rightB);
-    g->setProperty("bottomB", bottomB);
-    g->setProperty("leftB", leftB);
-    g->setProperty("hasOutsetShadow", hasOutsetShadow);
-    g->setProperty("shadowFillColor", hasGradient ? QColor(QStringLiteral("#ffffff")) : opaque(solid));
-    g->setProperty("shadowSrcOpacity", hasGradient ? gradientPeakAlpha : solid.alphaF());
-    g->setProperty("shadowColorOpaque", hasOutsetShadow ? opaque(outColor) : QColor(Qt::transparent));
-    g->setProperty("shadowOpacity", hasOutsetShadow ? outColor.alphaF() : 0.0);
-    g->setProperty("shadowX", hasOutsetShadow ? outset.value(QStringLiteral("x")).toReal() : 0.0);
-    g->setProperty("shadowY", hasOutsetShadow ? outset.value(QStringLiteral("y")).toReal() : 0.0);
-    g->setProperty("shadowBlur", hasOutsetShadow
-                       ? std::min<qreal>(1.0, outset.value(QStringLiteral("blur")).toReal() / 32.0) : 0.0);
-    g->setProperty("insetBevel", insetBevel);
-    g->setProperty("insetDark", insetDark);
-    g->setProperty("insetLight", insetLight);
-    g->setProperty("insetEdge", insetEdge);
-    g->setProperty("insetEdgeX", insetEdge ? insetEdgeShadow.value(QStringLiteral("x")).toReal() : 0.0);
-    g->setProperty("insetEdgeY", insetEdge ? insetEdgeShadow.value(QStringLiteral("y")).toReal() : 0.0);
-    g->setProperty("insetEdgeColor", insetEdge ? insetEdgeShadow.value(QStringLiteral("color")).value<QColor>()
-                                               : QColor(Qt::transparent));
-    g->setProperty("transitionMs", transitionMs);
-    g->setProperty("transitionEasing", transitionEasing);
+    in.insert(QStringLiteral("radiusStr"), QVariant::fromValue(str("border-radius")));
+    in.insert(QStringLiteral("radiusFallback"), QVariant::fromValue(m_radius));
+    in.insert(QStringLiteral("solid"), QVariant::fromValue(opaque(solid)));
+    in.insert(QStringLiteral("fillAlpha"), QVariant::fromValue(fillAlpha));
+    in.insert(QStringLiteral("hasGradient"), QVariant::fromValue(hasGradient));
+    in.insert(QStringLiteral("gradient"), QVariant::fromValue(gradient));
+    in.insert(QStringLiteral("orderedLayers"), QVariant::fromValue(orderedLayers));
+    in.insert(QStringLiteral("borderVisible"), QVariant::fromValue(borderVisible));
+    in.insert(QStringLiteral("borderColorOpaque"), QVariant::fromValue(opaque(borderColor)));
+    in.insert(QStringLiteral("borderWidth"), QVariant::fromValue(borderWidth));
+    in.insert(QStringLiteral("borderAlpha"), QVariant::fromValue(borderColor.alphaF()));
+    in.insert(QStringLiteral("hasSideBorder"), QVariant::fromValue(hasSideBorder));
+    in.insert(QStringLiteral("topB"), QVariant::fromValue(topB));
+    in.insert(QStringLiteral("rightB"), QVariant::fromValue(rightB));
+    in.insert(QStringLiteral("bottomB"), QVariant::fromValue(bottomB));
+    in.insert(QStringLiteral("leftB"), QVariant::fromValue(leftB));
+    in.insert(QStringLiteral("hasOutsetShadow"), QVariant::fromValue(hasOutsetShadow));
+    in.insert(QStringLiteral("shadowFillColor"), QVariant::fromValue(hasGradient ? QColor(QStringLiteral("#ffffff")) : opaque(solid)));
+    in.insert(QStringLiteral("shadowSrcOpacity"), QVariant::fromValue(hasGradient ? gradientPeakAlpha : solid.alphaF()));
+    in.insert(QStringLiteral("shadowColorOpaque"), QVariant::fromValue(hasOutsetShadow ? opaque(outColor) : QColor(Qt::transparent)));
+    in.insert(QStringLiteral("shadowOpacity"), QVariant::fromValue(hasOutsetShadow ? outColor.alphaF() : 0.0));
+    in.insert(QStringLiteral("shadowX"), QVariant::fromValue(hasOutsetShadow ? outset.value(QStringLiteral("x")).toReal() : 0.0));
+    in.insert(QStringLiteral("shadowY"), QVariant::fromValue(hasOutsetShadow ? outset.value(QStringLiteral("y")).toReal() : 0.0));
+    in.insert(QStringLiteral("shadowBlur"), hasOutsetShadow
+                  ? std::min<qreal>(1.0, outset.value(QStringLiteral("blur")).toReal() / 32.0) : 0.0);
+    in.insert(QStringLiteral("insetBevel"), QVariant::fromValue(insetBevel));
+    in.insert(QStringLiteral("insetDark"), QVariant::fromValue(insetDark));
+    in.insert(QStringLiteral("insetLight"), QVariant::fromValue(insetLight));
+    in.insert(QStringLiteral("insetEdge"), QVariant::fromValue(insetEdge));
+    in.insert(QStringLiteral("insetEdgeX"), QVariant::fromValue(insetEdge ? insetEdgeShadow.value(QStringLiteral("x")).toReal() : 0.0));
+    in.insert(QStringLiteral("insetEdgeY"), QVariant::fromValue(insetEdge ? insetEdgeShadow.value(QStringLiteral("y")).toReal() : 0.0));
+    in.insert(QStringLiteral("insetEdgeColor"),
+              QVariant::fromValue(insetEdge ? insetEdgeShadow.value(QStringLiteral("color")).value<QColor>()
+                                            : QColor(Qt::transparent)));
+    in.insert(QStringLiteral("transitionMs"), QVariant::fromValue(transitionMs));
+    in.insert(QStringLiteral("transitionEasing"), QVariant::fromValue(transitionEasing));
+
+    g->setProperty("cssIn", in);
 
     // --- static transform (rotate/scale/translate) — applied to us so content transforms too ---
     QVariantMap tf;
