@@ -1220,3 +1220,36 @@ test("widgets: <input type='date'> max throws a clear not-supported error", asyn
     /min\/max not supported yet/,
   );
 });
+
+// --- Phase 6.5 regression pins: slot internals must NOT be Css types (the CSS layout
+// engine lays out every Css child, stomping anchors/geometry bindings); they are plain
+// primitives styled via an injected CssItem. Popups must carry the implicit-size formula
+// (Templates popups have none of their own). ---
+
+test("emitQml 6.5: checkbox glyph is a plain Text styled via CssItem (not CssText)", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" />; }`);
+  assert.match(out, /Text \{[\s\S]*?text: "✓"[\s\S]*?Css\.CssItem \{ cssPrimitive: "text"; cssClass: \["indicator-glyph"\] \}/);
+  assert.doesNotMatch(out, /Css\.CssText \{[\s\S]*?indicator-glyph/);
+});
+
+test("emitQml 6.5: switch knob is a plain Rectangle styled via CssItem, x follows visualPosition", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
+  assert.match(out, /Rectangle \{[\s\S]*?x: __input\d+\.visualPosition[\s\S]*?Css\.CssItem \{ cssPrimitive: "rect"; cssClass: \["knob"\] \}/);
+  assert.doesNotMatch(out, /Css\.CssRect \{[\s\S]*?\["knob"\]/);
+});
+
+test("emitQml 6.5: radio dot is a plain Rectangle styled via CssItem", async () => {
+  const out = await qml(`export function F(){ return <input type="radio" name="g" />; }`);
+  assert.match(out, /Rectangle \{[\s\S]*?Css\.CssItem \{ cssPrimitive: "rect"; cssClass: \["indicator-dot"\] \}/);
+});
+
+test("emitQml 6.5: select popup carries the implicit-height formula", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /popup: T\.Popup \{[\s\S]*?implicitHeight: contentHeight \+ topPadding \+ bottomPadding/);
+});
+
+test("emitQml 6.5: spinbox pads for the buttons and steps on wheel only when focused", async () => {
+  const out = await qml(`export function F(){ return <input type="number" />; }`);
+  assert.match(out, /rightPadding: 32/);
+  assert.match(out, /WheelHandler \{[\s\S]*?enabled: __input\d+\.activeFocus[\s\S]*?increase\(\)/);
+});

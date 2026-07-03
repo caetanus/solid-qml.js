@@ -721,14 +721,16 @@ function emitCheckboxToggle(props: Props, scope: Scope, level: number, guard: st
     `${i(3)}height: 20`,
     `${i(3)}implicitWidth: 20`,
     `${i(3)}implicitHeight: 20`,
-    `${i(3)}Css.CssText {`,
-    `${i(4)}cssPrimitive: ""`,
-    `${i(4)}cssClass: ["indicator-glyph"]`,
+    // Plain Text, NOT CssText: any Css child of this CssFill is re-laid-out by the CSS
+    // engine (isLayoutChild is true for every Css type — it stretched the glyph to the
+    // full indicator and pinned it top-left). A plain primitive is invisible to the
+    // layout, so the anchor holds; the nested CssItem injects color/font from the
+    // .indicator-glyph rule without joining the layout.
+    `${i(3)}Text {`,
     `${i(4)}text: "✓"`,
     `${i(4)}visible: ${ctlId}.checked`,
-    // anchors.centerIn keeps the glyph centred regardless of font size; CSS flex cannot do this
-    // here because the indicator is not inside a Css container (it's inside T.CheckBox).
     `${i(4)}anchors.centerIn: parent`,
+    `${i(4)}Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }`,
     `${i(3)}}`,
     `${i(2)}}`,
   ];
@@ -785,14 +787,20 @@ function emitSwitchToggle(props: Props, scope: Scope, level: number, guard: stri
     `${i(3)}height: 20`,
     `${i(3)}implicitWidth: 36`,
     `${i(3)}implicitHeight: 20`,
-    `${i(3)}Css.CssRect {`,
-    `${i(4)}cssClass: ["knob"]`,
+    // Plain Rectangle, NOT CssRect: the CSS layout engine lays out every Css child (it
+    // stretched the knob to 36x0 and zeroed the x binding). A plain primitive keeps its
+    // geometry bindings; the nested CssItem injects background-color/radius/border from
+    // the .knob rule.
+    `${i(3)}Rectangle {`,
     `${i(4)}width: 16`,
     `${i(4)}height: 16`,
+    `${i(4)}radius: 8`,
+    `${i(4)}color: "#ffffff"`,
     `${i(4)}y: (parent.height - height) / 2`,
     // visualPosition goes 0→1 as the switch toggles; multiply by the remaining track width.
     `${i(4)}x: ${ctlId}.visualPosition * (parent.width - width)`,
     `${i(4)}Behavior on x { NumberAnimation { duration: 120 } }`,
+    `${i(4)}Css.CssItem { cssPrimitive: "rect"; cssClass: ["knob"] }`,
     `${i(3)}}`,
     `${i(2)}}`,
   ];
@@ -861,13 +869,17 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
     `${i(3)}height: 20`,
     `${i(3)}implicitWidth: 20`,
     `${i(3)}implicitHeight: 20`,
-    // Inner dot: a CssRect (border-radius via CSS makes it circular); centred with anchors.
-    `${i(3)}Css.CssRect {`,
-    `${i(4)}cssClass: ["indicator-dot"]`,
+    // Inner dot: plain Rectangle, NOT CssRect — the CSS layout engine lays out every Css
+    // child, stomping the centerIn anchor and the 8x8 size. The nested CssItem injects
+    // background-color/radius from the .indicator-dot rule.
+    `${i(3)}Rectangle {`,
     `${i(4)}visible: ${ctlId}.checked`,
     `${i(4)}anchors.centerIn: parent`,
     `${i(4)}width: 8`,
     `${i(4)}height: 8`,
+    `${i(4)}radius: 4`,
+    `${i(4)}color: "#ffffff"`,
+    `${i(4)}Css.CssItem { cssPrimitive: "rect"; cssClass: ["indicator-dot"] }`,
     `${i(3)}}`,
     `${i(2)}}`,
   );
@@ -1046,6 +1058,17 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
     `${i(2)}to: ${max}`,
     `${i(2)}stepSize: ${step}`,
     `${i(2)}editable: true`,
+    // Controls resize contentItem to the control minus paddings — without a rightPadding
+    // the TextInput covers the +/- buttons and eats their clicks.
+    `${i(2)}leftPadding: 12`,
+    `${i(2)}rightPadding: 32`,
+    // HTML semantics: the wheel steps the value, but ONLY while the field has focus;
+    // unfocused, the event must fall through to the page scroll. valueModified() reuses
+    // the onChange wiring.
+    `${i(2)}WheelHandler {`,
+    `${i(3)}enabled: ${ctlId}.activeFocus`,
+    `${i(3)}onWheel: (ev) => { if (ev.angleDelta.y > 0) ${ctlId}.increase(); else ${ctlId}.decrease(); ${ctlId}.valueModified() }`,
+    `${i(2)}}`,
     // contentItem: a plain TextInput (not Css) — it lives inside the control's item tree, not our
     // CSS layout engine. Color/font are bridged from the CssFill wrapper via ctlId.parent.inheritedX.
     `${i(2)}contentItem: TextInput {`,
@@ -1070,11 +1093,14 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
     `${i(3)}height: parent.height / 2`,
     `${i(3)}implicitWidth: 24`,
     `${i(3)}implicitHeight: parent.height / 2`,
-    `${i(3)}Css.CssText {`,
-    `${i(4)}cssPrimitive: ""`,
-    `${i(4)}cssClass: ["spin-glyph"]`,
+    // Plain Text, NOT CssText: a Css child inside this CssFill is re-laid-out by the CSS
+    // engine (isLayoutChild is true for every Css type), which stomps the centerIn anchor.
+    // A plain primitive is invisible to the layout; the nested CssItem injects the CSS
+    // (color/font from the .spin-glyph rule) without joining the layout.
+    `${i(3)}Text {`,
     `${i(4)}text: "+"`,
     `${i(4)}anchors.centerIn: parent`,
+    `${i(4)}Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }`,
     `${i(3)}}`,
     `${i(2)}}`,
     // down indicator: mirrors up, at the bottom-right.
@@ -1088,11 +1114,10 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
     `${i(3)}height: parent.height / 2`,
     `${i(3)}implicitWidth: 24`,
     `${i(3)}implicitHeight: parent.height / 2`,
-    `${i(3)}Css.CssText {`,
-    `${i(4)}cssPrimitive: ""`,
-    `${i(4)}cssClass: ["spin-glyph"]`,
+    `${i(3)}Text {`,
     `${i(4)}text: "−"`,
     `${i(4)}anchors.centerIn: parent`,
+    `${i(4)}Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }`,
     `${i(3)}}`,
     `${i(2)}}`,
   ];

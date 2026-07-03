@@ -286,12 +286,11 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 20
                             implicitHeight: 20
-                            Css.CssText {
-                                cssPrimitive: ""
-                                cssClass: ["indicator-glyph"]
+                            Text {
                                 text: "✓"
                                 visible: __input5.checked
                                 anchors.centerIn: parent
+                                Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }
                             }
                         }
                         onToggled: { chk1 = __input5.checked }
@@ -331,12 +330,11 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 20
                             implicitHeight: 20
-                            Css.CssText {
-                                cssPrimitive: ""
-                                cssClass: ["indicator-glyph"]
+                            Text {
                                 text: "✓"
                                 visible: __input6.checked
                                 anchors.centerIn: parent
+                                Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }
                             }
                         }
                         onToggled: { chk2 = __input6.checked }
@@ -376,13 +374,15 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 36
                             implicitHeight: 20
-                            Css.CssRect {
-                                cssClass: ["knob"]
+                            Rectangle {
                                 width: 16
                                 height: 16
+                                radius: 8
+                                color: "#ffffff"
                                 y: (parent.height - height) / 2
                                 x: __input7.visualPosition * (parent.width - width)
                                 Behavior on x { NumberAnimation { duration: 120 } }
+                                Css.CssItem { cssPrimitive: "rect"; cssClass: ["knob"] }
                             }
                         }
                         onToggled: { sw = __input7.checked }
@@ -422,12 +422,11 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 20
                             implicitHeight: 20
-                            Css.CssText {
-                                cssPrimitive: ""
-                                cssClass: ["indicator-glyph"]
+                            Text {
                                 text: "✓"
                                 visible: __input8.checked
                                 anchors.centerIn: parent
+                                Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }
                             }
                         }
                         enabled: false
@@ -467,12 +466,14 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 20
                             implicitHeight: 20
-                            Css.CssRect {
-                                cssClass: ["indicator-dot"]
+                            Rectangle {
                                 visible: __input9.checked
                                 anchors.centerIn: parent
                                 width: 8
                                 height: 8
+                                radius: 4
+                                color: "#ffffff"
+                                Css.CssItem { cssPrimitive: "rect"; cssClass: ["indicator-dot"] }
                             }
                         }
                         onToggled: { plan = "free" }
@@ -513,12 +514,14 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 20
                             implicitHeight: 20
-                            Css.CssRect {
-                                cssClass: ["indicator-dot"]
+                            Rectangle {
                                 visible: __input10.checked
                                 anchors.centerIn: parent
                                 width: 8
                                 height: 8
+                                radius: 4
+                                color: "#ffffff"
+                                Css.CssItem { cssPrimitive: "rect"; cssClass: ["indicator-dot"] }
                             }
                         }
                         onToggled: { plan = "pro" }
@@ -559,12 +562,14 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 20
                             implicitHeight: 20
-                            Css.CssRect {
-                                cssClass: ["indicator-dot"]
+                            Rectangle {
                                 visible: __input11.checked
                                 anchors.centerIn: parent
                                 width: 8
                                 height: 8
+                                radius: 4
+                                color: "#ffffff"
+                                Css.CssItem { cssPrimitive: "rect"; cssClass: ["indicator-dot"] }
                             }
                         }
                         onToggled: { plan = "team" }
@@ -754,6 +759,12 @@ Css.CssRect {
                         to: 10
                         stepSize: 1
                         editable: true
+                        leftPadding: 12
+                        rightPadding: 32
+                        WheelHandler {
+                            enabled: __input14.activeFocus
+                            onWheel: (ev) => { if (ev.angleDelta.y > 0) __input14.increase(); else __input14.decrease(); __input14.valueModified() }
+                        }
                         contentItem: TextInput {
                             text: __input14.displayText
                             validator: __input14.validator
@@ -775,11 +786,10 @@ Css.CssRect {
                             height: parent.height / 2
                             implicitWidth: 24
                             implicitHeight: parent.height / 2
-                            Css.CssText {
-                                cssPrimitive: ""
-                                cssClass: ["spin-glyph"]
+                            Text {
                                 text: "+"
                                 anchors.centerIn: parent
+                                Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }
                             }
                         }
                         down.indicator: Css.CssFill {
@@ -792,11 +802,10 @@ Css.CssRect {
                             height: parent.height / 2
                             implicitWidth: 24
                             implicitHeight: parent.height / 2
-                            Css.CssText {
-                                cssPrimitive: ""
-                                cssClass: ["spin-glyph"]
+                            Text {
                                 text: "−"
                                 anchors.centerIn: parent
+                                Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }
                             }
                         }
                         onValueModified: { qty = __input14.value }
