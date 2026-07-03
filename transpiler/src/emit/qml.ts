@@ -11,6 +11,11 @@ interface Props {
   classList: Array<{ key: string; expr: t.Expression }>;
   onClick: t.Node | undefined;
   ref: string | undefined; // the local var name a ref={ident} binds to
+  // HTML5 drag-and-drop subset: draggable + dragData on the source, onDrop on the target.
+  // The drop handler's parameter receives the SOURCE's dragData (not a DragEvent).
+  draggable: boolean;
+  dragData: t.Expression | undefined;
+  onDrop: t.Node | undefined;
 }
 
 /** Build the cssClass property line(s) for a native element.
@@ -100,6 +105,45 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
       `${pad}${INDENT}${INDENT}hoverEnabled: true`,
       `${pad}${INDENT}${INDENT}cursorShape: Qt.PointingHandCursor`,
       `${pad}${INDENT}${INDENT}onClicked: ${clickHandler}`,
+      `${pad}${INDENT}}`,
+    );
+  }
+  // Drag source: QtQuick's REAL item drag (Drag attached + MouseArea drag.target). The item
+  // follows the pointer; on release Drag.drop() delivers to the DropArea under the cursor
+  // and the parent box is re-laid-out so the card snaps home.
+  if (props.draggable) {
+    const counter = scope.hoverCounter ?? { n: 0 };
+    const dragId = `__drag${counter.n++}`;
+    const dataExpr = props.dragData ? emitExpr(props.dragData, { ...scope, mode: "binding" }) : "undefined";
+    stateLine.push(
+      `${pad}${INDENT}property var __dragData: ${dataExpr}`,
+      `${pad}${INDENT}Drag.active: ${dragId}.drag.active`,
+      `${pad}${INDENT}Drag.hotSpot.x: width / 2`,
+      `${pad}${INDENT}Drag.hotSpot.y: height / 2`,
+    );
+    clickLines.push(
+      `${pad}${INDENT}MouseArea {`,
+      `${pad}${INDENT}${INDENT}id: ${dragId}`,
+      `${pad}${INDENT}${INDENT}anchors.fill: parent`,
+      `${pad}${INDENT}${INDENT}drag.target: parent`,
+      `${pad}${INDENT}${INDENT}cursorShape: Qt.OpenHandCursor`,
+      `${pad}${INDENT}${INDENT}onReleased: { parent.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(parent) }`,
+      `${pad}${INDENT}}`,
+    );
+  }
+  // Drop target: a filling DropArea; the handler's parameter receives the source's dragData.
+  if (props.onDrop) {
+    const fn = props.onDrop;
+    if (!(t.isArrowFunctionExpression(fn) || t.isFunctionExpression(fn)) || t.isBlockStatement(fn.body))
+      throw new Error("onDrop must be an inline expression-bodied arrow in this plan");
+    const param = fn.params[0];
+    const paramName = param && t.isIdentifier(param) ? param.name : null;
+    const dropScope: Scope = { ...scope, mode: "handler",
+      locals: { ...(scope.locals ?? {}), ...(paramName ? { [paramName]: "drop.source.__dragData" } : {}) } };
+    clickLines.push(
+      `${pad}${INDENT}DropArea {`,
+      `${pad}${INDENT}${INDENT}anchors.fill: parent`,
+      `${pad}${INDENT}${INDENT}onDropped: (drop) => { ${emitExpr(fn.body, dropScope)} }`,
       `${pad}${INDENT}}`,
     );
   }
@@ -484,7 +528,7 @@ function emitHandler(node: t.Node | undefined, scope: Scope): string | null {
 }
 
 function readProps(propsArg: t.Node | undefined): Props {
-  const props: Props = { classes: [], classList: [], onClick: undefined, ref: undefined };
+  const props: Props = { classes: [], classList: [], onClick: undefined, ref: undefined, draggable: false, dragData: undefined, onDrop: undefined };
   if (!propsArg || !t.isObjectExpression(propsArg)) return props;
   for (const p of propsArg.properties) {
     if (!t.isObjectProperty(p) || !t.isIdentifier(p.key)) continue;
@@ -497,6 +541,9 @@ function readProps(propsArg: t.Node | undefined): Props {
       }
     }
     if (p.key.name === "onClick") props.onClick = p.value;
+    if (p.key.name === "draggable") props.draggable = !t.isBooleanLiteral(p.value) || p.value.value;
+    if (p.key.name === "dragData" && t.isExpression(p.value)) props.dragData = p.value;
+    if (p.key.name === "onDrop") props.onDrop = p.value;
     if (p.key.name === "ref" && t.isIdentifier(p.value)) props.ref = p.value.name;
   }
   return props;

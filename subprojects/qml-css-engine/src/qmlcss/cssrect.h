@@ -9,6 +9,7 @@
 #include <QVariantMap>
 
 class CssTheme;
+class QVariantAnimation;
 class CssLayoutEngine;
 
 // Native CSS box, translated 1:1 from qml/qmlcss/CssRect.qml — BY COMPOSITION, not
@@ -44,6 +45,28 @@ class CssRect : public QQuickItem {
     Q_PROPERTY(QString cssPart READ cssPart WRITE setCssPart NOTIFY cssPartChanged)
     Q_PROPERTY(QVariantMap style READ style WRITE setStyle NOTIFY styleChanged)
     Q_PROPERTY(bool hasCssIdentity READ hasCssIdentity NOTIFY hasCssIdentityChanged)
+
+    // Engine-driven hover: the theme flips cssHoverStyled when an applicable `:hover` rule
+    // exists (we then compose a HoverHandler); the handler writes cssEngineHover, whose
+    // notify re-applies the style with the extra "hover" state class.
+    Q_PROPERTY(bool cssHoverStyled READ cssHoverStyled WRITE setCssHoverStyled NOTIFY cssHoverStyledChanged)
+    Q_PROPERTY(bool cssEngineHover READ cssEngineHover WRITE setCssEngineHover NOTIFY cssStateChanged)
+
+public:
+    // --- CSS transitions (item-level) ----------------------------------------------------
+    // The declared `transition` (property/duration/easing), parsed at style apply. The layout
+    // engine consults this when writing width/height, so declared geometry transitions
+    // animate instead of snapping. Covers-check: empty/`all` or the exact property.
+    bool transitionCovers(QLatin1String prop) const
+    {
+        return m_transMs > 0
+            && (m_transProp.isEmpty() || m_transProp == QLatin1String("all") || m_transProp == prop);
+    }
+    // Animate width/height to `target`; returns false when no covering transition (the caller
+    // writes directly). Idempotent while already animating toward the same target.
+    bool animateGeometry(QLatin1String prop, qreal target);
+
+private:
 
     // Renderer defaults (used when the style omits the longhand) — the QML `default*` props,
     // set by the CssFill shim.
@@ -104,6 +127,15 @@ public:
     QVariantMap style() const { return m_style; }
     void setStyle(const QVariantMap &v);
 
+    bool cssHoverStyled() const { return m_hoverStyled; }
+    void setCssHoverStyled(bool v);
+    bool cssEngineHover() const { return m_engineHover; }
+    void setCssEngineHover(bool v);
+    Q_SLOT void onEngineHoverChanged(); // composed HoverHandler.hoveredChanged -> cssEngineHover
+    // Compose the Flickable and move the content holder into it (overflow-y: auto/scroll).
+    void ensureScrollable();
+    Q_SLOT void syncScrollContent();
+
     bool hasCssIdentity() const;
 
     qreal radius() const { return m_radius; }
@@ -151,6 +183,7 @@ signals:
     void cssPartChanged();
     void styleChanged();
     void hasCssIdentityChanged();
+    void cssHoverStyledChanged();
     void radiusChanged();
     void defaultColorChanged();
     void defaultBorderColorChanged();
@@ -211,7 +244,24 @@ private:
     //   onAnimTickChanged: if (cssLayout) cssLayout.applyAnim(root, _animStops, animTick)
     qreal m_animTick = 0.0;
     bool m_animActive = false;           // _animStops.length >= 2
-    bool m_displayHidden = false;        // we hid via display:none (so only we restore visible)
+
+    // --- CSS transition state (parsed from `transition` at style apply) -------------------
+    int m_transMs = 0;
+    int m_transEasing = 1; // QEasingCurve::InOutQuad set at parse; int to avoid the header dep
+    QString m_transProp;
+    QVariantAnimation *m_opacityAnim = nullptr; // lazy; animates our own opacity
+    QVariantAnimation *m_widthAnim = nullptr;   // lazy; driven via animateGeometry
+    QVariantAnimation *m_heightAnim = nullptr;
+    qreal m_widthAnimTarget = -1;
+    qreal m_heightAnimTarget = -1;
+
+    // overflow(-y): auto/scroll — composed Flickable hosting the contentHolder.
+    QPointer<QQuickItem> m_flickable;
+
+    // Engine-driven hover tracking (see cssHoverStyled/cssEngineHover above).
+    bool m_hoverStyled = false;
+    bool m_engineHover = false;
+    QPointer<QObject> m_hoverHandler; // composed QtQuick HoverHandler (created on demand)
     QVariantList m_animStops;            // buildAnimStops output for current @keyframes
     QPointer<QObject> m_anim;            // REAL QtQuick NumberAnimation on animTick (0→1)
 

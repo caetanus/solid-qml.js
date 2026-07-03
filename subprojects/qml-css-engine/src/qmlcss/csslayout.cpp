@@ -1,6 +1,7 @@
 #include "csslayout.h"
 
 #include "csstheme.h"
+#include "cssrect.h"
 
 #include <QMetaMethod>
 #include <QQuickItem>
@@ -94,16 +95,21 @@ void CssLayoutEngine::notifyParentLayout(QQuickItem *item)
 {
     if (!item)
         return;
-    QQuickItem *holder = item->parentItem();
-    QQuickItem *parentBox = holder ? holder->parentItem() : nullptr;
-    if (!parentBox)
-        return;
     // Duck-typed like the QML original (`if (holder.parent.requestRelayout) ...`): only boxes
-    // (CssRect/CssFill) have requestRelayout(); plain-Item ancestors are skipped silently.
-    const QMetaObject *mo = parentBox->metaObject();
-    const int idx = mo->indexOfMethod("requestRelayout()");
-    if (idx >= 0)
-        mo->method(idx).invoke(parentBox);
+    // (CssRect/CssFill) have requestRelayout(). A scrollable box interposes a Flickable and
+    // its contentItem between the holder and the box, so climb a few levels to find it;
+    // plain-Item ancestors without the method are skipped silently.
+    QQuickItem *p = item->parentItem();
+    for (int hops = 0; p && hops < 5; ++hops, p = p->parentItem()) {
+        if (hops == 0)
+            continue; // the holder itself
+        const QMetaObject *mo = p->metaObject();
+        const int idx = mo->indexOfMethod("requestRelayout()");
+        if (idx >= 0) {
+            mo->method(idx).invoke(p);
+            return;
+        }
+    }
 }
 
 void CssLayoutEngine::flush()
@@ -400,8 +406,20 @@ void CssLayoutEngine::place(QQuickItem *k, double x, double y, double w, double 
     const QVariantMap ks = k->property("style").toMap();
     w = clampSize(ks, QStringLiteral("width"), w, std::nan(""));
     h = clampSize(ks, QStringLiteral("height"), h, std::nan(""));
-    if (!std::isnan(w) && w >= 0 && std::abs(k->width() - w) > 0.5) k->setWidth(w);
-    if (!std::isnan(h) && h >= 0 && std::abs(k->height() - h) > 0.5) k->setHeight(h);
+    // A declared `transition: width/height` animates the write instead of snapping; the
+    // cast + covers-check only run when the geometry actually changes.
+    CssRect *box = nullptr;
+    if (!std::isnan(w) && w >= 0 && std::abs(k->width() - w) > 0.5) {
+        box = qobject_cast<CssRect *>(k);
+        if (!box || !box->animateGeometry(QLatin1String("width"), w))
+            k->setWidth(w);
+    }
+    if (!std::isnan(h) && h >= 0 && std::abs(k->height() - h) > 0.5) {
+        if (!box)
+            box = qobject_cast<CssRect *>(k);
+        if (!box || !box->animateGeometry(QLatin1String("height"), h))
+            k->setHeight(h);
+    }
     if (!std::isnan(x) && std::abs(k->x() - x) > 0.5) k->setX(x);
     if (!std::isnan(y) && std::abs(k->y() - y) > 0.5) k->setY(y);
 }

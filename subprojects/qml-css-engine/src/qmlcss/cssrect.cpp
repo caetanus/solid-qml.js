@@ -7,6 +7,7 @@
 #include <QJSValue>
 #include <QQmlComponent>
 #include <QQmlContext>
+#include <QVariantAnimation>
 #include <QQmlEngine>
 #include <QQmlListReference>
 #include <QQmlProperty>
@@ -176,9 +177,13 @@ Item {
     }
 
     // --- outset box-shadow (a separate source behind the fill, blurred by MultiEffect) ---
-    Item {
+    // Composed LAZILY: a MultiEffect drags in ShaderEffectSources + blur items even when
+    // invisible — 150+ dormant effect stacks made a page cost thousands of nodes.
+    Loader {
         anchors.fill: parent
-        visible: r.hasOutsetShadow
+        active: r.hasOutsetShadow
+        sourceComponent: Item {
+        anchors.fill: parent
 
         Shape {
             id: shadowSource
@@ -210,6 +215,7 @@ Item {
             shadowVerticalOffset: r.shadowY
             shadowBlur: r.shadowBlur
             autoPaddingEnabled: true
+        }
         }
     }
 
@@ -261,10 +267,12 @@ Item {
         }
     }
 
-    // --- border as its own Shape (independent alpha) ------------------------------------
-    Shape {
+    // --- border as its own Shape (independent alpha); lazy — most boxes have no border ---
+    Loader {
         anchors.fill: parent
-        visible: r.borderVisible
+        active: r.borderVisible
+        sourceComponent: Shape {
+        anchors.fill: parent
         preferredRendererType: Shape.CurveRenderer
         opacity: r.borderAlpha
         ShapePath {
@@ -281,12 +289,15 @@ Item {
             PathLine { x: 0; y: r.clampedRadius(0) }
             PathArc { x: r.clampedRadius(0); y: 0; radiusX: r.clampedRadius(0); radiusY: r.clampedRadius(0); direction: PathArc.Clockwise }
         }
+        }
     }
 
-    // --- per-side CSS borders (border-top, etc.) ---------------------------------------
-    Item {
+    // --- per-side CSS borders (border-top, etc.); lazy ----------------------------------
+    Loader {
         anchors.fill: parent
-        visible: r.hasSideBorder
+        active: r.hasSideBorder
+        sourceComponent: Item {
+        anchors.fill: parent
         Bar {
             anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
             height: r.topB.visible ? Math.max(1, r.topB.width) : 0
@@ -311,12 +322,15 @@ Item {
             barColor: r.rightB.color ? r.rightB.color : "transparent"
             visible: !!r.rightB.visible
         }
+        }
     }
 
-    // --- sunken bevel for two inset box-shadows ----------------------------------------
-    Item {
+    // --- sunken bevel for two inset box-shadows; lazy -----------------------------------
+    Loader {
         anchors.fill: parent
-        visible: r.insetBevel
+        active: r.insetBevel
+        sourceComponent: Item {
+        anchors.fill: parent
         Bar { // top — shadow
             visible: r.bevelEdge(0, 1)
             anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
@@ -341,12 +355,15 @@ Item {
             anchors.topMargin: r.clampedRadius(1); anchors.bottomMargin: r.clampedRadius(2)
             width: 1; barColor: r.insetLight
         }
+        }
     }
 
-    // --- a single inset box-shadow = a directional inner edge --------------------------
-    Item {
+    // --- a single inset box-shadow = a directional inner edge; lazy ---------------------
+    Loader {
         anchors.fill: parent
-        visible: r.insetEdge
+        active: r.insetEdge
+        sourceComponent: Item {
+        anchors.fill: parent
         Bar { // top/bottom band
             visible: r.insetEdge && r.insetEdgeY !== 0 && Math.abs(r.insetEdgeY) >= Math.abs(r.insetEdgeX)
             anchors.left: parent.left; anchors.right: parent.right
@@ -362,6 +379,7 @@ Item {
             anchors.right: r.insetEdgeX < 0 ? parent.right : undefined
             width: Math.max(1, Math.abs(r.insetEdgeX))
             barColor: r.insetEdgeColor
+        }
         }
     }
 
@@ -465,29 +483,58 @@ void CssRect::setStyle(const QVariantMap &v)
     m_style = v;
     emit styleChanged();
 
-    // Only a DECLARED display drives visible: an unconditional setVisible would sever author
-    // `visible:` bindings (<Show> guards on delegates). Restore true only if WE hid it.
-    const QString display = m_style.value(QStringLiteral("display")).toString();
-    if (display == QLatin1String("none")) {
-        setVisible(false);
-        m_displayHidden = true;
-    } else if (m_displayHidden) {
-        setVisible(true);
-        m_displayHidden = false;
+    // display:none NEVER writes `visible` (any imperative write severs author bindings —
+    // the <Show> guard — and a later restore resurrects hidden delegates). The layout skips
+    // display:none by style; painting dies via opacity 0; input via enabled false.
+    const bool displayNone = m_style.value(QStringLiteral("display")).toString() == QLatin1String("none");
+
+    // Parse the transition spec FIRST: the opacity write below and the layout engine's
+    // width/height writes (via animateGeometry) both key off it.
+    m_transMs = 0;
+    m_transProp.clear();
+    if (m_theme && m_style.contains(QStringLiteral("transition"))) {
+        const QVariantMap spec = m_theme->parseTransition(m_style.value(QStringLiteral("transition")).toString());
+        m_transMs = spec.value(QStringLiteral("duration")).toInt();
+        m_transEasing = spec.value(QStringLiteral("easing"),
+                                   static_cast<int>(QEasingCurve::InOutQuad)).toInt();
+        m_transProp = spec.value(QStringLiteral("property")).toString();
     }
 
     // visibility:hidden -> painted invisible (opacity 0) and inert (enabled false), but STILL in flow.
-    const bool hidden = m_style.value(QStringLiteral("visibility")).toString() == QLatin1String("hidden");
-    if (hidden)
-        setOpacity(0);
-    else
-        setOpacity(m_style.contains(QStringLiteral("opacity"))
-                       ? m_style.value(QStringLiteral("opacity")).toReal()
-                       : 1.0);
+    const bool hidden = displayNone
+        || m_style.value(QStringLiteral("visibility")).toString() == QLatin1String("hidden");
+    const qreal targetOpacity = hidden ? 0.0
+        : (m_style.contains(QStringLiteral("opacity")) ? m_style.value(QStringLiteral("opacity")).toReal() : 1.0);
+    // A covering `transition: opacity` fades instead of snapping (the carousel crossfade).
+    if (!hidden && isComponentComplete() && transitionCovers(QLatin1String("opacity"))
+        && !qFuzzyCompare(opacity(), targetOpacity)) {
+        if (!m_opacityAnim) {
+            m_opacityAnim = new QVariantAnimation(this);
+            connect(m_opacityAnim, &QVariantAnimation::valueChanged, this,
+                    [this](const QVariant &v) { setOpacity(v.toReal()); });
+        }
+        m_opacityAnim->stop();
+        m_opacityAnim->setStartValue(opacity());
+        m_opacityAnim->setEndValue(targetOpacity);
+        m_opacityAnim->setDuration(m_transMs);
+        m_opacityAnim->setEasingCurve(static_cast<QEasingCurve::Type>(m_transEasing));
+        m_opacityAnim->start();
+    } else {
+        if (m_opacityAnim)
+            m_opacityAnim->stop();
+        setOpacity(targetOpacity);
+    }
     setEnabled(!hidden);
     setZ(m_style.contains(QStringLiteral("z-index")) ? m_style.value(QStringLiteral("z-index")).toReal() : 0.0);
     const QString overflow = m_style.value(QStringLiteral("overflow")).toString();
-    setClip(overflow == QLatin1String("hidden") || overflow == QLatin1String("clip"));
+    QString overflowY = m_style.value(QStringLiteral("overflow-y")).toString();
+    if (overflowY.isEmpty())
+        overflowY = overflow;
+    // overflow(-y): auto/scroll -> the content area becomes a REAL Flickable (QML's native
+    // scrolling). Composed once, lazily; it clips itself, so the box's own clip stays off.
+    if (overflowY == QLatin1String("auto") || overflowY == QLatin1String("scroll"))
+        ensureScrollable();
+    setClip(!m_flickable && (overflow == QLatin1String("hidden") || overflow == QLatin1String("clip")));
 
     recompute();
     requestRelayout();
@@ -899,7 +946,7 @@ void CssRect::layoutChildren()
 {
     const qreal w = width();
     const qreal h = height();
-    for (QQuickItem *child : {m_render.data(), m_contentHolder.data()}) {
+    for (QQuickItem *child : {m_render.data(), m_flickable ? m_flickable.data() : m_contentHolder.data()}) {
         if (!child)
             continue;
         child->setX(0);
@@ -907,6 +954,53 @@ void CssRect::layoutChildren()
         child->setWidth(w);
         child->setHeight(h);
     }
+    if (m_flickable && m_contentHolder) {
+        // The holder becomes the scrolled content: full width, height = children extent.
+        m_contentHolder->setWidth(w);
+        syncScrollContent();
+    }
+}
+
+void CssRect::ensureScrollable()
+{
+    if (m_flickable || !m_contentHolder || !isComponentComplete())
+        return;
+    QQmlEngine *eng = qmlEngine(this);
+    if (!eng)
+        return;
+    QQmlComponent comp(eng);
+    comp.setData("import QtQuick\nFlickable { clip: true; boundsBehavior: Flickable.StopAtBounds; "
+                 "flickableDirection: Flickable.VerticalFlick }", QUrl());
+    QObject *o = comp.create(qmlContext(this));
+    QQuickItem *flick = qobject_cast<QQuickItem *>(o);
+    if (!flick) {
+        if (o)
+            o->deleteLater();
+        qWarning("CssRect: failed to compose Flickable: %s", qPrintable(comp.errorString()));
+        return;
+    }
+    flick->setParent(this);
+    flick->setParentItem(this);
+    m_flickable = flick;
+    // Move the content INTO the flickable; the layout keeps operating on the same holder.
+    QQuickItem *contentItem = flick->property("contentItem").value<QQuickItem *>();
+    m_contentHolder->setParentItem(contentItem ? contentItem : flick);
+    // Content extent follows the laid-out children.
+    connect(m_contentHolder, &QQuickItem::childrenRectChanged, this, &CssRect::syncScrollContent);
+    layoutChildren();
+}
+
+void CssRect::syncScrollContent()
+{
+    if (!m_flickable || !m_contentHolder)
+        return;
+    const QRectF r = m_contentHolder->childrenRect();
+    // Bottom padding keeps the scroll end breathing like the web (children start offset ~= top padding).
+    const qreal pad = std::max<qreal>(0.0, r.y());
+    const qreal contentH = std::max(height(), r.y() + r.height() + pad);
+    m_contentHolder->setHeight(contentH);
+    m_flickable->setProperty("contentWidth", width());
+    m_flickable->setProperty("contentHeight", contentH);
 }
 
 void CssRect::componentComplete()
@@ -1009,3 +1103,76 @@ void CssRect::geometryChange(const QRectF &newGeometry, const QRectF &oldGeometr
     if (newGeometry.size() != oldGeometry.size())
         requestRelayout();
 }
+
+bool CssRect::animateGeometry(QLatin1String prop, qreal target)
+{
+    const bool isW = (prop == QLatin1String("width"));
+    if (!transitionCovers(prop) || !isComponentComplete())
+        return false;
+    QVariantAnimation *&anim = isW ? m_widthAnim : m_heightAnim;
+    qreal &animTarget = isW ? m_widthAnimTarget : m_heightAnimTarget;
+    const qreal current = isW ? width() : height();
+    // Already heading (or arrived) there: the layout re-asks every pass while children reflow —
+    // treat as handled so the direct write doesn't cut the animation short.
+    if (anim && anim->state() == QAbstractAnimation::Running && qFuzzyCompare(animTarget, target))
+        return true;
+    if (qFuzzyCompare(current, target))
+        return true;
+    if (!anim) {
+        anim = new QVariantAnimation(this);
+        if (isW)
+            connect(anim, &QVariantAnimation::valueChanged, this,
+                    [this](const QVariant &v) { setWidth(v.toReal()); });
+        else
+            connect(anim, &QVariantAnimation::valueChanged, this,
+                    [this](const QVariant &v) { setHeight(v.toReal()); });
+    }
+    anim->stop();
+    anim->setStartValue(current);
+    anim->setEndValue(target);
+    anim->setDuration(m_transMs);
+    anim->setEasingCurve(static_cast<QEasingCurve::Type>(m_transEasing));
+    animTarget = target;
+    anim->start();
+    return true;
+}
+
+void CssRect::setCssHoverStyled(bool v)
+{
+    if (m_hoverStyled == v)
+        return;
+    m_hoverStyled = v;
+    emit cssHoverStyledChanged();
+    if (v && !m_hoverHandler && isComponentComplete()) {
+        // Compose a REAL QtQuick HoverHandler via the type-system (approved pattern; no
+        // private headers). It writes cssEngineHover, whose notify re-applies the style.
+        if (QQmlEngine *eng = qmlEngine(this)) {
+            QQmlComponent comp(eng);
+            comp.setData("import QtQuick\nHoverHandler {}", QUrl());
+            if (QObject *o = comp.create(qmlContext(this))) {
+                o->setParent(this);
+                o->setProperty("parent", QVariant::fromValue<QObject *>(this)); // handler target
+                connect(o, SIGNAL(hoveredChanged()), this, SLOT(onEngineHoverChanged()));
+                m_hoverHandler = o;
+            }
+        }
+    }
+    // Losing the rule (restyle/class change): stop reporting a stale hover.
+    if (!v && m_engineHover)
+        setCssEngineHover(false);
+}
+
+void CssRect::setCssEngineHover(bool v)
+{
+    if (m_engineHover == v)
+        return;
+    m_engineHover = v;
+    emit cssStateChanged(); // rides the state notify: the theme re-applies us + descendants
+}
+
+void CssRect::onEngineHoverChanged()
+{
+    if (m_hoverHandler)
+        setCssEngineHover(m_hoverHandler->property("hovered").toBool());
+}
+

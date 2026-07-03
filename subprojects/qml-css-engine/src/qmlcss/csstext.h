@@ -184,5 +184,4 @@ private:
     QPointer<QQuickItem> m_label; // the REAL QtQuick Text, via the type-system
     QPointer<QQuickItem> m_shadow; // the REAL QtQuick.Effects MultiEffect drop-shadow (text-shadow)
     QPointer<QQuickItem> m_bg; // background underlay Shape, composed on first background-color
-    bool m_displayHidden = false; // we hid via display:none (so only we restore visible)
 };

@@ -1895,10 +1895,181 @@ void QmlCssTests::styleApplyPreservesVisibleBinding()
     root->setProperty("showIt", true);
     QCOMPARE(badge->isVisible(), true);
 
-    // And `display: none` still hides (a declared display drives visible).
+    // And `display: none` still hides — by PAINT (opacity 0) and input (disabled), with
+    // `visible` (and its binding) untouched; the layout skips it by style.
     theme.loadFromString(QStringLiteral(".badge { display: none; }"));
     theme.loadCss(badge);
-    QCOMPARE(badge->isVisible(), false);
+    QCOMPARE(badge->opacity(), 0.0);
+    QVERIFY(!badge->isEnabled());
+    QCOMPARE(badge->isVisible(), true); // author binding still owns `visible`
+
+    // Removing display:none restores paint AND the binding still works.
+    theme.loadFromString(QStringLiteral(".badge { background-color: #41cd52; }"));
+    theme.loadCss(badge);
+    QCOMPARE(badge->opacity(), 1.0);
+    root->setProperty("showIt", false);
+    QCOMPARE(badge->isVisible(), false); // the <Show> guard survived the round-trip
+}
+
+// `transition: opacity <ms>` must ANIMATE the item's opacity on restyle, not snap — the
+// carousel crossfade depends on it. Sampled mid-flight with generous margins (CI-safe).
+void QmlCssTests::transitionAnimatesItemOpacity()
+{
+    CssTheme theme;
+    theme.loadFromString(QStringLiteral(R"(
+        .slide { opacity: 1; transition: opacity 400ms linear; }
+        .slide.off { opacity: 0; }
+    )"));
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &theme);
+    QQmlComponent component(&engine);
+    component.setData(R"(
+        import QtQuick
+        import qmlcss
+        CssRect { objectName: "s"; cssClass: ["slide"]; cssPrimitive: "div"; width: 100; height: 50 }
+    )", QUrl());
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY2(root, qPrintable(component.errorString()));
+    auto *s = qobject_cast<QQuickItem *>(root.data());
+    QVERIFY(s);
+    QCOMPARE(s->opacity(), 1.0);
+
+    s->setProperty("cssClass", QVariant(QStringList{QStringLiteral("slide"), QStringLiteral("off")}));
+    QTest::qWait(120); // ~30% through a 400ms linear fade
+    const qreal mid = s->opacity();
+    QVERIFY2(mid > 0.02 && mid < 0.98, qPrintable(QStringLiteral("opacity snapped: %1").arg(mid)));
+    QTRY_VERIFY_WITH_TIMEOUT(s->opacity() < 0.02, 2000); // settles at the target
+}
+
+// `transition: width <ms>` must animate the layout-applied width — the sidebar collapse.
+void QmlCssTests::transitionAnimatesLayoutWidth()
+{
+    CssTheme theme;
+    theme.loadFromString(QStringLiteral(R"(
+        .side { width: 200px; transition: width 400ms linear; }
+        .side.collapsed { width: 60px; }
+    )"));
+    CssLayoutEngine layoutEngine(&theme);
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &theme);
+    engine.rootContext()->setContextProperty(QStringLiteral("cssLayout"), &layoutEngine);
+    QQmlComponent component(&engine);
+    component.setData(R"(
+        import QtQuick
+        import qmlcss
+        CssRect {
+            cssPrimitive: ""
+            width: 400; height: 100
+            style: ({ "display": "flex", "flex-direction": "row" })
+            CssRect { objectName: "side"; cssClass: ["side"]; cssPrimitive: "div" }
+        }
+    )", QUrl());
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY2(root, qPrintable(component.errorString()));
+    auto *side = root->findChild<QQuickItem *>(QStringLiteral("side"));
+    QVERIFY(side);
+    QTRY_COMPARE_WITH_TIMEOUT(side->width(), 200.0, 2000);
+
+    side->setProperty("cssClass", QVariant(QStringList{QStringLiteral("side"), QStringLiteral("collapsed")}));
+    QTest::qWait(120);
+    const qreal mid = side->width();
+    QVERIFY2(mid < 198.0 && mid > 62.0, qPrintable(QStringLiteral("width snapped: %1").arg(mid)));
+    QTRY_VERIFY_WITH_TIMEOUT(std::abs(side->width() - 60.0) < 1.0, 2000);
+}
+
+// A `.card:hover` rule must flip cssHoverStyled on a matching CssRect (which then composes
+// its own HoverHandler), and the engine-tracked hover state must restyle: forcing the
+// internal flag resolves the :hover declarations.
+void QmlCssTests::hoverRuleEnablesEngineHoverTracking()
+{
+    CssTheme theme;
+    theme.loadFromString(QStringLiteral(R"(
+        .card { background-color: #ffffff; }
+        .card:hover { background-color: #ff0000; }
+        .plain { background-color: #eeeeee; }
+    )"));
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &theme);
+    QQmlComponent component(&engine);
+    component.setData(R"(
+        import QtQuick
+        import qmlcss
+        Item {
+            CssRect { objectName: "card"; cssClass: ["card"]; cssPrimitive: "div"; width: 50; height: 50 }
+            CssRect { objectName: "plain"; cssClass: ["plain"]; cssPrimitive: "div"; width: 50; height: 50 }
+        }
+    )", QUrl());
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY2(root, qPrintable(component.errorString()));
+
+    QObject *card = root->findChild<QObject *>(QStringLiteral("card"));
+    QObject *plain = root->findChild<QObject *>(QStringLiteral("plain"));
+    QVERIFY(card && plain);
+    QVERIFY2(card->property("cssHoverStyled").toBool(), "matching :hover rule not detected");
+    QVERIFY(!plain->property("cssHoverStyled").toBool());
+
+    // Simulate the tracked state (the composed HoverHandler writes the same property).
+    card->setProperty("cssEngineHover", true);
+    QCOMPARE(card->property("style").toMap().value(QStringLiteral("background-color")).toString(),
+             QStringLiteral("#ff0000"));
+    card->setProperty("cssEngineHover", false);
+    QCOMPARE(card->property("style").toMap().value(QStringLiteral("background-color")).toString(),
+             QStringLiteral("#ffffff"));
+}
+
+// `overflow-y: auto` (or scroll) turns the box's content area into a REAL Flickable —
+// wheel/drag scrolling comes from QtQuick, not a reimplementation. contentHeight tracks the
+// laid-out children so it scrolls exactly the overflow.
+void QmlCssTests::overflowScrollComposesFlickable()
+{
+    CssTheme theme;
+    theme.loadFromString(QStringLiteral(R"(
+        .list { overflow-y: auto; display: flex; flex-direction: column; }
+        .row { height: 60px; }
+    )"));
+    CssLayoutEngine layoutEngine(&theme);
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &theme);
+    engine.rootContext()->setContextProperty(QStringLiteral("cssLayout"), &layoutEngine);
+    QQmlComponent component(&engine);
+    component.setData(R"(
+        import QtQuick
+        import qmlcss
+        CssRect {
+            objectName: "list"
+            cssClass: ["list"]
+            cssPrimitive: "div"
+            width: 200; height: 150
+            CssRect { cssClass: ["row"]; cssPrimitive: "div" }
+            CssRect { cssClass: ["row"]; cssPrimitive: "div" }
+            CssRect { cssClass: ["row"]; cssPrimitive: "div" }
+            CssRect { cssClass: ["row"]; cssPrimitive: "div" }
+            CssRect { cssClass: ["row"]; cssPrimitive: "div" }
+        }
+    )", QUrl());
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY2(root, qPrintable(component.errorString()));
+
+    // 5 x 60px rows in a 150px viewport -> a Flickable with ~300px of content.
+    QQuickItem *flick = nullptr;
+    const auto kids = root->findChildren<QQuickItem *>();
+    for (QQuickItem *k : kids) {
+        if (QString::fromLatin1(k->metaObject()->className()).contains(QLatin1String("Flickable"))) {
+            flick = k;
+            break;
+        }
+    }
+    QVERIFY2(flick, "overflow-y: auto did not compose a Flickable");
+    QTRY_VERIFY_WITH_TIMEOUT(flick->property("contentHeight").toReal() >= 295.0, 2000);
+    QVERIFY(flick->clip());
+
+    // It actually scrolls: content offset moves.
+    flick->setProperty("contentY", 120.0);
+    QCOMPARE(flick->property("contentY").toReal(), 120.0);
 }
 
 QTEST_MAIN(QmlCssTests)

@@ -89,4 +89,17 @@ private slots:
 
     // text-shadow keeps the composed Text visible (a hidden MultiEffect source renders empty).
     void cssTextShadowKeepsLabelVisible();
+
+    // CSS transitions must animate the declared properties, not snap:
+    // item opacity (`transition: opacity`) and layout-applied width (`transition: width`).
+    void transitionAnimatesItemOpacity();
+    void transitionAnimatesLayoutWidth();
+
+    // An applicable `:hover` rule makes the engine hover-track the element itself (the web
+    // hovers ANY element; the transpiler only wires interactive ones).
+    void hoverRuleEnablesEngineHoverTracking();
+
+    // overflow-y: auto/scroll composes a real Flickable hosting the content (QML's native
+    // scrolling), with contentHeight tracking the laid-out children.
+    void overflowScrollComposesFlickable();
 };

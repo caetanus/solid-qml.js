@@ -7,11 +7,16 @@ Css.CssRect {
     property var page: "overview"
     property var slide: 0
     property var collapsed: false
-    readonly property var __const_MENU: [({ id: "overview", label: "Overview", icon: "▤", badge: "" }), ({ id: "analytics", label: "Analytics", icon: "◔", badge: "3" }), ({ id: "projects", label: "Projects", icon: "▦", badge: "12" }), ({ id: "settings", label: "Settings", icon: "✦", badge: "" })]
+    property var userOpen: false
+    property var order: ["qml-css-engine", "transpiler v2", "npm mirror", "AOT C++ target"]
+    readonly property var __const_MENU: [({ id: "overview", label: "Overview", icon: "▤", badge: "" }), ({ id: "analytics", label: "Analytics", icon: "◔", badge: "3" }), ({ id: "projects", label: "Projects", icon: "▦", badge: "12" }), ({ id: "activity", label: "Activity", icon: "≡", badge: "24" }), ({ id: "settings", label: "Settings", icon: "✦", badge: "" })]
     readonly property var __const_STATS: [({ label: "Revenue", value: "48.2k", delta: "+12.4%", up: true }), ({ label: "Active users", value: "1 284", delta: "+3.1%", up: true }), ({ label: "Churn", value: "2.4%", delta: "-0.8%", up: false }), ({ label: "Uptime", value: "99.98%", delta: "+0.01%", up: true })]
-    readonly property var __const_SLIDES: [({ src: "../../assets/slide-aurora.png", caption: "Aurora — GPU scene graph" }), ({ src: "../../assets/slide-ocean.png", caption: "Ocean — CSS gradient engine" }), ({ src: "../../assets/slide-ember.png", caption: "Ember — @keyframes driver" })]
+    readonly property var __const_SLIDES: [({ src: "../../assets/photo-mountain.jpg", caption: "Ridge — object-fit: cover on a real photo" }), ({ src: "../../assets/photo-forest.jpg", caption: "Riverbend — native Image decode" }), ({ src: "../../assets/photo-city.jpg", caption: "Fog city — carousel crossfade" })]
     readonly property var __const_FEED: [({ who: "AC", name: "Ana Costa", what: "deployed dashboard v2 to production", when: "2 min", tag: "deploy", ok: true }), ({ who: "RM", name: "Rui Matos", what: "opened PR #142 — carousel easing", when: "18 min", tag: "review", ok: true }), ({ who: "LS", name: "Lia Souza", what: "pipeline failed on test-css step", when: "41 min", tag: "ci", ok: false }), ({ who: "JP", name: "João Prado", what: "published qml-css-engine 0.2.0", when: "1 h", tag: "release", ok: true })]
     readonly property var __const_PROJECTS: [({ name: "qml-css-engine", desc: "CSS cascade, paint & layout in C++", pct: "p80", status: "active" }), ({ name: "transpiler v2", desc: "Solid JSX → structural QML", pct: "p65", status: "active" }), ({ name: "npm mirror", desc: "node modules on the V4 engine", pct: "p45", status: "beta" }), ({ name: "AOT C++ target", desc: "QtQuick C++ 1:1 generation", pct: "p10", status: "design" })]
+    readonly property var __const_LOG: [({ who: "AC", what: "deployed dashboard v2 to production", tag: "deploy", ok: true }), ({ who: "RM", what: "opened PR #142 — carousel easing curves", tag: "review", ok: true }), ({ who: "LS", what: "pipeline failed on test-css step", tag: "ci", ok: false }), ({ who: "JP", what: "published qml-css-engine 0.2.0", tag: "release", ok: true }), ({ who: "MB", what: "rewrote the flex shrink pass in C++", tag: "engine", ok: true }), ({ who: "AC", what: "fixed ancestor-scoped hover rules", tag: "engine", ok: true }), ({ who: "TS", what: "added Flickable-backed overflow scroll", tag: "engine", ok: true }), ({ who: "RM", what: "benchmarked 1100 nodes/page after lazy effects", tag: "perf", ok: true }), ({ who: "LS", what: "nightly run red: fetch shim on HTTP/2", tag: "ci", ok: false }), ({ who: "JP", what: "mirrored js-base64 onto the V4 engine", tag: "npm", ok: true }), ({ who: "MB", what: "landed grid-template-areas mapping", tag: "engine", ok: true }), ({ who: "AC", what: "shipped the collapsible sidebar", tag: "ui", ok: true }), ({ who: "TS", what: "traced the RHI layer runaway to stale builds", tag: "perf", ok: true }), ({ who: "RM", what: "reviewed the transpiler precedence fix", tag: "review", ok: true }), ({ who: "LS", what: "flaky: keyframes driver timing on CI", tag: "ci", ok: false }), ({ who: "JP", what: "documented QMLCss.h one-call registration", tag: "docs", ok: true }), ({ who: "MB", what: "ported Contrast.js to a C++ singleton", tag: "engine", ok: true }), ({ who: "AC", what: "wired hover tracking for any :hover rule", tag: "engine", ok: true }), ({ who: "TS", what: "added text background Shape underlay", tag: "engine", ok: true }), ({ who: "RM", what: "merged display:none binding preservation", tag: "review", ok: true }), ({ who: "LS", what: "green across 43 engine tests", tag: "ci", ok: true }), ({ who: "JP", what: "released the dashboard stress page", tag: "release", ok: true }), ({ who: "MB", what: "profiled badge-pulse frame production", tag: "perf", ok: true }), ({ who: "AC", what: "tuned the sidebar width transition", tag: "ui", ok: true })]
+    function proj(n) { var hit = __const_PROJECTS.filter(function(x_) { return x_.name === n }); return hit.length > 0 ? hit[0] : __const_PROJECTS[0]; }
+    function reorder(list, src, dst) { if (src === dst) { return list; } var out = list.filter(function(x_) { return x_ !== src }); out.splice(out.indexOf(dst), 0, src); return out; }
     property var __cleanups: []
     Component.onCompleted: { var timer = setInterval(function() { return slide = (slide + 1) % 3 }, 4000); __cleanups.push(function() { return clearInterval(timer) }); }
     Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
@@ -124,7 +129,8 @@ Css.CssRect {
                 }
             }
             Css.CssRect {
-                cssClass: ["dash-user"]
+                cssClass: ["dash-user"].concat(userOpen ? ["open"] : [])
+                cssState: __hover2.containsMouse ? ["hover"] : []
                 cssPrimitive: "div"
                 Css.CssRect {
                     cssClass: ["dash-avatar-ring"]
@@ -143,6 +149,134 @@ Css.CssRect {
                     cssClass: ["dash-user-n"]
                     cssPrimitive: "text"
                     text: "ada"
+                }
+                Css.CssText {
+                    cssClass: ["dash-user-chev"]
+                    cssPrimitive: "text"
+                    text: "▾"
+                }
+                Css.CssRect {
+                    cssClass: ["user-card"]
+                    visible: !!(userOpen)
+                    cssPrimitive: "div"
+                    Css.CssRect {
+                        cssClass: ["user-card-head"]
+                        cssPrimitive: "div"
+                        Css.CssRect {
+                            cssClass: ["user-card-avatar"]
+                            cssPrimitive: "div"
+                            Css.CssText {
+                                cssClass: ["user-card-avatar-t"]
+                                cssPrimitive: "text"
+                                text: "AL"
+                            }
+                        }
+                        Css.CssRect {
+                            cssClass: ["user-card-id"]
+                            cssPrimitive: "div"
+                            Css.CssText {
+                                cssClass: ["user-card-name"]
+                                cssPrimitive: "text"
+                                text: "Ada Lovelace"
+                            }
+                            Css.CssText {
+                                cssClass: ["user-card-mail"]
+                                cssPrimitive: "text"
+                                text: "ada@example.com"
+                            }
+                        }
+                    }
+                    Css.CssRect {
+                        cssClass: ["user-card-tags"]
+                        cssPrimitive: "div"
+                        Css.CssRect {
+                            cssClass: ["user-tag"]
+                            cssPrimitive: "div"
+                            Css.CssText {
+                                cssClass: ["user-tag-t"]
+                                cssPrimitive: "text"
+                                text: "owner"
+                            }
+                        }
+                        Css.CssRect {
+                            cssClass: ["user-tag", "alt"]
+                            cssPrimitive: "div"
+                            Css.CssText {
+                                cssClass: ["user-tag-t"]
+                                cssPrimitive: "text"
+                                text: "engine dev"
+                            }
+                        }
+                    }
+                    Css.CssRect {
+                        cssClass: ["user-card-row"]
+                        cssPrimitive: "div"
+                        Css.CssText {
+                            cssClass: ["user-kv"]
+                            cssPrimitive: "text"
+                            text: "Plan"
+                        }
+                        Css.CssText {
+                            cssClass: ["user-kv-v"]
+                            cssPrimitive: "text"
+                            text: "Max 20×"
+                        }
+                    }
+                    Css.CssRect {
+                        cssClass: ["user-card-row"]
+                        cssPrimitive: "div"
+                        Css.CssText {
+                            cssClass: ["user-kv"]
+                            cssPrimitive: "text"
+                            text: "Session"
+                        }
+                        Css.CssText {
+                            cssClass: ["user-kv-v"]
+                            cssPrimitive: "text"
+                            text: "native · GPU"
+                        }
+                    }
+                    Css.CssRect {
+                        cssClass: ["user-card-actions"]
+                        cssPrimitive: "div"
+                        Css.CssFill {
+                            cssClass: ["user-btn"]
+                            cssState: __hover3.containsMouse ? ["hover"] : []
+                            cssPrimitive: "button"
+                            Css.CssText {
+                                cssPrimitive: "text"
+                                text: "Profile"
+                            }
+                            MouseArea {
+                                id: __hover3
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                        }
+                        Css.CssFill {
+                            cssClass: ["user-btn", "ghost"]
+                            cssState: __hover4.containsMouse ? ["hover"] : []
+                            cssPrimitive: "button"
+                            Css.CssText {
+                                cssPrimitive: "text"
+                                text: "Sign out"
+                            }
+                            MouseArea {
+                                id: __hover4
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                        }
+                    }
+                }
+                MouseArea {
+                    id: __hover2
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: userOpen = !userOpen
                 }
             }
         }
@@ -206,14 +340,14 @@ Css.CssRect {
                     }
                     Css.CssFill {
                         cssClass: ["c-nav", "c-prev"]
-                        cssState: __hover2.containsMouse ? ["hover"] : []
+                        cssState: __hover5.containsMouse ? ["hover"] : []
                         cssPrimitive: "button"
                         Css.CssText {
                             cssPrimitive: "text"
                             text: "‹"
                         }
                         MouseArea {
-                            id: __hover2
+                            id: __hover5
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
@@ -222,14 +356,14 @@ Css.CssRect {
                     }
                     Css.CssFill {
                         cssClass: ["c-nav", "c-next"]
-                        cssState: __hover3.containsMouse ? ["hover"] : []
+                        cssState: __hover6.containsMouse ? ["hover"] : []
                         cssPrimitive: "button"
                         Css.CssText {
                             cssPrimitive: "text"
                             text: "›"
                         }
                         MouseArea {
-                            id: __hover3
+                            id: __hover6
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
@@ -243,10 +377,10 @@ Css.CssRect {
                             model: __const_SLIDES
                             Css.CssRect {
                                 cssClass: ["dot"].concat(slide === index ? ["on"] : [])
-                                cssState: __hover4.containsMouse ? ["hover"] : []
+                                cssState: __hover7.containsMouse ? ["hover"] : []
                                 cssPrimitive: "div"
                                 MouseArea {
-                                    id: __hover4
+                                    id: __hover7
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
@@ -442,13 +576,22 @@ Css.CssRect {
             Css.CssRect {
                 cssClass: ["dash-page"]
                 cssPrimitive: "div"
+                Css.CssText {
+                    cssClass: ["proj-hint"]
+                    cssPrimitive: "text"
+                    text: "Drag a card onto another to reorder"
+                }
                 Css.CssRect {
                     cssClass: ["proj-grid"]
                     cssPrimitive: "div"
                     Repeater {
-                        model: __const_PROJECTS
+                        model: order
                         Css.CssRect {
                             cssClass: ["proj-card"]
+                            property var __dragData: modelData
+                            Drag.active: __drag8.drag.active
+                            Drag.hotSpot.x: width / 2
+                            Drag.hotSpot.y: height / 2
                             cssPrimitive: "div"
                             Css.CssRect {
                                 cssClass: ["proj-head"]
@@ -456,29 +599,100 @@ Css.CssRect {
                                 Css.CssText {
                                     cssClass: ["proj-name"]
                                     cssPrimitive: "text"
-                                    text: "" + (modelData.name)
+                                    text: "" + (proj(modelData).name)
                                 }
                                 Css.CssRect {
-                                    cssClass: ["proj-pill"].concat(modelData.status === "beta" ? ["beta"] : []).concat(modelData.status === "design" ? ["design"] : [])
+                                    cssClass: ["proj-pill"].concat(proj(modelData).status === "beta" ? ["beta"] : []).concat(proj(modelData).status === "design" ? ["design"] : [])
                                     cssPrimitive: "div"
                                     Css.CssText {
                                         cssClass: ["proj-pill-t"]
                                         cssPrimitive: "text"
-                                        text: "" + (modelData.status)
+                                        text: "" + (proj(modelData).status)
                                     }
                                 }
                             }
                             Css.CssText {
                                 cssClass: ["proj-desc"]
                                 cssPrimitive: "text"
-                                text: "" + (modelData.desc)
+                                text: "" + (proj(modelData).desc)
                             }
                             Css.CssRect {
                                 cssClass: ["prog-track"]
                                 cssPrimitive: "div"
                                 Css.CssRect {
-                                    cssClass: ["prog-fill"].concat(modelData.pct === "p80" ? ["p80"] : []).concat(modelData.pct === "p65" ? ["p65"] : []).concat(modelData.pct === "p45" ? ["p45"] : []).concat(modelData.pct === "p10" ? ["p10"] : [])
+                                    cssClass: ["prog-fill"].concat(proj(modelData).pct === "p80" ? ["p80"] : []).concat(proj(modelData).pct === "p65" ? ["p65"] : []).concat(proj(modelData).pct === "p45" ? ["p45"] : []).concat(proj(modelData).pct === "p10" ? ["p10"] : [])
                                     cssPrimitive: "div"
+                                }
+                            }
+                            MouseArea {
+                                id: __drag8
+                                anchors.fill: parent
+                                drag.target: parent
+                                cursorShape: Qt.OpenHandCursor
+                                onReleased: { parent.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(parent) }
+                            }
+                            DropArea {
+                                anchors.fill: parent
+                                onDropped: (drop) => { order = reorder(order, drop.source.__dragData, modelData) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Repeater {
+            model: ((page === "activity") && !((page === "overview") || (page === "analytics") || (page === "projects"))) ? 1 : 0
+            Css.CssRect {
+                cssClass: ["dash-page"]
+                cssPrimitive: "div"
+                Css.CssRect {
+                    cssClass: ["feed", "tall"]
+                    cssPrimitive: "div"
+                    Css.CssText {
+                        cssClass: ["feed-h"]
+                        cssPrimitive: "text"
+                        text: "Full activity log — scrolls natively"
+                    }
+                    Repeater {
+                        model: __const_LOG
+                        Css.CssRect {
+                            cssClass: ["feed-row"]
+                            cssPrimitive: "div"
+                            Css.CssRect {
+                                cssClass: ["feed-avatar"]
+                                cssPrimitive: "div"
+                                Css.CssText {
+                                    cssClass: ["feed-avatar-t"]
+                                    cssPrimitive: "text"
+                                    text: "" + (modelData.who)
+                                }
+                            }
+                            Css.CssRect {
+                                cssClass: ["feed-body"]
+                                cssPrimitive: "div"
+                                Css.CssText {
+                                    cssClass: ["feed-what"]
+                                    cssPrimitive: "text"
+                                    text: "" + (modelData.what)
+                                }
+                            }
+                            Css.CssRect {
+                                cssClass: ["feed-tag"]
+                                cssPrimitive: "div"
+                                Css.CssText {
+                                    cssClass: ["feed-tag-t"]
+                                    cssPrimitive: "text"
+                                    text: "" + (modelData.tag)
+                                }
+                            }
+                            Css.CssRect {
+                                cssClass: ["feed-alert"]
+                                visible: !!(!modelData.ok)
+                                cssPrimitive: "div"
+                                Css.CssText {
+                                    cssClass: ["feed-alert-t"]
+                                    cssPrimitive: "text"
+                                    text: "!"
                                 }
                             }
                         }
@@ -487,7 +701,7 @@ Css.CssRect {
             }
         }
         Repeater {
-            model: ((page === "settings") && !((page === "overview") || (page === "analytics") || (page === "projects"))) ? 1 : 0
+            model: ((page === "settings") && !((page === "overview") || (page === "analytics") || (page === "projects") || (page === "activity"))) ? 1 : 0
             Css.CssRect {
                 cssClass: ["dash-page"]
                 cssPrimitive: "div"
@@ -546,14 +760,14 @@ Css.CssRect {
                             cssPrimitive: "div"
                             Css.CssFill {
                                 cssClass: ["set-opt", "active"]
-                                cssState: __hover5.containsMouse ? ["hover"] : []
+                                cssState: __hover9.containsMouse ? ["hover"] : []
                                 cssPrimitive: "button"
                                 Css.CssText {
                                     cssPrimitive: "text"
                                     text: "dark"
                                 }
                                 MouseArea {
-                                    id: __hover5
+                                    id: __hover9
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
@@ -561,14 +775,14 @@ Css.CssRect {
                             }
                             Css.CssFill {
                                 cssClass: ["set-opt"]
-                                cssState: __hover6.containsMouse ? ["hover"] : []
+                                cssState: __hover10.containsMouse ? ["hover"] : []
                                 cssPrimitive: "button"
                                 Css.CssText {
                                     cssPrimitive: "text"
                                     text: "light"
                                 }
                                 MouseArea {
-                                    id: __hover6
+                                    id: __hover10
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
@@ -576,14 +790,14 @@ Css.CssRect {
                             }
                             Css.CssFill {
                                 cssClass: ["set-opt"]
-                                cssState: __hover7.containsMouse ? ["hover"] : []
+                                cssState: __hover11.containsMouse ? ["hover"] : []
                                 cssPrimitive: "button"
                                 Css.CssText {
                                     cssPrimitive: "text"
                                     text: "system"
                                 }
                                 MouseArea {
-                                    id: __hover7
+                                    id: __hover11
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
@@ -601,14 +815,14 @@ Css.CssRect {
                         }
                         Css.CssFill {
                             cssClass: ["set-opt", "active"]
-                            cssState: __hover8.containsMouse ? ["hover"] : []
+                            cssState: __hover12.containsMouse ? ["hover"] : []
                             cssPrimitive: "button"
                             Css.CssText {
                                 cssPrimitive: "text"
                                 text: "on"
                             }
                             MouseArea {
-                                id: __hover8
+                                id: __hover12
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor

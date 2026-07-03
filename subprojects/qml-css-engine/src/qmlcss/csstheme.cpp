@@ -957,6 +957,10 @@ void CssTheme::applyCssTo(QObject *target) const
     // pseudo-class rules like `.counter:hover` resolve when the widget reports the state.
     QStringList classes = cssVariantToStringList(target->property("cssClass"));
     classes += cssVariantToStringList(target->property("cssState"));
+    // Engine-tracked hover (a composed HoverHandler on elements with an applicable :hover
+    // rule — the web hovers ANY element, not just interactive ones).
+    if (target->property("cssEngineHover").toBool())
+        classes << QStringLiteral("hover");
     const QString cssPart = target->property("cssPart").toString();
     // Type selectors (`button {}`) match this element's primitive.
     const QString cssPrimitive = target->property("cssPrimitive").toString();
@@ -969,7 +973,24 @@ void CssTheme::applyCssTo(QObject *target) const
         style = resolvePart(cssId, cssPart, classes);
     } else {
         const QStringList alternateIds = cssVariantToStringList(target->property("cssAlternateId"));
-        style = resolveMerged(collectCssAncestors(target), cssId, alternateIds, classes, cssPrimitive);
+        const QList<CssAncestorInfo> ancestors = collectCssAncestors(target);
+        style = resolveMerged(ancestors, cssId, alternateIds, classes, cssPrimitive);
+
+        // An applicable `:hover` rule makes the element hover-track ITSELF (it composes a
+        // HoverHandler behind cssHoverStyled) — the web hovers any element, and only
+        // interactive elements get transpiler-wired tracking. Compare base (hover stripped)
+        // against base+hover, so the answer is stable WHILE hovering.
+        if (target->metaObject()->indexOfProperty("cssHoverStyled") >= 0) {
+            QStringList off = classes;
+            off.removeAll(QStringLiteral("hover"));
+            QStringList on = off;
+            on << QStringLiteral("hover");
+            const QVariantMap offStyle = (off.size() == classes.size())
+                ? style : resolveMerged(ancestors, cssId, alternateIds, off, cssPrimitive);
+            const bool hoverStyled =
+                resolveMerged(ancestors, cssId, alternateIds, on, cssPrimitive) != offStyle;
+            target->setProperty("cssHoverStyled", hoverStyled);
+        }
     }
 
     // Push the resolved map into the target's `style` sink; its renderer keys off it

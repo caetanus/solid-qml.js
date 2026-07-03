@@ -116,15 +116,12 @@ void CssHr::setStyle(const QVariantMap &v)
     m_style = v;
     emit styleChanged();
 
-    // Only a DECLARED display drives visible (an unconditional write severs author bindings).
-    const QString display = m_style.value(QStringLiteral("display")).toString();
-    if (display == QLatin1String("none")) {
-        setVisible(false);
-        m_displayHidden = true;
-    } else if (m_displayHidden) {
-        setVisible(true);
-        m_displayHidden = false;
-    }
+    // display:none never writes `visible` (imperative writes sever author bindings, e.g. the
+    // <Show> guard); layout skips by style, painting dies via opacity, input via enabled.
+    const bool displayNone = m_style.value(QStringLiteral("display")).toString() == QLatin1String("none");
+    setOpacity(displayNone ? 0.0
+        : (m_style.contains(QStringLiteral("opacity")) ? m_style.value(QStringLiteral("opacity")).toReal() : 1.0));
+    setEnabled(!displayNone);
 
     // QML: line is a binding on style — recompute + reapply to the Rectangle, and refresh
     // implicitHeight (which itself notifies the parent layout).
