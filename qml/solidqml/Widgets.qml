@@ -990,14 +990,26 @@ Css.CssRect {
                                 }
                             }
                             T.AbstractDayOfWeekRow {
+                                id: __dow16
                                 x: 0
                                 y: 32
                                 width: parent.width
                                 height: 24
-                                delegate: Css.CssText {
-                                    cssPrimitive: ""
-                                    cssClass: ["dow"]
-                                    text: model.shortName
+                                contentItem: Row {
+                                    Repeater {
+                                        model: __dow16.source
+                                        delegate: __dow16.delegate
+                                    }
+                                }
+                                delegate: Item {
+                                    width: (__dow16.contentItem.width - 6 * __dow16.spacing) / 7
+                                    height: __dow16.contentItem.height
+                                    Css.CssText {
+                                        cssPrimitive: ""
+                                        cssClass: ["dow"]
+                                        text: model.shortName
+                                        anchors.centerIn: parent
+                                    }
                                 }
                             }
                             T.AbstractMonthGrid {
@@ -1008,10 +1020,20 @@ Css.CssRect {
                                 height: parent.height - 56
                                 month: __input16W.__calMonth16
                                 year: __input16W.__calYear16
+                                contentItem: Grid {
+                                    columns: 7
+                                    rows: 6
+                                    Repeater {
+                                        model: __mg16.source
+                                        delegate: __mg16.delegate
+                                    }
+                                }
                                 delegate: T.AbstractButton {
                                     id: __mgDel16
                                     implicitWidth: 32
                                     implicitHeight: 32
+                                    width: (__mg16.contentItem.width - 6 * __mg16.spacing) / 7
+                                    height: (__mg16.contentItem.height - 5 * __mg16.spacing) / 6
                                     background: Css.CssFill {
                                         cssPrimitive: "div"
                                         cssClass: ["day"]
@@ -1096,14 +1118,26 @@ Css.CssRect {
                         }
                     }
                     T.AbstractDayOfWeekRow {
+                        id: __dow17
                         x: 0
                         y: 32
                         width: parent.width
                         height: 24
-                        delegate: Css.CssText {
-                            cssPrimitive: ""
-                            cssClass: ["dow"]
-                            text: model.shortName
+                        contentItem: Row {
+                            Repeater {
+                                model: __dow17.source
+                                delegate: __dow17.delegate
+                            }
+                        }
+                        delegate: Item {
+                            width: (__dow17.contentItem.width - 6 * __dow17.spacing) / 7
+                            height: __dow17.contentItem.height
+                            Css.CssText {
+                                cssPrimitive: ""
+                                cssClass: ["dow"]
+                                text: model.shortName
+                                anchors.centerIn: parent
+                            }
                         }
                     }
                     T.AbstractMonthGrid {
@@ -1114,10 +1148,20 @@ Css.CssRect {
                         height: parent.height - 56
                         month: __cal17.__calMonth17
                         year: __cal17.__calYear17
+                        contentItem: Grid {
+                            columns: 7
+                            rows: 6
+                            Repeater {
+                                model: __mg17.source
+                                delegate: __mg17.delegate
+                            }
+                        }
                         delegate: T.AbstractButton {
                             id: __mgDel17
                             implicitWidth: 32
                             implicitHeight: 32
+                            width: (__mg17.contentItem.width - 6 * __mg17.spacing) / 7
+                            height: (__mg17.contentItem.height - 5 * __mg17.spacing) / 6
                             background: Css.CssFill {
                                 cssPrimitive: "div"
                                 cssClass: ["day"]

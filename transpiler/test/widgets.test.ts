@@ -1310,3 +1310,30 @@ test("tabstop: no widget hardcodes activeFocusOnTab: true", async () => {
   const out = await qml(`export function F(){ return <div><input /><textarea /><input type="number" /></div>; }`);
   assert.doesNotMatch(out, /activeFocusOnTab: true/);
 });
+
+// --- Calendar grids: Abstract templates instantiate NOTHING in C++ — the style must supply a
+// contentItem whose Repeater binds control.source → control.delegate (verified in
+// qtdeclarative/src/quicktemplates/qquickmonthgrid.cpp: the C++ only *resizes*
+// contentItem->childItems(); positioning is the positioner's job). Without this the calendar
+// renders header-only (the vertical collapse the owner reported). ---
+
+test("calendar: MonthGrid gets a Grid(7x6)+Repeater contentItem wired to source/delegate", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  assert.match(out, /T\.AbstractMonthGrid \{[\s\S]*?contentItem: Grid \{[\s\S]*?columns: 7[\s\S]*?rows: 6[\s\S]*?Repeater \{[\s\S]*?model: __mg\d+\.source[\s\S]*?delegate: __mg\d+\.delegate/);
+});
+
+test("calendar: DayOfWeekRow gets a Row+Repeater contentItem wired to source/delegate", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  assert.match(out, /T\.AbstractDayOfWeekRow \{[\s\S]*?contentItem: Row \{[\s\S]*?Repeater \{[\s\S]*?model: __dow\d+\.source[\s\S]*?delegate: __dow\d+\.delegate/);
+});
+
+test("calendar: date input popup shares the same repeater-backed grids", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /contentItem: Grid \{[\s\S]*?Repeater \{[\s\S]*?model: __mg\d+\.source/);
+});
+
+test("calendar: cells size declaratively (incubated creation misses the C++ resizeItems)", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  assert.match(out, /delegate: Item \{[\s\S]*?width: \(__dow\d+\.contentItem\.width - 6 \* __dow\d+\.spacing\) \/ 7/);
+  assert.match(out, /T\.AbstractButton \{[\s\S]*?width: \(__mg\d+\.contentItem\.width - 6 \* __mg\d+\.spacing\) \/ 7[\s\S]*?height: \(__mg\d+\.contentItem\.height - 5 \* __mg\d+\.spacing\) \/ 6/);
+});

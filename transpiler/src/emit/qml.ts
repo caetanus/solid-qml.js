@@ -1384,6 +1384,7 @@ function emitMonthGridLines(
   const i = (d: number) => INDENT.repeat(level + d);
   const mgId = `__mg${n}`;
   const delId = `__mgDel${n}`;
+  const dowId = `__dow${n}`;
 
   const clickBody = onChangeFn ? translateDateClickHandler(onChangeFn, scope) : "";
   const fullClick = [clickBody, clickExtra].filter(Boolean).join("; ");
@@ -1453,15 +1454,35 @@ function emitMonthGridLines(
     `${i(1)}}`,
     `${i(0)}}`,
     // ── day-of-week row ────────────────────────────────────────────────────
+    // The Abstract templates instantiate NO delegates in C++ — the style (us) must supply a
+    // contentItem whose Repeater binds control.source → control.delegate. The template's C++
+    // then only sizes contentItem children (width/7); the Row/Grid positioner places them.
     `${i(0)}T.AbstractDayOfWeekRow {`,
+    `${i(1)}id: ${dowId}`,
     `${i(1)}x: 0`,
     `${i(1)}y: 32`,
     `${i(1)}width: parent.width`,
     `${i(1)}height: 24`,
-    `${i(1)}delegate: Css.CssText {`,
-    `${i(2)}cssPrimitive: ""`,
-    `${i(2)}cssClass: ["dow"]`,
-    `${i(2)}text: model.shortName`,
+    `${i(1)}contentItem: Row {`,
+    `${i(2)}Repeater {`,
+    `${i(3)}model: ${dowId}.source`,
+    `${i(3)}delegate: ${dowId}.delegate`,
+    `${i(2)}}`,
+    `${i(1)}}`,
+    // Delegate host is a plain Item sized DECLARATIVELY with the template's own cell formula.
+    // The C++ resizeItems() only fires on geometryChange — under CssIncubator the Repeater
+    // populates after the last geometry change, so imperative sizing never lands and the Row
+    // stacks 0-wide cells. A binding is timing-proof. The CssText centres inside the cell
+    // (a bare CssText would re-assert its text-metrics size and misalign the Row).
+    `${i(1)}delegate: Item {`,
+    `${i(2)}width: (${dowId}.contentItem.width - 6 * ${dowId}.spacing) / 7`,
+    `${i(2)}height: ${dowId}.contentItem.height`,
+    `${i(2)}Css.CssText {`,
+    `${i(3)}cssPrimitive: ""`,
+    `${i(3)}cssClass: ["dow"]`,
+    `${i(3)}text: model.shortName`,
+    `${i(3)}anchors.centerIn: parent`,
+    `${i(2)}}`,
     `${i(1)}}`,
     `${i(0)}}`,
     // ── month grid ─────────────────────────────────────────────────────────
@@ -1473,10 +1494,22 @@ function emitMonthGridLines(
     `${i(1)}height: parent.height - 56`,
     `${i(1)}month: ${ownerId}.__calMonth${n}`,
     `${i(1)}year: ${ownerId}.__calYear${n}`,
+    `${i(1)}contentItem: Grid {`,
+    `${i(2)}columns: 7`,
+    `${i(2)}rows: 6`,
+    `${i(2)}Repeater {`,
+    `${i(3)}model: ${mgId}.source`,
+    `${i(3)}delegate: ${mgId}.delegate`,
+    `${i(2)}}`,
+    `${i(1)}}`,
     `${i(1)}delegate: T.AbstractButton {`,
     `${i(2)}id: ${delId}`,
     `${i(2)}implicitWidth: 32`,
     `${i(2)}implicitHeight: 32`,
+    // Declarative cell size (same formula as the template's resizeItems) — see the
+    // day-of-week delegate note: incubated creation misses the imperative resize.
+    `${i(2)}width: (${mgId}.contentItem.width - 6 * ${mgId}.spacing) / 7`,
+    `${i(2)}height: (${mgId}.contentItem.height - 5 * ${mgId}.spacing) / 6`,
     // background: a CssFill carrying the day's CSS class / pseudo-class state
     `${i(2)}background: Css.CssFill {`,
     `${i(3)}cssPrimitive: "div"`,
