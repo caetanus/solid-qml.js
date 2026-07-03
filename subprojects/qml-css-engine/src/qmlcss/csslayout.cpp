@@ -124,6 +124,8 @@ void CssLayoutEngine::notifyParentLayout(QQuickItem *item)
     }
 }
 
+static bool sqLayoutTrace = qEnvironmentVariableIntValue("SQ_LAYOUT_TRACE") != 0;
+
 void CssLayoutEngine::flush()
 {
     if (m_flushing)
@@ -420,9 +422,14 @@ void CssLayoutEngine::place(QQuickItem *k, double x, double y, double w, double 
     h = clampSize(ks, QStringLiteral("height"), h, std::nan(""));
     // A declared `transition: width/height` animates the write instead of snapping; the
     // cast + covers-check only run when the geometry actually changes.
+    // Record the imposition (the CSS "definite size" signal) even when the value is
+    // unchanged — children of an externally-sized box get the spec flex-shrink default.
+    CssRect *marked = qobject_cast<CssRect *>(k);
+    if (marked)
+        marked->markImposed(!std::isnan(w) && w >= 0, !std::isnan(h) && h >= 0);
     CssRect *box = nullptr;
     if (!std::isnan(w) && w >= 0 && std::abs(k->width() - w) > 0.5) {
-        box = qobject_cast<CssRect *>(k);
+        box = marked;
         if (!box || !box->animateGeometry(QLatin1String("width"), w))
             k->setWidth(w);
     }
@@ -472,6 +479,10 @@ void CssLayoutEngine::placeAbsolute(QQuickItem *k, double ox, double oy, double 
 
 void CssLayoutEngine::layout(QQuickItem *root, QQuickItem *content)
 {
+    if (sqLayoutTrace) {
+        const QString cls = root->property("cssClass").toStringList().join(QLatin1Char('.'));
+        fprintf(stderr, "[layout] %s w=%.0f h=%.0f\n", qPrintable(cls.isEmpty() ? QString::fromLatin1(root->metaObject()->className()) : cls), root->width(), root->height());
+    }
     if (!root || !content)
         return;
     const QVariantMap rootStyle = root->property("style").toMap();
@@ -522,9 +533,19 @@ void CssLayoutEngine::layout(QQuickItem *root, QQuickItem *content)
             flow[i] = byOrder[i].second;
     }
 
+    // CSS "definite size" per axis: declared in the container's own style, or imposed by
+    // the parent's layout (place() marks the box). Gates the spec flex-shrink default.
+    const auto axisDefinite = [&](const char *key) {
+        const QString v = styleStr(rootStyle, QLatin1String(key));
+        return !v.isEmpty() && v != QLatin1String("auto");
+    };
+    auto *rootBox = qobject_cast<CssRect *>(root);
+    const bool widthDefinite = axisDefinite("width") || (rootBox && rootBox->widthImposed());
+    const bool heightDefinite = axisDefinite("height") || (rootBox && rootBox->heightImposed());
+
     const QPair<double, double> contentSize = isGrid
         ? layoutGrid(flow, rootStyle, cw, ch, originX, originY)
-        : layoutFlex(flow, rootStyle, cw, ch, originX, originY, isFlex);
+        : layoutFlex(flow, rootStyle, cw, ch, originX, originY, isFlex, widthDefinite, heightDefinite);
 
     for (QQuickItem *k : abs)
         placeAbsolute(k, originX, originY, cw, ch);
@@ -539,13 +560,18 @@ void CssLayoutEngine::layout(QQuickItem *root, QQuickItem *content)
 
 QPair<double, double> CssLayoutEngine::layoutFlex(const QList<QQuickItem *> &flow,
                                                   const QVariantMap &rootStyle, double cw, double ch,
-                                                  double originX, double originY, bool isFlex) const
+                                                  double originX, double originY, bool isFlex,
+                                                  bool widthDefinite, bool heightDefinite) const
 {
     QString flexDir = styleStr(rootStyle, "flex-direction");
     if (flexDir.isEmpty()) flexDir = QStringLiteral("row");
     const bool horizontal = isFlex ? flexDir.startsWith(QLatin1String("row")) : false;
     const double mainAvail = horizontal ? cw : ch;
     const double crossAvail = horizontal ? ch : cw;
+    // CSS "definite main size": only then does the spec default flex-shrink:1 apply. An
+    // auto-sized main (content-driven) must let children overflow, never crush them against
+    // a stale in-convergence size (the historical auto-column collapse).
+    const bool mainDefinite = horizontal ? widthDefinite : heightDefinite;
 
     QString gapStr = styleStr(rootStyle, "gap");
     if (gapStr.isEmpty()) gapStr = styleStr(rootStyle, "row-gap");
@@ -611,13 +637,12 @@ QPair<double, double> CssLayoutEngine::layoutFlex(const QList<QQuickItem *> &flo
         if (std::isnan(g)) g = 0;
         grows[i] = g;
 
-        // flex-shrink: weights how much an item gives back when a line OVERFLOWS. We default to 0
-        // (not the CSS default 1) ON PURPOSE: correct default-1 needs the flexbox "definite main
-        // size" distinction — a flex-column with auto height must GROW, not shrink its children — and
-        // without it, auto-sized columns read a stale main size and collapse their content to ~0.
-        // So shrink applies only when the author asks (`flex-shrink`/`flex` 2nd token). Definite-size
-        // detection is a future refinement. Also honour the `flex` shorthand's 2nd token.
-        double sh = 0;
+        // flex-shrink: weights how much an item gives back when a line OVERFLOWS. The spec
+        // default 1 applies ONLY when the container's main size is DEFINITE (declared in its
+        // style, or imposed by the parent's layout — see markImposed); an auto-sized main
+        // keeps 0 so content stacks/overflows instead of crushing against a stale
+        // in-convergence size (the historical auto-column collapse).
+        double sh = mainDefinite ? 1 : 0;
         const QString fsh = styleStr(ks, "flex-shrink");
         if (!fsh.isEmpty())
             sh = jsParseFloat(fsh);

@@ -81,7 +81,8 @@ private:
 
     // flex + grid; return the content [width, height] occupied
     QPair<double, double> layoutFlex(const QList<QQuickItem *> &flow, const QVariantMap &rootStyle,
-                                     double cw, double ch, double ox, double oy, bool isFlex) const;
+                                     double cw, double ch, double ox, double oy, bool isFlex,
+                                     bool widthDefinite, bool heightDefinite) const;
     QPair<double, double> layoutGrid(const QList<QQuickItem *> &flow, const QVariantMap &rootStyle,
                                      double cw, double ch, double ox, double oy) const;
 
