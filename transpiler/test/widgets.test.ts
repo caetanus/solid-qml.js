@@ -1499,3 +1499,10 @@ test("date keyboard: field click gives the field focus (keyboard works after mou
   const out = await qml(`export function F(){ return <input type="date" />; }`);
   assert.match(out, /onClicked: \{ __input0\.forceActiveFocus\(\);/);
 });
+
+test("popups: dropdowns close when the app window deactivates (Qt::Popup semantics)", async () => {
+  const sel = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(sel, /Window\.onActiveChanged: if \(!Window\.active\) __input0\.popup\.close\(\)/);
+  const date = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(date, /Window\.onActiveChanged: if \(!Window\.active\) __input0P\.close\(\)/);
+});

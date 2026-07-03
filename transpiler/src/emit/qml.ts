@@ -1324,6 +1324,9 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
     `${i(2)}id: ${ctlId}`,
     `${i(2)}anchors.fill: parent`,
     `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
+    // Qt::Popup semantics (owner directive): the dropdown vanishes when the app window
+    // loses focus — a native popup window does not linger over other applications.
+    `${i(2)}Window.onActiveChanged: if (!Window.active) ${ctlId}.popup.close()`,
     // No visual chrome from Templates; the CssFill wrapper owns the box painting.
     `${i(2)}background: null`,
     // leftPadding keeps the contentItem text clear of the border (G4 from Phase 1 probe).
@@ -1777,6 +1780,8 @@ function emitDateInput(
     `${i(1)}property int __calYear${n}: __calVal${n} instanceof Date ? __calVal${n}.getFullYear() : new Date().getFullYear()`,
     // Keyboard cursor: arrows move it by ±1 (left/right) and ±7 (up/down) days, following the
     // shown month; Enter commits it through the same onChange path a cell click uses.
+    // Qt::Popup semantics: vanish when the app window loses focus (see emitSelect).
+    `${i(1)}Window.onActiveChanged: if (!Window.active) ${popId}.close()`,
     `${i(1)}property var __calCursor${n}: null`,
     `${i(1)}function __calStep${n}(days) { var b = __calCursor${n} instanceof Date ? __calCursor${n} : (__calVal${n} instanceof Date ? __calVal${n} : new Date()); var d = new Date(b.getFullYear(), b.getMonth(), b.getDate() + days); __calCursor${n} = d; __calMonth${n} = d.getMonth(); __calYear${n} = d.getFullYear() }`,
     ...(commitFnLines),

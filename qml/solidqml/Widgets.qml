@@ -734,6 +734,7 @@ Css.CssRect {
                         id: __input13
                         anchors.fill: parent
                         activeFocusOnTab: solidTabstop.enabled
+                        Window.onActiveChanged: if (!Window.active) __input13.popup.close()
                         background: null
                         leftPadding: 12
                         readonly property var __values: ["apple", "banana", "cherry", "mango"]
@@ -974,6 +975,7 @@ Css.CssRect {
                     property var __calVal16: inputDate
                     property int __calMonth16: __calVal16 instanceof Date ? __calVal16.getMonth() : new Date().getMonth()
                     property int __calYear16: __calVal16 instanceof Date ? __calVal16.getFullYear() : new Date().getFullYear()
+                    Window.onActiveChanged: if (!Window.active) __input16P.close()
                     property var __calCursor16: null
                     function __calStep16(days) { var b = __calCursor16 instanceof Date ? __calCursor16 : (__calVal16 instanceof Date ? __calVal16 : new Date()); var d = new Date(b.getFullYear(), b.getMonth(), b.getDate() + days); __calCursor16 = d; __calMonth16 = d.getMonth(); __calYear16 = d.getFullYear() }
                     function __calCommit16() { if (!(__calCursor16 instanceof Date)) return; inputDate = __calCursor16; __input16P.close() }
