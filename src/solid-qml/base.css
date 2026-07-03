@@ -149,3 +149,22 @@ select .value {
 .day:focus {
   border: 1px solid #2f6fab;
 }
+
+/* SpinBox up/down factory look — quiet buttons that read as buttons (Chrome-like column
+ * at the right edge); :active while pressed. Authored rules win. */
+.spin-up,
+.spin-down {
+  background: #f2f5f8;
+  border: 1px solid #e2e7ed;
+  border-radius: 4px;
+}
+
+.spin-up:active,
+.spin-down:active {
+  background: #dfe6ec;
+}
+
+.spin-glyph {
+  font-size: 11px;
+  color: #4a5766;
+}

@@ -918,10 +918,13 @@ Css.CssRect {
                             height: (parent.height - 4) / 2
                             implicitWidth: 24
                             implicitHeight: (parent.height - 4) / 2
-                            Text {
-                                text: "+"
-                                anchors.centerIn: parent
-                                Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }
+                            Item {
+                                anchors.fill: parent
+                                Text {
+                                    text: "+"
+                                    anchors.centerIn: parent
+                                    Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }
+                                }
                             }
                         }
                         down.indicator: Css.CssFill {
@@ -934,10 +937,13 @@ Css.CssRect {
                             height: (parent.height - 4) / 2
                             implicitWidth: 24
                             implicitHeight: (parent.height - 4) / 2
-                            Text {
-                                text: "−"
-                                anchors.centerIn: parent
-                                Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }
+                            Item {
+                                anchors.fill: parent
+                                Text {
+                                    text: "−"
+                                    anchors.centerIn: parent
+                                    Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }
+                                }
                             }
                         }
                         onValueModified: { qty = __input15.value }

@@ -1169,10 +1169,13 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
     // engine (isLayoutChild is true for every Css type), which stomps the centerIn anchor.
     // A plain primitive is invisible to the layout; the nested CssItem injects the CSS
     // (color/font from the .spin-glyph rule) without joining the layout.
-    `${i(3)}Text {`,
-    `${i(4)}text: "+"`,
-    `${i(4)}anchors.centerIn: parent`,
-    `${i(4)}Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }`,
+    `${i(3)}Item {`,
+    `${i(4)}anchors.fill: parent`,
+    `${i(4)}Text {`,
+    `${i(5)}text: "+"`,
+    `${i(5)}anchors.centerIn: parent`,
+    `${i(5)}Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }`,
+    `${i(4)}}`,
     `${i(3)}}`,
     `${i(2)}}`,
     // down indicator: mirrors up, at the bottom-right (same 2px inset).
@@ -1186,10 +1189,13 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
     `${i(3)}height: (parent.height - 4) / 2`,
     `${i(3)}implicitWidth: 24`,
     `${i(3)}implicitHeight: (parent.height - 4) / 2`,
-    `${i(3)}Text {`,
-    `${i(4)}text: "−"`,
-    `${i(4)}anchors.centerIn: parent`,
-    `${i(4)}Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }`,
+    `${i(3)}Item {`,
+    `${i(4)}anchors.fill: parent`,
+    `${i(4)}Text {`,
+    `${i(5)}text: "−"`,
+    `${i(5)}anchors.centerIn: parent`,
+    `${i(5)}Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }`,
+    `${i(4)}}`,
     `${i(3)}}`,
     `${i(2)}}`,
   ];
