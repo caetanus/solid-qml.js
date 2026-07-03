@@ -5,98 +5,99 @@
 <h1 align="center">solid-qml.js</h1>
 
 <p align="center">
-  <strong>Solid.js, renderizado nativo via QML/QtQuick — sem browser.</strong>
+  <strong>Solid.js, rendered natively via QML/QtQuick — no browser.</strong>
 </p>
 
 <p align="center">
-  <em>⚠️ Experimental / alpha — APIs, formatos gerados e comandos ainda mudam sem aviso.</em>
+  <em>⚠️ Experimental / alpha — APIs, generated formats and commands still change without notice.</em>
 </p>
 
 ---
 
-## O que é
+## What it is
 
-**solid-qml.js** transpila componentes [Solid.js](https://www.solidjs.com/) (JSX + CSS) para
-**QtQuick nativo**: uma scene-graph de verdade, renderizada pela GPU via Qt — **não** uma webview,
-**não** um DOM emulado.
+**solid-qml.js** transpiles [Solid.js](https://www.solidjs.com/) components (JSX + CSS) into
+**native QtQuick**: a real scene graph, GPU-rendered through Qt — **not** a webview,
+**not** an emulated DOM.
 
-Você escreve UI em TypeScript/JSX com o modelo reativo do Solid (signals, effects, memos, control
-flow) e estiliza com CSS comum. O transpiler segue os imports e emite **um arquivo `.qml` por
-componente**, mais uma folha de estilo, que rodam sobre uma engine de CSS própria em C++.
+You write UI in TypeScript/JSX with Solid's reactive model (signals, effects, memos, control
+flow) and style it with plain CSS. The transpiler follows your imports and emits **one `.qml`
+file per component**, plus a stylesheet, running on top of a custom C++ CSS engine.
 
-- **vs Electron** — sem empacotar Chromium + Node em cada app. O runtime é o Qt, a UI é
-  scene-graph nativo, o footprint é uma fração.
-- **vs React Native** — componentes nativos reais, sem ponte JS assíncrona entre mundos. E, no
-  release, o alvo é compilar tudo para **C++ (AOT)**, eliminando o interpretador.
+- **vs Electron** — no Chromium + Node bundled into every app. The runtime is Qt, the UI is a
+  native scene graph, the footprint is a fraction.
+- **vs React Native** — real native components, no asynchronous JS bridge between worlds. And
+  the release target is compiling everything to **C++ (AOT)**, eliminating the interpreter.
 
-## Destaques (reais, funcionam hoje)
+## Highlights (real, working today)
 
-- ⭐ **Imports de módulos npm/node rodando no motor V4 do Qt.** O maior defeito histórico do QML
-  sempre foi não poder importar pacotes do npm — resolvemos isso. O **código real do pacote** é
-  espelhado e executado de verdade no engine V4 (não é reimplementação nem stub); cada pacote que
-  quebra revela um buraco do V4 que a gente tapa.
-- **Engine de CSS própria em C++** que faz **layout E paint**: box-model, **flexbox**, **grid**,
-  `calc()`, `@media`, unidades `vw`/`vh`. Sem `QtQuick.Controls` — só primitivos leves
-  (Item / Text / TextInput / MouseArea / Repeater). O hot path (relayout) é C++ com zero overhead
-  de abstração.
-- **Web fonts via `@font-face` remoto** — baixa a fonte, cacheia e registra no `QFontDatabase` em
-  runtime. Não instala nada no sistema.
-- **Reatividade do Solid → QML**: `createSignal`, `createEffect`, `createMemo`, `createResource` +
+- ⭐ **npm/node module imports running on Qt's V4 engine.** QML's biggest historical defect has
+  always been that you can't import npm packages — we solved that. The **package's real code**
+  is mirrored and genuinely executed on the V4 engine (not a reimplementation, not a stub);
+  every package that breaks reveals a V4 hole that we then plug.
+- **Custom C++ CSS engine** doing **layout AND paint**: box model, **flexbox**, **grid**,
+  `calc()`, `@media`, `vw`/`vh` units. No `QtQuick.Controls` — only lightweight primitives
+  (Item / Text / TextInput / MouseArea / Repeater). The hot path (relayout) is C++ with zero
+  abstraction overhead.
+- **Web fonts via remote `@font-face`** — downloads the font, caches it and registers it with
+  `QFontDatabase` at runtime. Installs nothing on the system.
+- **Solid reactivity → QML**: `createSignal`, `createEffect`, `createMemo`, `createResource` +
   `<Suspense>`, `<Show>`, `<Switch>`/`<Match>` (lazy), `<For>`, `<Index>`.
-- **Shims de browser sobre o V4**: `fetch` (HTTPS real via `QNetworkAccessManager`, com
-  `Headers`/`Request`/`Response`/`AbortController`), `localStorage` (persistente),
+- **Browser shims over V4**: `fetch` (real HTTPS via `QNetworkAccessManager`, with
+  `Headers`/`Request`/`Response`/`AbortController`), `localStorage` (persistent),
   `XMLHttpRequest`, timers.
-- **Responsivo** — o layout reflui no resize da janela; `@media`, `vw`, `vh` reavaliam ao vivo.
+- **Responsive** — layout reflows on window resize; `@media`, `vw`, `vh` re-evaluate live.
 
 ## Quickstart
 
-Requisitos: Node.js + npm, **Qt 6** (Core, Gui, Qml, Quick, Test), **Meson** e **Ninja**.
+Requirements: Node.js + npm, **Qt 6** (Core, Gui, Qml, Quick, Test), **Meson** and **Ninja**.
 
 ```sh
-# 1. dependências JS
+# 1. JS dependencies
 npm install
 
-# 2. build do loader nativo (a engine de CSS em C++ vem vendorizada em subprojects/)
+# 2. build the native loader (the C++ CSS engine is vendored under subprojects/)
 meson setup build
 ninja -C build
 
-# 3. dev nativo: transpila src/mainqml.tsx → QML e abre a janela nativa com hot-reload
+# 3. native dev: transpiles src/mainqml.tsx → QML and opens the native window with hot reload
 node --import tsx scripts/dev-native.mjs
 ```
 
-O loop de dev observa `src/` e `examples/`, regenera o QML a cada mudança e o loader recarrega a
-cena ao vivo (edite o CSS e veja o restyle na hora).
+The dev loop watches `src/` and `examples/`, regenerates the QML on every change, and the loader
+reloads the scene live (edit the CSS and watch the restyle happen instantly).
 
-Outros comandos úteis (veja `package.json`):
+Other useful commands (see `package.json`):
 
 ```sh
-npm run test:transpiler   # suíte do transpiler (node --test)
-npm run dev               # preview web via Vite (Solid rodando no browser)
+npm run test:transpiler   # transpiler suite (node --test)
+npm run dev               # web preview via Vite (Solid running in the browser)
 ```
 
 ## Roadmap
 
-- **Uma única codebase para todas as plataformas** — apps para **Android, iOS, Windows, macOS e
-  Linux** (mobile **e** desktop) a partir do mesmo código Solid.
-- **AOT → C++ no release** — nosso gerador emite QtQuick C++ 1:1, eliminando o V4 interpretado; o
-  V4-AOT do Qt cobre só o JS dinâmico residual (async/fetch/closures).
-- **Interop com C++ nativo real** ao lado dos componentes Solid.
-- **Importar componentes QML reais** (interop / código legado).
-- **Packaging decente** para deploy, e caminho para **exportar para projetos legados**.
+- **A single codebase for every platform** — apps for **Android, iOS, Windows, macOS and
+  Linux** (mobile **and** desktop) from the same Solid code.
+- **AOT → C++ for release** — our generator emits 1:1 QtQuick C++, eliminating interpreted V4;
+  Qt's V4-AOT covers only the residual dynamic JS (async/fetch/closures).
+- **Real native C++ interop** alongside Solid components.
+- **Importing real QML components** (interop / legacy code).
+- **Decent packaging** for deployment, and a path to **exporting into legacy projects**.
 
-## Gaps / Limitações atuais
+## Gaps / Current limitations
 
-Estamos em alpha e fazemos questão de ser honestos sobre o que **ainda não existe**:
+We are in alpha and insist on being honest about what **does not exist yet**:
 
-- **Integração desktop faltando**: D-Bus, Avahi/zeroconf e system tray ainda não.
-- **Threads** e **background services (mobile)** ainda não.
-- **Gestures** (touch) ainda não.
-- **Scroll** de overflow ainda não — o QtQuick oferece via `Flickable`; está no topo da fila.
-- `<For>` ainda é frágil com **sub-JSX aninhado** e casos complexos.
-- Mapeamentos de **CSS avançado** dependem de decisões de design abertas.
-- **AOT → C++ ainda não implementado** — hoje o dev roda no V4 interpretado.
-- **Packaging com Qt é doloroso** — o sistema de deploy ainda está em aberto.
+- **Missing desktop integration**: D-Bus, Avahi/zeroconf and system tray, not yet.
+- **Threads** and **background services (mobile)**, not yet.
+- **Gestures** (touch), not yet.
+- Overflow **scrolling**, not yet — QtQuick offers it via `Flickable`; it is at the top of the
+  queue.
+- `<For>` is still fragile with **nested sub-JSX** and complex cases.
+- **Advanced CSS** mappings depend on open design decisions.
+- **AOT → C++ not implemented yet** — today dev runs on interpreted V4.
+- **Packaging with Qt is painful** — the deployment story is still open.
 
-## Licença
+## License
 
 TBD (experimental).

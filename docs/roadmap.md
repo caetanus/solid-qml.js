@@ -2,23 +2,24 @@
 
 ## Roadmap
 
-- **Uma única codebase para todas as plataformas** — Android, iOS, Windows, macOS e Linux
-  (mobile **e** desktop) a partir do mesmo código Solid.
-- **AOT → C++ no release** — o gerador emite QtQuick C++ 1:1, eliminando o V4 interpretado; o
-  V4-AOT do Qt cobre só o JS dinâmico residual (async/fetch/closures).
-- **Interop com C++ nativo real** ao lado dos componentes Solid.
-- **Importar componentes QML reais** (interop / código legado).
-- **Packaging decente** para deploy, e caminho para **exportar para projetos legados**.
+- **A single codebase for every platform** — Android, iOS, Windows, macOS and Linux (mobile
+  **and** desktop) from the same Solid code.
+- **AOT → C++ for release** — the generator emits 1:1 QtQuick C++, eliminating interpreted V4;
+  Qt's V4-AOT covers only the residual dynamic JS (async/fetch/closures).
+- **Real native C++ interop** alongside Solid components.
+- **Importing real QML components** (interop / legacy code).
+- **Decent packaging** for deployment, and a path to **exporting into legacy projects**.
 
-## Gaps / Limitações atuais
+## Gaps / Current limitations
 
-Alpha — sendo honestos sobre o que **ainda não existe**:
+Alpha — being honest about what **does not exist yet**:
 
-- **Integração desktop faltando**: D-Bus, Avahi/zeroconf e system tray ainda não.
-- **Threads** e **background services (mobile)** ainda não.
-- **Gestures** (touch) ainda não.
-- **Scroll** de overflow ainda não — o QtQuick oferece via `Flickable`; está no topo da fila.
-- `<For>` ainda é frágil com **sub-JSX aninhado** e casos complexos.
-- Mapeamentos de **CSS avançado** dependem de decisões de design abertas.
-- **AOT → C++ ainda não implementado** — hoje o dev roda no V4 interpretado.
-- **Packaging com Qt é doloroso** — o sistema de deploy ainda está em aberto.
+- **Missing desktop integration**: D-Bus, Avahi/zeroconf and system tray, not yet.
+- **Threads** and **background services (mobile)**, not yet.
+- **Gestures** (touch), not yet.
+- Overflow **scrolling**, not yet — QtQuick offers it via `Flickable`; it is at the top of the
+  queue.
+- `<For>` is still fragile with **nested sub-JSX** and complex cases.
+- **Advanced CSS** mappings depend on open design decisions.
+- **AOT → C++ not implemented yet** — today dev runs on interpreted V4.
+- **Packaging with Qt is painful** — the deployment story is still open.

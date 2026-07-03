@@ -1,42 +1,42 @@
-# Arquitetura
+# Architecture
 
-solid-qml.js tem três camadas: o **transpiler**, a **engine de CSS em C++**, e os **shims de
-browser** sobre o motor V4 do Qt.
+solid-qml.js has three layers: the **transpiler**, the **C++ CSS engine**, and the **browser
+shims** over Qt's V4 engine.
 
 ## Transpiler (`transpiler/`)
 
-Escrito em TypeScript. Normaliza o JSX do Solid para chamadas `h()` (via Babel), analisa os
-símbolos reativos do componente (signals, effects, memos, resources, props) e emite QML
-estrutural — **um arquivo `.qml` por componente**. Segue os imports para montar o grafo de
-dependências e reproduzir a composição como imports QML.
+Written in TypeScript. Normalizes Solid's JSX into `h()` calls (via Babel), analyzes the
+component's reactive symbols (signals, effects, memos, resources, props) and emits structural
+QML — **one `.qml` file per component**. It follows imports to build the dependency graph and
+reproduce the composition as QML imports.
 
-Cobre reatividade (`createSignal`/`createEffect`/`createMemo`/`createResource`) e control flow
-(`<Show>`, `<Switch>`/`<Match>` lazy, `<For>`, `<Index>`, `<Suspense>`), mapeando cada construção
-para o equivalente nativo em QtQuick (bindings, `Repeater`, Loaders).
+It covers reactivity (`createSignal`/`createEffect`/`createMemo`/`createResource`) and control
+flow (`<Show>`, lazy `<Switch>`/`<Match>`, `<For>`, `<Index>`, `<Suspense>`), mapping each
+construct to its native QtQuick equivalent (bindings, `Repeater`, Loaders).
 
-Imports de módulos npm/node são **espelhados**: o código real do pacote é reescrito para ESM
-carregável pelo V4 e executado no engine — não é reimplementação.
+npm/node module imports are **mirrored**: the package's real code is rewritten into ESM loadable
+by V4 and executed on the engine — it is not a reimplementation.
 
-## Engine de CSS em C++ (`subprojects/qml-css-engine/`)
+## C++ CSS engine (`subprojects/qml-css-engine/`)
 
-Vendorizada. Faz **layout E paint**: box-model, flexbox, grid, `calc()`, `@media`, `vw`/`vh`,
-`@font-face` remoto (download + cache + registro no `QFontDatabase`). Expõe primitivos leves
-(`CssRect`, `CssText`, `CssFill`, …) sobre Item/Text/TextInput/MouseArea/Repeater — sem
-`QtQuick.Controls`.
+Vendored. Does **layout AND paint**: box model, flexbox, grid, `calc()`, `@media`, `vw`/`vh`,
+remote `@font-face` (download + cache + registration with `QFontDatabase`). Exposes lightweight
+primitives (`CssRect`, `CssText`, `CssFill`, …) over Item/Text/TextInput/MouseArea/Repeater —
+no `QtQuick.Controls`.
 
-O hot path é o `CssLayoutEngine` (roda por relayout) e é escrito em C++ com zero overhead de
-abstração — sem cópias, `std::function` ou virtuais supérfluos no caminho quente.
+The hot path is the `CssLayoutEngine` (runs per relayout) and is written in C++ with zero
+abstraction overhead — no copies, `std::function` or superfluous virtuals on the hot path.
 
-## Shims de browser sobre o V4 (`src/shims/`)
+## Browser shims over V4 (`src/shims/`)
 
-O V4 é o interpretador ECMAScript dentro do Qt/QML, sem DOM nem globais de browser. Os shims
-instalam os globais que o código Solid espera:
+V4 is the ECMAScript interpreter inside Qt/QML, with no DOM and no browser globals. The shims
+install the globals Solid code expects:
 
-- `fetch` — HTTPS real via `QNetworkAccessManager`, com `Headers`/`Request`/`Response`/
+- `fetch` — real HTTPS via `QNetworkAccessManager`, with `Headers`/`Request`/`Response`/
   `AbortController`.
-- `localStorage` — persistente em disco.
-- `XMLHttpRequest` — sobre o mesmo transporte de rede.
-- timers (`setTimeout`/`setInterval`) e polyfills de JS ausentes no V4.
+- `localStorage` — persisted to disk.
+- `XMLHttpRequest` — over the same network transport.
+- timers (`setTimeout`/`setInterval`) and polyfills for JS missing from V4.
 
-O `loader` (`src/loader.cpp`) é o executável que carrega o QML gerado, instala os shims e a folha
-de CSS, e observa arquivos para hot-reload.
+The `loader` (`src/loader.cpp`) is the executable that loads the generated QML, installs the
+shims and the CSS sheet, and watches files for hot reload.

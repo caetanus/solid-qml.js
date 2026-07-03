@@ -1,37 +1,38 @@
 # Getting started
 
-## Requisitos
+## Requirements
 
 - Node.js + npm
 - **Qt 6** (Core, Gui, Qml, Quick, Test)
-- **Meson** e **Ninja**
+- **Meson** and **Ninja**
 
-## Instalação e build
+## Install and build
 
 ```sh
-# 1. dependências JS
+# 1. JS dependencies
 npm install
 
-# 2. build do loader nativo (a engine de CSS em C++ vem vendorizada em subprojects/)
+# 2. build the native loader (the C++ CSS engine is vendored under subprojects/)
 meson setup build
 ninja -C build
 ```
 
-## Dev nativo
+## Native dev
 
 ```sh
 node --import tsx scripts/dev-native.mjs
 ```
 
-Isso transpila `src/mainqml.tsx` para QML (`qml/solidqml/App.generated.qml` + um `.qml` por
-componente + `App.generated.css`) e abre a janela nativa com hot-reload: o loop observa `src/` e
-`examples/`, regenera o QML a cada mudança, e o loader recarrega a cena ao vivo.
+This transpiles `src/mainqml.tsx` into QML (`qml/solidqml/App.generated.qml` + one `.qml` per
+component + `App.generated.css`) and opens the native window with hot reload: the loop watches
+`src/` and `examples/`, regenerates the QML on every change, and the loader reloads the scene
+live.
 
-## Outros comandos
+## Other commands
 
 ```sh
-npm run test:transpiler   # suíte do transpiler (node --test)
-npm run dev               # preview web via Vite (Solid rodando no browser)
+npm run test:transpiler   # transpiler suite (node --test)
+npm run dev               # web preview via Vite (Solid running in the browser)
 ```
 
-Veja o `package.json` para a lista atual de scripts.
+See `package.json` for the current list of scripts.
