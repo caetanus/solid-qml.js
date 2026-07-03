@@ -1266,7 +1266,7 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
   const ctlId = `__input${idx}`;
   const delId = `__optDel${idx}`;
 
-  if (scope.usedWidgets) scope.usedWidgets.flag = true;
+  if (scope.usedWidgets) { scope.usedWidgets.flag = true; scope.usedWidgets.popupWindow = true; }
 
   // Parse static <option> children.
   const options = parseOptions(children);
@@ -1351,7 +1351,10 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
     // Templates popups have NO implicit-size policy of their own (that's the style's job,
     // and we ARE the style) — without this line the popup opens 0px tall.
     `${i(2)}popup: T.Popup {`,
-    `${i(3)}y: ${ctlId}.height + 2`,
+    // Desktop dropdown: a REAL native window (escapes the app window bounds, Qt 6.8+),
+    // flipping ABOVE the control when opening below would overflow the screen.
+    `${i(3)}popupType: T.Popup.Window`,
+    `${i(3)}y: (${ctlId}.mapToGlobal(0, ${ctlId}.height + 2).y + height > Screen.height) ? -(height + 2) : ${ctlId}.height + 2`,
     `${i(3)}width: ${ctlId}.width`,
     `${i(3)}implicitHeight: contentHeight + topPadding + bottomPadding`,
     `${i(3)}padding: 1`,
@@ -1701,7 +1704,7 @@ function emitDateInput(
   // n used for month-grid sub-ids; extract from ctlId e.g. "__input3" → 3.
   const n = parseInt(ctlId.replace("__input", ""), 10);
 
-  if (scope.usedWidgets) { scope.usedWidgets.flag = true; scope.usedWidgets.calendar = true; }
+  if (scope.usedWidgets) { scope.usedWidgets.flag = true; scope.usedWidgets.calendar = true; scope.usedWidgets.popupWindow = true; }
 
   let valueExpr: string | null = null;
   let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
@@ -1804,7 +1807,9 @@ function emitDateInput(
   lines.push(
     `${i(1)}T.Popup {`,
     `${i(2)}id: ${popId}`,
-    `${i(2)}y: ${wrapId}.height + 2`,
+    // Desktop dropdown: native window + flip above on screen overflow (see emitSelect).
+    `${i(2)}popupType: T.Popup.Window`,
+    `${i(2)}y: (${wrapId}.mapToGlobal(0, ${wrapId}.height + 2).y + height > Screen.height) ? -(height + 2) : ${wrapId}.height + 2`,
     // Templates popups have no implicit-size policy (style's job — ours): without these
     // two lines the calendar dropdown opens 0x0.
     `${i(2)}implicitWidth: contentWidth + leftPadding + rightPadding`,

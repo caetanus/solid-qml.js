@@ -627,10 +627,10 @@ test("widgets: <select> delegate contentItem is CssText with cssClass ['option-l
   assert.match(out, /text: modelData/);
 });
 
-test("widgets: <select> popup is T.Popup with y = combo.height + 2, width = combo.width, padding 1", async () => {
+test("widgets: <select> popup is T.Popup with y below (flip expr), width = combo.width, padding 1", async () => {
   const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
   assert.match(out, /popup: T\.Popup \{/);
-  assert.match(out, /y: __input0\.height \+ 2/);
+  assert.match(out, /: __input0\.height \+ 2/); // flip expression ends in the below-position
   assert.match(out, /width: __input0\.width/);
   assert.match(out, /padding: 1/);
 });
@@ -704,7 +704,7 @@ test("widgets: <select> disabled prop sets enabled: false on T.ComboBox", async 
 
 test("widgets: <select> Templates import is prepended", async () => {
   const out = await qmlType(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
+  assert.match(out, /import QtQuick\.Templates 6\.8 as T/);
 });
 
 test("widgets: dynamic <option> content throws a clear transpiler error", async () => {
@@ -1168,7 +1168,7 @@ test("widgets: <input type='date'> cssState: focus when popup open, disabled whe
 test("widgets: <input type='date'> popup is T.Popup below the field with padding 1 and .popup background", async () => {
   const out = await qml(`export function F(){ return <input type="date" />; }`);
   assert.match(out, /T\.Popup \{/);
-  assert.match(out, /y: __input0W\.height \+ 2/);
+  assert.match(out, /: __input0W\.height \+ 2/); // flip expression ends in the below-position
   assert.match(out, /padding: 1/);
   assert.match(out, /cssClass: \["popup"\]/);
 });
@@ -1205,7 +1205,7 @@ test("widgets: <input type='date'> disabled sets enabled: false on T.TextField",
 
 test("widgets: <input type='date'> Templates import uses version 6.3", async () => {
   const out = await qmlType(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /import QtQuick\.Templates 6\.3 as T/);
+  assert.match(out, /import QtQuick\.Templates 6\.8 as T/);
 });
 
 test("widgets: <input type='date'> min throws a clear not-supported error", async () => {
@@ -1431,4 +1431,25 @@ test("date: chevron is a plain Text anchored right (a Css child of the wrapper g
 test("calendar: the day label carries the day states (sibling slots — no ancestor relation)", async () => {
   const out = await qml(`export function F(){ return <Calendar />; }`);
   assert.match(out, /cssClass: \["day-label"\]\n\s*cssState: \(model\.today \? \["today"\] : \[\]\)/);
+});
+
+// --- Desktop popups: combo/date dropdowns are REAL windows (popupType: Popup.Window,
+// Templates 6.8+) so they escape the app window, and they flip ABOVE the control when
+// opening below would overflow the screen. ---
+
+test("popups: select popup is a native window and flips above on screen overflow", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /popup: T\.Popup \{[\s\S]*?popupType: T\.Popup\.Window/);
+  assert.match(out, /y: \(__input0\.mapToGlobal\(0, __input0\.height \+ 2\)\.y \+ height > Screen\.height\) \? -\(height \+ 2\) : __input0\.height \+ 2/);
+});
+
+test("popups: date popup is a native window and flips above on screen overflow", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /T\.Popup \{[\s\S]*?popupType: T\.Popup\.Window/);
+  assert.match(out, /y: \(__input0W\.mapToGlobal\(0, __input0W\.height \+ 2\)\.y \+ height > Screen\.height\) \? -\(height \+ 2\) : __input0W\.height \+ 2/);
+});
+
+test("popups: widgets bump the Templates import to 6.8 (popupType)", async () => {
+  const out = await qmlType(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /import QtQuick\.Templates 6\.8 as T/);
 });

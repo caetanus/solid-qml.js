@@ -50,7 +50,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   // Mutable flag set by widget emitters during the render pass.
   // `flag`: any Templates widget emitted → prepend the import.
   // `calendar`: MonthGrid / DayOfWeekRow used → upgrade to 6.3 (AbstractMonthGrid added in 6.3).
-  const usedWidgets = { flag: false, calendar: false };
+  const usedWidgets = { flag: false, calendar: false, popupWindow: false };
   // Radio button group names collected by emitRadioButton; each unique name becomes one
   // T.ButtonGroup { id: __group_<name> } child of the root item (emitted into lifecycle below).
   const buttonGroups = new Set<string>();
@@ -96,10 +96,11 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   const lines = emitQml(renderRoot, scope, 0);
 
   // If any widget was emitted, prepend the Templates import so T.* types resolve.
-  // Calendar / date-input use AbstractMonthGrid / AbstractDayOfWeekRow which were added in
-  // QtQuick.Templates 6.3; 6.3 is a strict superset of 6.0, so upgrading is safe.
+  // Pin the MINIMUM revision the component actually needs (owner directive): 6.0 base,
+  // 6.3 for the calendar Abstract* templates, 6.8 only when a native-window dropdown
+  // (Popup.popupType) is present — so simple forms keep the widest Qt compatibility.
   if (usedWidgets.flag) {
-    const ver = usedWidgets.calendar ? "6.3" : "6.0";
+    const ver = usedWidgets.popupWindow ? "6.8" : usedWidgets.calendar ? "6.3" : "6.0";
     lines.unshift("", `import QtQuick.Templates ${ver} as T`);
   }
 

@@ -3,7 +3,7 @@ import QtQuick
 import qmlcss 1.0 as Css
 
 
-import QtQuick.Templates 6.3 as T
+import QtQuick.Templates 6.8 as T
 Css.CssRect {
     id: __self
     property var inputName: ""
@@ -767,7 +767,8 @@ Css.CssRect {
                             }
                         }
                         popup: T.Popup {
-                            y: __input13.height + 2
+                            popupType: T.Popup.Window
+                            y: (__input13.mapToGlobal(0, __input13.height + 2).y + height > Screen.height) ? -(height + 2) : __input13.height + 2
                             width: __input13.width
                             implicitHeight: contentHeight + topPadding + bottomPadding
                             padding: 1
@@ -999,7 +1000,8 @@ Css.CssRect {
                     }
                     T.Popup {
                         id: __input16P
-                        y: __input16W.height + 2
+                        popupType: T.Popup.Window
+                        y: (__input16W.mapToGlobal(0, __input16W.height + 2).y + height > Screen.height) ? -(height + 2) : __input16W.height + 2
                         implicitWidth: contentWidth + leftPadding + rightPadding
                         implicitHeight: contentHeight + topPadding + bottomPadding
                         padding: 1
