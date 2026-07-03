@@ -1260,9 +1260,12 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
     `${i(3)}}`,
     `${i(2)}}`,
     // Popup: T.Popup below the control; padding ≥ border-width prevents clip (G3).
+    // Templates popups have NO implicit-size policy of their own (that's the style's job,
+    // and we ARE the style) — without this line the popup opens 0px tall.
     `${i(2)}popup: T.Popup {`,
     `${i(3)}y: ${ctlId}.height + 2`,
     `${i(3)}width: ${ctlId}.width`,
+    `${i(3)}implicitHeight: contentHeight + topPadding + bottomPadding`,
     `${i(3)}padding: 1`,
     `${i(3)}background: Css.CssFill {`,
     `${i(4)}cssPrimitive: "div"`,
@@ -1658,6 +1661,10 @@ function emitDateInput(
     `${i(1)}T.Popup {`,
     `${i(2)}id: ${popId}`,
     `${i(2)}y: ${wrapId}.height + 2`,
+    // Templates popups have no implicit-size policy (style's job — ours): without these
+    // two lines the calendar dropdown opens 0x0.
+    `${i(2)}implicitWidth: contentWidth + leftPadding + rightPadding`,
+    `${i(2)}implicitHeight: contentHeight + topPadding + bottomPadding`,
     `${i(2)}padding: 1`,
     `${i(2)}background: Css.CssFill {`,
     `${i(3)}cssPrimitive: "div"`,

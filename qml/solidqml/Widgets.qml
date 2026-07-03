@@ -647,6 +647,7 @@ Css.CssRect {
                         popup: T.Popup {
                             y: __input12.height + 2
                             width: __input12.width
+                            implicitHeight: contentHeight + topPadding + bottomPadding
                             padding: 1
                             background: Css.CssFill {
                                 cssPrimitive: "div"
@@ -859,6 +860,8 @@ Css.CssRect {
                     T.Popup {
                         id: __input15P
                         y: __input15W.height + 2
+                        implicitWidth: contentWidth + leftPadding + rightPadding
+                        implicitHeight: contentHeight + topPadding + bottomPadding
                         padding: 1
                         background: Css.CssFill {
                             cssPrimitive: "div"
