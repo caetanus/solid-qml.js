@@ -1156,7 +1156,7 @@ test("widgets: <input type='date'> emits chevron glyph anchored to the right", a
 
 test("widgets: <input type='date'> MouseArea toggles popup open/close (with reopen guard)", async () => {
   const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /onClicked: \{ if \(__input0P\.visible\) __input0P\.close\(\); else if \(Date\.now\(\) - __input0P\.__closedAt > 150\) __input0P\.open\(\) \}/);
+  assert.match(out, /onClicked: \{ __input0\.forceActiveFocus\(\); if \(__input0P\.visible\) __input0P\.close\(\); else if \(Date\.now\(\) - __input0P\.__closedAt > 150\) __input0P\.open\(\) \}/);
 });
 
 test("widgets: <input type='date'> cssState: focus when popup open, disabled when field disabled", async () => {
@@ -1462,6 +1462,40 @@ test("select: delegate binds highlighted to the combo's highlightedIndex (keyboa
 test("date: field click after a press-outside close does not reopen (toggle race)", async () => {
   const out = await qml(`export function F(){ return <input type="date" />; }`);
   assert.match(out, /property double __closedAt: 0/);
-  assert.match(out, /onClosed: __closedAt = Date\.now\(\)/);
-  assert.match(out, /onClicked: \{ if \(__input0P\.visible\) __input0P\.close\(\); else if \(Date\.now\(\) - __input0P\.__closedAt > 150\) __input0P\.open\(\) \}/);
+  assert.match(out, /onClosed: \{ __closedAt = Date\.now\(\)/);
+  assert.match(out, /onClicked: \{ __input0\.forceActiveFocus\(\); if \(__input0P\.visible\) __input0P\.close\(\); else if \(Date\.now\(\) - __input0P\.__closedAt > 150\) __input0P\.open\(\) \}/);
+});
+
+// --- Date popup keyboard: arrows move a day cursor (±1 / ±7), Enter/Space commit it
+// through the same onChange path a cell click uses; Down opens the closed popup. The
+// popup keeps focus on the field, so the Keys live there. ---
+
+test("date keyboard: field arrows step the cursor and Enter commits", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /function __calStep0\(days\)/);
+  assert.match(out, /Keys\.onDownPressed: __input0P\.visible \? __input0W\.__calStep0\(7\) : __input0P\.open\(\)/);
+  assert.match(out, /Keys\.onLeftPressed: \{ if \(__input0P\.visible\) __input0W\.__calStep0\(-1\) \}/);
+  assert.match(out, /Keys\.onReturnPressed: __input0P\.visible \? __input0W\.__calCommit0\(\) : __input0P\.open\(\)/);
+});
+
+test("date keyboard: popup inits the cursor on open, clears on close, cell shows :focus", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /onOpened: __input0W\.__calCursor0 = __input0W\.__calVal0 instanceof Date \? __input0W\.__calVal0 : new Date\(\)/);
+  assert.match(out, /onClosed: \{ __closedAt = Date\.now\(\); __input0W\.__calCursor0 = null \}/);
+  assert.match(out, /\.concat\(\(__input0W\.__calCursor0 instanceof Date[\s\S]*?\) \? \["focus"\] : \[\]\)/);
+});
+
+test("date keyboard: Enter commit runs the author's onChange with the cursor date", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [d, setD] = createSignal(null);
+      return <input type="date" value={d()} onChange={(e) => setD(e.target.valueAsDate)} />;
+    }
+  `);
+  assert.match(out, /function __calCommit0\(\) \{ if \(!\(__calCursor0 instanceof Date\)\) return; d = __calCursor0; __input0P\.close\(\) \}/);
+});
+
+test("date keyboard: field click gives the field focus (keyboard works after mouse open)", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /onClicked: \{ __input0\.forceActiveFocus\(\);/);
 });

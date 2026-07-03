@@ -141,3 +141,8 @@ select .value {
   height: 32px;
   padding-left: 10px;
 }
+
+/* Keyboard cursor on a calendar day (arrow navigation with the popup open). */
+.day:focus {
+  border: 1px solid #2f6fab;
+}

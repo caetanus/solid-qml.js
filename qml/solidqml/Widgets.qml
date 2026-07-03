@@ -968,6 +968,9 @@ Css.CssRect {
                     property var __calVal16: inputDate
                     property int __calMonth16: __calVal16 instanceof Date ? __calVal16.getMonth() : new Date().getMonth()
                     property int __calYear16: __calVal16 instanceof Date ? __calVal16.getFullYear() : new Date().getFullYear()
+                    property var __calCursor16: null
+                    function __calStep16(days) { var b = __calCursor16 instanceof Date ? __calCursor16 : (__calVal16 instanceof Date ? __calVal16 : new Date()); var d = new Date(b.getFullYear(), b.getMonth(), b.getDate() + days); __calCursor16 = d; __calMonth16 = d.getMonth(); __calYear16 = d.getFullYear() }
+                    function __calCommit16() { if (!(__calCursor16 instanceof Date)) return; inputDate = __calCursor16; __input16P.close() }
                     Item {
                         anchors.fill: parent
                         T.TextField {
@@ -976,8 +979,12 @@ Css.CssRect {
                             background: null
                             readOnly: true
                             activeFocusOnTab: solidTabstop.enabled
-                            Keys.onReturnPressed: __input16P.visible ? __input16P.close() : __input16P.open()
-                            Keys.onSpacePressed: __input16P.visible ? __input16P.close() : __input16P.open()
+                            Keys.onReturnPressed: __input16P.visible ? __input16W.__calCommit16() : __input16P.open()
+                            Keys.onSpacePressed: __input16P.visible ? __input16W.__calCommit16() : __input16P.open()
+                            Keys.onDownPressed: __input16P.visible ? __input16W.__calStep16(7) : __input16P.open()
+                            Keys.onUpPressed: { if (__input16P.visible) __input16W.__calStep16(-7) }
+                            Keys.onLeftPressed: { if (__input16P.visible) __input16W.__calStep16(-1) }
+                            Keys.onRightPressed: { if (__input16P.visible) __input16W.__calStep16(1) }
                             color: cssTheme.parseColor(__input16W.inheritedColor || "#2b2b2b")
                             font.family: cssTheme.resolveFontFamily(__input16W.inheritedFontFamily || "Sans Serif")
                             font.pixelSize: cssTheme.parseFontSize(__input16W.inheritedFontSize || "13px", 13)
@@ -1001,13 +1008,14 @@ Css.CssRect {
                         }
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: { if (__input16P.visible) __input16P.close(); else if (Date.now() - __input16P.__closedAt > 150) __input16P.open() }
+                            onClicked: { __input16.forceActiveFocus(); if (__input16P.visible) __input16P.close(); else if (Date.now() - __input16P.__closedAt > 150) __input16P.open() }
                         }
                     }
                     T.Popup {
                         id: __input16P
                         property double __closedAt: 0
-                        onClosed: __closedAt = Date.now()
+                        onOpened: __input16W.__calCursor16 = __input16W.__calVal16 instanceof Date ? __input16W.__calVal16 : new Date()
+                        onClosed: { __closedAt = Date.now(); __input16W.__calCursor16 = null }
                         popupType: T.Popup.Window
                         y: (__input16W.mapToGlobal(0, __input16W.height + 2).y + height > Screen.height) ? -(height + 2) : __input16W.height + 2
                         implicitWidth: contentWidth + leftPadding + rightPadding
@@ -1116,12 +1124,12 @@ Css.CssRect {
                                     background: Css.CssFill {
                                         cssPrimitive: "div"
                                         cssClass: ["day"]
-                                        cssState: (model.today ? ["today"] : []).concat((__input16W.__calVal16 instanceof Date && model.year === __input16W.__calVal16.getFullYear() && model.month === __input16W.__calVal16.getMonth() && model.day === __input16W.__calVal16.getDate()) ? ["selected"] : []).concat(model.month !== __mg16.month ? ["outside"] : []).concat(__mgDel16.hovered ? ["hover"] : [])
+                                        cssState: (model.today ? ["today"] : []).concat((__input16W.__calVal16 instanceof Date && model.year === __input16W.__calVal16.getFullYear() && model.month === __input16W.__calVal16.getMonth() && model.day === __input16W.__calVal16.getDate()) ? ["selected"] : []).concat(model.month !== __mg16.month ? ["outside"] : []).concat(__mgDel16.hovered ? ["hover"] : []).concat((__input16W.__calCursor16 instanceof Date && model.year === __input16W.__calCursor16.getFullYear() && model.month === __input16W.__calCursor16.getMonth() && model.day === __input16W.__calCursor16.getDate()) ? ["focus"] : [])
                                     }
                                     contentItem: Css.CssText {
                                         cssPrimitive: ""
                                         cssClass: ["day-label"]
-                                        cssState: (model.today ? ["today"] : []).concat((__input16W.__calVal16 instanceof Date && model.year === __input16W.__calVal16.getFullYear() && model.month === __input16W.__calVal16.getMonth() && model.day === __input16W.__calVal16.getDate()) ? ["selected"] : []).concat(model.month !== __mg16.month ? ["outside"] : []).concat(__mgDel16.hovered ? ["hover"] : [])
+                                        cssState: (model.today ? ["today"] : []).concat((__input16W.__calVal16 instanceof Date && model.year === __input16W.__calVal16.getFullYear() && model.month === __input16W.__calVal16.getMonth() && model.day === __input16W.__calVal16.getDate()) ? ["selected"] : []).concat(model.month !== __mg16.month ? ["outside"] : []).concat(__mgDel16.hovered ? ["hover"] : []).concat((__input16W.__calCursor16 instanceof Date && model.year === __input16W.__calCursor16.getFullYear() && model.month === __input16W.__calCursor16.getMonth() && model.day === __input16W.__calCursor16.getDate()) ? ["focus"] : [])
                                         text: model.day
                                     }
                                     onClicked: { inputDate = new Date(model.year, model.month, model.day); __input16P.close() }

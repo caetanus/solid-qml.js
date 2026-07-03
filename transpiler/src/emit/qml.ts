@@ -1419,7 +1419,7 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
  *  Maps the synthetic DOM event `e.target.value` / `e.target.valueAsDate` to the QML expression
  *  `new Date(model.year, model.month, model.day)` — the JS Date for the cell that was clicked.
  *  `valueAsDate` is checked first (longer match) so the regex alternation is unambiguous. */
-function translateDateClickHandler(fn: t.ArrowFunctionExpression | t.FunctionExpression, scope: Scope): string {
+function translateDateClickHandler(fn: t.ArrowFunctionExpression | t.FunctionExpression, scope: Scope, dateExprOverride?: string): string {
   const paramName = fn.params[0] && t.isIdentifier(fn.params[0]) ? fn.params[0].name : null;
   const inner: Scope = { ...scope, mode: "handler", locals: { ...(scope.locals ?? {}), ...(paramName ? { [paramName]: "__ev" } : {}) } };
   let body: string;
@@ -1432,7 +1432,7 @@ function translateDateClickHandler(fn: t.ArrowFunctionExpression | t.FunctionExp
   } else {
     body = emitExpr(fn.body, inner);
   }
-  const dateExpr = "new Date(model.year, model.month, model.day)";
+  const dateExpr = dateExprOverride ?? "new Date(model.year, model.month, model.day)";
   return body
     .replace(/__ev\.(?:currentTarget|target)\.valueAsDate/g, dateExpr)
     .replace(/__ev\.(?:currentTarget|target)\.value/g, dateExpr);
@@ -1456,6 +1456,7 @@ function emitMonthGridLines(
   clickExtra: string,
   scope: Scope,
   level: number,
+  cursorExpr?: string, // keyboard-cursor Date expr; adds a "focus" state to the matching cell
 ): string[] {
   const i = (d: number) => INDENT.repeat(level + d);
   const mgId = `__mg${n}`;
@@ -1470,11 +1471,18 @@ function emitMonthGridLines(
     ` && model.year === ${ownerId}.__calVal${n}.getFullYear()` +
     ` && model.month === ${ownerId}.__calVal${n}.getMonth()` +
     ` && model.day === ${ownerId}.__calVal${n}.getDate()`;
+  const cursorCheck = cursorExpr
+    ? `${cursorExpr} instanceof Date` +
+      ` && model.year === ${cursorExpr}.getFullYear()` +
+      ` && model.month === ${cursorExpr}.getMonth()` +
+      ` && model.day === ${cursorExpr}.getDate()`
+    : null;
   const dayCssState =
     `(model.today ? ["today"] : [])` +
     `.concat((${selCheck}) ? ["selected"] : [])` +
     `.concat(model.month !== ${mgId}.month ? ["outside"] : [])` +
-    `.concat(${delId}.hovered ? ["hover"] : [])`;
+    `.concat(${delId}.hovered ? ["hover"] : [])` +
+    (cursorCheck ? `.concat((${cursorCheck}) ? ["focus"] : [])` : ``);
 
   return [
     // ── prev nav button ────────────────────────────────────────────────────
@@ -1740,6 +1748,14 @@ function emitDateInput(
   // cssState: :focus when popup is open (visible = keyboard focus equivalent); :disabled from field.
   const cssState = `(${popId}.visible ? ["focus"] : []).concat(!${fldId}.enabled ? ["disabled"] : [])`;
 
+  // Enter with the popup open commits the keyboard cursor through the SAME author onChange
+  // path a cell click takes, then closes.
+  const rawCommit = onChangeFn ? translateDateClickHandler(onChangeFn, scope, `__calCursor${n}`) : "";
+  const commitBody = rawCommit && !rawCommit.trimEnd().endsWith(";") ? `${rawCommit}; ` : rawCommit ? `${rawCommit} ` : "";
+  const commitFnLines = [
+    `${i(1)}function __calCommit${n}() { if (!(__calCursor${n} instanceof Date)) return; ${commitBody}${popId}.close() }`,
+  ];
+
   const lines: string[] = [
     `${pad}Css.CssFill {`,
     ...classLine,
@@ -1753,6 +1769,11 @@ function emitDateInput(
     `${i(1)}property var __calVal${n}: ${calValExpr}`,
     `${i(1)}property int __calMonth${n}: __calVal${n} instanceof Date ? __calVal${n}.getMonth() : new Date().getMonth()`,
     `${i(1)}property int __calYear${n}: __calVal${n} instanceof Date ? __calVal${n}.getFullYear() : new Date().getFullYear()`,
+    // Keyboard cursor: arrows move it by ±1 (left/right) and ±7 (up/down) days, following the
+    // shown month; Enter commits it through the same onChange path a cell click uses.
+    `${i(1)}property var __calCursor${n}: null`,
+    `${i(1)}function __calStep${n}(days) { var b = __calCursor${n} instanceof Date ? __calCursor${n} : (__calVal${n} instanceof Date ? __calVal${n} : new Date()); var d = new Date(b.getFullYear(), b.getMonth(), b.getDate() + days); __calCursor${n} = d; __calMonth${n} = d.getMonth(); __calYear${n} = d.getFullYear() }`,
+    ...(commitFnLines),
     // Anchored plain-Item host: the wrapper is a Css container, and once the author's CSS
     // gives it box rules (e.g. `.wg-date { padding: … }`) the layout engine runs a flex pass
     // over ALL contentHolder children — plain ones included — stretching the chevron Text to
@@ -1768,10 +1789,15 @@ function emitDateInput(
     `${i(3)}background: null`,
     `${i(3)}readOnly: true`,
     `${i(3)}activeFocusOnTab: solidTabstop.enabled`,
-    // Keyboard affordance for the tab stop: Enter/Space toggles the calendar popup
-    // (the field is readOnly, so neither key edits text).
-    `${i(3)}Keys.onReturnPressed: ${popId}.visible ? ${popId}.close() : ${popId}.open()`,
-    `${i(3)}Keys.onSpacePressed: ${popId}.visible ? ${popId}.close() : ${popId}.open()`,
+    // Keyboard: Enter/Space/Down open the popup; with it open, arrows move the day cursor
+    // (±1 left/right, ±7 up/down — HTML date-picker semantics) and Enter/Space commit it.
+    // The popup keeps focus on this field (focus: false default), so keys land here.
+    `${i(3)}Keys.onReturnPressed: ${popId}.visible ? ${wrapId}.__calCommit${n}() : ${popId}.open()`,
+    `${i(3)}Keys.onSpacePressed: ${popId}.visible ? ${wrapId}.__calCommit${n}() : ${popId}.open()`,
+    `${i(3)}Keys.onDownPressed: ${popId}.visible ? ${wrapId}.__calStep${n}(7) : ${popId}.open()`,
+    `${i(3)}Keys.onUpPressed: { if (${popId}.visible) ${wrapId}.__calStep${n}(-7) }`,
+    `${i(3)}Keys.onLeftPressed: { if (${popId}.visible) ${wrapId}.__calStep${n}(-1) }`,
+    `${i(3)}Keys.onRightPressed: { if (${popId}.visible) ${wrapId}.__calStep${n}(1) }`,
     ...widgetColorFont(i, 1, wrapId),
     `${i(3)}leftPadding: 12`,
     `${i(3)}rightPadding: 36`,
@@ -1814,7 +1840,7 @@ function emitDateInput(
   lines.push(
     `${i(2)}MouseArea {`,
     `${i(3)}anchors.fill: parent`,
-    `${i(3)}onClicked: { if (${popId}.visible) ${popId}.close(); else if (Date.now() - ${popId}.__closedAt > 150) ${popId}.open() }`,
+    `${i(3)}onClicked: { ${fldId}.forceActiveFocus(); if (${popId}.visible) ${popId}.close(); else if (Date.now() - ${popId}.__closedAt > 150) ${popId}.open() }`,
     `${i(2)}}`,
   );
   lines.push(`${i(1)}}`);
@@ -1826,7 +1852,8 @@ function emitDateInput(
     `${i(1)}T.Popup {`,
     `${i(2)}id: ${popId}`,
     `${i(2)}property double __closedAt: 0`,
-    `${i(2)}onClosed: __closedAt = Date.now()`,
+    `${i(2)}onOpened: ${wrapId}.__calCursor${n} = ${wrapId}.__calVal${n} instanceof Date ? ${wrapId}.__calVal${n} : new Date()`,
+    `${i(2)}onClosed: { __closedAt = Date.now(); ${wrapId}.__calCursor${n} = null }`,
     // Desktop dropdown: native window + flip above on screen overflow (see emitSelect).
     `${i(2)}popupType: T.Popup.Window`,
     `${i(2)}y: (${wrapId}.mapToGlobal(0, ${wrapId}.height + 2).y + height > Screen.height) ? -(height + 2) : ${wrapId}.height + 2`,
@@ -1847,7 +1874,7 @@ function emitDateInput(
     `${i(3)}implicitWidth: 224`,
     `${i(3)}implicitHeight: 280`,
     // Shared month-grid structure: nav + DOW + MonthGrid; clicking a day fires onChange + close.
-    ...emitMonthGridLines(wrapId, n, onChangeFn, `${popId}.close()`, scope, level + 3),
+    ...emitMonthGridLines(wrapId, n, onChangeFn, `${popId}.close()`, scope, level + 3, `${wrapId}.__calCursor${n}`),
     `${i(2)}}`,
     `${i(1)}}`,
     `${pad}}`,
