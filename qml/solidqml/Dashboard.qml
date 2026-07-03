@@ -300,552 +300,562 @@ Css.CssRect {
                 }
             }
         }
-        Repeater {
-            model: (page === "overview") ? 1 : 0
-            Css.CssRect {
-                cssClass: ["dash-page"]
-                cssPrimitive: "div"
+        Css.CssIncubator {
+            active: (page === "overview") ? true : false
+            sourceComponent: Component {
                 Css.CssRect {
-                    cssClass: ["stat-row"]
+                    cssClass: ["dash-page"]
                     cssPrimitive: "div"
-                    Repeater {
-                        model: __const_STATS
-                        Css.CssRect {
-                            cssClass: ["stat"]
-                            cssPrimitive: "div"
-                            Css.CssText {
-                                cssClass: ["stat-label"]
-                                cssPrimitive: "text"
-                                text: "" + (modelData.label)
-                            }
-                            Css.CssText {
-                                cssClass: ["stat-value"]
-                                cssPrimitive: "text"
-                                text: "" + (modelData.value)
-                            }
+                    Css.CssRect {
+                        cssClass: ["stat-row"]
+                        cssPrimitive: "div"
+                        Repeater {
+                            model: __const_STATS
                             Css.CssRect {
-                                cssClass: ["stat-delta"].concat(!modelData.up ? ["down"] : [])
+                                cssClass: ["stat"]
                                 cssPrimitive: "div"
                                 Css.CssText {
-                                    cssClass: ["stat-delta-t"]
+                                    cssClass: ["stat-label"]
                                     cssPrimitive: "text"
-                                    text: "" + (modelData.delta)
+                                    text: "" + (modelData.label)
                                 }
-                            }
-                        }
-                    }
-                }
-                Css.CssRect {
-                    cssClass: ["carousel"]
-                    cssPrimitive: "div"
-                    Repeater {
-                        model: __const_SLIDES
-                        Css.CssRect {
-                            cssClass: ["slide"].concat(slide === index ? ["current"] : [])
-                            cssPrimitive: "div"
-                            Css.CssImage {
-                                cssClass: ["slide-img"]
-                                source: modelData.src || ""
-                            }
-                            Css.CssRect {
-                                cssClass: ["slide-cap"]
-                                cssPrimitive: "div"
                                 Css.CssText {
-                                    cssClass: ["slide-cap-t"]
+                                    cssClass: ["stat-value"]
                                     cssPrimitive: "text"
-                                    text: "" + (modelData.caption)
+                                    text: "" + (modelData.value)
+                                }
+                                Css.CssRect {
+                                    cssClass: ["stat-delta"].concat(!modelData.up ? ["down"] : [])
+                                    cssPrimitive: "div"
+                                    Css.CssText {
+                                        cssClass: ["stat-delta-t"]
+                                        cssPrimitive: "text"
+                                        text: "" + (modelData.delta)
+                                    }
                                 }
                             }
-                        }
-                    }
-                    Css.CssFill {
-                        cssClass: ["c-nav", "c-prev"]
-                        cssState: __hover6.containsMouse ? ["hover"] : []
-                        cssPrimitive: "button"
-                        Css.CssText {
-                            cssPrimitive: "text"
-                            text: "‹"
-                        }
-                        MouseArea {
-                            id: __hover6
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: slide = (slide + 2) % 3
-                        }
-                    }
-                    Css.CssFill {
-                        cssClass: ["c-nav", "c-next"]
-                        cssState: __hover7.containsMouse ? ["hover"] : []
-                        cssPrimitive: "button"
-                        Css.CssText {
-                            cssPrimitive: "text"
-                            text: "›"
-                        }
-                        MouseArea {
-                            id: __hover7
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: slide = (slide + 1) % 3
                         }
                     }
                     Css.CssRect {
-                        cssClass: ["dots"]
+                        cssClass: ["carousel"]
                         cssPrimitive: "div"
                         Repeater {
                             model: __const_SLIDES
                             Css.CssRect {
-                                cssClass: ["dot"].concat(slide === index ? ["on"] : [])
-                                cssState: __hover8.containsMouse ? ["hover"] : []
+                                cssClass: ["slide"].concat(slide === index ? ["current"] : [])
                                 cssPrimitive: "div"
-                                MouseArea {
-                                    id: __hover8
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: slide = index
-                                }
-                            }
-                        }
-                    }
-                }
-                Css.CssRect {
-                    cssClass: ["feed"]
-                    cssPrimitive: "div"
-                    Css.CssText {
-                        cssClass: ["feed-h"]
-                        cssPrimitive: "text"
-                        text: "Recent activity"
-                    }
-                    Repeater {
-                        model: __const_FEED
-                        Css.CssRect {
-                            cssClass: ["feed-row"]
-                            cssPrimitive: "div"
-                            Css.CssRect {
-                                cssClass: ["feed-avatar"]
-                                cssPrimitive: "div"
-                                Css.CssText {
-                                    cssClass: ["feed-avatar-t"]
-                                    cssPrimitive: "text"
-                                    text: "" + (modelData.who)
-                                }
-                            }
-                            Css.CssRect {
-                                cssClass: ["feed-body"]
-                                cssPrimitive: "div"
-                                Css.CssText {
-                                    cssClass: ["feed-name"]
-                                    cssPrimitive: "text"
-                                    text: "" + (modelData.name)
-                                }
-                                Css.CssText {
-                                    cssClass: ["feed-what"]
-                                    cssPrimitive: "text"
-                                    text: "" + (modelData.what)
-                                }
-                            }
-                            Css.CssRect {
-                                cssClass: ["feed-tag"]
-                                cssPrimitive: "div"
-                                Css.CssText {
-                                    cssClass: ["feed-tag-t"]
-                                    cssPrimitive: "text"
-                                    text: "" + (modelData.tag)
-                                }
-                            }
-                            Css.CssRect {
-                                cssClass: ["feed-alert"]
-                                visible: !!(!modelData.ok)
-                                cssPrimitive: "div"
-                                Css.CssText {
-                                    cssClass: ["feed-alert-t"]
-                                    cssPrimitive: "text"
-                                    text: "!"
-                                }
-                            }
-                            Css.CssText {
-                                cssClass: ["feed-when"]
-                                cssPrimitive: "text"
-                                text: "" + (modelData.when)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Repeater {
-            model: ((page === "analytics") && !((page === "overview"))) ? 1 : 0
-            Css.CssRect {
-                cssClass: ["dash-page"]
-                cssPrimitive: "div"
-                Css.CssRect {
-                    cssClass: ["panel"]
-                    cssPrimitive: "div"
-                    Css.CssText {
-                        cssClass: ["panel-h"]
-                        cssPrimitive: "text"
-                        text: "Weekly renders"
-                    }
-                    Css.CssRect {
-                        cssClass: ["chart"]
-                        cssPrimitive: "div"
-                        Css.CssRect {
-                            cssClass: ["bar", "b0"]
-                            cssPrimitive: "div"
-                        }
-                        Css.CssRect {
-                            cssClass: ["bar", "b1"]
-                            cssPrimitive: "div"
-                        }
-                        Css.CssRect {
-                            cssClass: ["bar", "b2"]
-                            cssPrimitive: "div"
-                        }
-                        Css.CssRect {
-                            cssClass: ["bar", "b3"]
-                            cssPrimitive: "div"
-                        }
-                        Css.CssRect {
-                            cssClass: ["bar", "b4"]
-                            cssPrimitive: "div"
-                        }
-                        Css.CssRect {
-                            cssClass: ["bar", "b5"]
-                            cssPrimitive: "div"
-                        }
-                        Css.CssRect {
-                            cssClass: ["bar", "b6"]
-                            cssPrimitive: "div"
-                        }
-                    }
-                    Css.CssRect {
-                        cssClass: ["chart-x"]
-                        cssPrimitive: "div"
-                        Css.CssText {
-                            cssClass: ["axis"]
-                            cssPrimitive: "text"
-                            text: "mon"
-                        }
-                        Css.CssText {
-                            cssClass: ["axis"]
-                            cssPrimitive: "text"
-                            text: "tue"
-                        }
-                        Css.CssText {
-                            cssClass: ["axis"]
-                            cssPrimitive: "text"
-                            text: "wed"
-                        }
-                        Css.CssText {
-                            cssClass: ["axis"]
-                            cssPrimitive: "text"
-                            text: "thu"
-                        }
-                        Css.CssText {
-                            cssClass: ["axis"]
-                            cssPrimitive: "text"
-                            text: "fri"
-                        }
-                        Css.CssText {
-                            cssClass: ["axis"]
-                            cssPrimitive: "text"
-                            text: "sat"
-                        }
-                        Css.CssText {
-                            cssClass: ["axis"]
-                            cssPrimitive: "text"
-                            text: "sun"
-                        }
-                    }
-                }
-                Css.CssRect {
-                    cssClass: ["panel"]
-                    cssPrimitive: "div"
-                    Css.CssText {
-                        cssClass: ["panel-h"]
-                        cssPrimitive: "text"
-                        text: "Pipeline health"
-                    }
-                    Repeater {
-                        model: __const_PROJECTS
-                        Css.CssRect {
-                            cssClass: ["prog-row"]
-                            cssPrimitive: "div"
-                            Css.CssText {
-                                cssClass: ["prog-name"]
-                                cssPrimitive: "text"
-                                text: "" + (modelData.name)
-                            }
-                            Css.CssRect {
-                                cssClass: ["prog-track"]
-                                cssPrimitive: "div"
-                                Css.CssRect {
-                                    cssClass: ["prog-fill"].concat(modelData.pct === "p80" ? ["p80"] : []).concat(modelData.pct === "p65" ? ["p65"] : []).concat(modelData.pct === "p45" ? ["p45"] : []).concat(modelData.pct === "p10" ? ["p10"] : [])
-                                    cssPrimitive: "div"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Repeater {
-            model: ((page === "projects") && !((page === "overview") || (page === "analytics"))) ? 1 : 0
-            Css.CssRect {
-                cssClass: ["dash-page"]
-                cssPrimitive: "div"
-                Css.CssText {
-                    cssClass: ["proj-hint"]
-                    cssPrimitive: "text"
-                    text: "Drag a card onto another to reorder"
-                }
-                Css.CssRect {
-                    cssClass: ["proj-grid"]
-                    cssPrimitive: "div"
-                    Repeater {
-                        model: order
-                        Css.CssRect {
-                            cssClass: ["proj-card"]
-                            property var __dragData: modelData
-                            Drag.active: __drag9.drag.active
-                            Drag.hotSpot.x: width / 2
-                            Drag.hotSpot.y: height / 2
-                            cssPrimitive: "div"
-                            Css.CssRect {
-                                cssClass: ["proj-head"]
-                                cssPrimitive: "div"
-                                Css.CssText {
-                                    cssClass: ["proj-name"]
-                                    cssPrimitive: "text"
-                                    text: "" + (proj(modelData).name)
+                                Css.CssImage {
+                                    cssClass: ["slide-img"]
+                                    source: modelData.src || ""
                                 }
                                 Css.CssRect {
-                                    cssClass: ["proj-pill"].concat(proj(modelData).status === "beta" ? ["beta"] : []).concat(proj(modelData).status === "design" ? ["design"] : [])
+                                    cssClass: ["slide-cap"]
                                     cssPrimitive: "div"
                                     Css.CssText {
-                                        cssClass: ["proj-pill-t"]
+                                        cssClass: ["slide-cap-t"]
                                         cssPrimitive: "text"
-                                        text: "" + (proj(modelData).status)
+                                        text: "" + (modelData.caption)
                                     }
                                 }
                             }
-                            Css.CssText {
-                                cssClass: ["proj-desc"]
-                                cssPrimitive: "text"
-                                text: "" + (proj(modelData).desc)
-                            }
-                            Css.CssRect {
-                                cssClass: ["prog-track"]
-                                cssPrimitive: "div"
-                                Css.CssRect {
-                                    cssClass: ["prog-fill"].concat(proj(modelData).pct === "p80" ? ["p80"] : []).concat(proj(modelData).pct === "p65" ? ["p65"] : []).concat(proj(modelData).pct === "p45" ? ["p45"] : []).concat(proj(modelData).pct === "p10" ? ["p10"] : [])
-                                    cssPrimitive: "div"
-                                }
-                            }
-                            MouseArea {
-                                id: __drag9
-                                anchors.fill: parent
-                                drag.target: parent
-                                cursorShape: Qt.OpenHandCursor
-                                onReleased: { parent.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(parent) }
-                            }
-                            DropArea {
-                                anchors.fill: parent
-                                onDropped: (drop) => { order = reorder(order, drop.source.__dragData, modelData) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Repeater {
-            model: ((page === "activity") && !((page === "overview") || (page === "analytics") || (page === "projects"))) ? 1 : 0
-            Css.CssRect {
-                cssClass: ["dash-page"]
-                cssPrimitive: "div"
-                Css.CssRect {
-                    cssClass: ["feed", "tall"]
-                    cssPrimitive: "div"
-                    Css.CssText {
-                        cssClass: ["feed-h"]
-                        cssPrimitive: "text"
-                        text: "Full activity log — scrolls natively"
-                    }
-                    Repeater {
-                        model: __const_LOG
-                        Css.CssRect {
-                            cssClass: ["feed-row"]
-                            cssPrimitive: "div"
-                            Css.CssRect {
-                                cssClass: ["feed-avatar"]
-                                cssPrimitive: "div"
-                                Css.CssText {
-                                    cssClass: ["feed-avatar-t"]
-                                    cssPrimitive: "text"
-                                    text: "" + (modelData.who)
-                                }
-                            }
-                            Css.CssRect {
-                                cssClass: ["feed-body"]
-                                cssPrimitive: "div"
-                                Css.CssText {
-                                    cssClass: ["feed-what"]
-                                    cssPrimitive: "text"
-                                    text: "" + (modelData.what)
-                                }
-                            }
-                            Css.CssRect {
-                                cssClass: ["feed-tag"]
-                                cssPrimitive: "div"
-                                Css.CssText {
-                                    cssClass: ["feed-tag-t"]
-                                    cssPrimitive: "text"
-                                    text: "" + (modelData.tag)
-                                }
-                            }
-                            Css.CssRect {
-                                cssClass: ["feed-alert"]
-                                visible: !!(!modelData.ok)
-                                cssPrimitive: "div"
-                                Css.CssText {
-                                    cssClass: ["feed-alert-t"]
-                                    cssPrimitive: "text"
-                                    text: "!"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Repeater {
-            model: ((page === "settings") && !((page === "overview") || (page === "analytics") || (page === "projects") || (page === "activity"))) ? 1 : 0
-            Css.CssRect {
-                cssClass: ["dash-page"]
-                cssPrimitive: "div"
-                Css.CssRect {
-                    cssClass: ["panel"]
-                    cssPrimitive: "div"
-                    Css.CssText {
-                        cssClass: ["panel-h"]
-                        cssPrimitive: "text"
-                        text: "Workspace"
-                    }
-                    Css.CssRect {
-                        cssClass: ["set-row"]
-                        cssPrimitive: "div"
-                        Css.CssText {
-                            cssClass: ["set-label"]
-                            cssPrimitive: "text"
-                            text: "Display name"
                         }
                         Css.CssFill {
-                            cssClass: ["set-input"]
-                            TextInput {
-                                id: __input0
-                                anchors.fill: parent
-                                anchors.leftMargin: 12
-                                anchors.rightMargin: 12
-                                verticalAlignment: TextInput.AlignVCenter
-                                clip: true
-                                selectByMouse: true
-                                activeFocusOnTab: true
-                                color: parent.style && parent.style["color"] ? cssTheme.parseColor(parent.style["color"]) : "#2b2b2b"
-                                font.family: parent.style && parent.style["font-family"] ? cssTheme.resolveFontFamily(parent.style["font-family"], "Sans Serif") : cssTheme.resolveFontFamily("Sans Serif")
-                                font.pointSize: parent.style && parent.style["font-size"] ? cssTheme.parseFontSize(parent.style["font-size"], 13) : 13
-                                Component.onCompleted: text = ""
-                                Text {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.left: parent.left
-                                    visible: parent.text.length === 0
-                                    text: "ada"
-                                    color: "#9aa0a6"
-                                    font: parent.font
-                                }
-                            }
-                        }
-                    }
-                    Css.CssRect {
-                        cssClass: ["set-row"]
-                        cssPrimitive: "div"
-                        Css.CssText {
-                            cssClass: ["set-label"]
-                            cssPrimitive: "text"
-                            text: "Theme"
-                        }
-                        Css.CssRect {
-                            cssClass: ["set-opts"]
-                            cssPrimitive: "div"
-                            Css.CssFill {
-                                cssClass: ["set-opt", "active"]
-                                cssState: __hover10.containsMouse ? ["hover"] : []
-                                cssPrimitive: "button"
-                                Css.CssText {
-                                    cssPrimitive: "text"
-                                    text: "dark"
-                                }
-                                MouseArea {
-                                    id: __hover10
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                }
-                            }
-                            Css.CssFill {
-                                cssClass: ["set-opt"]
-                                cssState: __hover11.containsMouse ? ["hover"] : []
-                                cssPrimitive: "button"
-                                Css.CssText {
-                                    cssPrimitive: "text"
-                                    text: "light"
-                                }
-                                MouseArea {
-                                    id: __hover11
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                }
-                            }
-                            Css.CssFill {
-                                cssClass: ["set-opt"]
-                                cssState: __hover12.containsMouse ? ["hover"] : []
-                                cssPrimitive: "button"
-                                Css.CssText {
-                                    cssPrimitive: "text"
-                                    text: "system"
-                                }
-                                MouseArea {
-                                    id: __hover12
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                }
-                            }
-                        }
-                    }
-                    Css.CssRect {
-                        cssClass: ["set-row"]
-                        cssPrimitive: "div"
-                        Css.CssText {
-                            cssClass: ["set-label"]
-                            cssPrimitive: "text"
-                            text: "GPU vsync"
-                        }
-                        Css.CssFill {
-                            cssClass: ["set-opt", "active"]
-                            cssState: __hover13.containsMouse ? ["hover"] : []
+                            cssClass: ["c-nav", "c-prev"]
+                            cssState: __hover6.containsMouse ? ["hover"] : []
                             cssPrimitive: "button"
                             Css.CssText {
                                 cssPrimitive: "text"
-                                text: "on"
+                                text: "‹"
                             }
                             MouseArea {
-                                id: __hover13
+                                id: __hover6
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
+                                onClicked: slide = (slide + 2) % 3
+                            }
+                        }
+                        Css.CssFill {
+                            cssClass: ["c-nav", "c-next"]
+                            cssState: __hover7.containsMouse ? ["hover"] : []
+                            cssPrimitive: "button"
+                            Css.CssText {
+                                cssPrimitive: "text"
+                                text: "›"
+                            }
+                            MouseArea {
+                                id: __hover7
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: slide = (slide + 1) % 3
+                            }
+                        }
+                        Css.CssRect {
+                            cssClass: ["dots"]
+                            cssPrimitive: "div"
+                            Repeater {
+                                model: __const_SLIDES
+                                Css.CssRect {
+                                    cssClass: ["dot"].concat(slide === index ? ["on"] : [])
+                                    cssState: __hover8.containsMouse ? ["hover"] : []
+                                    cssPrimitive: "div"
+                                    MouseArea {
+                                        id: __hover8
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: slide = index
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Css.CssRect {
+                        cssClass: ["feed"]
+                        cssPrimitive: "div"
+                        Css.CssText {
+                            cssClass: ["feed-h"]
+                            cssPrimitive: "text"
+                            text: "Recent activity"
+                        }
+                        Repeater {
+                            model: __const_FEED
+                            Css.CssRect {
+                                cssClass: ["feed-row"]
+                                cssPrimitive: "div"
+                                Css.CssRect {
+                                    cssClass: ["feed-avatar"]
+                                    cssPrimitive: "div"
+                                    Css.CssText {
+                                        cssClass: ["feed-avatar-t"]
+                                        cssPrimitive: "text"
+                                        text: "" + (modelData.who)
+                                    }
+                                }
+                                Css.CssRect {
+                                    cssClass: ["feed-body"]
+                                    cssPrimitive: "div"
+                                    Css.CssText {
+                                        cssClass: ["feed-name"]
+                                        cssPrimitive: "text"
+                                        text: "" + (modelData.name)
+                                    }
+                                    Css.CssText {
+                                        cssClass: ["feed-what"]
+                                        cssPrimitive: "text"
+                                        text: "" + (modelData.what)
+                                    }
+                                }
+                                Css.CssRect {
+                                    cssClass: ["feed-tag"]
+                                    cssPrimitive: "div"
+                                    Css.CssText {
+                                        cssClass: ["feed-tag-t"]
+                                        cssPrimitive: "text"
+                                        text: "" + (modelData.tag)
+                                    }
+                                }
+                                Css.CssRect {
+                                    cssClass: ["feed-alert"]
+                                    visible: !!(!modelData.ok)
+                                    cssPrimitive: "div"
+                                    Css.CssText {
+                                        cssClass: ["feed-alert-t"]
+                                        cssPrimitive: "text"
+                                        text: "!"
+                                    }
+                                }
+                                Css.CssText {
+                                    cssClass: ["feed-when"]
+                                    cssPrimitive: "text"
+                                    text: "" + (modelData.when)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Css.CssIncubator {
+            active: ((page === "analytics") && !((page === "overview"))) ? true : false
+            sourceComponent: Component {
+                Css.CssRect {
+                    cssClass: ["dash-page"]
+                    cssPrimitive: "div"
+                    Css.CssRect {
+                        cssClass: ["panel"]
+                        cssPrimitive: "div"
+                        Css.CssText {
+                            cssClass: ["panel-h"]
+                            cssPrimitive: "text"
+                            text: "Weekly renders"
+                        }
+                        Css.CssRect {
+                            cssClass: ["chart"]
+                            cssPrimitive: "div"
+                            Css.CssRect {
+                                cssClass: ["bar", "b0"]
+                                cssPrimitive: "div"
+                            }
+                            Css.CssRect {
+                                cssClass: ["bar", "b1"]
+                                cssPrimitive: "div"
+                            }
+                            Css.CssRect {
+                                cssClass: ["bar", "b2"]
+                                cssPrimitive: "div"
+                            }
+                            Css.CssRect {
+                                cssClass: ["bar", "b3"]
+                                cssPrimitive: "div"
+                            }
+                            Css.CssRect {
+                                cssClass: ["bar", "b4"]
+                                cssPrimitive: "div"
+                            }
+                            Css.CssRect {
+                                cssClass: ["bar", "b5"]
+                                cssPrimitive: "div"
+                            }
+                            Css.CssRect {
+                                cssClass: ["bar", "b6"]
+                                cssPrimitive: "div"
+                            }
+                        }
+                        Css.CssRect {
+                            cssClass: ["chart-x"]
+                            cssPrimitive: "div"
+                            Css.CssText {
+                                cssClass: ["axis"]
+                                cssPrimitive: "text"
+                                text: "mon"
+                            }
+                            Css.CssText {
+                                cssClass: ["axis"]
+                                cssPrimitive: "text"
+                                text: "tue"
+                            }
+                            Css.CssText {
+                                cssClass: ["axis"]
+                                cssPrimitive: "text"
+                                text: "wed"
+                            }
+                            Css.CssText {
+                                cssClass: ["axis"]
+                                cssPrimitive: "text"
+                                text: "thu"
+                            }
+                            Css.CssText {
+                                cssClass: ["axis"]
+                                cssPrimitive: "text"
+                                text: "fri"
+                            }
+                            Css.CssText {
+                                cssClass: ["axis"]
+                                cssPrimitive: "text"
+                                text: "sat"
+                            }
+                            Css.CssText {
+                                cssClass: ["axis"]
+                                cssPrimitive: "text"
+                                text: "sun"
+                            }
+                        }
+                    }
+                    Css.CssRect {
+                        cssClass: ["panel"]
+                        cssPrimitive: "div"
+                        Css.CssText {
+                            cssClass: ["panel-h"]
+                            cssPrimitive: "text"
+                            text: "Pipeline health"
+                        }
+                        Repeater {
+                            model: __const_PROJECTS
+                            Css.CssRect {
+                                cssClass: ["prog-row"]
+                                cssPrimitive: "div"
+                                Css.CssText {
+                                    cssClass: ["prog-name"]
+                                    cssPrimitive: "text"
+                                    text: "" + (modelData.name)
+                                }
+                                Css.CssRect {
+                                    cssClass: ["prog-track"]
+                                    cssPrimitive: "div"
+                                    Css.CssRect {
+                                        cssClass: ["prog-fill"].concat(modelData.pct === "p80" ? ["p80"] : []).concat(modelData.pct === "p65" ? ["p65"] : []).concat(modelData.pct === "p45" ? ["p45"] : []).concat(modelData.pct === "p10" ? ["p10"] : [])
+                                        cssPrimitive: "div"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Css.CssIncubator {
+            active: ((page === "projects") && !((page === "overview") || (page === "analytics"))) ? true : false
+            sourceComponent: Component {
+                Css.CssRect {
+                    cssClass: ["dash-page"]
+                    cssPrimitive: "div"
+                    Css.CssText {
+                        cssClass: ["proj-hint"]
+                        cssPrimitive: "text"
+                        text: "Drag a card onto another to reorder"
+                    }
+                    Css.CssRect {
+                        cssClass: ["proj-grid"]
+                        cssPrimitive: "div"
+                        Repeater {
+                            model: order
+                            Css.CssRect {
+                                cssClass: ["proj-card"]
+                                property var __dragData: modelData
+                                Drag.active: __drag9.drag.active
+                                Drag.hotSpot.x: width / 2
+                                Drag.hotSpot.y: height / 2
+                                cssPrimitive: "div"
+                                Css.CssRect {
+                                    cssClass: ["proj-head"]
+                                    cssPrimitive: "div"
+                                    Css.CssText {
+                                        cssClass: ["proj-name"]
+                                        cssPrimitive: "text"
+                                        text: "" + (proj(modelData).name)
+                                    }
+                                    Css.CssRect {
+                                        cssClass: ["proj-pill"].concat(proj(modelData).status === "beta" ? ["beta"] : []).concat(proj(modelData).status === "design" ? ["design"] : [])
+                                        cssPrimitive: "div"
+                                        Css.CssText {
+                                            cssClass: ["proj-pill-t"]
+                                            cssPrimitive: "text"
+                                            text: "" + (proj(modelData).status)
+                                        }
+                                    }
+                                }
+                                Css.CssText {
+                                    cssClass: ["proj-desc"]
+                                    cssPrimitive: "text"
+                                    text: "" + (proj(modelData).desc)
+                                }
+                                Css.CssRect {
+                                    cssClass: ["prog-track"]
+                                    cssPrimitive: "div"
+                                    Css.CssRect {
+                                        cssClass: ["prog-fill"].concat(proj(modelData).pct === "p80" ? ["p80"] : []).concat(proj(modelData).pct === "p65" ? ["p65"] : []).concat(proj(modelData).pct === "p45" ? ["p45"] : []).concat(proj(modelData).pct === "p10" ? ["p10"] : [])
+                                        cssPrimitive: "div"
+                                    }
+                                }
+                                MouseArea {
+                                    id: __drag9
+                                    anchors.fill: parent
+                                    drag.target: parent
+                                    cursorShape: Qt.OpenHandCursor
+                                    onReleased: { parent.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(parent) }
+                                }
+                                DropArea {
+                                    anchors.fill: parent
+                                    onDropped: (drop) => { order = reorder(order, drop.source.__dragData, modelData) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Css.CssIncubator {
+            active: ((page === "activity") && !((page === "overview") || (page === "analytics") || (page === "projects"))) ? true : false
+            sourceComponent: Component {
+                Css.CssRect {
+                    cssClass: ["dash-page"]
+                    cssPrimitive: "div"
+                    Css.CssRect {
+                        cssClass: ["feed", "tall"]
+                        cssPrimitive: "div"
+                        Css.CssText {
+                            cssClass: ["feed-h"]
+                            cssPrimitive: "text"
+                            text: "Full activity log — scrolls natively"
+                        }
+                        Repeater {
+                            model: __const_LOG
+                            Css.CssRect {
+                                cssClass: ["feed-row"]
+                                cssPrimitive: "div"
+                                Css.CssRect {
+                                    cssClass: ["feed-avatar"]
+                                    cssPrimitive: "div"
+                                    Css.CssText {
+                                        cssClass: ["feed-avatar-t"]
+                                        cssPrimitive: "text"
+                                        text: "" + (modelData.who)
+                                    }
+                                }
+                                Css.CssRect {
+                                    cssClass: ["feed-body"]
+                                    cssPrimitive: "div"
+                                    Css.CssText {
+                                        cssClass: ["feed-what"]
+                                        cssPrimitive: "text"
+                                        text: "" + (modelData.what)
+                                    }
+                                }
+                                Css.CssRect {
+                                    cssClass: ["feed-tag"]
+                                    cssPrimitive: "div"
+                                    Css.CssText {
+                                        cssClass: ["feed-tag-t"]
+                                        cssPrimitive: "text"
+                                        text: "" + (modelData.tag)
+                                    }
+                                }
+                                Css.CssRect {
+                                    cssClass: ["feed-alert"]
+                                    visible: !!(!modelData.ok)
+                                    cssPrimitive: "div"
+                                    Css.CssText {
+                                        cssClass: ["feed-alert-t"]
+                                        cssPrimitive: "text"
+                                        text: "!"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Css.CssIncubator {
+            active: ((page === "settings") && !((page === "overview") || (page === "analytics") || (page === "projects") || (page === "activity"))) ? true : false
+            sourceComponent: Component {
+                Css.CssRect {
+                    cssClass: ["dash-page"]
+                    cssPrimitive: "div"
+                    Css.CssRect {
+                        cssClass: ["panel"]
+                        cssPrimitive: "div"
+                        Css.CssText {
+                            cssClass: ["panel-h"]
+                            cssPrimitive: "text"
+                            text: "Workspace"
+                        }
+                        Css.CssRect {
+                            cssClass: ["set-row"]
+                            cssPrimitive: "div"
+                            Css.CssText {
+                                cssClass: ["set-label"]
+                                cssPrimitive: "text"
+                                text: "Display name"
+                            }
+                            Css.CssFill {
+                                cssClass: ["set-input"]
+                                TextInput {
+                                    id: __input0
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 12
+                                    anchors.rightMargin: 12
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    clip: true
+                                    selectByMouse: true
+                                    activeFocusOnTab: true
+                                    color: parent.style && parent.style["color"] ? cssTheme.parseColor(parent.style["color"]) : "#2b2b2b"
+                                    font.family: parent.style && parent.style["font-family"] ? cssTheme.resolveFontFamily(parent.style["font-family"], "Sans Serif") : cssTheme.resolveFontFamily("Sans Serif")
+                                    font.pointSize: parent.style && parent.style["font-size"] ? cssTheme.parseFontSize(parent.style["font-size"], 13) : 13
+                                    Component.onCompleted: text = ""
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.left: parent.left
+                                        visible: parent.text.length === 0
+                                        text: "ada"
+                                        color: "#9aa0a6"
+                                        font: parent.font
+                                    }
+                                }
+                            }
+                        }
+                        Css.CssRect {
+                            cssClass: ["set-row"]
+                            cssPrimitive: "div"
+                            Css.CssText {
+                                cssClass: ["set-label"]
+                                cssPrimitive: "text"
+                                text: "Theme"
+                            }
+                            Css.CssRect {
+                                cssClass: ["set-opts"]
+                                cssPrimitive: "div"
+                                Css.CssFill {
+                                    cssClass: ["set-opt", "active"]
+                                    cssState: __hover10.containsMouse ? ["hover"] : []
+                                    cssPrimitive: "button"
+                                    Css.CssText {
+                                        cssPrimitive: "text"
+                                        text: "dark"
+                                    }
+                                    MouseArea {
+                                        id: __hover10
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                    }
+                                }
+                                Css.CssFill {
+                                    cssClass: ["set-opt"]
+                                    cssState: __hover11.containsMouse ? ["hover"] : []
+                                    cssPrimitive: "button"
+                                    Css.CssText {
+                                        cssPrimitive: "text"
+                                        text: "light"
+                                    }
+                                    MouseArea {
+                                        id: __hover11
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                    }
+                                }
+                                Css.CssFill {
+                                    cssClass: ["set-opt"]
+                                    cssState: __hover12.containsMouse ? ["hover"] : []
+                                    cssPrimitive: "button"
+                                    Css.CssText {
+                                        cssPrimitive: "text"
+                                        text: "system"
+                                    }
+                                    MouseArea {
+                                        id: __hover12
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                    }
+                                }
+                            }
+                        }
+                        Css.CssRect {
+                            cssClass: ["set-row"]
+                            cssPrimitive: "div"
+                            Css.CssText {
+                                cssClass: ["set-label"]
+                                cssPrimitive: "text"
+                                text: "GPU vsync"
+                            }
+                            Css.CssFill {
+                                cssClass: ["set-opt", "active"]
+                                cssState: __hover13.containsMouse ? ["hover"] : []
+                                cssPrimitive: "button"
+                                Css.CssText {
+                                    cssPrimitive: "text"
+                                    text: "on"
+                                }
+                                MouseArea {
+                                    id: __hover13
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                }
                             }
                         }
                     }

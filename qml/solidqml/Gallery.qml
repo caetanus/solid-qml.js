@@ -256,79 +256,109 @@ Css.CssRect {
             }
         }
     }
-    Repeater {
-        model: (view === "hello") ? 1 : 0
-        Hello {
+    Css.CssIncubator {
+        active: (view === "hello") ? true : false
+        sourceComponent: Component {
+            Hello {
+            }
         }
     }
-    Repeater {
-        model: ((view === "counters") && !((view === "hello"))) ? 1 : 0
-        Counters {
+    Css.CssIncubator {
+        active: ((view === "counters") && !((view === "hello"))) ? true : false
+        sourceComponent: Component {
+            Counters {
+            }
         }
     }
-    Repeater {
-        model: ((view === "counter") && !((view === "hello") || (view === "counters"))) ? 1 : 0
-        TimerCounter {
+    Css.CssIncubator {
+        active: ((view === "counter") && !((view === "hello") || (view === "counters"))) ? true : false
+        sourceComponent: Component {
+            TimerCounter {
+            }
         }
     }
-    Repeater {
-        model: ((view === "children") && !((view === "hello") || (view === "counters") || (view === "counter"))) ? 1 : 0
-        Children {
+    Css.CssIncubator {
+        active: ((view === "children") && !((view === "hello") || (view === "counters") || (view === "counter"))) ? true : false
+        sourceComponent: Component {
+            Children {
+            }
         }
     }
-    Repeater {
-        model: ((view === "derived") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children"))) ? 1 : 0
-        Derived {
+    Css.CssIncubator {
+        active: ((view === "derived") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children"))) ? true : false
+        sourceComponent: Component {
+            Derived {
+            }
         }
     }
-    Repeater {
-        model: ((view === "index") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived"))) ? 1 : 0
-        IndexList {
+    Css.CssIncubator {
+        active: ((view === "index") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived"))) ? true : false
+        sourceComponent: Component {
+            IndexList {
+            }
         }
     }
-    Repeater {
-        model: ((view === "dynamic") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index"))) ? 1 : 0
-        DynamicTag {
+    Css.CssIncubator {
+        active: ((view === "dynamic") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index"))) ? true : false
+        sourceComponent: Component {
+            DynamicTag {
+            }
         }
     }
-    Repeater {
-        model: ((view === "props") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic"))) ? 1 : 0
-        PropHelpers {
+    Css.CssIncubator {
+        active: ((view === "props") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic"))) ? true : false
+        sourceComponent: Component {
+            PropHelpers {
+            }
         }
     }
-    Repeater {
-        model: ((view === "context") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props"))) ? 1 : 0
-        ContextDemo {
+    Css.CssIncubator {
+        active: ((view === "context") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props"))) ? true : false
+        sourceComponent: Component {
+            ContextDemo {
+            }
         }
     }
-    Repeater {
-        model: ((view === "refs") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context"))) ? 1 : 0
-        Refs {
+    Css.CssIncubator {
+        active: ((view === "refs") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context"))) ? true : false
+        sourceComponent: Component {
+            Refs {
+            }
         }
     }
-    Repeater {
-        model: ((view === "fetch") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs"))) ? 1 : 0
-        Fetch {
+    Css.CssIncubator {
+        active: ((view === "fetch") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs"))) ? true : false
+        sourceComponent: Component {
+            Fetch {
+            }
         }
     }
-    Repeater {
-        model: ((view === "todomvc") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch"))) ? 1 : 0
-        TodoMVC {
+    Css.CssIncubator {
+        active: ((view === "todomvc") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch"))) ? true : false
+        sourceComponent: Component {
+            TodoMVC {
+            }
         }
     }
-    Repeater {
-        model: ((view === "nodeimports") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch") || (view === "todomvc"))) ? 1 : 0
-        NodeImports {
+    Css.CssIncubator {
+        active: ((view === "nodeimports") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch") || (view === "todomvc"))) ? true : false
+        sourceComponent: Component {
+            NodeImports {
+            }
         }
     }
-    Repeater {
-        model: ((view === "cssgaps") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch") || (view === "todomvc") || (view === "nodeimports"))) ? 1 : 0
-        CssGaps {
+    Css.CssIncubator {
+        active: ((view === "cssgaps") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch") || (view === "todomvc") || (view === "nodeimports"))) ? true : false
+        sourceComponent: Component {
+            CssGaps {
+            }
         }
     }
-    Repeater {
-        model: ((view === "dashboard") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch") || (view === "todomvc") || (view === "nodeimports") || (view === "cssgaps"))) ? 1 : 0
-        Dashboard {
+    Css.CssIncubator {
+        active: ((view === "dashboard") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch") || (view === "todomvc") || (view === "nodeimports") || (view === "cssgaps"))) ? true : false
+        sourceComponent: Component {
+            Dashboard {
+            }
         }
     }
 }

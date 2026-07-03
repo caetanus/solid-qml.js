@@ -100,21 +100,23 @@ Css.CssRect {
         Css.CssRect {
             cssClass: ["todo-filters"]
             cssPrimitive: "div"
-            Repeater {
-                model: (remaining > 0 && remaining < todos.length) ? 1 : 0
-                Css.CssFill {
-                    cssState: __hover1.containsMouse ? ["hover"] : []
-                    cssPrimitive: "button"
-                    Css.CssText {
-                        cssPrimitive: "text"
-                        text: "all"
-                    }
-                    MouseArea {
-                        id: __hover1
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: selectAll()
+            Css.CssIncubator {
+                active: (remaining > 0 && remaining < todos.length) ? true : false
+                sourceComponent: Component {
+                    Css.CssFill {
+                        cssState: __hover1.containsMouse ? ["hover"] : []
+                        cssPrimitive: "button"
+                        Css.CssText {
+                            cssPrimitive: "text"
+                            text: "all"
+                        }
+                        MouseArea {
+                            id: __hover1
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: selectAll()
+                        }
                     }
                 }
             }

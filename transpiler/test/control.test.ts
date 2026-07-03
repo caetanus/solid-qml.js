@@ -36,12 +36,12 @@ test("For: becomes a Repeater whose delegate binds item to modelData", async () 
   assert.match(out, /Css\.CssText \{[\s\S]*text: "" \+ \(modelData\)/);
 });
 
-test("Switch: each Match branch is LAZY (a Repeater gated by its when minus the priors)", async () => {
+test("Switch: each Match branch is LAZY and ASYNC (a CssIncubator gated by its when minus the priors)", async () => {
   const out = await qml(`import { Switch, Match } from "solid-js"; export function C(){ const [n,setN]=createSignal(0); return <Switch><Match when={n() === 0}><text>zero</text></Match><Match when={n() === 1}><text>one</text></Match></Switch>; }`);
-  // Each branch is a Repeater whose model instantiates the delegate ONLY when its guard holds.
-  assert.match(out, /Repeater \{/);
-  assert.match(out, /model: \(n === 0\) \? 1 : 0[\s\S]*text: "zero"/);
-  assert.match(out, /model: \(\(n === 1\) && !\(\(n === 0\)\)\) \? 1 : 0[\s\S]*text: "one"/);
+  // Each branch INCUBATES its content only while its guard holds (async page mount).
+  assert.match(out, /Css\.CssIncubator \{/);
+  assert.match(out, /active: \(n === 0\) \? true : false[\s\S]*text: "zero"/);
+  assert.match(out, /active: \(\(n === 1\) && !\(\(n === 0\)\)\) \? true : false[\s\S]*text: "one"/);
   // No eager visible-gating of Switch branches anymore.
   assert.doesNotMatch(out, /visible: !!\(n === 0\)/);
 });

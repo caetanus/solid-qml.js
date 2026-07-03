@@ -716,9 +716,13 @@ function emitSwitch(children: t.Node[], scope: Scope, level: number, outerGuard?
     const guard = outerGuard ? `(${outerGuard}) && (${cond})` : cond;
     for (const k of kids) {
       if (!isHCall(k)) continue;
-      out.push(`${pad}Repeater {`, `${pad}${INDENT}model: (${guard}) ? 1 : 0`);
-      out.push(...emitQml(k, scope, level + 1));
-      out.push(`${pad}}`);
+      // Async branch mount: the click flips `active`, the page INCUBATES (time-sliced by the
+      // window's incubation controller) and the ready item is reparented into the content
+      // holder as a direct layout child — Repeater semantics, without blocking the frame.
+      out.push(`${pad}Css.CssIncubator {`, `${pad}${INDENT}active: (${guard}) ? true : false`);
+      out.push(`${pad}${INDENT}sourceComponent: Component {`);
+      out.push(...emitQml(k, scope, level + 2));
+      out.push(`${pad}${INDENT}}`, `${pad}}`);
     }
     priors.push(`(${when})`);
   }
