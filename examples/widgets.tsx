@@ -2,6 +2,7 @@
 // One page per control family, values wired to signals; the "Form state" card at the
 // bottom echoes all values reactively and provides a Reset button.
 import { createSignal } from "solid-js";
+import { tabstop } from "qml-solid";
 import { div, text, button } from "../src/solid-qml/runtime";
 import "./widgets.css";
 
@@ -16,6 +17,8 @@ export function Widgets() {
   const [chk1, setChk1] = createSignal(false);
   const [chk2, setChk2] = createSignal(true);
   const [sw, setSw] = createSignal(false);
+  // Live tabstop opt-out (qml-solid runtime API); flipping it re-evaluates every widget's tab stop.
+  const [tabs, setTabs] = createSignal(true);
   // Single plan signal — each radio's onChange sets the string value.
   const [plan, setPlan] = createSignal("free");
 
@@ -98,6 +101,12 @@ export function Widgets() {
           <div class="wg-check-row">
             <input type="checkbox" class="wg-checkbox" disabled />
             <text class="wg-check-label">Disabled checkbox</text>
+          </div>
+
+          <div class="wg-check-row">
+            <input type="checkbox" role="switch" class="wg-switch" checked={tabs()}
+                   onChange={(e) => { setTabs(e.target.checked); tabstop.enabled = e.target.checked; }} />
+            <text class="wg-check-label">Tab navigation (native only)</text>
           </div>
 
           <text class="wg-sublabel">Plan</text>

@@ -46,7 +46,7 @@ Css.CssRect {
                 rightPadding: 12
                 verticalAlignment: TextInput.AlignVCenter
                 selectByMouse: true
-                activeFocusOnTab: true
+                activeFocusOnTab: solidTabstop.enabled
                 onTextEdited: { draft = text }
                 Keys.onPressed: (event) => { (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && add() }
                 Text {

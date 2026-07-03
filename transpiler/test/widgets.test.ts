@@ -1253,3 +1253,60 @@ test("emitQml 6.5: spinbox pads for the buttons and steps on wheel only when foc
   assert.match(out, /rightPadding: 32/);
   assert.match(out, /WheelHandler \{[\s\S]*?enabled: __input\d+\.activeFocus[\s\S]*?increase\(\)/);
 });
+
+// --- Tab navigation (desktop): every interactive widget is a tab stop, bound to the
+// solidTabstop context property (loader-owned) so `tabstop.enabled = false` opts the
+// whole app out at runtime. ---
+
+const TAB_STOP = /activeFocusOnTab: solidTabstop\.enabled/;
+
+test("tabstop: <input> text field binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  assert.match(await qml(`export function F(){ return <input />; }`), TAB_STOP);
+});
+
+test("tabstop: <textarea> binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  assert.match(await qml(`export function F(){ return <textarea />; }`), TAB_STOP);
+});
+
+test("tabstop: <input type='checkbox'> binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  assert.match(await qml(`export function F(){ return <input type="checkbox" />; }`), TAB_STOP);
+});
+
+test("tabstop: switch binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  assert.match(await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`), TAB_STOP);
+});
+
+test("tabstop: radio binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  assert.match(await qml(`export function F(){ return <input type="radio" name="g" />; }`), TAB_STOP);
+});
+
+test("tabstop: <select> binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  assert.match(await qml(`export function F(){ return <select><option>A</option></select>; }`), TAB_STOP);
+});
+
+test("tabstop: <input type='range'> binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  assert.match(await qml(`export function F(){ return <input type="range" />; }`), TAB_STOP);
+});
+
+test("tabstop: <input type='number'> binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  assert.match(await qml(`export function F(){ return <input type="number" />; }`), TAB_STOP);
+});
+
+test("tabstop: <input type='number'> forwards scope focus into the editable text", async () => {
+  // T.SpinBox is a focus scope; without focus: true on the contentItem, tabbing into the
+  // control leaves the TextInput unfocused and typing goes nowhere.
+  const out = await qml(`export function F(){ return <input type="number" />; }`);
+  assert.match(out, /contentItem: TextInput \{[\s\S]*?focus: true/);
+});
+
+test("tabstop: <input type='date'> field is a tab stop and opens the popup from the keyboard", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, TAB_STOP);
+  assert.match(out, /Keys\.onReturnPressed/);
+  assert.match(out, /Keys\.onSpacePressed/);
+});
+
+test("tabstop: no widget hardcodes activeFocusOnTab: true", async () => {
+  const out = await qml(`export function F(){ return <div><input /><textarea /><input type="number" /></div>; }`);
+  assert.doesNotMatch(out, /activeFocusOnTab: true/);
+});

@@ -81,6 +81,11 @@ export function button(props: PrimitiveProps) {
   );
 }
 
+// Native tab-navigation switch (`import { tabstop } from "qml-solid"`). In the QML target the
+// transpiler rewrites this to the loader's reactive `solidTabstop` context property; here it
+// only mirrors the API so shared sources typecheck — the browser keeps the DOM's own tab order.
+export const tabstop = { enabled: true };
+
 export function qmlComponent(path: string) {
   return function QmlImportedComponent(props: PrimitiveProps) {
     return (

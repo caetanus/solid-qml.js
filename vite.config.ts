@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 import { solidQml } from "./src/solid-qml/vite-plugin";
@@ -5,6 +6,11 @@ import { solidQml } from "./src/solid-qml/vite-plugin";
 // `vite --mode qmldev` opens the native QML window and hot-reloads it on .tsx/.css edits;
 // the default mode keeps the browser preview.
 export default defineConfig(({ mode }) => ({
+  resolve: {
+    // The authoring package name; in the browser it resolves to the runtime shim (the QML
+    // target compiles the import away instead).
+    alias: { "qml-solid": fileURLToPath(new URL("./src/solid-qml/runtime", import.meta.url)) },
+  },
   plugins: [
     solidQml(
       mode === "qmldev"

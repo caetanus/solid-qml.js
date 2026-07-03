@@ -805,7 +805,7 @@ Css.CssRect {
                                     rightPadding: 12
                                     verticalAlignment: TextInput.AlignVCenter
                                     selectByMouse: true
-                                    activeFocusOnTab: true
+                                    activeFocusOnTab: solidTabstop.enabled
                                     Text {
                                         anchors.verticalCenter: parent.verticalCenter
                                         anchors.left: parent.left

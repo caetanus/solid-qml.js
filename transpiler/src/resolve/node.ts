@@ -37,6 +37,7 @@ export function isBareSpecifier(spec: string): boolean {
 
 export function isRuntimeOnlyImport(spec: string): boolean {
   return spec === "solid-js" || spec === "solid-js/web" || spec === "solid-js/store" ||
+    spec === "qml-solid" ||
     spec.endsWith("/solid-qml/runtime") || spec.endsWith("/solid-qml/runtime.ts");
 }
 

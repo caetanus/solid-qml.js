@@ -532,7 +532,7 @@ function emitInput(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
     `${i(2)}rightPadding: 12`,
     `${i(2)}verticalAlignment: TextInput.AlignVCenter`,
     `${i(2)}selectByMouse: true`,
-    `${i(2)}activeFocusOnTab: true`,
+    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
   ];
 
   if (type === "password") lines.push(`${i(2)}echoMode: TextInput.Password`);
@@ -625,7 +625,7 @@ function emitTextarea(propsArg: t.Node | undefined, props: Props, scope: Scope, 
     ...widgetColorFont(i),
     `${i(2)}padding: 12`,
     `${i(2)}selectByMouse: true`,
-    `${i(2)}activeFocusOnTab: true`,
+    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
   ];
 
   if (disabled) lines.push(`${i(2)}enabled: false`);
@@ -712,6 +712,7 @@ function emitCheckboxToggle(props: Props, scope: Scope, level: number, guard: st
     `${i(2)}anchors.fill: parent`,
     `${i(2)}background: null`,
     `${i(2)}contentItem: null`,
+    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
     // indicator: a fixed-size Css item (not in a Css layout container — geometry is hardcoded).
     `${i(2)}indicator: Css.CssFill {`,
     `${i(3)}cssPrimitive: "span"`,
@@ -779,6 +780,7 @@ function emitSwitchToggle(props: Props, scope: Scope, level: number, guard: stri
     `${i(2)}anchors.fill: parent`,
     `${i(2)}background: null`,
     `${i(2)}contentItem: null`,
+    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
     `${i(2)}indicator: Css.CssFill {`,
     `${i(3)}cssPrimitive: "span"`,
     `${i(3)}cssClass: ["track"]`,
@@ -855,6 +857,7 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
     `${i(2)}anchors.fill: parent`,
     `${i(2)}background: null`,
     `${i(2)}contentItem: null`,
+    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
   ];
 
   // Attach to the group if a name was given; the group is declared at root level by emitComponentType.
@@ -963,6 +966,7 @@ function emitSlider(props: Props, scope: Scope, level: number, guard: string | u
     `${i(1)}T.Slider {`,
     `${i(2)}id: ${ctlId}`,
     `${i(2)}anchors.fill: parent`,
+    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
     // Track: background slot (fills the control); centred vertically via explicit x/y bindings.
     // Using Qt Basic-style geometry so the 6px-tall track sits in the middle of the taller handle.
     `${i(2)}background: Css.CssFill {`,
@@ -1058,6 +1062,7 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
     `${i(2)}to: ${max}`,
     `${i(2)}stepSize: ${step}`,
     `${i(2)}editable: true`,
+    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
     // Controls resize contentItem to the control minus paddings — without a rightPadding
     // the TextInput covers the +/- buttons and eats their clicks.
     `${i(2)}leftPadding: 12`,
@@ -1072,6 +1077,9 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
     // contentItem: a plain TextInput (not Css) — it lives inside the control's item tree, not our
     // CSS layout engine. Color/font are bridged from the CssFill wrapper via ctlId.parent.inheritedX.
     `${i(2)}contentItem: TextInput {`,
+    // T.SpinBox is a focus scope: focus: true forwards the control's active focus into the
+    // TextInput so tabbing in lets the user type immediately.
+    `${i(3)}focus: true`,
     `${i(3)}text: ${ctlId}.displayText`,
     `${i(3)}validator: ${ctlId}.validator`,
     `${i(3)}readOnly: !${ctlId}.editable`,
@@ -1245,6 +1253,7 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
     `${i(1)}T.ComboBox {`,
     `${i(2)}id: ${ctlId}`,
     `${i(2)}anchors.fill: parent`,
+    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
     // No visual chrome from Templates; the CssFill wrapper owns the box painting.
     `${i(2)}background: null`,
     // leftPadding keeps the contentItem text clear of the border (G4 from Phase 1 probe).
@@ -1638,6 +1647,11 @@ function emitDateInput(
     `${i(2)}anchors.fill: parent`,
     `${i(2)}background: null`,
     `${i(2)}readOnly: true`,
+    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
+    // Keyboard affordance for the tab stop: Enter/Space toggles the calendar popup
+    // (the field is readOnly, so neither key edits text).
+    `${i(2)}Keys.onReturnPressed: ${popId}.visible ? ${popId}.close() : ${popId}.open()`,
+    `${i(2)}Keys.onSpacePressed: ${popId}.visible ? ${popId}.close() : ${popId}.open()`,
     ...widgetColorFont(i),
     `${i(2)}leftPadding: 12`,
     `${i(2)}rightPadding: 36`,

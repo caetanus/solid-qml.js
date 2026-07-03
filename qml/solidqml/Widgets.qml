@@ -13,6 +13,7 @@ Css.CssRect {
     property var chk1: false
     property var chk2: true
     property var sw: false
+    property var tabs: true
     property var plan: "free"
     property var fruit: "apple"
     property var volume: 50
@@ -59,7 +60,7 @@ Css.CssRect {
                         rightPadding: 12
                         verticalAlignment: TextInput.AlignVCenter
                         selectByMouse: true
-                        activeFocusOnTab: true
+                        activeFocusOnTab: solidTabstop.enabled
                         onTextEdited: { inputName = text }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
@@ -104,7 +105,7 @@ Css.CssRect {
                         rightPadding: 12
                         verticalAlignment: TextInput.AlignVCenter
                         selectByMouse: true
-                        activeFocusOnTab: true
+                        activeFocusOnTab: solidTabstop.enabled
                         echoMode: TextInput.Password
                         onTextEdited: { inputPass = text }
                         Text {
@@ -150,7 +151,7 @@ Css.CssRect {
                         rightPadding: 12
                         verticalAlignment: TextInput.AlignVCenter
                         selectByMouse: true
-                        activeFocusOnTab: true
+                        activeFocusOnTab: solidTabstop.enabled
                         maximumLength: 20
                         onTextEdited: { inputSearch = text }
                         Text {
@@ -196,7 +197,7 @@ Css.CssRect {
                         rightPadding: 12
                         verticalAlignment: TextInput.AlignVCenter
                         selectByMouse: true
-                        activeFocusOnTab: true
+                        activeFocusOnTab: solidTabstop.enabled
                         enabled: false
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
@@ -234,7 +235,7 @@ Css.CssRect {
                         font.pixelSize: cssTheme.parseFontSize(parent.inheritedFontSize || "13px", 13)
                         padding: 12
                         selectByMouse: true
-                        activeFocusOnTab: true
+                        activeFocusOnTab: solidTabstop.enabled
                         onTextChanged: { inputNotes = text }
                         Text {
                             anchors.top: parent.top
@@ -278,6 +279,7 @@ Css.CssRect {
                         anchors.fill: parent
                         background: null
                         contentItem: null
+                        activeFocusOnTab: solidTabstop.enabled
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
@@ -322,6 +324,7 @@ Css.CssRect {
                         anchors.fill: parent
                         background: null
                         contentItem: null
+                        activeFocusOnTab: solidTabstop.enabled
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
@@ -366,6 +369,7 @@ Css.CssRect {
                         anchors.fill: parent
                         background: null
                         contentItem: null
+                        activeFocusOnTab: solidTabstop.enabled
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["track"]
@@ -414,6 +418,7 @@ Css.CssRect {
                         anchors.fill: parent
                         background: null
                         contentItem: null
+                        activeFocusOnTab: solidTabstop.enabled
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
@@ -438,58 +443,59 @@ Css.CssRect {
                     text: "Disabled checkbox"
                 }
             }
-            Css.CssText {
-                cssClass: ["wg-sublabel"]
-                cssPrimitive: "text"
-                text: "Plan"
-            }
             Css.CssRect {
                 cssClass: ["wg-check-row"]
                 cssPrimitive: "div"
                 Css.CssFill {
-                    cssClass: ["wg-radio"]
+                    cssClass: ["wg-switch"]
                     cssPrimitive: "input"
                     cssState: (__input9.checked ? ["checked"] : []).concat(!__input9.enabled ? ["disabled"] : [])
                     implicitWidth: __input9.implicitWidth
                     implicitHeight: __input9.implicitHeight
-                    T.RadioButton {
+                    T.Switch {
                         id: __input9
                         anchors.fill: parent
                         background: null
                         contentItem: null
-                        T.ButtonGroup.group: __group_plan
+                        activeFocusOnTab: solidTabstop.enabled
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
-                            cssClass: ["indicator"]
+                            cssClass: ["track"]
                             cssState: (__input9.checked ? ["checked"] : []).concat(!__input9.enabled ? ["disabled"] : [])
-                            width: 20
+                            width: 36
                             height: 20
-                            implicitWidth: 20
+                            implicitWidth: 36
                             implicitHeight: 20
                             Rectangle {
-                                visible: __input9.checked
-                                anchors.centerIn: parent
-                                width: 8
-                                height: 8
-                                radius: 4
+                                width: 16
+                                height: 16
+                                radius: 8
                                 color: "#ffffff"
-                                Css.CssItem { cssPrimitive: "rect"; cssClass: ["indicator-dot"] }
+                                y: (parent.height - height) / 2
+                                x: __input9.visualPosition * (parent.width - width)
+                                Behavior on x { NumberAnimation { duration: 120 } }
+                                Css.CssItem { cssPrimitive: "rect"; cssClass: ["knob"] }
                             }
                         }
-                        onToggled: { plan = "free" }
+                        onToggled: { tabs = __input9.checked; solidTabstop.enabled = __input9.checked; }
                     }
                     Binding {
                         target: __input9
                         property: "checked"
-                        value: plan === "free"
+                        value: tabs
                         restoreMode: Binding.RestoreNone
                     }
                 }
                 Css.CssText {
                     cssClass: ["wg-check-label"]
                     cssPrimitive: "text"
-                    text: "Free"
+                    text: "Tab navigation (native only)"
                 }
+            }
+            Css.CssText {
+                cssClass: ["wg-sublabel"]
+                cssPrimitive: "text"
+                text: "Plan"
             }
             Css.CssRect {
                 cssClass: ["wg-check-row"]
@@ -505,6 +511,7 @@ Css.CssRect {
                         anchors.fill: parent
                         background: null
                         contentItem: null
+                        activeFocusOnTab: solidTabstop.enabled
                         T.ButtonGroup.group: __group_plan
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
@@ -524,19 +531,19 @@ Css.CssRect {
                                 Css.CssItem { cssPrimitive: "rect"; cssClass: ["indicator-dot"] }
                             }
                         }
-                        onToggled: { plan = "pro" }
+                        onToggled: { plan = "free" }
                     }
                     Binding {
                         target: __input10
                         property: "checked"
-                        value: plan === "pro"
+                        value: plan === "free"
                         restoreMode: Binding.RestoreNone
                     }
                 }
                 Css.CssText {
                     cssClass: ["wg-check-label"]
                     cssPrimitive: "text"
-                    text: "Pro"
+                    text: "Free"
                 }
             }
             Css.CssRect {
@@ -553,6 +560,7 @@ Css.CssRect {
                         anchors.fill: parent
                         background: null
                         contentItem: null
+                        activeFocusOnTab: solidTabstop.enabled
                         T.ButtonGroup.group: __group_plan
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
@@ -572,10 +580,59 @@ Css.CssRect {
                                 Css.CssItem { cssPrimitive: "rect"; cssClass: ["indicator-dot"] }
                             }
                         }
-                        onToggled: { plan = "team" }
+                        onToggled: { plan = "pro" }
                     }
                     Binding {
                         target: __input11
+                        property: "checked"
+                        value: plan === "pro"
+                        restoreMode: Binding.RestoreNone
+                    }
+                }
+                Css.CssText {
+                    cssClass: ["wg-check-label"]
+                    cssPrimitive: "text"
+                    text: "Pro"
+                }
+            }
+            Css.CssRect {
+                cssClass: ["wg-check-row"]
+                cssPrimitive: "div"
+                Css.CssFill {
+                    cssClass: ["wg-radio"]
+                    cssPrimitive: "input"
+                    cssState: (__input12.checked ? ["checked"] : []).concat(!__input12.enabled ? ["disabled"] : [])
+                    implicitWidth: __input12.implicitWidth
+                    implicitHeight: __input12.implicitHeight
+                    T.RadioButton {
+                        id: __input12
+                        anchors.fill: parent
+                        background: null
+                        contentItem: null
+                        activeFocusOnTab: solidTabstop.enabled
+                        T.ButtonGroup.group: __group_plan
+                        indicator: Css.CssFill {
+                            cssPrimitive: "span"
+                            cssClass: ["indicator"]
+                            cssState: (__input12.checked ? ["checked"] : []).concat(!__input12.enabled ? ["disabled"] : [])
+                            width: 20
+                            height: 20
+                            implicitWidth: 20
+                            implicitHeight: 20
+                            Rectangle {
+                                visible: __input12.checked
+                                anchors.centerIn: parent
+                                width: 8
+                                height: 8
+                                radius: 4
+                                color: "#ffffff"
+                                Css.CssItem { cssPrimitive: "rect"; cssClass: ["indicator-dot"] }
+                            }
+                        }
+                        onToggled: { plan = "team" }
+                    }
+                    Binding {
+                        target: __input12
                         property: "checked"
                         value: plan === "team"
                         restoreMode: Binding.RestoreNone
@@ -611,12 +668,13 @@ Css.CssRect {
                 Css.CssFill {
                     cssClass: ["wg-select"]
                     cssPrimitive: "select"
-                    cssState: (__input12.activeFocus ? ["focus"] : []).concat(!__input12.enabled ? ["disabled"] : [])
-                    implicitWidth: __input12.implicitWidth
-                    implicitHeight: __input12.implicitHeight
+                    cssState: (__input13.activeFocus ? ["focus"] : []).concat(!__input13.enabled ? ["disabled"] : [])
+                    implicitWidth: __input13.implicitWidth
+                    implicitHeight: __input13.implicitHeight
                     T.ComboBox {
-                        id: __input12
+                        id: __input13
                         anchors.fill: parent
+                        activeFocusOnTab: solidTabstop.enabled
                         background: null
                         leftPadding: 12
                         readonly property var __values: ["apple", "banana", "cherry", "mango"]
@@ -624,7 +682,7 @@ Css.CssRect {
                         contentItem: Css.CssText {
                             cssPrimitive: ""
                             cssClass: ["value"]
-                            text: __input12.displayText
+                            text: __input13.displayText
                         }
                         Css.CssText {
                             cssPrimitive: ""
@@ -635,13 +693,13 @@ Css.CssRect {
                             anchors.verticalCenter: parent.verticalCenter
                         }
                         delegate: T.ItemDelegate {
-                            id: __optDel12
-                            width: __input12.popup.width
+                            id: __optDel13
+                            width: __input13.popup.width
                             implicitHeight: 36
                             background: Css.CssFill {
                                 cssPrimitive: "div"
                                 cssClass: ["option"]
-                                cssState: (__optDel12.highlighted ? ["hover"] : []).concat(__input12.currentIndex === index ? ["selected"] : [])
+                                cssState: (__optDel13.highlighted ? ["hover"] : []).concat(__input13.currentIndex === index ? ["selected"] : [])
                             }
                             contentItem: Css.CssText {
                                 cssPrimitive: ""
@@ -650,8 +708,8 @@ Css.CssRect {
                             }
                         }
                         popup: T.Popup {
-                            y: __input12.height + 2
-                            width: __input12.width
+                            y: __input13.height + 2
+                            width: __input13.width
                             implicitHeight: contentHeight + topPadding + bottomPadding
                             padding: 1
                             background: Css.CssFill {
@@ -660,17 +718,17 @@ Css.CssRect {
                             }
                             contentItem: ListView {
                                 clip: true
-                                model: __input12.delegateModel
-                                currentIndex: __input12.highlightedIndex
+                                model: __input13.delegateModel
+                                currentIndex: __input13.highlightedIndex
                                 implicitHeight: Math.min(contentHeight, 240)
                             }
                         }
-                        onActivated: (index) => { fruit = __input12.__values[index] }
+                        onActivated: (index) => { fruit = __input13.__values[index] }
                     }
                     Binding {
-                        target: __input12
+                        target: __input13
                         property: "currentIndex"
-                        value: __input12.__values.indexOf(fruit)
+                        value: __input13.__values.indexOf(fruit)
                         restoreMode: Binding.RestoreNone
                     }
                 }
@@ -695,23 +753,24 @@ Css.CssRect {
                 Css.CssFill {
                     cssClass: ["wg-range"]
                     cssPrimitive: "input"
-                    cssState: (__input13.activeFocus ? ["focus"] : []).concat(!__input13.enabled ? ["disabled"] : [])
-                    implicitWidth: __input13.implicitWidth
-                    implicitHeight: __input13.implicitHeight
+                    cssState: (__input14.activeFocus ? ["focus"] : []).concat(!__input14.enabled ? ["disabled"] : [])
+                    implicitWidth: __input14.implicitWidth
+                    implicitHeight: __input14.implicitHeight
                     T.Slider {
-                        id: __input13
+                        id: __input14
                         anchors.fill: parent
+                        activeFocusOnTab: solidTabstop.enabled
                         background: Css.CssFill {
                             cssPrimitive: ""
                             cssClass: ["track"]
-                            x: __input13.leftPadding
-                            y: __input13.topPadding + (__input13.availableHeight - height) / 2
-                            width: __input13.availableWidth
+                            x: __input14.leftPadding
+                            y: __input14.topPadding + (__input14.availableHeight - height) / 2
+                            width: __input14.availableWidth
                             height: 6
                             implicitHeight: 6
                             Css.CssRect {
                                 cssClass: ["track-fill"]
-                                width: __input13.visualPosition * parent.width
+                                width: __input14.visualPosition * parent.width
                                 height: parent.height
                             }
                         }
@@ -721,16 +780,16 @@ Css.CssRect {
                             height: 18
                             implicitWidth: 18
                             implicitHeight: 18
-                            x: __input13.leftPadding + __input13.visualPosition * (__input13.availableWidth - width)
-                            y: __input13.topPadding + __input13.availableHeight / 2 - height / 2
+                            x: __input14.leftPadding + __input14.visualPosition * (__input14.availableWidth - width)
+                            y: __input14.topPadding + __input14.availableHeight / 2 - height / 2
                         }
                         from: 0
                         to: 100
                         stepSize: 1
-                        onMoved: { volume = __input13.value }
+                        onMoved: { volume = __input14.value }
                     }
                     Binding {
-                        target: __input13
+                        target: __input14
                         property: "value"
                         value: volume
                         restoreMode: Binding.RestoreNone
@@ -748,30 +807,32 @@ Css.CssRect {
                 Css.CssFill {
                     cssClass: ["wg-number"]
                     cssPrimitive: "input"
-                    cssState: (__input14.activeFocus ? ["focus"] : []).concat(!__input14.enabled ? ["disabled"] : [])
-                    implicitWidth: __input14.implicitWidth
-                    implicitHeight: __input14.implicitHeight
+                    cssState: (__input15.activeFocus ? ["focus"] : []).concat(!__input15.enabled ? ["disabled"] : [])
+                    implicitWidth: __input15.implicitWidth
+                    implicitHeight: __input15.implicitHeight
                     T.SpinBox {
-                        id: __input14
+                        id: __input15
                         anchors.fill: parent
                         background: null
                         from: 1
                         to: 10
                         stepSize: 1
                         editable: true
+                        activeFocusOnTab: solidTabstop.enabled
                         leftPadding: 12
                         rightPadding: 32
                         WheelHandler {
-                            enabled: __input14.activeFocus
-                            onWheel: (ev) => { if (ev.angleDelta.y > 0) __input14.increase(); else __input14.decrease(); __input14.valueModified() }
+                            enabled: __input15.activeFocus
+                            onWheel: (ev) => { if (ev.angleDelta.y > 0) __input15.increase(); else __input15.decrease(); __input15.valueModified() }
                         }
                         contentItem: TextInput {
-                            text: __input14.displayText
-                            validator: __input14.validator
-                            readOnly: !__input14.editable
-                            color: cssTheme.parseColor(__input14.parent.inheritedColor || "#2b2b2b")
-                            font.family: cssTheme.resolveFontFamily(__input14.parent.inheritedFontFamily || "Sans Serif")
-                            font.pixelSize: cssTheme.parseFontSize(__input14.parent.inheritedFontSize || "13px", 13)
+                            focus: true
+                            text: __input15.displayText
+                            validator: __input15.validator
+                            readOnly: !__input15.editable
+                            color: cssTheme.parseColor(__input15.parent.inheritedColor || "#2b2b2b")
+                            font.family: cssTheme.resolveFontFamily(__input15.parent.inheritedFontFamily || "Sans Serif")
+                            font.pixelSize: cssTheme.parseFontSize(__input15.parent.inheritedFontSize || "13px", 13)
                             horizontalAlignment: Qt.AlignHCenter
                             verticalAlignment: Qt.AlignVCenter
                             selectByMouse: true
@@ -779,7 +840,7 @@ Css.CssRect {
                         up.indicator: Css.CssFill {
                             cssPrimitive: ""
                             cssClass: ["spin-up"]
-                            cssState: __input14.up.pressed ? ["active"] : []
+                            cssState: __input15.up.pressed ? ["active"] : []
                             x: parent.width - width
                             y: 0
                             width: 24
@@ -795,7 +856,7 @@ Css.CssRect {
                         down.indicator: Css.CssFill {
                             cssPrimitive: ""
                             cssClass: ["spin-down"]
-                            cssState: __input14.down.pressed ? ["active"] : []
+                            cssState: __input15.down.pressed ? ["active"] : []
                             x: parent.width - width
                             y: parent.height / 2
                             width: 24
@@ -808,10 +869,10 @@ Css.CssRect {
                                 Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }
                             }
                         }
-                        onValueModified: { qty = __input14.value }
+                        onValueModified: { qty = __input15.value }
                     }
                     Binding {
-                        target: __input14
+                        target: __input15
                         property: "value"
                         value: qty
                         restoreMode: Binding.RestoreNone
@@ -828,19 +889,22 @@ Css.CssRect {
                 }
                 Css.CssFill {
                     cssClass: ["wg-date"]
-                    id: __input15W
+                    id: __input16W
                     cssPrimitive: "input"
-                    cssState: (__input15P.visible ? ["focus"] : []).concat(!__input15.enabled ? ["disabled"] : [])
+                    cssState: (__input16P.visible ? ["focus"] : []).concat(!__input16.enabled ? ["disabled"] : [])
                     implicitWidth: 200
                     implicitHeight: 36
-                    property var __calVal15: inputDate
-                    property int __calMonth15: __calVal15 instanceof Date ? __calVal15.getMonth() : new Date().getMonth()
-                    property int __calYear15: __calVal15 instanceof Date ? __calVal15.getFullYear() : new Date().getFullYear()
+                    property var __calVal16: inputDate
+                    property int __calMonth16: __calVal16 instanceof Date ? __calVal16.getMonth() : new Date().getMonth()
+                    property int __calYear16: __calVal16 instanceof Date ? __calVal16.getFullYear() : new Date().getFullYear()
                     T.TextField {
-                        id: __input15
+                        id: __input16
                         anchors.fill: parent
                         background: null
                         readOnly: true
+                        activeFocusOnTab: solidTabstop.enabled
+                        Keys.onReturnPressed: __input16P.visible ? __input16P.close() : __input16P.open()
+                        Keys.onSpacePressed: __input16P.visible ? __input16P.close() : __input16P.open()
                         color: cssTheme.parseColor(parent.inheritedColor || "#2b2b2b")
                         font.family: cssTheme.resolveFontFamily(parent.inheritedFontFamily || "Sans Serif")
                         font.pixelSize: cssTheme.parseFontSize(parent.inheritedFontSize || "13px", 13)
@@ -849,9 +913,9 @@ Css.CssRect {
                         verticalAlignment: TextInput.AlignVCenter
                     }
                     Binding {
-                        target: __input15
+                        target: __input16
                         property: "text"
-                        value: __input15W.__calVal15 instanceof Date ? Qt.formatDate(__input15W.__calVal15, "yyyy-MM-dd") : ""
+                        value: __input16W.__calVal16 instanceof Date ? Qt.formatDate(__input16W.__calVal16, "yyyy-MM-dd") : ""
                         restoreMode: Binding.RestoreNone
                     }
                     Css.CssText {
@@ -864,11 +928,11 @@ Css.CssRect {
                     }
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: { if (__input15P.visible) __input15P.close(); else __input15P.open() }
+                        onClicked: { if (__input16P.visible) __input16P.close(); else __input16P.open() }
                     }
                     T.Popup {
-                        id: __input15P
-                        y: __input15W.height + 2
+                        id: __input16P
+                        y: __input16W.height + 2
                         implicitWidth: contentWidth + leftPadding + rightPadding
                         implicitHeight: contentHeight + topPadding + bottomPadding
                         padding: 1
@@ -892,8 +956,8 @@ Css.CssRect {
                                 MouseArea {
                                     anchors.fill: parent
                                     onClicked: {
-                                        if (__input15W.__calMonth15 === 0) { __input15W.__calYear15 = __input15W.__calYear15 - 1; __input15W.__calMonth15 = 11 }
-                                        else __input15W.__calMonth15 = __input15W.__calMonth15 - 1
+                                        if (__input16W.__calMonth16 === 0) { __input16W.__calYear16 = __input16W.__calYear16 - 1; __input16W.__calMonth16 = 11 }
+                                        else __input16W.__calMonth16 = __input16W.__calMonth16 - 1
                                     }
                                 }
                             }
@@ -904,7 +968,7 @@ Css.CssRect {
                                 y: 0
                                 width: parent.width - 64
                                 height: 32
-                                text: Qt.locale().monthName(__input15W.__calMonth15) + " " + __input15W.__calYear15
+                                text: Qt.locale().monthName(__input16W.__calMonth16) + " " + __input16W.__calYear16
                                 style: ({"text-align": "center"})
                             }
                             Css.CssFill {
@@ -920,8 +984,8 @@ Css.CssRect {
                                 MouseArea {
                                     anchors.fill: parent
                                     onClicked: {
-                                        if (__input15W.__calMonth15 === 11) { __input15W.__calYear15 = __input15W.__calYear15 + 1; __input15W.__calMonth15 = 0 }
-                                        else __input15W.__calMonth15 = __input15W.__calMonth15 + 1
+                                        if (__input16W.__calMonth16 === 11) { __input16W.__calYear16 = __input16W.__calYear16 + 1; __input16W.__calMonth16 = 0 }
+                                        else __input16W.__calMonth16 = __input16W.__calMonth16 + 1
                                     }
                                 }
                             }
@@ -937,28 +1001,28 @@ Css.CssRect {
                                 }
                             }
                             T.AbstractMonthGrid {
-                                id: __mg15
+                                id: __mg16
                                 x: 0
                                 y: 56
                                 width: parent.width
                                 height: parent.height - 56
-                                month: __input15W.__calMonth15
-                                year: __input15W.__calYear15
+                                month: __input16W.__calMonth16
+                                year: __input16W.__calYear16
                                 delegate: T.AbstractButton {
-                                    id: __mgDel15
+                                    id: __mgDel16
                                     implicitWidth: 32
                                     implicitHeight: 32
                                     background: Css.CssFill {
                                         cssPrimitive: "div"
                                         cssClass: ["day"]
-                                        cssState: (model.today ? ["today"] : []).concat((__input15W.__calVal15 instanceof Date && model.year === __input15W.__calVal15.getFullYear() && model.month === __input15W.__calVal15.getMonth() && model.day === __input15W.__calVal15.getDate()) ? ["selected"] : []).concat(model.month !== __mg15.month ? ["outside"] : []).concat(__mgDel15.hovered ? ["hover"] : [])
+                                        cssState: (model.today ? ["today"] : []).concat((__input16W.__calVal16 instanceof Date && model.year === __input16W.__calVal16.getFullYear() && model.month === __input16W.__calVal16.getMonth() && model.day === __input16W.__calVal16.getDate()) ? ["selected"] : []).concat(model.month !== __mg16.month ? ["outside"] : []).concat(__mgDel16.hovered ? ["hover"] : [])
                                     }
                                     contentItem: Css.CssText {
                                         cssPrimitive: ""
                                         cssClass: ["day-label"]
                                         text: model.day
                                     }
-                                    onClicked: { inputDate = new Date(model.year, model.month, model.day); __input15P.close() }
+                                    onClicked: { inputDate = new Date(model.year, model.month, model.day); __input16P.close() }
                                 }
                             }
                         }
@@ -976,13 +1040,13 @@ Css.CssRect {
             }
             Css.CssFill {
                 cssClass: ["wg-cal"]
-                id: __cal16
+                id: __cal17
                 cssPrimitive: "div"
                 implicitWidth: 224
                 implicitHeight: 280
-                property var __calVal16: calDate
-                property int __calMonth16: __calVal16 instanceof Date ? __calVal16.getMonth() : new Date().getMonth()
-                property int __calYear16: __calVal16 instanceof Date ? __calVal16.getFullYear() : new Date().getFullYear()
+                property var __calVal17: calDate
+                property int __calMonth17: __calVal17 instanceof Date ? __calVal17.getMonth() : new Date().getMonth()
+                property int __calYear17: __calVal17 instanceof Date ? __calVal17.getFullYear() : new Date().getFullYear()
                 Item {
                     anchors.fill: parent
                     Css.CssFill {
@@ -998,8 +1062,8 @@ Css.CssRect {
                         MouseArea {
                             anchors.fill: parent
                             onClicked: {
-                                if (__cal16.__calMonth16 === 0) { __cal16.__calYear16 = __cal16.__calYear16 - 1; __cal16.__calMonth16 = 11 }
-                                else __cal16.__calMonth16 = __cal16.__calMonth16 - 1
+                                if (__cal17.__calMonth17 === 0) { __cal17.__calYear17 = __cal17.__calYear17 - 1; __cal17.__calMonth17 = 11 }
+                                else __cal17.__calMonth17 = __cal17.__calMonth17 - 1
                             }
                         }
                     }
@@ -1010,7 +1074,7 @@ Css.CssRect {
                         y: 0
                         width: parent.width - 64
                         height: 32
-                        text: Qt.locale().monthName(__cal16.__calMonth16) + " " + __cal16.__calYear16
+                        text: Qt.locale().monthName(__cal17.__calMonth17) + " " + __cal17.__calYear17
                         style: ({"text-align": "center"})
                     }
                     Css.CssFill {
@@ -1026,8 +1090,8 @@ Css.CssRect {
                         MouseArea {
                             anchors.fill: parent
                             onClicked: {
-                                if (__cal16.__calMonth16 === 11) { __cal16.__calYear16 = __cal16.__calYear16 + 1; __cal16.__calMonth16 = 0 }
-                                else __cal16.__calMonth16 = __cal16.__calMonth16 + 1
+                                if (__cal17.__calMonth17 === 11) { __cal17.__calYear17 = __cal17.__calYear17 + 1; __cal17.__calMonth17 = 0 }
+                                else __cal17.__calMonth17 = __cal17.__calMonth17 + 1
                             }
                         }
                     }
@@ -1043,21 +1107,21 @@ Css.CssRect {
                         }
                     }
                     T.AbstractMonthGrid {
-                        id: __mg16
+                        id: __mg17
                         x: 0
                         y: 56
                         width: parent.width
                         height: parent.height - 56
-                        month: __cal16.__calMonth16
-                        year: __cal16.__calYear16
+                        month: __cal17.__calMonth17
+                        year: __cal17.__calYear17
                         delegate: T.AbstractButton {
-                            id: __mgDel16
+                            id: __mgDel17
                             implicitWidth: 32
                             implicitHeight: 32
                             background: Css.CssFill {
                                 cssPrimitive: "div"
                                 cssClass: ["day"]
-                                cssState: (model.today ? ["today"] : []).concat((__cal16.__calVal16 instanceof Date && model.year === __cal16.__calVal16.getFullYear() && model.month === __cal16.__calVal16.getMonth() && model.day === __cal16.__calVal16.getDate()) ? ["selected"] : []).concat(model.month !== __mg16.month ? ["outside"] : []).concat(__mgDel16.hovered ? ["hover"] : [])
+                                cssState: (model.today ? ["today"] : []).concat((__cal17.__calVal17 instanceof Date && model.year === __cal17.__calVal17.getFullYear() && model.month === __cal17.__calVal17.getMonth() && model.day === __cal17.__calVal17.getDate()) ? ["selected"] : []).concat(model.month !== __mg17.month ? ["outside"] : []).concat(__mgDel17.hovered ? ["hover"] : [])
                             }
                             contentItem: Css.CssText {
                                 cssPrimitive: ""

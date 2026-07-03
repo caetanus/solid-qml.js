@@ -27,7 +27,7 @@ export interface CtxWiring {
  * and one reactive `property` per signal (initial value via emitExpr). The signal properties are
  * the bare names the render's bindings read.
  */
-export function emitComponentType(fn: t.Function, render: t.CallExpression, components?: Map<string, string>, contexts?: Set<string>, provider?: ProviderInfo | null, ctx?: CtxWiring, moduleFile?: t.File, jsImports?: Record<string, string>): string[] {
+export function emitComponentType(fn: t.Function, render: t.CallExpression, components?: Map<string, string>, contexts?: Set<string>, provider?: ProviderInfo | null, ctx?: CtxWiring, moduleFile?: t.File, jsImports?: Record<string, string>, moduleInit?: string[]): string[] {
   const table = analyzeSignals(fn);
   const props = analyzeProps(fn);
   const resources = analyzeResources(fn);
@@ -231,6 +231,9 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   });
   const setupScope: Scope = { table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, locals: { ...constAliases, ...refLocals }, jsImports, ...(mutableLocals ? { mutableLocals } : {}) };
   const onCompletedBody: string[] = [
+    // Hoisted module-level statements (already emitted in their own module's import scope):
+    // import-time code runs before any component setup.
+    ...(moduleInit ?? []),
     ...filteredSetup.map((s) => emitStmt(s, setupScope)),
     ...onMount.map((b) => t.isBlockStatement(b)
       ? b.body.map((st) => emitStmt(st, setupScope)).join(" ")

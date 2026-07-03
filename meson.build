@@ -35,6 +35,7 @@ solid_qml_loader_qt_sources = qt6.preprocess(
     'src/shims/webtimers.h',
     'src/shims/webplatform.h',
     'src/shims/nodeshims.h',
+    'src/shims/tabstop.h',
   ),
 )
 

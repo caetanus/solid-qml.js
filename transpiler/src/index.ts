@@ -6,6 +6,7 @@ import { emitComponentType } from "./emit/component.ts";
 import { analyzeContexts, analyzeProvider, analyzeSignals, analyzeUseContext } from "./model/symbols.ts";
 import { hParts, isComponentIdentifier, isHCall } from "./ast/h.ts";
 import { isBareSpecifier, isRuntimeOnlyImport, mirrorNodeImports, resolveNodeImport } from "./resolve/node.ts";
+import { emitStmt } from "./emit/stmt.ts";
 
 export interface GeneratedApp {
   /** The entry (app-root) component's QML type. */
@@ -43,6 +44,10 @@ interface Mod {
   jsImports: Record<string, string>;
   /** mirror path → QML import alias, for this source module's mirrored dependencies. */
   qmlImports: Map<string, string>;
+  /** Module-level runtime-config statements (e.g. `tabstop.enabled = false`), already emitted as
+   *  QML statements. Import-time semantics: they run once at app boot, hoisted into the entry
+   *  component's Component.onCompleted. */
+  moduleInit: string[];
 }
 
 /** Every component function (returns an h() call) declared at module top level. */
@@ -149,6 +154,11 @@ export async function generate(source: string, filename: string, opts: GenerateO
     const imports = collectImports(file);
     const jsImports: Record<string, string> = {};
     const qmlImports = new Map<string, string>();
+    // `tabstop` from "qml-solid" (or the runtime module) is the loader's solidTabstop context
+    // property — the identifier rewrites in place, the import compiles away.
+    for (const [local, imp] of imports) {
+      if (isRuntimeOnlyImport(imp.spec) && imp.imported === "tabstop") jsImports[local] = "solidTabstop";
+    }
     const bareImports = [...imports.values()].filter((imp) => isBareSpecifier(imp.spec) && !isRuntimeOnlyImport(imp.spec));
     if (bareImports.length > 0) {
       const mirrored = await mirrorNodeImports(bareImports, path.dirname(absPath), readFile);
@@ -171,7 +181,18 @@ export async function generate(source: string, filename: string, opts: GenerateO
             : `${alias}.${imp.imported}`;
       }
     }
-    const mod: Mod = { comps: findComponents(file), imports, dir: path.dirname(absPath), contexts: analyzeContexts(file), file, jsImports, qmlImports };
+    // Module-level writes to a runtime-config import (`tabstop.enabled = false` at top level):
+    // emitted here, with THIS module's import scope, and hoisted to the entry's onCompleted.
+    const moduleInit: string[] = [];
+    for (const node of file.program.body) {
+      if (!t.isExpressionStatement(node) || !t.isAssignmentExpression(node.expression)) continue;
+      const lhs = node.expression.left;
+      if (t.isMemberExpression(lhs) && t.isIdentifier(lhs.object) && lhs.object.name in jsImports
+        && imports.get(lhs.object.name) && isRuntimeOnlyImport(imports.get(lhs.object.name)!.spec)) {
+        moduleInit.push(emitStmt(node, { table: new Map(), mode: "handler", jsImports }));
+      }
+    }
+    const mod: Mod = { comps: findComponents(file), imports, dir: path.dirname(absPath), contexts: analyzeContexts(file), file, jsImports, qmlImports, moduleInit };
     modules.set(absPath, mod);
     return mod;
   };
@@ -257,7 +278,9 @@ export async function generate(source: string, filename: string, opts: GenerateO
       componentMeta: componentMeta.size ? componentMeta : undefined,
       ctxValueShape,
     };
-    const qml = [...headerFor(node.mod), ...emitComponentType(info.fn, info.render, typeMap, node.mod.contexts, role.provider, ctxWiring, node.mod.file, node.mod.jsImports), ""].join("\n");
+    // Import-time module statements across the whole graph run once, at the entry's boot.
+    const moduleInit = key === entryKey ? [...modules.values()].flatMap((m) => m.moduleInit) : undefined;
+    const qml = [...headerFor(node.mod), ...emitComponentType(info.fn, info.render, typeMap, node.mod.contexts, role.provider, ctxWiring, node.mod.file, node.mod.jsImports, moduleInit), ""].join("\n");
     if (key === entryKey) entry = qml;
     else components[typeName.get(key)!] = qml;
   }

@@ -26,7 +26,7 @@ Css.CssRect {
             rightPadding: 12
             verticalAlignment: TextInput.AlignVCenter
             selectByMouse: true
-            activeFocusOnTab: true
+            activeFocusOnTab: solidTabstop.enabled
             onTextEdited: { s = text }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
