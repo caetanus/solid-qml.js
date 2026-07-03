@@ -1506,3 +1506,10 @@ test("popups: dropdowns close when the app window deactivates (Qt::Popup semanti
   const date = await qml(`export function F(){ return <input type="date" />; }`);
   assert.match(date, /Window\.onActiveChanged: if \(!Window\.active\) __input0P\.close\(\)/);
 });
+
+test("tabstop: a radio group is ONE tab stop — checked radio (or first) only", async () => {
+  const out = await qml(`export function F(){ return <input type="radio" name="g" />; }`);
+  assert.match(out, /activeFocusOnTab: solidTabstop\.enabled && \(__input0\.checked \|\| \(!__group_g\.checkedButton && __group_g\.buttons\.length > 0 && __group_g\.buttons\[0\] === __input0\)\)/);
+  const bare = await qml(`export function F(){ return <input type="radio" />; }`);
+  assert.match(bare, /activeFocusOnTab: solidTabstop\.enabled\n/);
+});

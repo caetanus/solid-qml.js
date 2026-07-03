@@ -546,7 +546,7 @@ Css.CssRect {
                         anchors.fill: parent
                         background: null
                         contentItem: null
-                        activeFocusOnTab: solidTabstop.enabled
+                        activeFocusOnTab: solidTabstop.enabled && (__input10.checked || (!__group_plan.checkedButton && __group_plan.buttons.length > 0 && __group_plan.buttons[0] === __input10))
                         T.ButtonGroup.group: __group_plan
                         function __step(d) { var bs = __group_plan.buttons; var j = (bs.indexOf(__input10) + d + bs.length) % bs.length; var b = bs[j]; b.forceActiveFocus(Qt.TabFocusReason); b.checked = true; b.toggled() }
                         Keys.onDownPressed: __step(1)
@@ -603,7 +603,7 @@ Css.CssRect {
                         anchors.fill: parent
                         background: null
                         contentItem: null
-                        activeFocusOnTab: solidTabstop.enabled
+                        activeFocusOnTab: solidTabstop.enabled && (__input11.checked || (!__group_plan.checkedButton && __group_plan.buttons.length > 0 && __group_plan.buttons[0] === __input11))
                         T.ButtonGroup.group: __group_plan
                         function __step(d) { var bs = __group_plan.buttons; var j = (bs.indexOf(__input11) + d + bs.length) % bs.length; var b = bs[j]; b.forceActiveFocus(Qt.TabFocusReason); b.checked = true; b.toggled() }
                         Keys.onDownPressed: __step(1)
@@ -660,7 +660,7 @@ Css.CssRect {
                         anchors.fill: parent
                         background: null
                         contentItem: null
-                        activeFocusOnTab: solidTabstop.enabled
+                        activeFocusOnTab: solidTabstop.enabled && (__input12.checked || (!__group_plan.checkedButton && __group_plan.buttons.length > 0 && __group_plan.buttons[0] === __input12))
                         T.ButtonGroup.group: __group_plan
                         function __step(d) { var bs = __group_plan.buttons; var j = (bs.indexOf(__input12) + d + bs.length) % bs.length; var b = bs[j]; b.forceActiveFocus(Qt.TabFocusReason); b.checked = true; b.toggled() }
                         Keys.onDownPressed: __step(1)

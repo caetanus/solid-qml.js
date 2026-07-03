@@ -885,7 +885,11 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
     `${i(2)}anchors.fill: parent`,
     `${i(2)}background: null`,
     `${i(2)}contentItem: null`,
-    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
+    // A radio GROUP is ONE tab stop (HTML/desktop): Tab enters at the checked radio — or
+    // the first, when none is checked — and Tab leaves the group; arrows move within.
+    groupId
+      ? `${i(2)}activeFocusOnTab: solidTabstop.enabled && (${ctlId}.checked || (!${groupId}.checkedButton && ${groupId}.buttons.length > 0 && ${groupId}.buttons[0] === ${ctlId}))`
+      : `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
   ];
 
   // Attach to the group if a name was given; the group is declared at root level by emitComponentType.
