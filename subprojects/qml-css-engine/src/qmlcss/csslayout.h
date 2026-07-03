@@ -32,6 +32,13 @@ public:
     // Queue a (re)layout of `root`'s content (held by `content`); coalesced.
     Q_INVOKABLE void requestLayout(QQuickItem *root, QQuickItem *content);
     Q_INVOKABLE void notifyParentLayout(QQuickItem *item);
+
+    // Layout hibernation (owner's batch gate): while a batch is open, requestLayout only
+    // RECORDS work; endBatch runs ONE flush for everything. Brackets bulk style passes
+    // (reapplyAll / descendant sweeps) so N applies cost one layout, not N. Outside a
+    // batch the flush stays synchronous (the resize stale-frame guarantee is untouched).
+    void beginBatch() { ++m_batchDepth; }
+    void endBatch();
     // Lay out now.
     Q_INVOKABLE void layout(QQuickItem *root, QQuickItem *content);
 
@@ -89,5 +96,6 @@ private:
     CssTheme *m_theme;
     QHash<QQuickItem *, QPointer<QQuickItem>> m_pending; // root -> content
     QTimer *m_flushTimer;
+    int m_batchDepth = 0;
     bool m_flushing = false;
 };

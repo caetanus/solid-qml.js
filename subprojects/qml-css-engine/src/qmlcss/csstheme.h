@@ -12,6 +12,7 @@
 #include <QVariantMap>
 
 class QNetworkAccessManager;
+class CssLayoutEngine;
 
 struct CssSimpleSelector {
     bool universal = false;
@@ -229,6 +230,10 @@ public:
     // caller re-loads (loadLayered) to apply. Setting the same value is a no-op.
     void setStylePrelude(const QString &css);
 
+    // Wired by CssLayoutEngine's constructor: lets bulk apply passes (reapplyAll,
+    // descendant sweeps) hibernate the layout and flush once (see beginBatch/endBatch).
+    void setLayoutEngine(CssLayoutEngine *engine) { m_layoutEngine = engine; }
+
 signals:
     void loadedChanged();
     void viewportChanged();
@@ -251,6 +256,7 @@ private:
     mutable QHash<QString, QString> m_fontFamilyCache;
     // Bitmask of matching @media groups at the current viewport (resize fast-path).
     quint64 m_mediaSignature = 0;
+    CssLayoutEngine *m_layoutEngine = nullptr;
     QString resolveFontFamilyUncached(const QString &value, const QString &fallback) const;
 
     // Rule index (rebuilt with m_rules): candidate rule indices by subject class/element/id,

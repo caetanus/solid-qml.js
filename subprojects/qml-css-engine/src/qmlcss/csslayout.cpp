@@ -75,6 +75,15 @@ CssLayoutEngine::CssLayoutEngine(CssTheme *theme, QObject *parent)
     m_flushTimer->setSingleShot(true);
     m_flushTimer->setInterval(0);
     connect(m_flushTimer, &QTimer::timeout, this, &CssLayoutEngine::flush);
+    // The theme brackets its bulk apply passes with our batch gate.
+    if (m_theme)
+        m_theme->setLayoutEngine(this);
+}
+
+void CssLayoutEngine::endBatch()
+{
+    if (--m_batchDepth == 0 && !m_pending.isEmpty() && !m_flushing)
+        flush();
 }
 
 // --- scheduling -------------------------------------------------------------------------
@@ -84,6 +93,9 @@ void CssLayoutEngine::requestLayout(QQuickItem *root, QQuickItem *content)
     if (!root || !content)
         return;
     m_pending.insert(root, content);
+    // Hibernating (batch open): only record — endBatch runs the single flush.
+    if (m_batchDepth > 0)
+        return;
     // Re-entrant request (a layout pass resized a child, which re-queued work): just record it.
     // The synchronous drain loop in flush() picks it up in its next pass — no timer needed.
     if (m_flushing)

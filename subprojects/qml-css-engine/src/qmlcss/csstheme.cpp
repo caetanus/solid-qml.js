@@ -1,5 +1,6 @@
 #include "csstheme.h"
 
+#include "csslayout.h"
 #include "valueparser.h"
 
 #include <QCryptographicHash>
@@ -42,6 +43,14 @@ struct ApplyStats {
     }
 };
 ApplyStats g_applyStats;
+
+// Exception-safe layout hibernation: open the batch on construction, single flush on scope
+// exit. Null-safe so callers work before any CssLayoutEngine registered.
+struct LayoutBatchGuard {
+    CssLayoutEngine *eng;
+    explicit LayoutBatchGuard(CssLayoutEngine *e) : eng(e) { if (eng) eng->beginBatch(); }
+    ~LayoutBatchGuard() { if (eng) eng->endBatch(); }
+};
 } // namespace
 
 
@@ -1130,6 +1139,7 @@ void CssTheme::reapplyForSender()
     if (!target)
         return;
     if (g_applyStats.enabled) ++g_applyStats.fromSender;
+    const LayoutBatchGuard batch(m_layoutEngine); // self + descendants, one flush
     applyCssTo(target);
     // Ancestor-scoped rules (`.nav button.active text`) read ANCESTOR identity: a class/state
     // change on `target` can restyle registered DESCENDANTS, which only observe themselves.
@@ -1149,6 +1159,7 @@ void CssTheme::reapplyForSender()
 
 void CssTheme::reapplyAll()
 {
+    const LayoutBatchGuard batch(m_layoutEngine); // N applies, ONE layout flush
     m_bindings.removeIf([](const QPointer<QObject> &p) { return p.isNull(); });
     for (const QPointer<QObject> &p : m_bindings) {
         if (p) {
