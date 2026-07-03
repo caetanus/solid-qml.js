@@ -1,3 +1,4 @@
+#include "qmlcss/componentcache.h"
 #include "qmlcss/csshr.h"
 
 #include "qmlcss/csslayout.h"
@@ -201,8 +202,8 @@ void CssHr::componentComplete()
     // This is the composition mandate: we do not paint — the Shape (ShapePath + PathRectangle)
     // does. Rectangle is deliberately avoided (owner's rule: it is capped for several effects).
     if (QQmlEngine *eng = qmlEngine(this)) {
-        QQmlComponent comp(eng);
-        comp.setData(
+        QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("csshr-895a2f4a"),
+            
             "import QtQuick\n"
             "import QtQuick.Shapes\n"
             "Shape {\n"
@@ -216,9 +217,8 @@ void CssHr::componentComplete()
             "        fillColor: \"#ededed\"\n"
             "        PathRectangle { id: pr; x: 0; y: 0; width: 1; height: 1 }\n"
             "    }\n"
-            "}\n",
-            QUrl());
-        if (QObject *o = comp.create(qmlContext(this))) {
+            "}\n");
+        if (QObject *o = comp->create(qmlContext(this))) {
             if (QQuickItem *shape = qobject_cast<QQuickItem *>(o)) {
                 shape->setParentItem(this);
                 m_shape = shape;

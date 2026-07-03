@@ -1,3 +1,4 @@
+#include "qmlcss/componentcache.h"
 #include "qmlcss/cssimage.h"
 
 #include "qmlcss/csstheme.h"
@@ -226,9 +227,9 @@ void CssImage::componentComplete()
     if (eng) {
         // REAL QtQuick Image (a native texture provider, so MultiEffect can consume it directly).
         {
-            QQmlComponent comp(eng);
-            comp.setData("import QtQuick\nImage { asynchronous: true; cache: true }", QUrl());
-            if (QObject *o = comp.create(qmlContext(this))) {
+            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssimage-1cf91361"),
+                "import QtQuick\nImage { asynchronous: true; cache: true }");
+            if (QObject *o = comp->create(qmlContext(this))) {
                 if (QQuickItem *img = qobject_cast<QQuickItem *>(o)) {
                     img->setParentItem(this);
                     m_image = img;
@@ -241,8 +242,8 @@ void CssImage::componentComplete()
         // REAL QtQuick Shape rounded-rect used as the MultiEffect mask (Rectangle avoided per rule).
         // layer.enabled makes the Shape a texture provider so it can be a maskSource.
         {
-            QQmlComponent comp(eng);
-            comp.setData(
+            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssimage-f2908ad5"),
+                
                 "import QtQuick\n"
                 "import QtQuick.Shapes\n"
                 "Shape {\n"
@@ -257,9 +258,8 @@ void CssImage::componentComplete()
                 "        fillColor: \"white\"\n"
                 "        PathRectangle { id: pr; x: 0; y: 0; width: 1; height: 1; radius: 0 }\n"
                 "    }\n"
-                "}\n",
-                QUrl());
-            if (QObject *o = comp.create(qmlContext(this))) {
+                "}\n");
+            if (QObject *o = comp->create(qmlContext(this))) {
                 if (QQuickItem *mask = qobject_cast<QQuickItem *>(o)) {
                     mask->setParentItem(this);
                     m_mask = mask;
@@ -271,9 +271,9 @@ void CssImage::componentComplete()
 
         // REAL QtQuick.Effects MultiEffect: source = Image, maskSource = Shape.
         {
-            QQmlComponent comp(eng);
-            comp.setData("import QtQuick.Effects\nMultiEffect {}", QUrl());
-            if (QObject *o = comp.create(qmlContext(this))) {
+            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssimage-4d5d97c3"),
+                "import QtQuick.Effects\nMultiEffect {}");
+            if (QObject *o = comp->create(qmlContext(this))) {
                 if (QQuickItem *effect = qobject_cast<QQuickItem *>(o)) {
                     effect->setParentItem(this);
                     if (m_image)

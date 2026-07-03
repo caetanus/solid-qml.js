@@ -1,3 +1,4 @@
+#include "qmlcss/componentcache.h"
 #include "qmlcss/cssfilllayer.h"
 
 #include <QQmlComponent>
@@ -208,9 +209,9 @@ void CssFillLayer::componentComplete()
     QQuickItem::componentComplete();
 
     if (QQmlEngine *eng = qmlEngine(this)) {
-        QQmlComponent comp(eng);
-        comp.setData(kFillLayerShell, QUrl());
-        if (QObject *o = comp.create(qmlContext(this))) {
+        QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssfilllayer-01c7e117"),
+            kFillLayerShell);
+        if (QObject *o = comp->create(qmlContext(this))) {
             if (QQuickItem *shape = qobject_cast<QQuickItem *>(o)) {
                 shape->setParentItem(this);
                 m_shape = shape;
@@ -219,7 +220,7 @@ void CssFillLayer::componentComplete()
             }
         } else {
             qWarning("CssFillLayer: failed to compose Shape shell: %s",
-                     qPrintable(comp.errorString()));
+                     qPrintable(comp->errorString()));
         }
     }
 

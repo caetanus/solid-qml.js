@@ -1,3 +1,4 @@
+#include "qmlcss/componentcache.h"
 #include "qmlcss/cssdropshadow.h"
 
 #include <QQmlComponent>
@@ -94,12 +95,11 @@ void CssDropShadow::componentComplete()
     if (QQmlEngine *eng = qmlEngine(this)) {
         // The REAL QtQuick.Effects MultiEffect — the actual renderer. autoPaddingEnabled matches
         // the QML original so the shadow is never clipped by this item's bounds.
-        QQmlComponent comp(eng);
-        comp.setData(
+        QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssdropshadow-2001d9c5"),
+            
             "import QtQuick.Effects\n"
-            "MultiEffect { autoPaddingEnabled: true }\n",
-            QUrl());
-        if (QObject *o = comp.create(qmlContext(this))) {
+            "MultiEffect { autoPaddingEnabled: true }\n");
+        if (QObject *o = comp->create(qmlContext(this))) {
             if (QQuickItem *fx = qobject_cast<QQuickItem *>(o)) {
                 fx->setParentItem(this);
                 m_effect = fx;

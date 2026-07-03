@@ -5,6 +5,7 @@
 #include <QQmlListProperty>
 #include <QQuickItem>
 #include <QVariant>
+#include <QVarLengthArray>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -263,6 +264,10 @@ private:
     bool m_engineHover = false;
     QPointer<QObject> m_hoverHandler; // composed QtQuick HoverHandler (created on demand)
     QVariantList m_animStops;            // buildAnimStops output for current @keyframes
+    // Same stops pre-parsed for the per-frame tick (the QVariantMap form costs allocations
+    // EVERY frame at 60fps; this is the relayout-adjacent hot path).
+    struct AnimStop { double offset, rotate, scale, tx, ty; };
+    QVarLengthArray<AnimStop, 8> m_animStopsFast;
     QPointer<QObject> m_anim;            // REAL QtQuick NumberAnimation on animTick (0→1)
 
     QPointer<CssTheme> m_theme;

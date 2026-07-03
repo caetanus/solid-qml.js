@@ -1,3 +1,4 @@
+#include "qmlcss/componentcache.h"
 #include "qmlcss/cssicon.h"
 
 #include <QQmlComponent>
@@ -229,16 +230,15 @@ void CssIcon::componentComplete()
         // REAL QtQuick Image — source + texture provider for the MultiEffect.
         // visible: false because the MultiEffect is the visible renderer.
         {
-            QQmlComponent comp(eng);
-            comp.setData(
+            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssicon-fd07c8e9"),
+                
                 "import QtQuick\n"
                 "Image {\n"
                 "    fillMode: Image.PreserveAspectFit\n"  // == 1
                 "    smooth: true; mipmap: true\n"
                 "    visible: false\n"
-                "}\n",
-                QUrl());
-            if (QObject *o = comp.create(qmlContext(this))) {
+                "}\n");
+            if (QObject *o = comp->create(qmlContext(this))) {
                 if (QQuickItem *img = qobject_cast<QQuickItem *>(o)) {
                     img->setParentItem(this);
                     m_image = img;
@@ -246,15 +246,15 @@ void CssIcon::componentComplete()
                     o->deleteLater();
                 }
             } else {
-                qWarning("CssIcon: failed to compose Image: %s", qPrintable(comp.errorString()));
+                qWarning("CssIcon: failed to compose Image: %s", qPrintable(comp->errorString()));
             }
         }
 
         // REAL QtQuick.Effects MultiEffect — visible renderer with colorization.
         if (m_image) {
-            QQmlComponent comp(eng);
-            comp.setData("import QtQuick.Effects\nMultiEffect {}\n", QUrl());
-            if (QObject *o = comp.create(qmlContext(this))) {
+            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssicon-962d4f4f"),
+                "import QtQuick.Effects\nMultiEffect {}\n");
+            if (QObject *o = comp->create(qmlContext(this))) {
                 if (QQuickItem *fx = qobject_cast<QQuickItem *>(o)) {
                     fx->setParentItem(this);
                     // QML: source: iconImage
@@ -266,7 +266,7 @@ void CssIcon::componentComplete()
                     o->deleteLater();
                 }
             } else {
-                qWarning("CssIcon: failed to compose MultiEffect: %s", qPrintable(comp.errorString()));
+                qWarning("CssIcon: failed to compose MultiEffect: %s", qPrintable(comp->errorString()));
             }
         }
     }

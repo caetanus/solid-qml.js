@@ -1,3 +1,4 @@
+#include "qmlcss/componentcache.h"
 #include "qmlcss/csskeyframes.h"
 
 #include <QQmlComponent>
@@ -170,12 +171,11 @@ void CssKeyframes::componentComplete()
     if (QQmlEngine *eng = qmlEngine(this)) {
         // REAL QtQuick NumberAnimation animating this item's `progress` property from 0 to 1.
         // It is a QObject (not a QQuickItem), so setParent keeps ownership.
-        QQmlComponent comp(eng);
-        comp.setData(
+        QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("csskeyframes-fd9161da"),
+            
             "import QtQuick\n"
-            "NumberAnimation { from: 0.0; to: 1.0 }\n",
-            QUrl());
-        if (QObject *o = comp.create(qmlContext(this))) {
+            "NumberAnimation { from: 0.0; to: 1.0 }\n");
+        if (QObject *o = comp->create(qmlContext(this))) {
             o->setParent(this);
             // Target this C++ item's `progress` Q_PROPERTY.
             o->setProperty("target", QVariant::fromValue(static_cast<QObject *>(this)));
@@ -183,7 +183,7 @@ void CssKeyframes::componentComplete()
             m_anim = o;
         } else {
             qWarning("CssKeyframes: failed to compose NumberAnimation: %s",
-                     qPrintable(comp.errorString()));
+                     qPrintable(comp->errorString()));
         }
     }
 

@@ -1,3 +1,4 @@
+#include "qmlcss/componentcache.h"
 #include "qmlcss/cssrect.h"
 
 #include "qmlcss/csslayout.h"
@@ -654,10 +655,29 @@ void CssRect::setAnimTick(qreal v)
 {
     m_animTick = v;
     emit animTickChanged();
-    // QML: onAnimTickChanged: if (typeof cssLayout !== "undefined" && cssLayout)
-    //          cssLayout.applyAnim(root, root._animStops, root.animTick)
-    if (m_layout)
-        m_layout->applyAnim(this, m_animStops, v);
+    // Per-frame path: interpolate the PRE-PARSED stops and write the anim fields directly.
+    // (The QML-equivalent went through cssLayout.applyAnim with QVariantMaps — allocation
+    // churn on every tick of every animated element.)
+    const int n = m_animStopsFast.size();
+    if (n < 2)
+        return;
+    const AnimStop *a = &m_animStopsFast[0];
+    const AnimStop *b = &m_animStopsFast[n - 1];
+    for (int i = 0; i < n - 1; ++i) {
+        if (v >= m_animStopsFast[i].offset && v <= m_animStopsFast[i + 1].offset) {
+            a = &m_animStopsFast[i];
+            b = &m_animStopsFast[i + 1];
+            break;
+        }
+    }
+    const double span = b->offset - a->offset;
+    const double t = span > 0 ? (v - a->offset) / span : 0;
+    m_animRotate = a->rotate + (b->rotate - a->rotate) * t;
+    m_animScale = a->scale + (b->scale - a->scale) * t;
+    m_animTx = a->tx + (b->tx - a->tx) * t;
+    m_animTy = a->ty + (b->ty - a->ty) * t;
+    emit animChanged();
+    applyTransform();
 }
 
 // --- content default property (forwards to the contentHolder's `data`, the QML alias) --------
@@ -893,6 +913,15 @@ void CssRect::recompute()
         newStops = m_layout->buildAnimStops(animFrames);
     m_animStops = newStops;
     m_animActive = m_animStops.size() >= 2;
+    m_animStopsFast.clear();
+    for (const QVariant &v : std::as_const(m_animStops)) {
+        const QVariantMap m = v.toMap();
+        m_animStopsFast.append({ m.value(QStringLiteral("offset")).toDouble(),
+                                 m.value(QStringLiteral("rotate")).toDouble(),
+                                 m.value(QStringLiteral("scale"), 1.0).toDouble(),
+                                 m.value(QStringLiteral("tx")).toDouble(),
+                                 m.value(QStringLiteral("ty")).toDouble() });
+    }
 
     if (m_anim) {
         // Stop first so reconfiguration takes effect cleanly (matching QML reactive rebuild).
@@ -968,15 +997,15 @@ void CssRect::ensureScrollable()
     QQmlEngine *eng = qmlEngine(this);
     if (!eng)
         return;
-    QQmlComponent comp(eng);
-    comp.setData("import QtQuick\nFlickable { clip: true; boundsBehavior: Flickable.StopAtBounds; "
-                 "flickableDirection: Flickable.VerticalFlick }", QUrl());
-    QObject *o = comp.create(qmlContext(this));
+    QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-5262d4c3"),
+        "import QtQuick\nFlickable { clip: true; boundsBehavior: Flickable.StopAtBounds; "
+                 "flickableDirection: Flickable.VerticalFlick }");
+    QObject *o = comp->create(qmlContext(this));
     QQuickItem *flick = qobject_cast<QQuickItem *>(o);
     if (!flick) {
         if (o)
             o->deleteLater();
-        qWarning("CssRect: failed to compose Flickable: %s", qPrintable(comp.errorString()));
+        qWarning("CssRect: failed to compose Flickable: %s", qPrintable(comp->errorString()));
         return;
     }
     flick->setParent(this);
@@ -1017,9 +1046,9 @@ void CssRect::componentComplete()
     if (QQmlEngine *eng = qmlEngine(this)) {
         // The REAL QtQuick render subtree (Shapes + MultiEffect), via the type-system.
         {
-            QQmlComponent comp(eng);
-            comp.setData(kRenderShell, QUrl());
-            if (QObject *o = comp.create(qmlContext(this))) {
+            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-f609f831"),
+                kRenderShell);
+            if (QObject *o = comp->create(qmlContext(this))) {
                 if (QQuickItem *render = qobject_cast<QQuickItem *>(o)) {
                     render->setParentItem(this);
                     // Keep content ABOVE the fill: the render subtree paints first (lower).
@@ -1030,15 +1059,15 @@ void CssRect::componentComplete()
                     o->deleteLater();
                 }
             } else {
-                qWarning("CssRect: failed to compose render subtree: %s", qPrintable(comp.errorString()));
+                qWarning("CssRect: failed to compose render subtree: %s", qPrintable(comp->errorString()));
             }
         }
 
         // A REAL QtQuick Translate appended to our transform list (static/animated translate).
         {
-            QQmlComponent comp(eng);
-            comp.setData("import QtQuick\nTranslate {}", QUrl());
-            if (QObject *o = comp.create(qmlContext(this))) {
+            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-92acf9f1"),
+                "import QtQuick\nTranslate {}");
+            if (QObject *o = comp->create(qmlContext(this))) {
                 QQmlListReference ref(this, "transform");
                 if (ref.isValid())
                     ref.append(o);
@@ -1051,19 +1080,18 @@ void CssRect::componentComplete()
         // recompute() when the style changes. Equivalent QML:
         //   NumberAnimation on animTick { from: 0.0; to: 1.0; ... running: root._animActive }
         {
-            QQmlComponent comp(eng);
-            comp.setData(
+            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-382c9393"),
+                
                 "import QtQuick\n"
-                "NumberAnimation { from: 0.0; to: 1.0 }\n",
-                QUrl());
-            if (QObject *o = comp.create(qmlContext(this))) {
+                "NumberAnimation { from: 0.0; to: 1.0 }\n");
+            if (QObject *o = comp->create(qmlContext(this))) {
                 o->setParent(this);
                 o->setProperty("target", QVariant::fromValue(static_cast<QObject *>(this)));
                 o->setProperty("property", QStringLiteral("animTick"));
                 m_anim = o;
             } else {
                 qWarning("CssRect: failed to compose anim NumberAnimation: %s",
-                         qPrintable(comp.errorString()));
+                         qPrintable(comp->errorString()));
             }
         }
     }
@@ -1147,9 +1175,9 @@ void CssRect::setCssHoverStyled(bool v)
         // Compose a REAL QtQuick HoverHandler via the type-system (approved pattern; no
         // private headers). It writes cssEngineHover, whose notify re-applies the style.
         if (QQmlEngine *eng = qmlEngine(this)) {
-            QQmlComponent comp(eng);
-            comp.setData("import QtQuick\nHoverHandler {}", QUrl());
-            if (QObject *o = comp.create(qmlContext(this))) {
+            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-3e8916a3"),
+                "import QtQuick\nHoverHandler {}");
+            if (QObject *o = comp->create(qmlContext(this))) {
                 o->setParent(this);
                 o->setProperty("parent", QVariant::fromValue<QObject *>(this)); // handler target
                 connect(o, SIGNAL(hoveredChanged()), this, SLOT(onEngineHoverChanged()));

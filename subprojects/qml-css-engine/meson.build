@@ -18,6 +18,7 @@ qt6_dep = dependency(
 
 qml_css_engine_sources = files(
   'src/qmlcss/csstheme.cpp',
+  'src/qmlcss/componentcache.cpp',
   'src/qmlcss/csslayout.cpp',
   'src/qmlcss/csshr.cpp',
   'src/qmlcss/cssimage.cpp',
@@ -35,6 +36,7 @@ qml_css_engine_sources = files(
 
 qml_css_engine_headers = files(
   'src/qmlcss/QMLCss.h',
+  'src/qmlcss/componentcache.h',
   'src/qmlcss/csstheme.h',
   'src/qmlcss/csslayout.h',
   'src/qmlcss/csshr.h',

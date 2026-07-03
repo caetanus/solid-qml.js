@@ -1,3 +1,4 @@
+#include "qmlcss/componentcache.h"
 #include "qmlcss/csstext.h"
 
 #include "qmlcss/csslayout.h"
@@ -309,9 +310,9 @@ void CssText::applyShadow()
     // Lazy composition: only a label that actually declares text-shadow pays for the effect.
     if (!m_shadow && hasShadow && m_label && isComponentComplete()) {
         if (QQmlEngine *eng = qmlEngine(this)) {
-            QQmlComponent comp(eng);
-            comp.setData("import QtQuick.Effects\nMultiEffect { autoPaddingEnabled: true; visible: false }", QUrl());
-            if (QObject *o = comp.create(qmlContext(this))) {
+            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("csstext-81a20bf2"),
+                "import QtQuick.Effects\nMultiEffect { autoPaddingEnabled: true; visible: false }");
+            if (QObject *o = comp->create(qmlContext(this))) {
                 if (QQuickItem *fx = qobject_cast<QQuickItem *>(o)) {
                     fx->setParent(this);
                     fx->setParentItem(this);
@@ -405,9 +406,9 @@ void CssText::componentComplete()
     if (QQmlEngine *eng = qmlEngine(this)) {
         // The REAL QtQuick Text, via the Qt type-system (we forward everything onto it).
         {
-            QQmlComponent comp(eng);
-            comp.setData("import QtQuick\nText {}", QUrl());
-            if (QObject *o = comp.create(qmlContext(this))) {
+            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("csstext-bf5e2923"),
+                "import QtQuick\nText {}");
+            if (QObject *o = comp->create(qmlContext(this))) {
                 if (QQuickItem *label = qobject_cast<QQuickItem *>(o)) {
                     label->setParentItem(this);
                     m_label = label;
@@ -415,7 +416,7 @@ void CssText::componentComplete()
                     o->deleteLater();
                 }
             } else {
-                qWarning("CssText: failed to compose Text: %s", qPrintable(comp.errorString()));
+                qWarning("CssText: failed to compose Text: %s", qPrintable(comp->errorString()));
             }
         }
 
@@ -503,8 +504,8 @@ void CssText::applyBackground()
 
     if (!m_bg && isComponentComplete()) {
         if (QQmlEngine *eng = qmlEngine(this)) {
-            QQmlComponent comp(eng);
-            comp.setData(R"(import QtQuick
+            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("csstext-f477b5b7"),
+                R"(import QtQuick
 import QtQuick.Shapes
 Shape {
     id: bgroot
@@ -520,8 +521,8 @@ Shape {
         fillColor: bgroot.bgColor
         PathRectangle { x: 0; y: 0; width: bgroot.width; height: bgroot.height; radius: bgroot.bgRadius }
     }
-})", QUrl());
-            if (QObject *o = comp.create(qmlContext(this))) {
+})");
+            if (QObject *o = comp->create(qmlContext(this))) {
                 if (QQuickItem *bg = qobject_cast<QQuickItem *>(o)) {
                     bg->setParent(this); // C++ ownership (mirrors CssRect's composed scene)
                     bg->setParentItem(this);
@@ -530,7 +531,7 @@ Shape {
                     o->deleteLater();
                 }
             } else {
-                qWarning("CssText: failed to compose background Shape: %s", qPrintable(comp.errorString()));
+                qWarning("CssText: failed to compose background Shape: %s", qPrintable(comp->errorString()));
             }
         }
     }

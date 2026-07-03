@@ -1,3 +1,4 @@
+#include "qmlcss/componentcache.h"
 #include "qmlcss/cssfill.h"
 
 #include "qmlcss/csslayout.h"
@@ -413,11 +414,10 @@ void CssFill::componentComplete()
     if (QQmlEngine *eng = qmlEngine(this)) {
         // Compose bottom -> top; stackBefore(contentHolder) keeps the declared children on top.
         auto compose = [&](const char *qml) -> QQuickItem * {
-            QQmlComponent comp(eng);
-            comp.setData(qml, QUrl());
-            QObject *o = comp.create(qmlContext(this));
+            QQmlComponent *comp = QmlCss::cachedComponent(eng, QLatin1String(qml), qml); // runtime snippet: key = content
+            QObject *o = comp->create(qmlContext(this));
             if (!o) {
-                qWarning("CssFill: failed to compose layer: %s", qPrintable(comp.errorString()));
+                qWarning("CssFill: failed to compose layer: %s", qPrintable(comp->errorString()));
                 return nullptr;
             }
             auto *item = qobject_cast<QQuickItem *>(o);
