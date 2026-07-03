@@ -1333,6 +1333,9 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
     // Delegate: one T.ItemDelegate per model row.
     `${i(2)}delegate: T.ItemDelegate {`,
     `${i(3)}id: ${delId}`,
+    // The style must bind highlighted itself (Basic does the same) — without it keyboard
+    // navigation moves highlightedIndex invisibly and the active row never changes.
+    `${i(3)}highlighted: ${ctlId}.highlightedIndex === index`,
     // Width must be explicit (G4 from Phase 1): ComboBox does not size delegates automatically.
     `${i(3)}width: ${ctlId}.popup.width`,
     `${i(3)}implicitHeight: 36`,

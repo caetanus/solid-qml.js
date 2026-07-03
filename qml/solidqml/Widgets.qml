@@ -753,6 +753,7 @@ Css.CssRect {
                         }
                         delegate: T.ItemDelegate {
                             id: __optDel13
+                            highlighted: __input13.highlightedIndex === index
                             width: __input13.popup.width
                             implicitHeight: 36
                             background: Css.CssFill {

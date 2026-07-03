@@ -1453,3 +1453,8 @@ test("popups: widgets bump the Templates import to 6.8 (popupType)", async () =>
   const out = await qmlType(`export function F(){ return <select><option>A</option></select>; }`);
   assert.match(out, /import QtQuick\.Templates 6\.8 as T/);
 });
+
+test("select: delegate binds highlighted to the combo's highlightedIndex (keyboard nav visible)", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /T\.ItemDelegate \{[\s\S]*?highlighted: __input0\.highlightedIndex === index/);
+});
