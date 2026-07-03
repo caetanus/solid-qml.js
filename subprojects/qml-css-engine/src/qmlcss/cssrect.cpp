@@ -1127,8 +1127,12 @@ void CssRect::componentComplete()
                 if (QQuickItem *render = qobject_cast<QQuickItem *>(o)) {
                     render->setParentItem(this);
                     // Keep content ABOVE the fill: the render subtree paints first (lower).
-                    if (m_contentHolder)
-                        render->stackBefore(m_contentHolder);
+                    // A scrollable box moved the holder INTO the composed Flickable (the
+                    // single-shot mount styles before the shell exists), so the sibling to
+                    // stack under is the Flickable in that case.
+                    QQuickItem *contentAnchor = m_flickable ? m_flickable.data() : m_contentHolder.data();
+                    if (contentAnchor)
+                        render->stackBefore(contentAnchor);
                     m_render = render;
                 } else {
                     o->deleteLater();
