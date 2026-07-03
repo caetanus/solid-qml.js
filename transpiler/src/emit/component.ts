@@ -47,6 +47,9 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   const hasCtxBindings = Object.keys(ctxBindings).length > 0;
   const inputCounter = { n: 0 };
   const hoverCounter = { n: 0 };
+  // Mutable flag: set to true by emitInput/emitTextarea when a T.* widget is emitted.
+  // Read after the render pass to decide whether to prepend the Templates import.
+  const usedWidgets = { flag: false };
   // Module-level `const NAME = <pure literal>` data tables (menus, slides, feeds…) referenced by
   // this component. QML property names cannot start with an upper-case letter (and these usually
   // do), so each one is surfaced as `__const_NAME` and the identifier is aliased in scope.
@@ -66,7 +69,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   for (const name of moduleConstDecls.keys()) constAliases[name] = `__const_${safeName(name)}`;
   const scope: Scope = {
     table, mode: "binding", propsParam: props.param ?? undefined, propAliases, components, contexts, refs: collectedRefs,
-    inputCounter, hoverCounter, resources: resources.map((r) => r.name), jsImports,
+    inputCounter, hoverCounter, usedWidgets, resources: resources.map((r) => r.name), jsImports,
     ...(moduleConstDecls.size > 0 ? { locals: { ...constAliases } } : {}),
     ...(mutableLocals ? { mutableLocals } : {}),
     ...(helpers ? { helpers } : {}),
@@ -87,6 +90,11 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     }
   }
   const lines = emitQml(renderRoot, scope, 0);
+
+  // If any widget was emitted, prepend the Templates import so T.TextField / T.TextArea resolve.
+  // This line lands between the standard header (emitted by headerFor in index.ts) and the type
+  // body, which is valid QML — imports may appear in any order before the root object.
+  if (usedWidgets.flag) lines.unshift("", "import QtQuick.Templates 6.0 as T");
 
   const openIdx = lines.findIndex((l) => /\{\s*$/.test(l));
   // The root may already carry an id from a ref={x} (e.g. id: _ref_myDiv). A QML object can have only

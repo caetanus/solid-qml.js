@@ -212,30 +212,39 @@ async function qmlType(src: string): Promise<string> {
   return emitComponentType(fn, render, new Map()).join("\n");
 }
 
-test("emitQml: <input class='x' value={s()} onInput={...} /> -> CssFill + TextInput + Connections", async () => {
+test("emitQml: <input class='x' value={s()} onInput={...} /> -> CssFill + T.TextField + Binding", async () => {
   const out = await qmlType(`
     export function F() {
       const [s, setS] = createSignal("");
       return <input class="x" value={s()} onInput={(e) => setS(e.currentTarget.value)} />;
     }
   `);
-  // Outer wrapper
+  // Outer wrapper carries the CSS identity and pseudo-class state.
   assert.match(out, /Css\.CssFill \{/);
   assert.match(out, /cssClass: \["x"\]/);
-  // TextInput with an id
-  assert.match(out, /TextInput \{/);
+  assert.match(out, /cssPrimitive: "input"/);
+  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)/);
+  // Implicit size follows the control so CSS width/height still overrides.
+  assert.match(out, /implicitWidth: __input0\.implicitWidth/);
+  // Native control — chromeless (background null) so our CssFill owns the box visuals.
+  assert.match(out, /T\.TextField \{/);
   assert.match(out, /id: __input0/);
-  // Styling
   assert.match(out, /anchors\.fill: parent/);
-  assert.match(out, /verticalAlignment: TextInput\.AlignVCenter/);
-  // Initial value
-  assert.match(out, /Component\.onCompleted: text = s/);
-  // onTextEdited handler: e.currentTarget.value -> text
+  assert.match(out, /background: null/);
+  // CSS colour/font bridged from the wrapper's inherited properties.
+  assert.match(out, /color: cssTheme\.parseColor\(parent\.inheritedColor/);
+  assert.match(out, /font\.pixelSize: cssTheme\.parseFontSize/);
+  // onTextEdited handler: e.currentTarget.value → text (translated by translateInputHandler).
   assert.match(out, /onTextEdited: \{ s = text \}/);
-  // Two-way Connections
-  assert.match(out, /Connections \{/);
-  assert.match(out, /target: __self/);
-  assert.match(out, /function onSChanged\(\) \{ if \(__input0\.text !== s\) __input0\.text = s \}/);
+  // Binding element persists the signal value into the control (survives user edits).
+  assert.match(out, /Binding \{/);
+  assert.match(out, /target: __input0/);
+  assert.match(out, /property: "text"/);
+  assert.match(out, /value: s/);
+  assert.match(out, /restoreMode: Binding\.RestoreNone/);
+  // No old-style Connections/onCompleted (replaced by Binding).
+  assert.doesNotMatch(out, /Component\.onCompleted/);
+  assert.doesNotMatch(out, /TextInput \{/); // bare TextInput is gone; T.TextField is used
 });
 
 // --- Task 3: classList={{ cls: expr }} ---

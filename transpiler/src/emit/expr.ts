@@ -56,6 +56,9 @@ export interface Scope {
   helpers?: Set<string>;
   /** Imported JS bindings mirrored as QML ES modules: local name → QML expression. */
   jsImports?: Record<string, string>;
+  /** Mutable flag set by widget emitters (emitInput, emitTextarea) when a T.* control is
+   *  emitted. emitComponentType reads it after the render pass to prepend the Templates import. */
+  usedWidgets?: { flag: boolean };
 }
 
 /** A reactive cell / prop / mutable-local name as a QML reference: always BARE — it's a property on

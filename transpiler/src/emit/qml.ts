@@ -79,6 +79,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
   if (tag === "button") return emitButton(props, children as t.Node[], scope, level, guard);
   if (tag === "img") return emitImage(propsArg, props, scope, level, guard);
   if (tag === "input") return emitInput(propsArg, props, scope, level, guard);
+  if (tag === "textarea") return emitTextarea(propsArg, props, scope, level, guard);
 
   if (TEXT_TAGS.has(tag)) {
     return [
@@ -339,7 +340,7 @@ function emitImage(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
 }
 
 /** Translate an onInput/onKeyDown arrow handler body to QML-JS, mapping the event param and DOM idioms.
- *  - `e.currentTarget.value` / `e.target.value` → `text` (the TextInput's text property)
+ *  - `e.currentTarget.value` / `e.target.value` → `text` (the control's text property in scope)
  *  - `e.key === "Enter"` → `(event.key === Qt.Key_Return || event.key === Qt.Key_Enter)`
  *  - `e.key === "Escape"` → `(event.key === Qt.Key_Escape)`
  *  - `e.key` → `event.key`
@@ -366,107 +367,258 @@ function translateInputHandler(fn: t.ArrowFunctionExpression | t.FunctionExpress
     .replace(/__ev\.key/g, "event.key");
 }
 
-/** <input class="x" value={s()} onInput={(e)=>setS(e.currentTarget.value)} onKeyDown={...} placeholder="..." />
- *  → Css.CssFill { TextInput { id: __inputN; text bound; onTextEdited; Keys.onPressed; placeholder Text } Connections } */
-function emitInput(propsArg: t.Node | undefined, props: Props, scope: Scope, level: number, guard?: string): string[] {
-  const pad = INDENT.repeat(level);
-  const i = (n: number) => INDENT.repeat(level + n);
-  const classLine = buildCssClassLine(props, scope, i(1));
-
-  // Allocate a unique id for this TextInput via the per-file counter in scope.
-  const counter = scope.inputCounter ?? { n: 0 };
-  const inpId = `__input${counter.n++}`;
-  // If this is the first (only) input and no counter was in scope, we've mutated the local object —
-  // but since it's not threaded back, we only need the id here. For multiple inputs, callers thread
-  // the counter via scope.inputCounter.
-
-  // Resolve value, onInput, onKeyDown, placeholder from propsArg.
-  let valueExpr = '""';
-  let signalName: string | null = null; // the signal name if value={sig()} — for two-way sync
-  let onInputFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
-  let onKeyDownFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
+/** Parse all widget-relevant attrs from a propsArg ObjectExpression into a plain record.
+ *  Returns the typed, name-normalised set of values the widget emitters need. */
+function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
+  type: string; valueExpr: string | null; signalName: string | null;
+  placeholder: string;
+  onInputFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null;
+  onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null;
+  onKeyDownFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null;
+  disabled: boolean; readOnly: boolean; maxLength: string | null;
+} {
+  let type = "text";
+  let valueExpr: string | null = null;
+  let signalName: string | null = null;
   let placeholder = "";
+  let onInputFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
+  let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
+  let onKeyDownFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
+  let disabled = false;
+  let readOnly = false;
+  let maxLength: string | null = null;
 
   if (propsArg && t.isObjectExpression(propsArg)) {
     for (const p of propsArg.properties) {
       if (!t.isObjectProperty(p) || !t.isIdentifier(p.key)) continue;
       const key = p.key.name;
+      if (key === "type" && t.isStringLiteral(p.value)) type = p.value.value;
       if (key === "value" && t.isExpression(p.value)) {
         valueExpr = emitExpr(p.value, { ...scope, mode: "binding" });
-        // Detect value={sig()} — a zero-arg call to a signal accessor.
+        // Detect value={sig()} — zero-arg call to a signal accessor — to name the Binding's value.
         if (t.isCallExpression(p.value) && t.isIdentifier(p.value.callee) && p.value.arguments.length === 0) {
           const sym = scope.table.get(p.value.callee.name);
           if (sym?.kind === "signal") signalName = sym.name;
         }
       }
-      if (key === "onInput" && t.isExpression(p.value) && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
+      if (key === "placeholder" && t.isStringLiteral(p.value)) placeholder = p.value.value;
+      if (key === "onInput" && t.isExpression(p.value)
+          && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
         onInputFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
-      if ((key === "onKeyDown" || key === "onKeydown") && t.isExpression(p.value) && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
+      if (key === "onChange" && t.isExpression(p.value)
+          && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
+        onChangeFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
+      if ((key === "onKeyDown" || key === "onKeydown") && t.isExpression(p.value)
+          && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
         onKeyDownFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
-      if (key === "placeholder" && t.isStringLiteral(p.value))
-        placeholder = p.value.value;
+      // `disabled` / `readonly` / `readOnly` / `maxlength` / `maxLength` — HTML attribute names.
+      if (key === "disabled") disabled = !t.isBooleanLiteral(p.value) || p.value.value;
+      if (key === "readonly" || key === "readOnly") readOnly = !t.isBooleanLiteral(p.value) || p.value.value;
+      if (key === "maxlength" || key === "maxLength") {
+        if (t.isNumericLiteral(p.value)) maxLength = String(p.value.value);
+        else if (t.isExpression(p.value)) maxLength = emitExpr(p.value, { ...scope, mode: "binding" });
+      }
     }
   }
+  return { type, valueExpr, signalName, placeholder, onInputFn, onChangeFn, onKeyDownFn, disabled, readOnly, maxLength };
+}
 
-  // Compute onTextEdited body.
-  let inputBody = "";
-  if (onInputFn) {
-    inputBody = translateInputHandler(onInputFn, scope);
-  } else if (signalName) {
-    // No explicit onInput but bound to a signal → write-back: sig = text
-    inputBody = `${safeName(signalName)} = text`;
-  }
+/** Emit the color + font bindings that bridge the CssFill parent's CSS-inherited properties into a
+ *  native text control (T.TextField or T.TextArea). The CssFill exposes `inheritedColor`,
+ *  `inheritedFontFamily`, and `inheritedFontSize` as resolved CSS string values; cssTheme helpers
+ *  parse them into the QML types the native control expects. Fallbacks match existing gallery defaults. */
+function widgetColorFont(i: (n: number) => string): string[] {
+  return [
+    `${i(2)}color: cssTheme.parseColor(parent.inheritedColor || "#2b2b2b")`,
+    `${i(2)}font.family: cssTheme.resolveFontFamily(parent.inheritedFontFamily || "Sans Serif")`,
+    `${i(2)}font.pixelSize: cssTheme.parseFontSize(parent.inheritedFontSize || "13px", 13)`,
+  ];
+}
 
-  // Compute Keys.onPressed body.
-  let keyBody = "";
-  if (onKeyDownFn) {
-    keyBody = translateInputHandler(onKeyDownFn, scope);
-  }
+/** <input type="text|password|email|search" .../>
+ *  → wrapper Css.CssFill (cssPrimitive "input") carrying CSS identity + `:focus`/`:disabled` state,
+ *    + inner T.TextField (background null, anchors.fill) with CSS-bridged colour/font.
+ *
+ *  Controlled value: a `Binding` element on the CssFill re-asserts the signal value into the
+ *  control without being destroyed on user edits (unlike a plain property binding).
+ *  Two-way: the author's onInput → onTextEdited handler writes back into the signal.
+ *  Placeholder: a plain QML Text overlay inside T.TextField (T.TextField's own contentItem
+ *  renders placeholders, but only through an attached style — we don't load one). */
+function emitInput(propsArg: t.Node | undefined, props: Props, scope: Scope, level: number, guard?: string): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  const classLine = buildCssClassLine(props, scope, i(1));
 
-  const parts: string[] = [
+  // Unique id for this control; shared counter keeps ids monotonically unique across the component.
+  const counter = scope.inputCounter ?? { n: 0 };
+  const ctlId = `__input${counter.n++}`;
+
+  // Mark that this component uses QtQuick.Templates so the header emits the import.
+  if (scope.usedWidgets) scope.usedWidgets.flag = true;
+
+  const { type, valueExpr, signalName, placeholder, onInputFn, onChangeFn, onKeyDownFn, disabled, readOnly, maxLength }
+    = readWidgetProps(propsArg, scope);
+
+  // cssState: `:focus` when the control has keyboard focus; `:disabled` when not enabled.
+  const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+
+  // Handler bodies — translateInputHandler maps e.target.value → `text`, e.key → event.key, etc.
+  let textEditedBody = onInputFn
+    ? translateInputHandler(onInputFn, scope)
+    : signalName ? `${safeName(signalName)} = text` : "";
+  const editingFinishedBody = onChangeFn ? translateInputHandler(onChangeFn, scope) : "";
+  const keyBody = onKeyDownFn ? translateInputHandler(onKeyDownFn, scope) : "";
+
+  const lines: string[] = [
     `${pad}Css.CssFill {`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}TextInput {`,
-    `${i(2)}id: ${inpId}`,
+    `${i(1)}cssPrimitive: "input"`,
+    `${i(1)}cssState: ${cssState}`,
+    // Implicit size from the control so flex/grid overrides still work when no CSS size is set.
+    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
+    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
+    `${i(1)}T.TextField {`,
+    `${i(2)}id: ${ctlId}`,
     `${i(2)}anchors.fill: parent`,
-    `${i(2)}anchors.leftMargin: 12`,
-    `${i(2)}anchors.rightMargin: 12`,
+    // No visual chrome from Templates; our CssFill owns every painted pixel.
+    `${i(2)}background: null`,
+    ...widgetColorFont(i),
+    `${i(2)}leftPadding: 12`,
+    `${i(2)}rightPadding: 12`,
     `${i(2)}verticalAlignment: TextInput.AlignVCenter`,
-    `${i(2)}clip: true`,
     `${i(2)}selectByMouse: true`,
     `${i(2)}activeFocusOnTab: true`,
-    `${i(2)}color: parent.style && parent.style["color"] ? cssTheme.parseColor(parent.style["color"]) : "#2b2b2b"`,
-    `${i(2)}font.family: parent.style && parent.style["font-family"] ? cssTheme.resolveFontFamily(parent.style["font-family"], "Sans Serif") : cssTheme.resolveFontFamily("Sans Serif")`,
-    `${i(2)}font.pointSize: parent.style && parent.style["font-size"] ? cssTheme.parseFontSize(parent.style["font-size"], 13) : 13`,
-    `${i(2)}Component.onCompleted: text = ${valueExpr}`,
   ];
-  if (inputBody) parts.push(`${i(2)}onTextEdited: { ${inputBody} }`);
-  if (keyBody) parts.push(`${i(2)}Keys.onPressed: (event) => { ${keyBody} }`);
+
+  if (type === "password") lines.push(`${i(2)}echoMode: TextInput.Password`);
+  if (disabled) lines.push(`${i(2)}enabled: false`);
+  if (readOnly) lines.push(`${i(2)}readOnly: true`);
+  if (maxLength !== null) lines.push(`${i(2)}maximumLength: ${maxLength}`);
+  if (textEditedBody) lines.push(`${i(2)}onTextEdited: { ${textEditedBody} }`);
+  if (editingFinishedBody) lines.push(`${i(2)}onEditingFinished: { ${editingFinishedBody} }`);
+  if (keyBody) lines.push(`${i(2)}Keys.onPressed: (event) => { ${keyBody} }`);
+
+  // Placeholder: a plain Text overlay inside the control (positioned to match the text baseline).
+  // Hides when the field has text or is focused (web `<input>` placeholder semantics).
   if (placeholder) {
-    parts.push(
+    lines.push(
       `${i(2)}Text {`,
       `${i(3)}anchors.verticalCenter: parent.verticalCenter`,
       `${i(3)}anchors.left: parent.left`,
-      `${i(3)}visible: parent.text.length === 0`,
+      `${i(3)}anchors.leftMargin: parent.leftPadding`,
+      `${i(3)}visible: parent.text.length === 0 && !parent.activeFocus`,
       `${i(3)}text: ${JSON.stringify(placeholder)}`,
       `${i(3)}color: "#9aa0a6"`,
       `${i(3)}font: parent.font`,
       `${i(2)}}`,
     );
   }
-  // Two-way sync: if bound to a signal, push external signal changes into the TextInput.
-  if (signalName) {
-    const cap = signalName.charAt(0).toUpperCase() + signalName.slice(1);
-    parts.push(
-      `${i(2)}Connections {`,
-      `${i(3)}target: __self`,
-      `${i(3)}function on${cap}Changed() { if (${inpId}.text !== ${safeName(signalName)}) ${inpId}.text = ${safeName(signalName)} }`,
+
+  lines.push(`${i(1)}}`);
+
+  // Binding element: persistently asserts the signal value into the control text. Unlike a plain
+  // property binding (`text: sig`), a Binding object survives user edits — the signal value is
+  // re-pushed only when `value` changes (i.e., when the signal emits). restoreMode: RestoreNone
+  // prevents the Binding from reverting the field when it becomes inactive.
+  if (valueExpr !== null) {
+    lines.push(
+      `${i(1)}Binding {`,
+      `${i(2)}target: ${ctlId}`,
+      `${i(2)}property: "text"`,
+      `${i(2)}value: ${valueExpr}`,
+      `${i(2)}restoreMode: Binding.RestoreNone`,
+      `${i(1)}}`,
+    );
+  }
+
+  lines.push(`${pad}}`);
+  return lines;
+}
+
+/** <textarea .../>
+ *  → wrapper Css.CssFill (cssPrimitive "textarea") + T.TextArea (background null, wrapMode Wrap).
+ *
+ *  T.TextArea lacks `textEdited` (it extends TextEdit, not TextField/TextInput), so `onInput` and
+ *  `onChange` both map to `onTextChanged`. The Binding's no-op re-assertion prevents the echo from
+ *  causing visible re-renders (QML only emits textChanged when the text actually changes). */
+function emitTextarea(propsArg: t.Node | undefined, props: Props, scope: Scope, level: number, guard?: string): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  const classLine = buildCssClassLine(props, scope, i(1));
+
+  const counter = scope.inputCounter ?? { n: 0 };
+  const ctlId = `__input${counter.n++}`;
+
+  if (scope.usedWidgets) scope.usedWidgets.flag = true;
+
+  const { valueExpr, signalName, placeholder, onInputFn, onChangeFn, disabled, readOnly }
+    = readWidgetProps(propsArg, scope);
+
+  const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+
+  // T.TextArea has no textEdited signal: map both onInput and onChange to onTextChanged.
+  // (onInput takes priority if both are specified.)
+  const fn = onInputFn ?? onChangeFn;
+  let textChangedBody = fn
+    ? translateInputHandler(fn, scope)
+    : signalName ? `${safeName(signalName)} = text` : "";
+
+  const lines: string[] = [
+    `${pad}Css.CssFill {`,
+    ...classLine,
+    ...guardLine(guard, level),
+    `${i(1)}cssPrimitive: "textarea"`,
+    `${i(1)}cssState: ${cssState}`,
+    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
+    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
+    `${i(1)}T.TextArea {`,
+    `${i(2)}id: ${ctlId}`,
+    `${i(2)}anchors.fill: parent`,
+    `${i(2)}background: null`,
+    // Allow the text to wrap; callers can override via CSS `white-space: nowrap` (not yet mapped).
+    `${i(2)}wrapMode: TextEdit.Wrap`,
+    ...widgetColorFont(i),
+    `${i(2)}padding: 12`,
+    `${i(2)}selectByMouse: true`,
+    `${i(2)}activeFocusOnTab: true`,
+  ];
+
+  if (disabled) lines.push(`${i(2)}enabled: false`);
+  if (readOnly) lines.push(`${i(2)}readOnly: true`);
+  if (textChangedBody) lines.push(`${i(2)}onTextChanged: { ${textChangedBody} }`);
+
+  // Placeholder: overlaid at the top-left of the editing area (top-aligned for multi-line).
+  if (placeholder) {
+    lines.push(
+      `${i(2)}Text {`,
+      `${i(3)}anchors.top: parent.top`,
+      `${i(3)}anchors.left: parent.left`,
+      `${i(3)}anchors.topMargin: parent.padding`,
+      `${i(3)}anchors.leftMargin: parent.padding`,
+      `${i(3)}visible: parent.text.length === 0 && !parent.activeFocus`,
+      `${i(3)}text: ${JSON.stringify(placeholder)}`,
+      `${i(3)}color: "#9aa0a6"`,
+      `${i(3)}font: parent.font`,
       `${i(2)}}`,
     );
   }
-  parts.push(`${i(1)}}`, `${pad}}`);
-  return parts;
+
+  lines.push(`${i(1)}}`);
+
+  if (valueExpr !== null) {
+    lines.push(
+      `${i(1)}Binding {`,
+      `${i(2)}target: ${ctlId}`,
+      `${i(2)}property: "text"`,
+      `${i(2)}value: ${valueExpr}`,
+      `${i(2)}restoreMode: Binding.RestoreNone`,
+      `${i(1)}}`,
+    );
+  }
+
+  lines.push(`${pad}}`);
+  return lines;
 }
 
 /** Children that are elements (recurse) interleaved with text/interpolation runs (one CssText each). */

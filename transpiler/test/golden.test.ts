@@ -157,18 +157,19 @@ test("golden: effect-smoke.tsx emits onCompleted body + Connections dep-tracking
   assert.match(app.entry, /function onAChanged\(\) \{ b = a \* 2; \}/); // dep handler (bare)
 });
 
-test("golden: input-demo.tsx emits CssFill + TextInput with two-way binding and placeholder", async () => {
+test("golden: input-demo.tsx emits CssFill + T.TextField with Binding and placeholder", async () => {
   const src = await readFile(`${dir}input-demo.tsx`, "utf8");
   const got = (await generate(src, "input-demo.tsx")).entry;
   const want = await readFile(`${dir}input-demo.expected.qml`, "utf8");
   assert.equal(got.trimEnd(), want.trimEnd());
   assert.match(got, /Css\.CssFill \{/);
   assert.match(got, /cssClass: \["search"\]/);
-  assert.match(got, /TextInput \{/);
+  assert.match(got, /T\.TextField \{/);           // native Template control (no visual chrome)
   assert.match(got, /id: __input0/);
-  assert.match(got, /Component\.onCompleted: text = s/);
+  assert.match(got, /background: null/);
   assert.match(got, /onTextEdited: \{ s = text \}/);
-  assert.match(got, /Connections \{[\s\S]*function onSChanged\(\)/);
+  assert.match(got, /Binding \{[\s\S]*target: __input0/); // persistent Binding (survives user edits)
+  assert.match(got, /import QtQuick\.Templates 6\.0 as T/); // Templates import prepended
   assert.match(got, /visible: parent\.text\.length === 0/);
   assert.match(got, /text: "search…"/);
 });
