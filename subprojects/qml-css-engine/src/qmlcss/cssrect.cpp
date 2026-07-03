@@ -1158,9 +1158,6 @@ void CssRect::ensureScrollable()
     QQmlEngine *eng = qmlEngine(this);
     if (!eng)
         return;
-    // Native Flickable + a Controls-free scroll indicator: a thin bar on the VIEWPORT layer
-    // (`parent: flick` keeps it out of the reparented content), sized by the visible ratio,
-    // faded in while the view moves/drags/flicks.
     QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-flickable"),
         "import QtQuick\n"
         "Flickable {\n"
@@ -1168,6 +1165,8 @@ void CssRect::ensureScrollable()
         "    clip: true\n"
         "    boundsBehavior: Flickable.StopAtBounds\n"
         "    flickableDirection: Flickable.VerticalFlick\n"
+        // Controls-free scroll indicator on the VIEWPORT layer (parent: flick keeps it out
+        // of the reparented content): sized by the visible ratio, fades in while moving.
         "    Rectangle {\n"
         "        parent: flick\n"
         "        x: flick.width - 5\n"

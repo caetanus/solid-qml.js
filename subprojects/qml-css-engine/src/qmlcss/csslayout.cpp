@@ -124,8 +124,6 @@ void CssLayoutEngine::notifyParentLayout(QQuickItem *item)
     }
 }
 
-static bool sqLayoutTrace = qEnvironmentVariableIntValue("SQ_LAYOUT_TRACE") != 0;
-
 void CssLayoutEngine::flush()
 {
     if (m_flushing)
@@ -414,12 +412,6 @@ double CssLayoutEngine::clampSize(const QVariantMap &style, const QString &axis,
 
 void CssLayoutEngine::place(QQuickItem *k, double x, double y, double w, double h) const
 {
-    place(k, x, y, w, h, false, false);
-}
-
-void CssLayoutEngine::place(QQuickItem *k, double x, double y, double w, double h,
-                            bool wImposed, bool hImposed) const
-{
     // Final clamp so stretched / grown items still honour min-/max-width/height (a flex row that
     // stretches children to the container's cross box must not blow past their max-width — this is
     // what makes a `max-width` paragraph wrap instead of overflowing).
@@ -428,22 +420,9 @@ void CssLayoutEngine::place(QQuickItem *k, double x, double y, double w, double 
     h = clampSize(ks, QStringLiteral("height"), h, std::nan(""));
     // A declared `transition: width/height` animates the write instead of snapping; the
     // cast + covers-check only run when the geometry actually changes.
-    // Record the imposition (the CSS "definite size" signal) even when the value is
-    // unchanged — children of an externally-sized box get the spec flex-shrink default.
-    // ONLY non-content-derived writes count (a base-size write is the item's own content
-    // echoed back; treating it as definite reintroduces the auto-column collapse).
-    CssRect *marked = qobject_cast<CssRect *>(k);
-    if (marked) {
-        if (sqLayoutTrace && (wImposed || hImposed)) {
-            const QString cls = k->property("cssClass").toStringList().join(QLatin1Char('\x2e'));
-            fprintf(stderr, "[impose] %s w=%d h=%d (%.0f x %.0f)\n", qPrintable(cls), int(wImposed), int(hImposed), w, h);
-        }
-        marked->markImposed(wImposed && !std::isnan(w) && w >= 0,
-                            hImposed && !std::isnan(h) && h >= 0);
-    }
     CssRect *box = nullptr;
     if (!std::isnan(w) && w >= 0 && std::abs(k->width() - w) > 0.5) {
-        box = marked;
+        box = qobject_cast<CssRect *>(k);
         if (!box || !box->animateGeometry(QLatin1String("width"), w))
             k->setWidth(w);
     }
@@ -493,10 +472,6 @@ void CssLayoutEngine::placeAbsolute(QQuickItem *k, double ox, double oy, double 
 
 void CssLayoutEngine::layout(QQuickItem *root, QQuickItem *content)
 {
-    if (sqLayoutTrace) {
-        const QString cls = root->property("cssClass").toStringList().join(QLatin1Char('.'));
-        fprintf(stderr, "[layout] %s w=%.0f h=%.0f\n", qPrintable(cls.isEmpty() ? QString::fromLatin1(root->metaObject()->className()) : cls), root->width(), root->height());
-    }
     if (!root || !content)
         return;
     const QVariantMap rootStyle = root->property("style").toMap();
@@ -547,19 +522,9 @@ void CssLayoutEngine::layout(QQuickItem *root, QQuickItem *content)
             flow[i] = byOrder[i].second;
     }
 
-    // CSS "definite size" per axis: declared in the container's own style, or imposed by
-    // the parent's layout (place() marks the box). Gates the spec flex-shrink default.
-    const auto axisDefinite = [&](const char *key) {
-        const QString v = styleStr(rootStyle, QLatin1String(key));
-        return !v.isEmpty() && v != QLatin1String("auto");
-    };
-    auto *rootBox = qobject_cast<CssRect *>(root);
-    const bool widthDefinite = axisDefinite("width") || (rootBox && rootBox->widthImposed());
-    const bool heightDefinite = axisDefinite("height") || (rootBox && rootBox->heightImposed());
-
     const QPair<double, double> contentSize = isGrid
         ? layoutGrid(flow, rootStyle, cw, ch, originX, originY)
-        : layoutFlex(flow, rootStyle, cw, ch, originX, originY, isFlex, widthDefinite, heightDefinite);
+        : layoutFlex(flow, rootStyle, cw, ch, originX, originY, isFlex);
 
     for (QQuickItem *k : abs)
         placeAbsolute(k, originX, originY, cw, ch);
@@ -574,18 +539,13 @@ void CssLayoutEngine::layout(QQuickItem *root, QQuickItem *content)
 
 QPair<double, double> CssLayoutEngine::layoutFlex(const QList<QQuickItem *> &flow,
                                                   const QVariantMap &rootStyle, double cw, double ch,
-                                                  double originX, double originY, bool isFlex,
-                                                  bool widthDefinite, bool heightDefinite) const
+                                                  double originX, double originY, bool isFlex) const
 {
     QString flexDir = styleStr(rootStyle, "flex-direction");
     if (flexDir.isEmpty()) flexDir = QStringLiteral("row");
     const bool horizontal = isFlex ? flexDir.startsWith(QLatin1String("row")) : false;
     const double mainAvail = horizontal ? cw : ch;
     const double crossAvail = horizontal ? ch : cw;
-    // CSS "definite main size": only then does the spec default flex-shrink:1 apply. An
-    // auto-sized main (content-driven) must let children overflow, never crush them against
-    // a stale in-convergence size (the historical auto-column collapse).
-    const bool mainDefinite = horizontal ? widthDefinite : heightDefinite;
 
     QString gapStr = styleStr(rootStyle, "gap");
     if (gapStr.isEmpty()) gapStr = styleStr(rootStyle, "row-gap");
@@ -651,12 +611,17 @@ QPair<double, double> CssLayoutEngine::layoutFlex(const QList<QQuickItem *> &flo
         if (std::isnan(g)) g = 0;
         grows[i] = g;
 
-        // flex-shrink: weights how much an item gives back when a line OVERFLOWS. The spec
-        // default 1 applies ONLY when the container's main size is DEFINITE (declared in its
-        // style, or imposed by the parent's layout — see markImposed); an auto-sized main
-        // keeps 0 so content stacks/overflows instead of crushing against a stale
-        // in-convergence size (the historical auto-column collapse).
-        double sh = mainDefinite ? 1 : 0;
+        // flex-shrink: weights how much an item gives back when a line OVERFLOWS. We default to 0
+        // (not the CSS default 1) ON PURPOSE: correct default-1 needs the flexbox "definite main
+        // size" distinction — a flex-column with auto height must GROW, not shrink its children — and
+        // without it, auto-sized columns read a stale main size and collapse their content to ~0.
+        // So shrink applies only when the author asks (`flex-shrink`/`flex` 2nd token). Definite-size
+        // detection is a future refinement. Also honour the `flex` shorthand's 2nd token.
+        // STABLE flexible-both-ways rule: an item that declares flex-grow also gives space
+        // back on overflow (shrink default 1) — that's what lets a grown pane follow the
+        // container back down on a window shrink. Rigid (non-grow) items keep 0 unless the
+        // author asks; deriving CSS "definite size" from layout state proved unstable.
+        double sh = grows[i] > 0 ? 1 : 0;
         const QString fsh = styleStr(ks, "flex-shrink");
         if (!fsh.isEmpty())
             sh = jsParseFloat(fsh);
@@ -814,13 +779,8 @@ QPair<double, double> CssLayoutEngine::layoutFlex(const QList<QQuickItem *> &flo
             crossPos += crossCursor;
 
             const double mainPos = pos + mMar[i].first;
-            // Definite-size signals for the child: cross-axis stretch, a grow-filled main,
-            // or an explicit style size on the axis — never a content-derived base echo.
-            const bool crossImposed = (csz != crosses[i]) || cfixed[i];
-            const bool mainImposed = (grows[i] > 0 && msz != mains[i]) || (lm[i] != mains[i])
-                || !styleStr(ks, horizontal ? "width" : "height").isEmpty();
-            if (horizontal) place(flow[i], originX + mainPos, originY + crossPos, msz, csz, mainImposed, crossImposed);
-            else place(flow[i], originX + crossPos, originY + mainPos, csz, msz, crossImposed, mainImposed);
+            if (horizontal) place(flow[i], originX + mainPos, originY + crossPos, msz, csz);
+            else place(flow[i], originX + crossPos, originY + mainPos, csz, msz);
 
             pos = mainPos + msz + mMar[i].second + between;
             Q_UNUSED(naturalCross);
