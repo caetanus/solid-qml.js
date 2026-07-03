@@ -46,9 +46,10 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   for (const b of ctx?.useContext ?? []) ctxBindings[b.local] = b.ctx;
   const hasCtxBindings = Object.keys(ctxBindings).length > 0;
   const inputCounter = { n: 0 };
+  const hoverCounter = { n: 0 };
   const scope: Scope = {
     table, mode: "binding", propsParam: props.param ?? undefined, propAliases, components, contexts, refs: collectedRefs,
-    inputCounter, resources: resources.map((r) => r.name), jsImports,
+    inputCounter, hoverCounter, resources: resources.map((r) => r.name), jsImports,
     ...(mutableLocals ? { mutableLocals } : {}),
     ...(helpers ? { helpers } : {}),
     ...(hasCtxBindings ? { ctxBindings, ctxValueShape: ctx?.ctxValueShape } : {}),

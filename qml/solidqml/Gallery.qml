@@ -16,159 +16,227 @@ Css.CssRect {
         cssClass: ["nav"]
         cssPrimitive: "div"
         Css.CssFill {
+            cssClass: [].concat(view === "hello" ? ["active"] : [])
+            cssState: __hover0.containsMouse ? ["hover"] : []
             cssPrimitive: "button"
             Css.CssText {
                 cssPrimitive: "text"
                 text: "Hello"
             }
             MouseArea {
+                id: __hover0
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: view = "hello"
             }
         }
         Css.CssFill {
+            cssClass: [].concat(view === "counters" ? ["active"] : [])
+            cssState: __hover1.containsMouse ? ["hover"] : []
             cssPrimitive: "button"
             Css.CssText {
                 cssPrimitive: "text"
                 text: "Counters"
             }
             MouseArea {
+                id: __hover1
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: view = "counters"
             }
         }
         Css.CssFill {
+            cssClass: [].concat(view === "counter" ? ["active"] : [])
+            cssState: __hover2.containsMouse ? ["hover"] : []
             cssPrimitive: "button"
             Css.CssText {
                 cssPrimitive: "text"
                 text: "Counter (timer)"
             }
             MouseArea {
+                id: __hover2
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: view = "counter"
             }
         }
         Css.CssFill {
+            cssClass: [].concat(view === "children" ? ["active"] : [])
+            cssState: __hover3.containsMouse ? ["hover"] : []
             cssPrimitive: "button"
             Css.CssText {
                 cssPrimitive: "text"
                 text: "props.children"
             }
             MouseArea {
+                id: __hover3
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: view = "children"
             }
         }
         Css.CssFill {
+            cssClass: [].concat(view === "derived" ? ["active"] : [])
+            cssState: __hover4.containsMouse ? ["hover"] : []
             cssPrimitive: "button"
             Css.CssText {
                 cssPrimitive: "text"
                 text: "Derived"
             }
             MouseArea {
+                id: __hover4
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: view = "derived"
             }
         }
         Css.CssFill {
+            cssClass: [].concat(view === "index" ? ["active"] : [])
+            cssState: __hover5.containsMouse ? ["hover"] : []
             cssPrimitive: "button"
             Css.CssText {
                 cssPrimitive: "text"
                 text: "Index"
             }
             MouseArea {
+                id: __hover5
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: view = "index"
             }
         }
         Css.CssFill {
+            cssClass: [].concat(view === "dynamic" ? ["active"] : [])
+            cssState: __hover6.containsMouse ? ["hover"] : []
             cssPrimitive: "button"
             Css.CssText {
                 cssPrimitive: "text"
                 text: "Dynamic"
             }
             MouseArea {
+                id: __hover6
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: view = "dynamic"
             }
         }
         Css.CssFill {
+            cssClass: [].concat(view === "props" ? ["active"] : [])
+            cssState: __hover7.containsMouse ? ["hover"] : []
             cssPrimitive: "button"
             Css.CssText {
                 cssPrimitive: "text"
                 text: "Prop helpers"
             }
             MouseArea {
+                id: __hover7
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: view = "props"
             }
         }
         Css.CssFill {
+            cssClass: [].concat(view === "context" ? ["active"] : [])
+            cssState: __hover8.containsMouse ? ["hover"] : []
             cssPrimitive: "button"
             Css.CssText {
                 cssPrimitive: "text"
                 text: "Context"
             }
             MouseArea {
+                id: __hover8
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: view = "context"
             }
         }
         Css.CssFill {
+            cssClass: [].concat(view === "refs" ? ["active"] : [])
+            cssState: __hover9.containsMouse ? ["hover"] : []
             cssPrimitive: "button"
             Css.CssText {
                 cssPrimitive: "text"
                 text: "Refs"
             }
             MouseArea {
+                id: __hover9
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: view = "refs"
             }
         }
         Css.CssFill {
+            cssClass: [].concat(view === "fetch" ? ["active"] : [])
+            cssState: __hover10.containsMouse ? ["hover"] : []
             cssPrimitive: "button"
             Css.CssText {
                 cssPrimitive: "text"
                 text: "Fetch"
             }
             MouseArea {
+                id: __hover10
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: view = "fetch"
             }
         }
         Css.CssFill {
+            cssClass: [].concat(view === "todomvc" ? ["active"] : [])
+            cssState: __hover11.containsMouse ? ["hover"] : []
             cssPrimitive: "button"
             Css.CssText {
                 cssPrimitive: "text"
                 text: "TodoMVC"
             }
             MouseArea {
+                id: __hover11
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: view = "todomvc"
             }
         }
         Css.CssFill {
+            cssClass: [].concat(view === "nodeimports" ? ["active"] : [])
+            cssState: __hover12.containsMouse ? ["hover"] : []
             cssPrimitive: "button"
             Css.CssText {
                 cssPrimitive: "text"
                 text: "Node imports"
             }
             MouseArea {
+                id: __hover12
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: view = "nodeimports"
+            }
+        }
+        Css.CssFill {
+            cssClass: [].concat(view === "cssgaps" ? ["active"] : [])
+            cssState: __hover13.containsMouse ? ["hover"] : []
+            cssPrimitive: "button"
+            Css.CssText {
+                cssPrimitive: "text"
+                text: "CSS gaps"
+            }
+            MouseArea {
+                id: __hover13
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: view = "cssgaps"
             }
         }
     }
@@ -235,6 +303,11 @@ Css.CssRect {
     Repeater {
         model: ((view === "nodeimports") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch") || (view === "todomvc"))) ? 1 : 0
         NodeImports {
+        }
+    }
+    Repeater {
+        model: ((view === "cssgaps") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch") || (view === "todomvc") || (view === "nodeimports"))) ? 1 : 0
+        CssGaps {
         }
     }
 }

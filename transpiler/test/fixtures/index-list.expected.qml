@@ -8,13 +8,16 @@ Css.CssRect {
     cssClass: ["app"]
     cssPrimitive: "div"
     Css.CssFill {
+        cssState: __hover0.containsMouse ? ["hover"] : []
         cssPrimitive: "button"
         Css.CssText {
             cssPrimitive: "text"
             text: "add"
         }
         MouseArea {
+            id: __hover0
             anchors.fill: parent
+            hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: items = [...items, "more"]
         }

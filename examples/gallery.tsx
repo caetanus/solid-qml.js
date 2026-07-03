@@ -16,6 +16,7 @@ import { Refs } from "./refs";
 import { Fetch } from "./fetch";
 import { TodoMVC } from "./todomvc";
 import { NodeImports } from "./nodeimports";
+import { CssGaps } from "./cssgaps";
 import "./examples.css";
 
 export function Gallery() {
@@ -29,19 +30,20 @@ export function Gallery() {
         <div class="hero-bg" />
       </Show>
       <div class="nav">
-        <button onClick={() => setView("hello")}>Hello</button>
-        <button onClick={() => setView("counters")}>Counters</button>
-        <button onClick={() => setView("counter")}>Counter (timer)</button>
-        <button onClick={() => setView("children")}>props.children</button>
-        <button onClick={() => setView("derived")}>Derived</button>
-        <button onClick={() => setView("index")}>Index</button>
-        <button onClick={() => setView("dynamic")}>Dynamic</button>
-        <button onClick={() => setView("props")}>Prop helpers</button>
-        <button onClick={() => setView("context")}>Context</button>
-        <button onClick={() => setView("refs")}>Refs</button>
-        <button onClick={() => setView("fetch")}>Fetch</button>
-        <button onClick={() => setView("todomvc")}>TodoMVC</button>
-        <button onClick={() => setView("nodeimports")}>Node imports</button>
+        <button classList={{ active: view() === "hello" }} onClick={() => setView("hello")}>Hello</button>
+        <button classList={{ active: view() === "counters" }} onClick={() => setView("counters")}>Counters</button>
+        <button classList={{ active: view() === "counter" }} onClick={() => setView("counter")}>Counter (timer)</button>
+        <button classList={{ active: view() === "children" }} onClick={() => setView("children")}>props.children</button>
+        <button classList={{ active: view() === "derived" }} onClick={() => setView("derived")}>Derived</button>
+        <button classList={{ active: view() === "index" }} onClick={() => setView("index")}>Index</button>
+        <button classList={{ active: view() === "dynamic" }} onClick={() => setView("dynamic")}>Dynamic</button>
+        <button classList={{ active: view() === "props" }} onClick={() => setView("props")}>Prop helpers</button>
+        <button classList={{ active: view() === "context" }} onClick={() => setView("context")}>Context</button>
+        <button classList={{ active: view() === "refs" }} onClick={() => setView("refs")}>Refs</button>
+        <button classList={{ active: view() === "fetch" }} onClick={() => setView("fetch")}>Fetch</button>
+        <button classList={{ active: view() === "todomvc" }} onClick={() => setView("todomvc")}>TodoMVC</button>
+        <button classList={{ active: view() === "nodeimports" }} onClick={() => setView("nodeimports")}>Node imports</button>
+        <button classList={{ active: view() === "cssgaps" }} onClick={() => setView("cssgaps")}>CSS gaps</button>
       </div>
       <Switch>
         <Match when={view() === "hello"}><Hello /></Match>
@@ -57,6 +59,7 @@ export function Gallery() {
         <Match when={view() === "fetch"}><Fetch /></Match>
         <Match when={view() === "todomvc"}><TodoMVC /></Match>
         <Match when={view() === "nodeimports"}><NodeImports /></Match>
+        <Match when={view() === "cssgaps"}><CssGaps /></Match>
       </Switch>
     </div>
   );

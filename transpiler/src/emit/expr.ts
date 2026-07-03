@@ -42,6 +42,9 @@ export interface Scope {
   ctxProvCounter?: { n: number };
   /** Mutable counter for unique TextInput ids (`__inputN`). Shared across one emit pass. */
   inputCounter?: { n: number };
+  /** Mutable counter for unique button MouseArea ids (`__hoverN`) — the button's `cssState`
+   *  reads `containsMouse` so `:hover` rules fire natively. Shared across one emit pass. */
+  hoverCounter?: { n: number };
   /** Resource names declared in this component (`createResource`). `<Suspense>` gates its children on
    *  "no tracked resource is loading" — `!(<r>_loading || …)`. */
   resources?: string[];

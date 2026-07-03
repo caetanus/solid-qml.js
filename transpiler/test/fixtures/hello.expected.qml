@@ -58,6 +58,7 @@ Css.CssRect {
             }
             Css.CssFill {
                 cssClass: ["hello-cta"]
+                cssState: __hover0.containsMouse ? ["hover"] : []
                 cssPrimitive: "button"
                 Css.CssText {
                     cssPrimitive: "text"
@@ -77,7 +78,9 @@ Css.CssRect {
                     }
                 }
                 MouseArea {
+                    id: __hover0
                     anchors.fill: parent
+                    hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: events = events + 1
                 }

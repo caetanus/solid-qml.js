@@ -8,13 +8,16 @@ Css.CssRect {
     cssClass: ["app"]
     cssPrimitive: "div"
     Css.CssFill {
+        cssState: __hover0.containsMouse ? ["hover"] : []
         cssPrimitive: "button"
         Css.CssText {
             cssPrimitive: "text"
             text: "render as: <" + (tag) + ">"
         }
         MouseArea {
+            id: __hover0
             anchors.fill: parent
+            hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: tag = tag === "h1" ? "bio" : "h1"
         }

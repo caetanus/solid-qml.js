@@ -36,6 +36,7 @@ class CssThemeTests final : public QObject {
 private slots:
     void parsesIdClassAndSourceOrder();
     void resolvesDescendantSelectorsWithContext();
+    void classAncestorSelectorsScope();
     void exactResolveIgnoresUniversalRules();
     void stripsCommentsAndAtRules();
     void parsesColors();

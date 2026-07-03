@@ -81,6 +81,45 @@ void CssThemeTests::resolvesDescendantSelectorsWithContext()
     QVERIFY(!focusedWorkspaceButton.contains(QStringLiteral("background")));
 }
 
+// Descendant selectors with CLASS (or type) ancestors must scope like the web: `.nav button`
+// only styles buttons under a `.nav` element. Before the ancestor chain existed, such rules
+// matched EVERY button (ancestor classes only added specificity) — `.nav button` stomped
+// unrelated buttons app-wide.
+void CssThemeTests::classAncestorSelectorsScope()
+{
+    CssTheme theme;
+    theme.loadFromString(QStringLiteral(R"(
+        button { color: #222222; }
+        .nav button { background: #101010; }
+        .gallery .nav button { border-radius: 9px; }
+    )"));
+
+    // No ancestors: only the bare type rule applies.
+    const QVariantMap lone = theme.resolveWithAncestors({}, QString(), {}, QString(), QStringLiteral("button"));
+    QCOMPARE(lone.value(QStringLiteral("color")).toString(), QStringLiteral("#222222"));
+    QVERIFY(!lone.contains(QStringLiteral("background")));
+
+    // A .nav ancestor: the scoped rule applies; the two-level rule still requires .gallery.
+    CssAncestorInfo nav;
+    nav.classes = QStringList{QStringLiteral("nav")};
+    const QVariantMap scoped = theme.resolveWithAncestors({nav}, QString(), {}, QString(), QStringLiteral("button"));
+    QCOMPARE(scoped.value(QStringLiteral("background")).toString(), QStringLiteral("#101010"));
+    QVERIFY(!scoped.contains(QStringLiteral("border-radius")));
+
+    // Outer→inner chain [.gallery, .nav]: all three rules apply.
+    CssAncestorInfo gallery;
+    gallery.classes = QStringList{QStringLiteral("gallery")};
+    const QVariantMap deep = theme.resolveWithAncestors({gallery, nav}, QString(), {}, QString(),
+                                                        QStringLiteral("button"));
+    QCOMPARE(deep.value(QStringLiteral("border-radius")).toString(), QStringLiteral("9px"));
+
+    // Order matters: [.nav, .gallery] does NOT satisfy `.gallery .nav button`.
+    const QVariantMap reversed = theme.resolveWithAncestors({nav, gallery}, QString(), {}, QString(),
+                                                            QStringLiteral("button"));
+    QVERIFY(!reversed.contains(QStringLiteral("border-radius")));
+    QCOMPARE(reversed.value(QStringLiteral("background")).toString(), QStringLiteral("#101010"));
+}
+
 void CssThemeTests::exactResolveIgnoresUniversalRules()
 {
     CssTheme theme;

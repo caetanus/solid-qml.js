@@ -5,13 +5,16 @@ import qmlcss 1.0 as Css
 Css.CssFill {
     id: __self
     property var __ctx_CounterContext
+    cssState: __hover0.containsMouse ? ["hover"] : []
     cssPrimitive: "button"
     Css.CssText {
         cssPrimitive: "text"
         text: "increment"
     }
     MouseArea {
+        id: __hover0
         anchors.fill: parent
+        hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: __ctx_CounterContext.increment()
     }

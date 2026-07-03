@@ -16,6 +16,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QQuickItem>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QUrl>
@@ -294,12 +295,12 @@ CssSimpleSelector parseSimpleSelector(const QString &raw)
 }
 
 struct FullSelectorParse {
-    QString ancestorId;
+    QList<CssSimpleSelector> ancestors;
     CssSimpleSelector subject;
 };
 
 // Split a full selector on combinators and extract the subject (last token)
-// plus the ancestor id from the leading part.
+// plus the full ancestor chain (outer→inner) from the leading parts.
 FullSelectorParse parseFullSelector(const QString &fullSelector)
 {
     static const QRegularExpression combinatorRe(QStringLiteral(R"(\s*[>+~]\s*|\s+)"));
@@ -316,12 +317,42 @@ FullSelectorParse parseFullSelector(const QString &fullSelector)
     for (int i = 0; i + 1 < parts.size(); ++i) {
         const CssSimpleSelector ancestor = parseSimpleSelector(parts.at(i));
         result.subject.specificity += ancestor.specificity;
-        // Take the first #id found in the ancestor chain as context key
-        if (!ancestor.id.isEmpty() && result.ancestorId.isEmpty())
-            result.ancestorId = ancestor.id;
+        result.ancestors.append(ancestor);
     }
 
     return result;
+}
+
+// One requirement of a rule's ancestor chain against one real ancestor element.
+bool ancestorSelectorMatches(const CssSimpleSelector &sel, const CssAncestorInfo &info)
+{
+    if (!sel.id.isEmpty() && sel.id != info.id)
+        return false;
+    if (!sel.element.isEmpty() && sel.element != info.primitive)
+        return false;
+    for (const QString &cls : sel.classes) {
+        if (!info.classes.contains(cls))
+            return false;
+    }
+    return true;
+}
+
+// Descendant-combinator semantics: the rule's ancestors (outer→inner) must match a
+// subsequence of the element's real ancestor chain (outer→inner), in order.
+bool ancestorChainMatches(const QList<CssSimpleSelector> &required, const QList<CssAncestorInfo> &chain)
+{
+    int c = 0;
+    for (const CssSimpleSelector &sel : required) {
+        for (;; ++c) {
+            if (c >= chain.size())
+                return false;
+            if (ancestorSelectorMatches(sel, chain.at(c))) {
+                ++c;
+                break;
+            }
+        }
+    }
+    return true;
 }
 
 QVariantMap parseDeclarationBlock(const QString &block, QVariantMap *importantOut = nullptr)
@@ -560,8 +591,8 @@ QList<CssRule> parseCss(const QString &css)
             if (!props.isEmpty()) {
                 const QStringList selectors = selectorPart.split(QLatin1Char(','), Qt::SkipEmptyParts);
                 for (const QString &sel : selectors) {
-                    const FullSelectorParse parsed = parseFullSelector(sel.trimmed());
-                    rules.append({parsed.ancestorId, parsed.subject, props, important});
+                    FullSelectorParse parsed = parseFullSelector(sel.trimmed());
+                    rules.append({std::move(parsed.ancestors), parsed.subject, props, important});
                 }
             }
         }
@@ -572,7 +603,7 @@ QList<CssRule> parseCss(const QString &css)
     return rules;
 }
 
-bool selectorMatches(const CssSimpleSelector &sel, const QString &contextId, const QString &id,
+bool selectorMatches(const CssSimpleSelector &sel, bool hasAncestorContext, const QString &id,
                      const QStringList &classes, const QString &pseudoElement, const QString &primitive)
 {
     // A pseudo-element rule (`::before`) only matches when that overlay is requested,
@@ -586,7 +617,7 @@ bool selectorMatches(const CssSimpleSelector &sel, const QString &contextId, con
     // A selector that constrains nothing at the top level (no id, class, or type) is too broad
     // for component styling; allow it only with an ancestor context (i.e. via resolveWith).
     if (!sel.universal && sel.id.isEmpty() && sel.classes.isEmpty() && sel.element.isEmpty()
-        && contextId.isEmpty())
+        && !hasAncestorContext)
         return false;
     if (!sel.id.isEmpty() && sel.id != id)
         return false;
@@ -870,24 +901,48 @@ static QStringList cssVariantToStringList(const QVariant &v)
     return v.toString().split(QLatin1Char(' '), Qt::SkipEmptyParts);
 }
 
-QVariantMap CssTheme::resolveMerged(const QString &cssId, const QStringList &alternateIds,
-                                    const QStringList &classes, const QString &primitive) const
+QVariantMap CssTheme::resolveMerged(const QList<CssAncestorInfo> &ancestors, const QString &cssId,
+                                    const QStringList &alternateIds, const QStringList &classes,
+                                    const QString &primitive) const
 {
-    QVariantMap merged = resolve(QString(), classes, QString(), primitive);
+    QVariantMap merged = resolveImpl(ancestors, QString(), classes, QString(), primitive);
     // Waybar-compat aliases first (lowest priority), then the primary id wins on conflict.
     for (const QString &alt : alternateIds) {
         if (alt.isEmpty())
             continue;
-        const QVariantMap m = resolve(alt, classes, QString(), primitive);
+        const QVariantMap m = resolveImpl(ancestors, alt, classes, QString(), primitive);
         for (auto it = m.constBegin(); it != m.constEnd(); ++it)
             merged.insert(it.key(), it.value());
     }
     if (!cssId.isEmpty()) {
-        const QVariantMap primary = resolve(cssId, classes, QString(), primitive);
+        const QVariantMap primary = resolveImpl(ancestors, cssId, classes, QString(), primitive);
         for (auto it = primary.constBegin(); it != primary.constEnd(); ++it)
             merged.insert(it.key(), it.value());
     }
     return merged;
+}
+
+// Walk the item tree upward collecting the CSS identity of every ancestor element (outer→inner).
+// Plain Items in between (content holders, transpiler wrappers) carry no CSS signature and are
+// skipped — they are not elements.
+static QList<CssAncestorInfo> collectCssAncestors(QObject *target)
+{
+    QList<CssAncestorInfo> chain;
+    auto *item = qobject_cast<QQuickItem *>(target);
+    if (!item)
+        return chain;
+    for (QQuickItem *p = item->parentItem(); p; p = p->parentItem()) {
+        const QMetaObject *mo = p->metaObject();
+        if (mo->indexOfProperty("cssPrimitive") < 0 && mo->indexOfProperty("cssClass") < 0)
+            continue;
+        CssAncestorInfo info;
+        info.id = p->property("cssId").toString();
+        info.classes = cssVariantToStringList(p->property("cssClass"));
+        info.classes += cssVariantToStringList(p->property("cssState"));
+        info.primitive = p->property("cssPrimitive").toString();
+        chain.prepend(info); // the walk is inner→outer; the chain is outer→inner
+    }
+    return chain;
 }
 
 void CssTheme::applyCssTo(QObject *target) const
@@ -914,7 +969,7 @@ void CssTheme::applyCssTo(QObject *target) const
         style = resolvePart(cssId, cssPart, classes);
     } else {
         const QStringList alternateIds = cssVariantToStringList(target->property("cssAlternateId"));
-        style = resolveMerged(cssId, alternateIds, classes, cssPrimitive);
+        style = resolveMerged(collectCssAncestors(target), cssId, alternateIds, classes, cssPrimitive);
     }
 
     // Push the resolved map into the target's `style` sink; its renderer keys off it
@@ -964,8 +1019,22 @@ void CssTheme::loadCss(QObject *target)
 
 void CssTheme::reapplyForSender()
 {
-    if (QObject *target = sender())
-        applyCssTo(target);
+    QObject *target = sender();
+    if (!target)
+        return;
+    applyCssTo(target);
+    // Ancestor-scoped rules (`.nav button.active text`) read ANCESTOR identity: a class/state
+    // change on `target` can restyle registered DESCENDANTS, which only observe themselves.
+    auto *item = qobject_cast<QQuickItem *>(target);
+    if (!item)
+        return;
+    for (const QPointer<QObject> &p : std::as_const(m_bindings)) {
+        if (!p || p == target)
+            continue;
+        auto *child = qobject_cast<QQuickItem *>(p.data());
+        if (child && item->isAncestorOf(child))
+            applyCssTo(child);
+    }
 }
 
 void CssTheme::reapplyAll()
@@ -980,19 +1049,30 @@ void CssTheme::reapplyAll()
 QVariantMap CssTheme::resolve(const QString &id, const QStringList &classes, const QString &pseudoElement,
                               const QString &primitive) const
 {
-    return resolveImpl(QString(), id, classes, pseudoElement, primitive);
+    return resolveImpl({}, id, classes, pseudoElement, primitive);
 }
 
 QVariantMap CssTheme::resolveWith(const QString &contextId, const QString &id, const QStringList &classes,
                                   const QString &pseudoElement) const
 {
+    // The context id becomes a one-element ancestor chain, so `#workspaces button` matches.
     // The single `id` doubles as the primitive: `resolveWith("workspaces", "button")` must
     // match `#workspaces button` (a type selector) as well as `#workspaces #button`.
-    return resolveImpl(contextId, id, classes, pseudoElement, id);
+    CssAncestorInfo context;
+    context.id = contextId;
+    return resolveImpl({context}, id, classes, pseudoElement, id);
 }
 
-QVariantMap CssTheme::resolveImpl(const QString &contextId, const QString &id, const QStringList &classes,
-                                  const QString &pseudoElement, const QString &primitive) const
+QVariantMap CssTheme::resolveWithAncestors(const QList<CssAncestorInfo> &ancestors, const QString &id,
+                                           const QStringList &classes, const QString &pseudoElement,
+                                           const QString &primitive) const
+{
+    return resolveImpl(ancestors, id, classes, pseudoElement, primitive);
+}
+
+QVariantMap CssTheme::resolveImpl(const QList<CssAncestorInfo> &ancestors, const QString &id,
+                                  const QStringList &classes, const QString &pseudoElement,
+                                  const QString &primitive) const
 {
     struct Match {
         int specificity;
@@ -1004,11 +1084,11 @@ QVariantMap CssTheme::resolveImpl(const QString &contextId, const QString &id, c
     QList<Match> matches;
     for (int i = 0; i < m_rules.size(); ++i) {
         const CssRule &rule = m_rules.at(i);
-        // A rule with a required ancestor only matches when called with that ancestor as context.
-        // Rules with no ancestor requirement match in all contexts.
-        if (!rule.requiredAncestorId.isEmpty() && rule.requiredAncestorId != contextId)
+        // A descendant rule only matches when the element's real ancestor chain satisfies the
+        // selector's ancestor chain. Rules with no ancestor requirement match in all contexts.
+        if (!rule.ancestors.isEmpty() && !ancestorChainMatches(rule.ancestors, ancestors))
             continue;
-        if (selectorMatches(rule.selector, contextId, id, classes, pseudoElement, primitive))
+        if (selectorMatches(rule.selector, !ancestors.isEmpty(), id, classes, pseudoElement, primitive))
             matches.append({rule.selector.specificity, i, rule.properties, rule.importantProperties});
     }
 
@@ -1043,7 +1123,7 @@ QVariantMap CssTheme::resolveExact(const QString &id, const QStringList &classes
     QList<Match> matches;
     for (int i = 0; i < m_rules.size(); ++i) {
         const CssRule &rule = m_rules.at(i);
-        if (!rule.requiredAncestorId.isEmpty())
+        if (!rule.ancestors.isEmpty())
             continue;
         const CssSimpleSelector &sel = rule.selector;
         if (sel.id != id || sel.pseudoElement != pseudoElement)

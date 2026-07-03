@@ -204,10 +204,15 @@ function emitButton(props: Props, children: t.Node[], scope: Scope, level: numbe
   const isElement = (c: t.Node) => isHCall(c);
   const textKids = children.filter((c) => !isElement(c));
   const elemKids = children.filter(isElement);
+  // The MouseArea doubles as the hover tracker: `cssState` mirrors containsMouse so
+  // `:hover` rules restyle the button (and, via ancestor scoping, its label) natively.
+  const counter = scope.hoverCounter ?? { n: 0 };
+  const maId = `__hover${counter.n++}`;
   const lines = [
     `${pad}Css.CssFill {`,
     ...classLine,
     ...guardLine(guard, level),
+    `${i(1)}cssState: ${maId}.containsMouse ? ["hover"] : []`,
     `${i(1)}cssPrimitive: "button"`,
     `${i(1)}Css.CssText {`,
     `${i(2)}cssPrimitive: "text"`,
@@ -215,7 +220,9 @@ function emitButton(props: Props, children: t.Node[], scope: Scope, level: numbe
     `${i(1)}}`,
     ...emitChildren(elemKids, scope, level + 1),
     `${i(1)}MouseArea {`,
+    `${i(2)}id: ${maId}`,
     `${i(2)}anchors.fill: parent`,
+    `${i(2)}hoverEnabled: true`,
     `${i(2)}cursorShape: Qt.PointingHandCursor`,
   ];
   const handler = emitHandler(props.onClick, scope);

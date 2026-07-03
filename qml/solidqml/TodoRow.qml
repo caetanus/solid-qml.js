@@ -11,13 +11,16 @@ Css.CssRect {
     cssPrimitive: "div"
     Css.CssFill {
         cssClass: ["todo-toggle"]
+        cssState: __hover0.containsMouse ? ["hover"] : []
         cssPrimitive: "button"
         Css.CssText {
             cssPrimitive: "text"
             text: "" + (todo.done ? "✓" : "○")
         }
         MouseArea {
+            id: __hover0
             anchors.fill: parent
+            hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: onToggle(todo.id)
         }
@@ -29,13 +32,16 @@ Css.CssRect {
     }
     Css.CssFill {
         cssClass: ["todo-remove"]
+        cssState: __hover1.containsMouse ? ["hover"] : []
         cssPrimitive: "button"
         Css.CssText {
             cssPrimitive: "text"
             text: "✕"
         }
         MouseArea {
+            id: __hover1
             anchors.fill: parent
+            hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: onRemove(todo.id)
         }

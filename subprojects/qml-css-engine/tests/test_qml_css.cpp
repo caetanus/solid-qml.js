@@ -1734,4 +1734,66 @@ void QmlCssTests::layoutNotifyParentSkipsNonBoxAncestors()
                  qPrintable(QStringLiteral("notifyParentLayout warned: ") + w));
 }
 
+// End-to-end web-parity scoping: `.nav button` must style ONLY buttons under a `.nav`
+// element (the chain is collected from the item tree by applyCssTo), and toggling a class
+// on the ANCESTOR (`button.active` here) must restyle scoped DESCENDANT rules
+// (`.nav button.active text`) — the text child itself never changes its own identity.
+void QmlCssTests::ancestorScopedRulesStyleTheTree()
+{
+    CssTheme theme;
+    theme.loadFromString(QStringLiteral(R"(
+        text { color: #101010; }
+        .nav button { background-color: #112233; }
+        .nav button.active text { color: #ffffff; }
+    )"));
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &theme);
+
+    QQmlComponent component(&engine);
+    component.setData(R"(
+        import QtQuick
+        import qmlcss
+        Item {
+            width: 400; height: 200
+            CssRect {
+                objectName: "nav"
+                cssClass: ["nav"]
+                cssPrimitive: "div"
+                CssFill {
+                    objectName: "inside"
+                    cssPrimitive: "button"
+                    CssText { objectName: "label"; cssPrimitive: "text"; text: "hi" }
+                }
+            }
+            CssFill {
+                objectName: "outside"
+                cssPrimitive: "button"
+            }
+        }
+    )", QUrl());
+
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY2(root, qPrintable(component.errorString()));
+
+    QObject *inside = root->findChild<QObject *>(QStringLiteral("inside"));
+    QObject *outside = root->findChild<QObject *>(QStringLiteral("outside"));
+    QObject *label = root->findChild<QObject *>(QStringLiteral("label"));
+    QVERIFY(inside && outside && label);
+
+    // Scoped: only the button under .nav gets the background.
+    QCOMPARE(inside->property("style").toMap().value(QStringLiteral("background-color")).toString(),
+             QStringLiteral("#112233"));
+    QVERIFY(!outside->property("style").toMap().contains(QStringLiteral("background-color")));
+
+    // Label starts at the bare `text {}` colour.
+    QCOMPARE(label->property("style").toMap().value(QStringLiteral("color")).toString(),
+             QStringLiteral("#101010"));
+
+    // Turning the BUTTON active must restyle the LABEL (ancestor-scoped rule).
+    inside->setProperty("cssClass", QVariant(QStringList{QStringLiteral("active")}));
+    QCOMPARE(label->property("style").toMap().value(QStringLiteral("color")).toString(),
+             QStringLiteral("#ffffff"));
+}
+
 QTEST_MAIN(QmlCssTests)

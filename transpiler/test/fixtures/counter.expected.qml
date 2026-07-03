@@ -6,13 +6,16 @@ Css.CssFill {
     id: __self
     property var count: 0
     cssClass: ["counter"]
+    cssState: __hover0.containsMouse ? ["hover"] : []
     cssPrimitive: "button"
     Css.CssText {
         cssPrimitive: "text"
         text: "count: " + (count)
     }
     MouseArea {
+        id: __hover0
         anchors.fill: parent
+        hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: count = count + 1
     }

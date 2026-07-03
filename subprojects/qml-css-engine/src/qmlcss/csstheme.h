@@ -25,12 +25,23 @@ struct CssSimpleSelector {
 };
 
 struct CssRule {
-    QString requiredAncestorId;
+    // Full ancestor chain of a descendant selector, outer→inner (`.gallery .nav button`
+    // keeps [.gallery, .nav]). Empty for unscoped rules. Matched as a subsequence of the
+    // element's real ancestor chain, like the web.
+    QList<CssSimpleSelector> ancestors;
     CssSimpleSelector selector;
     QVariantMap properties;
     // Subset of `properties` declared `!important` — they win the cascade over
     // non-important declarations regardless of specificity.
     QVariantMap importantProperties;
+};
+
+// Identity of one ancestor element (outer→inner), collected from the item tree at apply
+// time so descendant selectors scope correctly.
+struct CssAncestorInfo {
+    QString id;
+    QStringList classes; // authored cssClass + runtime cssState
+    QString primitive;
 };
 
 // A single `(<feature>: <px>)` constraint of a media query (e.g. max-width 720).
@@ -106,6 +117,13 @@ public:
     // as the primitive. The strict cssPrimitive matching of the loadCss path is unaffected.
     Q_INVOKABLE QVariantMap resolveWith(const QString &contextId, const QString &id, const QStringList &classes = {},
                                         const QString &pseudoElement = {}) const;
+
+    // C++-side resolve with an explicit ancestor chain (outer→inner). This is what applyCssTo
+    // uses after collecting the chain from the item tree — descendant selectors with class or
+    // type ancestors (`.nav button`) only match elements actually under such ancestors.
+    QVariantMap resolveWithAncestors(const QList<CssAncestorInfo> &ancestors, const QString &id,
+                                     const QStringList &classes = {}, const QString &pseudoElement = {},
+                                     const QString &primitive = {}) const;
 
     // Resolve only rules that explicitly target this id — universal (*) rules are excluded.
     // Use this when you want to apply id-specific overrides on top of an already-resolved base.
@@ -223,12 +241,14 @@ private slots:
     void reapplyForSender();
 
 private:
-    QVariantMap resolveImpl(const QString &contextId, const QString &id, const QStringList &classes,
-                            const QString &pseudoElement, const QString &primitive = {}) const;
+    QVariantMap resolveImpl(const QList<CssAncestorInfo> &ancestors, const QString &id,
+                            const QStringList &classes, const QString &pseudoElement,
+                            const QString &primitive = {}) const;
 
     // Merge the waybar alias(es) under the primary id (primary wins), for `classes`.
-    QVariantMap resolveMerged(const QString &cssId, const QStringList &alternateIds,
-                              const QStringList &classes, const QString &primitive = {}) const;
+    QVariantMap resolveMerged(const QList<CssAncestorInfo> &ancestors, const QString &cssId,
+                              const QStringList &alternateIds, const QStringList &classes,
+                              const QString &primitive = {}) const;
     // Read the target's identity properties, resolve, and push the style onto it (the
     // actual "apply the rules" step). Re-reads the object's current cssClass each time.
     void applyCssTo(QObject *target) const;

@@ -74,4 +74,8 @@ private slots:
     // notifyParentLayout must duck-type like the QML original: a plain-Item grandparent
     // (no requestRelayout()) is skipped silently, not invoked-and-warned.
     void layoutNotifyParentSkipsNonBoxAncestors();
+
+    // Ancestor-scoped rules end-to-end: `.nav button` styles only buttons under `.nav`,
+    // and a class/state change on an ANCESTOR restyles the scoped descendants too.
+    void ancestorScopedRulesStyleTheTree();
 };

@@ -6,13 +6,16 @@ Css.CssFill {
     id: __self
     property var label
     cssClass: ["btn"]
+    cssState: __hover0.containsMouse ? ["hover"] : []
     cssPrimitive: "button"
     Css.CssText {
         cssPrimitive: "text"
         text: "" + (label)
     }
     MouseArea {
+        id: __hover0
         anchors.fill: parent
+        hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
     }
 }

@@ -60,13 +60,16 @@ Css.CssRect {
         }
         Css.CssFill {
             cssClass: ["todo-add"]
+            cssState: __hover0.containsMouse ? ["hover"] : []
             cssPrimitive: "button"
             Css.CssText {
                 cssPrimitive: "text"
                 text: "add"
             }
             MouseArea {
+                id: __hover0
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: add()
             }
@@ -100,38 +103,47 @@ Css.CssRect {
             Repeater {
                 model: (remaining > 0 && remaining < todos.length) ? 1 : 0
                 Css.CssFill {
+                    cssState: __hover1.containsMouse ? ["hover"] : []
                     cssPrimitive: "button"
                     Css.CssText {
                         cssPrimitive: "text"
                         text: "all"
                     }
                     MouseArea {
+                        id: __hover1
                         anchors.fill: parent
+                        hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: selectAll()
                     }
                 }
             }
             Css.CssFill {
+                cssState: __hover2.containsMouse ? ["hover"] : []
                 cssPrimitive: "button"
                 Css.CssText {
                     cssPrimitive: "text"
                     text: "active"
                 }
                 MouseArea {
+                    id: __hover2
                     anchors.fill: parent
+                    hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: filter = "active"
                 }
             }
             Css.CssFill {
+                cssState: __hover3.containsMouse ? ["hover"] : []
                 cssPrimitive: "button"
                 Css.CssText {
                     cssPrimitive: "text"
                     text: "done"
                 }
                 MouseArea {
+                    id: __hover3
                     anchors.fill: parent
+                    hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: filter = "completed"
                 }
