@@ -138,6 +138,10 @@ public:
     // Lazy composition of the per-box extras (most boxes never need them).
     void ensureTranslate();
     void ensureAnim();
+    // Compose the paint subtree on demand (lean shell: layout-only boxes skip it entirely).
+    void ensureRenderShell();
+    // Item-level effects that apply with or without the shell (static transform + @keyframes).
+    void applyStaticTransformAndAnim();
     Q_SLOT void syncScrollContent();
 
     bool hasCssIdentity() const;

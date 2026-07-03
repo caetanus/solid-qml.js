@@ -2,6 +2,8 @@
 
 #include <QDebug>
 #include <QQmlContext>
+#include <QTimer>
+#include <QVariantAnimation>
 #include <QQmlEngine>
 
 CssIncubator::CssIncubator(QQuickItem *parent)
@@ -93,6 +95,20 @@ void CssIncubator::ready()
     // holder), so the layout engine treats it exactly like a declared child.
     item->setParentItem(parentItem() ? parentItem() : this);
     m_item = item;
+    // ATOMIC reveal: incubation streams the subtree in over several frames — visible,
+    // that reads as slow, glitchy rendering. Hold the item transparent until the layout
+    // settles (one event-loop turn after mount), then fade it in as ONE finished page.
+    item->setOpacity(0.0);
+    QTimer::singleShot(60, item, [item] {
+        auto *fade = new QVariantAnimation(item);
+        fade->setStartValue(0.0);
+        fade->setEndValue(1.0);
+        fade->setDuration(120);
+        fade->setEasingCurve(QEasingCurve::OutCubic);
+        QObject::connect(fade, &QVariantAnimation::valueChanged, item,
+                         [item](const QVariant &v) { item->setOpacity(v.toReal()); });
+        fade->start(QAbstractAnimation::DeleteWhenStopped);
+    });
     emit itemChanged();
 }
 

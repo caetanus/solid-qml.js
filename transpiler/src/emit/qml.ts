@@ -114,20 +114,26 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
   if (props.draggable) {
     const counter = scope.hoverCounter ?? { n: 0 };
     const dragId = `__drag${counter.n++}`;
+    const rootId = props.ref ? `_ref_${safeName(props.ref)}` : `${dragId}_root`;
+    if (!props.ref) refLine.push(`${pad}${INDENT}id: ${rootId}`);
     const dataExpr = props.dragData ? emitExpr(props.dragData, { ...scope, mode: "binding" }) : "undefined";
+    // Declared children (this MouseArea included) are REPARENTED into the box's content
+    // holder, so `parent` is NOT the card — the drag must target the element root by id,
+    // otherwise the content slides around inside a stationary shell.
     stateLine.push(
       `${pad}${INDENT}property var __dragData: ${dataExpr}`,
       `${pad}${INDENT}Drag.active: ${dragId}.drag.active`,
       `${pad}${INDENT}Drag.hotSpot.x: width / 2`,
       `${pad}${INDENT}Drag.hotSpot.y: height / 2`,
+      `${pad}${INDENT}z: ${dragId}.drag.active ? 1000 : 0`,
     );
     clickLines.push(
       `${pad}${INDENT}MouseArea {`,
       `${pad}${INDENT}${INDENT}id: ${dragId}`,
       `${pad}${INDENT}${INDENT}anchors.fill: parent`,
-      `${pad}${INDENT}${INDENT}drag.target: parent`,
+      `${pad}${INDENT}${INDENT}drag.target: ${rootId}`,
       `${pad}${INDENT}${INDENT}cursorShape: Qt.OpenHandCursor`,
-      `${pad}${INDENT}${INDENT}onReleased: { parent.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(parent) }`,
+      `${pad}${INDENT}${INDENT}onReleased: { ${rootId}.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(${rootId}) }`,
       `${pad}${INDENT}}`,
     );
   }

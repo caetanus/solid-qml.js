@@ -778,10 +778,34 @@ void CssRect::maybeLoadCss()
         m_theme->loadCss(this);
 }
 
+// Does the resolved style paint anything? Only then is the render shell worth composing.
+// (Transforms, opacity, animation and layout all live on the item itself.)
+static bool stylePaints(const QVariantMap &style)
+{
+    static const char *paintKeys[] = {
+        "background", "background-color", "background-image",
+        "border", "border-color", "border-width",
+        "border-top", "border-right", "border-bottom", "border-left",
+        "box-shadow",
+    };
+    for (const char *k : paintKeys) {
+        if (!style.value(QLatin1String(k)).toString().isEmpty())
+            return true;
+    }
+    return false;
+}
+
 void CssRect::recompute()
 {
-    if (!m_render)
+    // Lean shell: compose the paint subtree only when the style actually paints; until
+    // then the whole map build + push is skipped (item-level things — opacity, transform,
+    // @keyframes, layout — are applied by setStyle/applyTransform regardless).
+    if (!m_render && stylePaints(m_style))
+        ensureRenderShell();
+    if (!m_render) {
+        applyStaticTransformAndAnim();
         return;
+    }
 
     auto str = [&](const char *k) { return m_style.value(QLatin1String(k)).toString(); };
     auto has = [&](const char *k) { return !m_style.value(QLatin1String(k)).toString().isEmpty(); };
@@ -931,6 +955,16 @@ void CssRect::recompute()
     else
         g->setProperty("cssIn", in);
 
+    applyStaticTransformAndAnim();
+}
+
+// Item-level style effects that exist with or without the render shell: static transform,
+// the @keyframes driver, and the final transform application.
+void CssRect::applyStaticTransformAndAnim()
+{
+    auto str = [&](const char *k) { return m_style.value(QLatin1String(k)).toString(); };
+    auto has = [&](const char *k) { return !m_style.value(QLatin1String(k)).toString().isEmpty(); };
+
     // --- static transform (rotate/scale/translate) — applied to us so content transforms too ---
     QVariantMap tf;
     if (m_theme && has("transform"))
@@ -1010,6 +1044,7 @@ void CssRect::recompute()
 
     applyTransform();
 }
+
 
 void CssRect::applyTransform()
 {
@@ -1118,35 +1153,8 @@ void CssRect::componentComplete()
 
     const qint64 tResolve = g_mountStats.enabled ? mountTimer.nsecsElapsed() : 0;
 
-    if (QQmlEngine *eng = qmlEngine(this)) {
-        // The REAL QtQuick render subtree (Shapes + MultiEffect), via the type-system.
-        {
-            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-f609f831"),
-                kRenderShell);
-            if (QObject *o = comp->create(qmlContext(this))) {
-                if (QQuickItem *render = qobject_cast<QQuickItem *>(o)) {
-                    render->setParentItem(this);
-                    // Keep content ABOVE the fill: the render subtree paints first (lower).
-                    // A scrollable box moved the holder INTO the composed Flickable (the
-                    // single-shot mount styles before the shell exists), so the sibling to
-                    // stack under is the Flickable in that case.
-                    QQuickItem *contentAnchor = m_flickable ? m_flickable.data() : m_contentHolder.data();
-                    if (contentAnchor)
-                        render->stackBefore(contentAnchor);
-                    m_render = render;
-                } else {
-                    o->deleteLater();
-                }
-            } else {
-                qWarning("CssRect: failed to compose render subtree: %s", qPrintable(comp->errorString()));
-            }
-        }
-
-        // Translate composed LAZILY in ensureTranslate() — most boxes never translate.
-
-        // The @keyframes NumberAnimation is composed LAZILY in recompute() when an
-        // animation actually activates — most boxes never animate.
-    }
+    // The render shell is composed LAZILY in ensureRenderShell(): a layout-only box (no
+    // background/border/shadow — most of a page) never pays for the paint machinery.
 
     // React to implicit-size / visibility changes like the QML on*Changed handlers.
     connect(this, &QQuickItem::implicitWidthChanged, this, [this]() {
@@ -1296,3 +1304,33 @@ void CssRect::ensureAnim()
         m_anim = o;
     }
 }
+
+
+void CssRect::ensureRenderShell()
+{
+    if (m_render || !isComponentComplete())
+        return;
+    QQmlEngine *eng = qmlEngine(this);
+    if (!eng)
+        return;
+    // The REAL QtQuick render subtree (Shapes + MultiEffect), via the type-system.
+    QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-shell"), kRenderShell);
+    if (QObject *o = comp->create(qmlContext(this))) {
+        if (QQuickItem *render = qobject_cast<QQuickItem *>(o)) {
+            render->setParent(this);
+            render->setParentItem(this);
+            // Keep content ABOVE the fill: the render subtree paints first (lower). A
+            // scrollable box holds its content inside the composed Flickable.
+            QQuickItem *contentAnchor = m_flickable ? m_flickable.data() : m_contentHolder.data();
+            if (contentAnchor)
+                render->stackBefore(contentAnchor);
+            m_render = render;
+            layoutChildren(); // size the fresh shell to the current box
+        } else {
+            o->deleteLater();
+        }
+    } else {
+        qWarning("CssRect: failed to compose render subtree: %s", qPrintable(comp->errorString()));
+    }
+}
+

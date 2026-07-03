@@ -617,6 +617,8 @@ Css.CssRect {
                                 Drag.active: __drag9.drag.active
                                 Drag.hotSpot.x: width / 2
                                 Drag.hotSpot.y: height / 2
+                                z: __drag9.drag.active ? 1000 : 0
+                                id: __drag9_root
                                 cssPrimitive: "div"
                                 Css.CssRect {
                                     cssClass: ["proj-head"]
@@ -652,9 +654,9 @@ Css.CssRect {
                                 MouseArea {
                                     id: __drag9
                                     anchors.fill: parent
-                                    drag.target: parent
+                                    drag.target: __drag9_root
                                     cursorShape: Qt.OpenHandCursor
-                                    onReleased: { parent.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(parent) }
+                                    onReleased: { __drag9_root.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(__drag9_root) }
                                 }
                                 DropArea {
                                     anchors.fill: parent
