@@ -1044,9 +1044,13 @@ function emitSlider(props: Props, scope: Scope, level: number, guard: string | u
     `${i(2)}stepSize: ${step}`,
     // Focused wheel steps the value (same semantics as the SpinBox); moved() re-fires
     // so the author's onInput/onChange wiring runs.
+    // Same touchpad handling as the SpinBox wheel (see there): Mouse-only default +
+    // 120-unit notch accumulation.
     `${i(2)}WheelHandler {`,
+    `${i(3)}property real __acc: 0`,
     `${i(3)}enabled: ${ctlId}.activeFocus`,
-    `${i(3)}onWheel: (ev) => { ${ctlId}.value = ev.angleDelta.y > 0 ? Math.min(${ctlId}.to, ${ctlId}.value + ${ctlId}.stepSize) : Math.max(${ctlId}.from, ${ctlId}.value - ${ctlId}.stepSize); ${ctlId}.moved() }`,
+    `${i(3)}acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad`,
+    `${i(3)}onWheel: (ev) => { __acc += ev.angleDelta.y !== 0 ? ev.angleDelta.y : ev.pixelDelta.y * 8; var s = 0; while (__acc >= 120) { __acc -= 120; s++ } while (__acc <= -120) { __acc += 120; s-- } if (s !== 0) { ${ctlId}.value = Math.max(${ctlId}.from, Math.min(${ctlId}.to, ${ctlId}.value + s * ${ctlId}.stepSize)); ${ctlId}.moved() } }`,
     `${i(2)}}`,
   ];
 
@@ -1122,9 +1126,15 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
     // the onChange wiring. Stepping writes `value` directly: Qt 6.11's SpinBox refactor
     // (QQuickAbstractSpinBox) dropped the Q_INVOKABLE from increase()/decrease() — they
     // no longer exist from QML and the call was a silent TypeError.
+    // acceptedDevices: the default is Mouse ONLY — touchpad scrolling (system-synthesized
+    // wheel) is filtered in wantsPointerEvent, so laptops never stepped. Touchpads also
+    // send small continuous deltas (or pixelDelta with angleDelta 0): accumulate to the
+    // 120-unit notch before stepping.
     `${i(2)}WheelHandler {`,
+    `${i(3)}property real __acc: 0`,
     `${i(3)}enabled: ${ctlId}.activeFocus`,
-    `${i(3)}onWheel: (ev) => { ${ctlId}.value = ev.angleDelta.y > 0 ? Math.min(${ctlId}.to, ${ctlId}.value + ${ctlId}.stepSize) : Math.max(${ctlId}.from, ${ctlId}.value - ${ctlId}.stepSize); ${ctlId}.valueModified() }`,
+    `${i(3)}acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad`,
+    `${i(3)}onWheel: (ev) => { __acc += ev.angleDelta.y !== 0 ? ev.angleDelta.y : ev.pixelDelta.y * 8; var s = 0; while (__acc >= 120) { __acc -= 120; s++ } while (__acc <= -120) { __acc += 120; s-- } if (s !== 0) { ${ctlId}.value = Math.max(${ctlId}.from, Math.min(${ctlId}.to, ${ctlId}.value + s * ${ctlId}.stepSize)); ${ctlId}.valueModified() } }`,
     `${i(2)}}`,
     // contentItem: a plain TextInput (not Css) — it lives inside the control's item tree, not our
     // CSS layout engine. Color/font are bridged from the CssFill wrapper via ctlId.parent.inheritedX.

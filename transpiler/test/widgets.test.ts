@@ -1256,7 +1256,7 @@ test("emitQml 6.5: spinbox pads for the buttons and steps on wheel only when foc
   assert.match(out, /rightPadding: 32/);
   // Steps by writing `value` directly: Qt 6.11 dropped the Q_INVOKABLE from
   // increase()/decrease() (QQuickAbstractSpinBox refactor) — calling them is a TypeError.
-  assert.match(out, /WheelHandler \{[\s\S]*?enabled: __input\d+\.activeFocus[\s\S]*?Math\.min\(__input\d+\.to, __input\d+\.value \+ __input\d+\.stepSize\)/);
+  assert.match(out, /WheelHandler \{[\s\S]*?acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*?valueModified\(\)/);
   assert.doesNotMatch(out, /increase\(\)/);
 });
 
@@ -1420,7 +1420,7 @@ test("arrows: checkbox and switch move focus along the chain, honoring the tabst
 
 test("wheel: slider steps value when focused and re-emits moved()", async () => {
   const out = await qml(`export function F(){ return <input type="range" />; }`);
-  assert.match(out, /WheelHandler \{[\s\S]*?enabled: __input0\.activeFocus[\s\S]*?Math\.min\(__input0\.to, __input0\.value \+ __input0\.stepSize\)[\s\S]*?__input0\.moved\(\)/);
+  assert.match(out, /WheelHandler \{[\s\S]*?acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*?__input0\.moved\(\)/);
 });
 
 test("date: chevron is a plain Text anchored right (a Css child of the wrapper gets re-laid-out left)", async () => {

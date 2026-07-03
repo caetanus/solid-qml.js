@@ -850,8 +850,10 @@ Css.CssRect {
                         to: 100
                         stepSize: 1
                         WheelHandler {
+                            property real __acc: 0
                             enabled: __input14.activeFocus
-                            onWheel: (ev) => { __input14.value = ev.angleDelta.y > 0 ? Math.min(__input14.to, __input14.value + __input14.stepSize) : Math.max(__input14.from, __input14.value - __input14.stepSize); __input14.moved() }
+                            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                            onWheel: (ev) => { __acc += ev.angleDelta.y !== 0 ? ev.angleDelta.y : ev.pixelDelta.y * 8; var s = 0; while (__acc >= 120) { __acc -= 120; s++ } while (__acc <= -120) { __acc += 120; s-- } if (s !== 0) { __input14.value = Math.max(__input14.from, Math.min(__input14.to, __input14.value + s * __input14.stepSize)); __input14.moved() } }
                         }
                         onMoved: { volume = __input14.value }
                     }
@@ -889,8 +891,10 @@ Css.CssRect {
                         leftPadding: 12
                         rightPadding: 32
                         WheelHandler {
+                            property real __acc: 0
                             enabled: __input15.activeFocus
-                            onWheel: (ev) => { __input15.value = ev.angleDelta.y > 0 ? Math.min(__input15.to, __input15.value + __input15.stepSize) : Math.max(__input15.from, __input15.value - __input15.stepSize); __input15.valueModified() }
+                            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                            onWheel: (ev) => { __acc += ev.angleDelta.y !== 0 ? ev.angleDelta.y : ev.pixelDelta.y * 8; var s = 0; while (__acc >= 120) { __acc -= 120; s++ } while (__acc <= -120) { __acc += 120; s-- } if (s !== 0) { __input15.value = Math.max(__input15.from, Math.min(__input15.to, __input15.value + s * __input15.stepSize)); __input15.valueModified() } }
                         }
                         contentItem: TextInput {
                             focus: true
