@@ -25,6 +25,27 @@
 #include <algorithm>
 
 namespace {
+struct ApplyStats {
+    qint64 chainNs = 0, resolveNs = 0, hoverNs = 0, pushNs = 0; int count = 0;
+    int fromLoad = 0, fromSender = 0, fromDescendant = 0, fromAll = 0;
+    QHash<QByteArray, int> byClass;
+    bool enabled = qEnvironmentVariableIntValue("SQ_MOUNT_STATS") != 0;
+    ~ApplyStats() {
+        if (enabled && count > 0) {
+            fprintf(stderr, "[apply-stats] x%d | chain: %.1fms | resolve: %.1fms | hover: %.1fms | push: %.1fms\n",
+                    count, chainNs / 1e6, resolveNs / 1e6, hoverNs / 1e6, pushNs / 1e6);
+            fprintf(stderr, "[apply-origin] load: %d | sender: %d | descendant: %d | reapplyAll: %d\n",
+                    fromLoad, fromSender, fromDescendant, fromAll);
+            for (auto it = byClass.constBegin(); it != byClass.constEnd(); ++it)
+                fprintf(stderr, "[apply-class] %s x%d\n", it.key().constData(), it.value());
+        }
+    }
+};
+ApplyStats g_applyStats;
+} // namespace
+
+
+namespace {
 
 QString stripComments(const QString &css)
 {
@@ -759,6 +780,7 @@ void CssTheme::loadFromString(const QString &css)
     emit loadedChanged();
     // Reverse slot: push freshly-resolved styles to every registered object so a theme
     // reload re-styles the live UI without any QML binding.
+    if (g_applyStats.enabled) fprintf(stderr, "[reapplyAll] from THEME (RE)LOAD\n");
     reapplyAll();
 
     // Load/download each @font-face (deduped by URL). Cached fonts register synchronously here;
@@ -777,6 +799,13 @@ void CssTheme::rebuildRules()
         if (mediaMatches(group.query, m_viewportWidth, m_viewportHeight))
             m_rules += group.rules;
     }
+
+    // Refresh the resize fast-path signature for the CURRENT groups (a theme reload changes
+    // the group list, so a stale mask must not skip the next viewport rebuild).
+    m_mediaSignature = 0;
+    for (int i = 0; i < m_mediaGroups.size() && i < 64; ++i)
+        if (mediaMatches(m_mediaGroups.at(i).query, m_viewportWidth, m_viewportHeight))
+            m_mediaSignature |= (quint64(1) << i);
 
     // Rebuild the selector index: a rule is bucketed under ONE key of its subject (a class,
     // else the element, else the id); subject-unconstrained rules go to the unkeyed list.
@@ -812,6 +841,7 @@ void CssTheme::registerFontData(const QByteArray &bytes)
     // revision (text bindings observe it and re-resolve) and re-push styles to registered objects.
     ++m_fontRevision;
     emit fontRevisionChanged();
+    if (g_applyStats.enabled) fprintf(stderr, "[reapplyAll] from FONT REGISTRATION\n");
     reapplyAll();
 }
 
@@ -883,7 +913,19 @@ void CssTheme::setViewport(qreal width, qreal height)
     emit viewportChanged();
     if (!m_loaded)
         return;
+    // Only a change in WHICH @media groups match requires re-resolving styles: a tiling WM
+    // retile (or a live resize) that stays within the same breakpoints used to rebuild and
+    // re-apply EVERYTHING per resize event. vw/vh lengths are resolved at layout time and
+    // follow viewportChanged regardless.
+    quint64 signature = 0;
+    for (int i = 0; i < m_mediaGroups.size() && i < 64; ++i)
+        if (mediaMatches(m_mediaGroups.at(i).query, m_viewportWidth, m_viewportHeight))
+            signature |= (quint64(1) << i);
+    if (signature == m_mediaSignature)
+        return;
+    m_mediaSignature = signature;
     rebuildRules();
+    if (g_applyStats.enabled) fprintf(stderr, "[reapplyAll] from setViewport(%g, %g)\n", width, height);
     reapplyAll();
 }
 
@@ -968,24 +1010,14 @@ static QList<CssAncestorInfo> collectCssAncestors(QObject *target)
     return chain;
 }
 
-namespace {
-struct ApplyStats {
-    qint64 chainNs = 0, resolveNs = 0, hoverNs = 0, pushNs = 0; int count = 0;
-    bool enabled = qEnvironmentVariableIntValue("SQ_MOUNT_STATS") != 0;
-    ~ApplyStats() {
-        if (enabled && count > 0)
-            fprintf(stderr, "[apply-stats] x%d | chain: %.1fms | resolve: %.1fms | hover: %.1fms | push: %.1fms\n",
-                    count, chainNs / 1e6, resolveNs / 1e6, hoverNs / 1e6, pushNs / 1e6);
-    }
-};
-ApplyStats g_applyStats;
-} // namespace
-
 void CssTheme::applyCssTo(QObject *target) const
 {
     QElapsedTimer t;
-    if (g_applyStats.enabled)
+    if (g_applyStats.enabled) {
         t.start();
+        if (target)
+            ++g_applyStats.byClass[QByteArray(target->metaObject()->className())];
+    }
     if (!target)
         return;
 
@@ -1066,6 +1098,7 @@ void CssTheme::loadCss(QObject *target)
         return;
     }
 
+    if (g_applyStats.enabled) ++g_applyStats.fromLoad;
     // Register once; the reverse slot re-reads the object's identity on every (re)load.
     if (!m_bindings.contains(QPointer<QObject>(target))) {
         m_bindings.append(QPointer<QObject>(target));
@@ -1096,6 +1129,7 @@ void CssTheme::reapplyForSender()
     QObject *target = sender();
     if (!target)
         return;
+    if (g_applyStats.enabled) ++g_applyStats.fromSender;
     applyCssTo(target);
     // Ancestor-scoped rules (`.nav button.active text`) read ANCESTOR identity: a class/state
     // change on `target` can restyle registered DESCENDANTS, which only observe themselves.
@@ -1106,8 +1140,10 @@ void CssTheme::reapplyForSender()
         if (!p || p == target)
             continue;
         auto *child = qobject_cast<QQuickItem *>(p.data());
-        if (child && item->isAncestorOf(child))
+        if (child && item->isAncestorOf(child)) {
+            if (g_applyStats.enabled) ++g_applyStats.fromDescendant;
             applyCssTo(child);
+        }
     }
 }
 
@@ -1115,8 +1151,10 @@ void CssTheme::reapplyAll()
 {
     m_bindings.removeIf([](const QPointer<QObject> &p) { return p.isNull(); });
     for (const QPointer<QObject> &p : m_bindings) {
-        if (p)
+        if (p) {
+            if (g_applyStats.enabled) ++g_applyStats.fromAll;
             applyCssTo(p);
+        }
     }
 }
 

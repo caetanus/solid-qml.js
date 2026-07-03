@@ -42,6 +42,51 @@ const PROJECTS = [
   { name: "AOT C++ target", desc: "QtQuick C++ 1:1 generation", pct: "p10", status: "design" },
 ];
 
+// Runtime theme override — loaded via cssTheme.loadLayeredString ON TOP of the cascade (the
+// live-CSS selling point: same rules engine, swapped at runtime). Cleared on unmount.
+const DARK_CSS = `
+.dash { background: #10161f; }
+.dash-top { background: #16212e; border-bottom: 1px solid #223140; }
+.dash-title { color: #e8eef5; }
+.dash-user-n { color: #b9c7d4; }
+.dash-user:hover { background: #1d2a38; }
+.dash-user.open { background: #223140; }
+.stat { background: linear-gradient(180deg, #16212e 0%, #131c27 100%); border: 1px solid #223140; border-top: 3px solid #41cd52; }
+.stat:hover { border: 1px solid #2e4256; border-top: 3px solid #4fe063; }
+.stat-label { color: #7d92a5; }
+.stat-value { color: #e8eef5; }
+.feed { background: #16212e; border: 1px solid #223140; }
+.feed-h { color: #e8eef5; }
+.feed-row:hover { background: #1d2a38; }
+.feed-avatar { background: #223140; }
+.feed-avatar-t { color: #b9c7d4; }
+.feed-name { color: #e8eef5; }
+.feed-what { color: #7d92a5; }
+.feed-tag { background: #223140; }
+.feed-tag-t { color: #b9c7d4; }
+.feed-when { color: #4d6274; }
+.panel { background: #16212e; border: 1px solid #223140; }
+.panel-h { color: #e8eef5; }
+.prog-name { color: #b9c7d4; }
+.prog-track { background: #223140; }
+.axis { color: #4d6274; }
+.proj-card { background: #16212e; border: 1px solid #223140; }
+.proj-card:hover { border: 1px solid #2e4256; }
+.proj-name { color: #e8eef5; }
+.proj-desc { color: #7d92a5; }
+.proj-hint { color: #4d6274; }
+.set-row { border-bottom: 1px solid #223140; }
+.set-label { color: #b9c7d4; }
+.set-input { background: #131c27; border: 1px solid #223140; color: #e8eef5; }
+.set-opt { background: #16212e; border: 1px solid #223140; }
+.set-opt text { color: #b9c7d4; }
+.set-opt:hover { background: #1d2a38; }
+.user-card { background: #16212e; border: 1px solid #2e4256; }
+.user-card-name { color: #e8eef5; }
+.user-kv-v { color: #e8eef5; }
+.user-card-row { border-bottom: 1px solid #223140; }
+`;
+
 const LOG = [
   { who: "AC", what: "deployed dashboard v2 to production", tag: "deploy", ok: true },
   { who: "RM", what: "opened PR #142 — carousel easing curves", tag: "review", ok: true },
@@ -75,6 +120,12 @@ export function Dashboard() {
   const [collapsed, setCollapsed] = createSignal(false);
   const [userOpen, setUserOpen] = createSignal(false);
   const [order, setOrder] = createSignal(["qml-css-engine", "transpiler v2", "npm mirror", "AOT C++ target"]);
+  const [darkTheme, setDarkTheme] = createSignal(false);
+  function toggleTheme() {
+    setDarkTheme(!darkTheme());
+    cssTheme.loadLayeredString(darkTheme() ? DARK_CSS : "");
+  }
+  onCleanup(() => cssTheme.loadLayeredString(""));
   function proj(n) {
     const hit = PROJECTS.filter((x) => x.name === n);
     return hit.length > 0 ? hit[0] : PROJECTS[0];
@@ -118,6 +169,9 @@ export function Dashboard() {
           <div class="dash-title-wrap">
             <text class="dash-title">{page()}</text>
             <div class="dash-title-accent" />
+          </div>
+          <div class="theme-toggle" classList={{ on: darkTheme() }} onClick={() => toggleTheme()}>
+            <text class="theme-toggle-t">{darkTheme() ? "☀" : "☾"}</text>
           </div>
           <div class="dash-user" classList={{ open: userOpen() }} onClick={() => setUserOpen(!userOpen())}>
             <div class="dash-avatar-ring">

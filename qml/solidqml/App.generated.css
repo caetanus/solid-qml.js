@@ -763,6 +763,18 @@ button:hover {
   100% { transform: translateY(0); }
 }
 
+.theme-toggle {
+  display: flex; justify-content: center; align-items: center;
+  width: 34px; height: 34px;
+  border: 1px solid #d5dee8; border-radius: 17px;
+  background: #ffffff;
+  transition: background 140ms ease;
+}
+.theme-toggle:hover { background: #eef4f9; }
+.theme-toggle.on { background: #16212e; border: 1px solid #2e4256; }
+.theme-toggle-t { color: #445263; font-size: 15px; }
+.theme-toggle.on .theme-toggle-t { color: #f2c94c; }
+
 /* --- user dropdown ---------------------------------------------------------------- */
 .dash-user {
   position: relative;

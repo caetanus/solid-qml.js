@@ -117,6 +117,11 @@ export function emitExpr(node: t.Node, scope: Scope): string {
     return safeName(node.name);
   }
 
+  // Expression-free template literal — a plain (usually multi-line) string.
+  if (t.isTemplateLiteral(node) && node.expressions.length === 0) {
+    return JSON.stringify(node.quasis.map((q) => q.value.cooked ?? q.value.raw).join(""));
+  }
+
   if (t.isBinaryExpression(node) || t.isLogicalExpression(node)) {
     // Re-parenthesize by precedence: the AST has no parens, so `(slide + 2) % 3` would
     // otherwise flatten to `slide + 2 % 3` (a different expression).

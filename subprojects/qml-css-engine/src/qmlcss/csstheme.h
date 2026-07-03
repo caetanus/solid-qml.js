@@ -249,6 +249,8 @@ private:
     mutable QHash<QString, QVariantMap> m_resolveCache;
     // resolveFontFamily memo; cleared when a downloaded font registers.
     mutable QHash<QString, QString> m_fontFamilyCache;
+    // Bitmask of matching @media groups at the current viewport (resize fast-path).
+    quint64 m_mediaSignature = 0;
     QString resolveFontFamilyUncached(const QString &value, const QString &fallback) const;
 
     // Rule index (rebuilt with m_rules): candidate rule indices by subject class/element/id,
