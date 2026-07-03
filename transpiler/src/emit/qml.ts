@@ -44,6 +44,14 @@ function buildCssClassLine(props: Props, scope: Scope, pad: string): string[] {
 export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?: string): string[] {
   const { tag: tagArg, props: propsArg, children } = hParts(call);
 
+  // <>…</> fragment: NO node of its own — the children emit inline into the parent
+  // (true fragment semantics; a root-level fragment is wrapped by emitComponentType).
+  if (isFragmentTag(tagArg)) {
+    const out: string[] = [];
+    for (const k of children) if (isHCall(k)) out.push(...emitQml(k, scope, level, guard));
+    return out;
+  }
+
   if (t.isIdentifier(tagArg)) {
     if (tagArg.name === "Show") return emitShow(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "For") return emitFor(propsArg, children as t.Node[], scope, level, guard);

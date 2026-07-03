@@ -78,6 +78,11 @@ private:
     // geometry assignment
     void place(QQuickItem *k, double x, double y, double w, double h) const;
     void placeAbsolute(QQuickItem *k, double ox, double oy, double cw, double ch) const;
+    // `wImposed`/`hImposed`: the written size did NOT derive from the item's own content
+    // (cross-axis stretch, main-axis grow fill, or an explicit style size) — the CSS
+    // "definite size" signal that gates the spec flex-shrink default for its children.
+    void place(QQuickItem *k, double x, double y, double w, double h,
+               bool wImposed, bool hImposed) const;
 
     // flex + grid; return the content [width, height] occupied
     QPair<double, double> layoutFlex(const QList<QQuickItem *> &flow, const QVariantMap &rootStyle,

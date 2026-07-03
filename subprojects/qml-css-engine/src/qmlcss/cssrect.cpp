@@ -1158,9 +1158,29 @@ void CssRect::ensureScrollable()
     QQmlEngine *eng = qmlEngine(this);
     if (!eng)
         return;
-    QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-5262d4c3"),
-        "import QtQuick\nFlickable { clip: true; boundsBehavior: Flickable.StopAtBounds; "
-                 "flickableDirection: Flickable.VerticalFlick }");
+    // Native Flickable + a Controls-free scroll indicator: a thin bar on the VIEWPORT layer
+    // (`parent: flick` keeps it out of the reparented content), sized by the visible ratio,
+    // faded in while the view moves/drags/flicks.
+    QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-flickable"),
+        "import QtQuick\n"
+        "Flickable {\n"
+        "    id: flick\n"
+        "    clip: true\n"
+        "    boundsBehavior: Flickable.StopAtBounds\n"
+        "    flickableDirection: Flickable.VerticalFlick\n"
+        "    Rectangle {\n"
+        "        parent: flick\n"
+        "        x: flick.width - 5\n"
+        "        y: flick.visibleArea.yPosition * flick.height\n"
+        "        width: 3\n"
+        "        radius: 1.5\n"
+        "        color: \"#66000000\"\n"
+        "        height: Math.max(20, flick.visibleArea.heightRatio * flick.height)\n"
+        "        visible: flick.contentHeight > flick.height + 1\n"
+        "        opacity: (flick.moving || flick.dragging || flick.flicking) ? 0.85 : 0.0\n"
+        "        Behavior on opacity { NumberAnimation { duration: 300 } }\n"
+        "    }\n"
+        "}");
     QObject *o = comp->create(qmlContext(this));
     QQuickItem *flick = qobject_cast<QQuickItem *>(o);
     if (!flick) {

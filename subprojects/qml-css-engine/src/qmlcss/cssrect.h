@@ -69,11 +69,12 @@ public:
 
     // Set by CssLayoutEngine::place(): this box's size on the given axis was IMPOSED by its
     // parent's layout — the CSS "definite size" signal that turns on the spec default
-    // flex-shrink:1 for its children (auto-sized axes keep shrink off; see layoutFlex).
+    // flex-shrink:1 for its children. Reflects the LATEST placement (never sticky): an
+    // early convergence pass with default styles must not poison later correct ones.
     void markImposed(bool widthImposed, bool heightImposed)
     {
-        m_widthImposed = widthImposed || m_widthImposed;
-        m_heightImposed = heightImposed || m_heightImposed;
+        m_widthImposed = widthImposed;
+        m_heightImposed = heightImposed;
     }
     bool widthImposed() const { return m_widthImposed; }
     bool heightImposed() const { return m_heightImposed; }

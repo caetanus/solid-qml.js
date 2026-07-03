@@ -5,7 +5,7 @@ import { emitExpr, type Scope } from "./expr.ts";
 import { emitStmt, emitValue, emitBindingStmt } from "./stmt.ts";
 import { analyzeSignals, analyzeProps, analyzeSetup, analyzeResources, analyzeMutableLocals, analyzeRenderLocals, analyzeHelpers, collectFetcherDeps, effectDeps, type ProviderInfo, type UseContextBinding } from "../model/symbols.ts";
 import { safeName } from "../names/safe.ts";
-import { hParts, isHCall } from "../ast/h.ts";
+import { hParts, isHCall, isFragmentTag } from "../ast/h.ts";
 
 const generate: typeof _generate = (_generate as any).default ?? _generate;
 
@@ -73,7 +73,20 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     ...(hasCtxBindings ? { ctxBindings, ctxValueShape: ctx?.ctxValueShape } : {}),
     ...(ctx?.componentMeta ? { componentMeta: ctx.componentMeta, providerStack: {}, ctxProvCounter: { n: 0 } } : {}),
   };
-  const lines = emitQml(render, scope, 0);
+  // A root-level fragment needs a QML host: wrap in a primitive-less CssRect (a plain
+  // layout box the engine treats as a transparent container).
+  let renderRoot = render;
+  {
+    const { tag } = hParts(render);
+    if (isFragmentTag(tag)) {
+      renderRoot = t.callExpression(t.identifier("h"), [
+        t.stringLiteral("div"),
+        t.nullLiteral(),
+        ...hParts(render).children.filter((c): c is t.Expression => t.isExpression(c)),
+      ]);
+    }
+  }
+  const lines = emitQml(renderRoot, scope, 0);
 
   const openIdx = lines.findIndex((l) => /\{\s*$/.test(l));
   // The root may already carry an id from a ref={x} (e.g. id: _ref_myDiv). A QML object can have only

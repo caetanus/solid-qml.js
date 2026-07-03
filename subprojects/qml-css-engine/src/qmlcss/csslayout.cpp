@@ -414,6 +414,12 @@ double CssLayoutEngine::clampSize(const QVariantMap &style, const QString &axis,
 
 void CssLayoutEngine::place(QQuickItem *k, double x, double y, double w, double h) const
 {
+    place(k, x, y, w, h, false, false);
+}
+
+void CssLayoutEngine::place(QQuickItem *k, double x, double y, double w, double h,
+                            bool wImposed, bool hImposed) const
+{
     // Final clamp so stretched / grown items still honour min-/max-width/height (a flex row that
     // stretches children to the container's cross box must not blow past their max-width — this is
     // what makes a `max-width` paragraph wrap instead of overflowing).
@@ -424,9 +430,17 @@ void CssLayoutEngine::place(QQuickItem *k, double x, double y, double w, double 
     // cast + covers-check only run when the geometry actually changes.
     // Record the imposition (the CSS "definite size" signal) even when the value is
     // unchanged — children of an externally-sized box get the spec flex-shrink default.
+    // ONLY non-content-derived writes count (a base-size write is the item's own content
+    // echoed back; treating it as definite reintroduces the auto-column collapse).
     CssRect *marked = qobject_cast<CssRect *>(k);
-    if (marked)
-        marked->markImposed(!std::isnan(w) && w >= 0, !std::isnan(h) && h >= 0);
+    if (marked) {
+        if (sqLayoutTrace && (wImposed || hImposed)) {
+            const QString cls = k->property("cssClass").toStringList().join(QLatin1Char('\x2e'));
+            fprintf(stderr, "[impose] %s w=%d h=%d (%.0f x %.0f)\n", qPrintable(cls), int(wImposed), int(hImposed), w, h);
+        }
+        marked->markImposed(wImposed && !std::isnan(w) && w >= 0,
+                            hImposed && !std::isnan(h) && h >= 0);
+    }
     CssRect *box = nullptr;
     if (!std::isnan(w) && w >= 0 && std::abs(k->width() - w) > 0.5) {
         box = marked;
@@ -800,8 +814,13 @@ QPair<double, double> CssLayoutEngine::layoutFlex(const QList<QQuickItem *> &flo
             crossPos += crossCursor;
 
             const double mainPos = pos + mMar[i].first;
-            if (horizontal) place(flow[i], originX + mainPos, originY + crossPos, msz, csz);
-            else place(flow[i], originX + crossPos, originY + mainPos, csz, msz);
+            // Definite-size signals for the child: cross-axis stretch, a grow-filled main,
+            // or an explicit style size on the axis — never a content-derived base echo.
+            const bool crossImposed = (csz != crosses[i]) || cfixed[i];
+            const bool mainImposed = (grows[i] > 0 && msz != mains[i]) || (lm[i] != mains[i])
+                || !styleStr(ks, horizontal ? "width" : "height").isEmpty();
+            if (horizontal) place(flow[i], originX + mainPos, originY + crossPos, msz, csz, mainImposed, crossImposed);
+            else place(flow[i], originX + crossPos, originY + mainPos, csz, msz, crossImposed, mainImposed);
 
             pos = mainPos + msz + mMar[i].second + between;
             Q_UNUSED(naturalCross);
