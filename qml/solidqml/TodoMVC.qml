@@ -79,12 +79,14 @@ Css.CssRect {
         cssClass: ["todo-list"]
         visible: !!(todos.length > 0)
         cssPrimitive: "div"
-        Repeater {
+        Css.CssRepeater {
             model: visible_
-            TodoRow {
-                todo: modelData
-                onToggle: toggle
-                onRemove: remove
+            delegate: Component {
+                TodoRow {
+                    todo: modelData
+                    onToggle: toggle
+                    onRemove: remove
+                }
             }
         }
     }

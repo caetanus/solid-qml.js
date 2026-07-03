@@ -2072,4 +2072,65 @@ void QmlCssTests::overflowScrollComposesFlickable()
     QCOMPARE(flick->property("contentY").toReal(), 120.0);
 }
 
+// Flyweight <For>: reorder must reuse the SAME delegate items (moved, not recreated).
+void QmlCssTests::cssRepeaterReordersWithoutRecreating()
+{
+    CssTheme theme;
+    theme.loadFromString(QStringLiteral(".row { height: 10px; }"));
+    CssLayoutEngine layoutEngine(&theme);
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &theme);
+    engine.rootContext()->setContextProperty(QStringLiteral("cssLayout"), &layoutEngine);
+    QQmlComponent component(&engine);
+    component.setData(R"(
+        import QtQuick
+        import qmlcss
+        CssRect {
+            id: box
+            cssPrimitive: ""
+            width: 200; height: 200
+            property var order: ["a", "b", "c"]
+            style: ({ "display": "flex", "flex-direction": "column" })
+            CssRepeater {
+                model: box.order
+                delegate: Component {
+                    CssRect { objectName: "row-" + modelData; cssClass: ["row"]; cssPrimitive: "div" }
+                }
+            }
+        }
+    )", QUrl());
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY2(root, qPrintable(component.errorString()));
+
+    auto rows = [&]() {
+        QHash<QString, QQuickItem *> out;
+        for (QQuickItem *k : root->findChildren<QQuickItem *>()) {
+            if (k->objectName().startsWith(QLatin1String("row-")))
+                out.insert(k->objectName(), k);
+        }
+        return out;
+    };
+    const auto before = rows();
+    QCOMPARE(before.size(), 3);
+    QQuickItem *a = before.value(QStringLiteral("row-a"));
+    QQuickItem *c = before.value(QStringLiteral("row-c"));
+    QVERIFY(a && c);
+
+    // Reorder: c moves first — the INSTANCES must survive.
+    root->setProperty("order", QVariant(QStringList{QStringLiteral("c"), QStringLiteral("a"), QStringLiteral("b")}));
+    const auto after = rows();
+    QCOMPARE(after.size(), 3);
+    QCOMPARE(after.value(QStringLiteral("row-a")), a); // same pointer: reused, not recreated
+    QCOMPARE(after.value(QStringLiteral("row-c")), c);
+
+    // Layout follows the new order after the flush: c above a.
+    QTRY_VERIFY_WITH_TIMEOUT(c->y() < a->y(), 2000);
+
+    // Removal destroys only the removed row; the rest survive.
+    root->setProperty("order", QVariant(QStringList{QStringLiteral("c"), QStringLiteral("a")}));
+    QTRY_COMPARE_WITH_TIMEOUT(rows().size(), 2, 2000);
+    QCOMPARE(rows().value(QStringLiteral("row-a")), a);
+}
+
 QTEST_MAIN(QmlCssTests)

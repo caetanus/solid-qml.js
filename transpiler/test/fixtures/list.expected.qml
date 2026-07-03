@@ -7,12 +7,14 @@ Css.CssRect {
     property var items: ["a", "b", "c"]
     cssClass: ["app"]
     cssPrimitive: "div"
-    Repeater {
+    Css.CssRepeater {
         model: items
-        Css.CssText {
-            cssClass: ["row"]
-            cssPrimitive: "text"
-            text: "" + (modelData)
+        delegate: Component {
+            Css.CssText {
+                cssClass: ["row"]
+                cssPrimitive: "text"
+                text: "" + (modelData)
+            }
         }
     }
 }

@@ -46,38 +46,40 @@ Css.CssRect {
                 text: "solid-qml"
             }
         }
-        Repeater {
+        Css.CssRepeater {
             model: __const_MENU
-            Css.CssRect {
-                cssClass: ["dash-item"].concat(page === modelData.id ? ["active"] : [])
-                cssState: __hover0.containsMouse ? ["hover"] : []
-                cssPrimitive: "div"
-                Css.CssText {
-                    cssClass: ["dash-icon"]
-                    cssPrimitive: "text"
-                    text: "" + (modelData.icon)
-                }
-                Css.CssText {
-                    cssClass: ["dash-label"]
-                    cssPrimitive: "text"
-                    text: "" + (modelData.label)
-                }
+            delegate: Component {
                 Css.CssRect {
-                    cssClass: ["dash-badge"]
-                    visible: !!(modelData.badge !== "")
+                    cssClass: ["dash-item"].concat(page === modelData.id ? ["active"] : [])
+                    cssState: __hover0.containsMouse ? ["hover"] : []
                     cssPrimitive: "div"
                     Css.CssText {
-                        cssClass: ["dash-badge-n"]
+                        cssClass: ["dash-icon"]
                         cssPrimitive: "text"
-                        text: "" + (modelData.badge)
+                        text: "" + (modelData.icon)
                     }
-                }
-                MouseArea {
-                    id: __hover0
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: page = modelData.id
+                    Css.CssText {
+                        cssClass: ["dash-label"]
+                        cssPrimitive: "text"
+                        text: "" + (modelData.label)
+                    }
+                    Css.CssRect {
+                        cssClass: ["dash-badge"]
+                        visible: !!(modelData.badge !== "")
+                        cssPrimitive: "div"
+                        Css.CssText {
+                            cssClass: ["dash-badge-n"]
+                            cssPrimitive: "text"
+                            text: "" + (modelData.badge)
+                        }
+                    }
+                    MouseArea {
+                        id: __hover0
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: page = modelData.id
+                    }
                 }
             }
         }
@@ -309,28 +311,30 @@ Css.CssRect {
                     Css.CssRect {
                         cssClass: ["stat-row"]
                         cssPrimitive: "div"
-                        Repeater {
+                        Css.CssRepeater {
                             model: __const_STATS
-                            Css.CssRect {
-                                cssClass: ["stat"]
-                                cssPrimitive: "div"
-                                Css.CssText {
-                                    cssClass: ["stat-label"]
-                                    cssPrimitive: "text"
-                                    text: "" + (modelData.label)
-                                }
-                                Css.CssText {
-                                    cssClass: ["stat-value"]
-                                    cssPrimitive: "text"
-                                    text: "" + (modelData.value)
-                                }
+                            delegate: Component {
                                 Css.CssRect {
-                                    cssClass: ["stat-delta"].concat(!modelData.up ? ["down"] : [])
+                                    cssClass: ["stat"]
                                     cssPrimitive: "div"
                                     Css.CssText {
-                                        cssClass: ["stat-delta-t"]
+                                        cssClass: ["stat-label"]
                                         cssPrimitive: "text"
-                                        text: "" + (modelData.delta)
+                                        text: "" + (modelData.label)
+                                    }
+                                    Css.CssText {
+                                        cssClass: ["stat-value"]
+                                        cssPrimitive: "text"
+                                        text: "" + (modelData.value)
+                                    }
+                                    Css.CssRect {
+                                        cssClass: ["stat-delta"].concat(!modelData.up ? ["down"] : [])
+                                        cssPrimitive: "div"
+                                        Css.CssText {
+                                            cssClass: ["stat-delta-t"]
+                                            cssPrimitive: "text"
+                                            text: "" + (modelData.delta)
+                                        }
                                     }
                                 }
                             }
@@ -419,57 +423,59 @@ Css.CssRect {
                             cssPrimitive: "text"
                             text: "Recent activity"
                         }
-                        Repeater {
+                        Css.CssRepeater {
                             model: __const_FEED
-                            Css.CssRect {
-                                cssClass: ["feed-row"]
-                                cssPrimitive: "div"
+                            delegate: Component {
                                 Css.CssRect {
-                                    cssClass: ["feed-avatar"]
+                                    cssClass: ["feed-row"]
                                     cssPrimitive: "div"
-                                    Css.CssText {
-                                        cssClass: ["feed-avatar-t"]
-                                        cssPrimitive: "text"
-                                        text: "" + (modelData.who)
+                                    Css.CssRect {
+                                        cssClass: ["feed-avatar"]
+                                        cssPrimitive: "div"
+                                        Css.CssText {
+                                            cssClass: ["feed-avatar-t"]
+                                            cssPrimitive: "text"
+                                            text: "" + (modelData.who)
+                                        }
                                     }
-                                }
-                                Css.CssRect {
-                                    cssClass: ["feed-body"]
-                                    cssPrimitive: "div"
-                                    Css.CssText {
-                                        cssClass: ["feed-name"]
-                                        cssPrimitive: "text"
-                                        text: "" + (modelData.name)
+                                    Css.CssRect {
+                                        cssClass: ["feed-body"]
+                                        cssPrimitive: "div"
+                                        Css.CssText {
+                                            cssClass: ["feed-name"]
+                                            cssPrimitive: "text"
+                                            text: "" + (modelData.name)
+                                        }
+                                        Css.CssText {
+                                            cssClass: ["feed-what"]
+                                            cssPrimitive: "text"
+                                            text: "" + (modelData.what)
+                                        }
+                                    }
+                                    Css.CssRect {
+                                        cssClass: ["feed-tag"]
+                                        cssPrimitive: "div"
+                                        Css.CssText {
+                                            cssClass: ["feed-tag-t"]
+                                            cssPrimitive: "text"
+                                            text: "" + (modelData.tag)
+                                        }
+                                    }
+                                    Css.CssRect {
+                                        cssClass: ["feed-alert"]
+                                        visible: !!(!modelData.ok)
+                                        cssPrimitive: "div"
+                                        Css.CssText {
+                                            cssClass: ["feed-alert-t"]
+                                            cssPrimitive: "text"
+                                            text: "!"
+                                        }
                                     }
                                     Css.CssText {
-                                        cssClass: ["feed-what"]
+                                        cssClass: ["feed-when"]
                                         cssPrimitive: "text"
-                                        text: "" + (modelData.what)
+                                        text: "" + (modelData.when)
                                     }
-                                }
-                                Css.CssRect {
-                                    cssClass: ["feed-tag"]
-                                    cssPrimitive: "div"
-                                    Css.CssText {
-                                        cssClass: ["feed-tag-t"]
-                                        cssPrimitive: "text"
-                                        text: "" + (modelData.tag)
-                                    }
-                                }
-                                Css.CssRect {
-                                    cssClass: ["feed-alert"]
-                                    visible: !!(!modelData.ok)
-                                    cssPrimitive: "div"
-                                    Css.CssText {
-                                        cssClass: ["feed-alert-t"]
-                                        cssPrimitive: "text"
-                                        text: "!"
-                                    }
-                                }
-                                Css.CssText {
-                                    cssClass: ["feed-when"]
-                                    cssPrimitive: "text"
-                                    text: "" + (modelData.when)
                                 }
                             }
                         }
@@ -571,22 +577,24 @@ Css.CssRect {
                             cssPrimitive: "text"
                             text: "Pipeline health"
                         }
-                        Repeater {
+                        Css.CssRepeater {
                             model: __const_PROJECTS
-                            Css.CssRect {
-                                cssClass: ["prog-row"]
-                                cssPrimitive: "div"
-                                Css.CssText {
-                                    cssClass: ["prog-name"]
-                                    cssPrimitive: "text"
-                                    text: "" + (modelData.name)
-                                }
+                            delegate: Component {
                                 Css.CssRect {
-                                    cssClass: ["prog-track"]
+                                    cssClass: ["prog-row"]
                                     cssPrimitive: "div"
+                                    Css.CssText {
+                                        cssClass: ["prog-name"]
+                                        cssPrimitive: "text"
+                                        text: "" + (modelData.name)
+                                    }
                                     Css.CssRect {
-                                        cssClass: ["prog-fill"].concat(modelData.pct === "p80" ? ["p80"] : []).concat(modelData.pct === "p65" ? ["p65"] : []).concat(modelData.pct === "p45" ? ["p45"] : []).concat(modelData.pct === "p10" ? ["p10"] : [])
+                                        cssClass: ["prog-track"]
                                         cssPrimitive: "div"
+                                        Css.CssRect {
+                                            cssClass: ["prog-fill"].concat(modelData.pct === "p80" ? ["p80"] : []).concat(modelData.pct === "p65" ? ["p65"] : []).concat(modelData.pct === "p45" ? ["p45"] : []).concat(modelData.pct === "p10" ? ["p10"] : [])
+                                            cssPrimitive: "div"
+                                        }
                                     }
                                 }
                             }
@@ -609,58 +617,61 @@ Css.CssRect {
                     Css.CssRect {
                         cssClass: ["proj-grid"]
                         cssPrimitive: "div"
-                        Repeater {
+                        Css.CssRepeater {
                             model: order
-                            Css.CssRect {
-                                cssClass: ["proj-card"]
-                                property var __dragData: modelData
-                                Drag.active: __drag9.drag.active
-                                Drag.hotSpot.x: width / 2
-                                Drag.hotSpot.y: height / 2
-                                z: __drag9.drag.active ? 1000 : 0
-                                id: __drag9_root
-                                cssPrimitive: "div"
+                            delegate: Component {
                                 Css.CssRect {
-                                    cssClass: ["proj-head"]
+                                    cssClass: ["proj-card"]
+                                    property var __dragData: modelData
+                                    Drag.active: __drag9.drag.active
+                                    Drag.hotSpot.x: width / 2
+                                    Drag.hotSpot.y: height / 2
+                                    z: __drag9.drag.active ? 1000 : 0
+                                    id: __drag9_root
                                     cssPrimitive: "div"
-                                    Css.CssText {
-                                        cssClass: ["proj-name"]
-                                        cssPrimitive: "text"
-                                        text: "" + (proj(modelData).name)
-                                    }
                                     Css.CssRect {
-                                        cssClass: ["proj-pill"].concat(proj(modelData).status === "beta" ? ["beta"] : []).concat(proj(modelData).status === "design" ? ["design"] : [])
+                                        cssClass: ["proj-head"]
                                         cssPrimitive: "div"
                                         Css.CssText {
-                                            cssClass: ["proj-pill-t"]
+                                            cssClass: ["proj-name"]
                                             cssPrimitive: "text"
-                                            text: "" + (proj(modelData).status)
+                                            text: "" + (proj(modelData).name)
+                                        }
+                                        Css.CssRect {
+                                            cssClass: ["proj-pill"].concat(proj(modelData).status === "beta" ? ["beta"] : []).concat(proj(modelData).status === "design" ? ["design"] : [])
+                                            cssPrimitive: "div"
+                                            Css.CssText {
+                                                cssClass: ["proj-pill-t"]
+                                                cssPrimitive: "text"
+                                                text: "" + (proj(modelData).status)
+                                            }
                                         }
                                     }
-                                }
-                                Css.CssText {
-                                    cssClass: ["proj-desc"]
-                                    cssPrimitive: "text"
-                                    text: "" + (proj(modelData).desc)
-                                }
-                                Css.CssRect {
-                                    cssClass: ["prog-track"]
-                                    cssPrimitive: "div"
-                                    Css.CssRect {
-                                        cssClass: ["prog-fill"].concat(proj(modelData).pct === "p80" ? ["p80"] : []).concat(proj(modelData).pct === "p65" ? ["p65"] : []).concat(proj(modelData).pct === "p45" ? ["p45"] : []).concat(proj(modelData).pct === "p10" ? ["p10"] : [])
-                                        cssPrimitive: "div"
+                                    Css.CssText {
+                                        cssClass: ["proj-desc"]
+                                        cssPrimitive: "text"
+                                        text: "" + (proj(modelData).desc)
                                     }
-                                }
-                                MouseArea {
-                                    id: __drag9
-                                    anchors.fill: parent
-                                    drag.target: __drag9_root
-                                    cursorShape: Qt.OpenHandCursor
-                                    onReleased: { __drag9_root.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(__drag9_root) }
-                                }
-                                DropArea {
-                                    anchors.fill: parent
-                                    onDropped: (drop) => { order = reorder(order, drop.source.__dragData, modelData) }
+                                    Css.CssRect {
+                                        cssClass: ["prog-track"]
+                                        cssPrimitive: "div"
+                                        Css.CssRect {
+                                            cssClass: ["prog-fill"].concat(proj(modelData).pct === "p80" ? ["p80"] : []).concat(proj(modelData).pct === "p65" ? ["p65"] : []).concat(proj(modelData).pct === "p45" ? ["p45"] : []).concat(proj(modelData).pct === "p10" ? ["p10"] : [])
+                                            cssPrimitive: "div"
+                                        }
+                                    }
+                                    MouseArea {
+                                        id: __drag9
+                                        anchors.fill: parent
+                                        drag.target: __drag9_root
+                                        cursorShape: Qt.OpenHandCursor
+                                        onReleased: { __drag9_root.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(__drag9_root) }
+                                    }
+                                    DropArea {
+                                        anchors.fill: parent
+                                        enabled: !__drag9.drag.active
+                                        onDropped: (drop) => { order = reorder(order, drop.source.__dragData, modelData) }
+                                    }
                                 }
                             }
                         }
@@ -682,46 +693,48 @@ Css.CssRect {
                             cssPrimitive: "text"
                             text: "Full activity log — scrolls natively"
                         }
-                        Repeater {
+                        Css.CssRepeater {
                             model: __const_LOG
-                            Css.CssRect {
-                                cssClass: ["feed-row"]
-                                cssPrimitive: "div"
+                            delegate: Component {
                                 Css.CssRect {
-                                    cssClass: ["feed-avatar"]
+                                    cssClass: ["feed-row"]
                                     cssPrimitive: "div"
-                                    Css.CssText {
-                                        cssClass: ["feed-avatar-t"]
-                                        cssPrimitive: "text"
-                                        text: "" + (modelData.who)
+                                    Css.CssRect {
+                                        cssClass: ["feed-avatar"]
+                                        cssPrimitive: "div"
+                                        Css.CssText {
+                                            cssClass: ["feed-avatar-t"]
+                                            cssPrimitive: "text"
+                                            text: "" + (modelData.who)
+                                        }
                                     }
-                                }
-                                Css.CssRect {
-                                    cssClass: ["feed-body"]
-                                    cssPrimitive: "div"
-                                    Css.CssText {
-                                        cssClass: ["feed-what"]
-                                        cssPrimitive: "text"
-                                        text: "" + (modelData.what)
+                                    Css.CssRect {
+                                        cssClass: ["feed-body"]
+                                        cssPrimitive: "div"
+                                        Css.CssText {
+                                            cssClass: ["feed-what"]
+                                            cssPrimitive: "text"
+                                            text: "" + (modelData.what)
+                                        }
                                     }
-                                }
-                                Css.CssRect {
-                                    cssClass: ["feed-tag"]
-                                    cssPrimitive: "div"
-                                    Css.CssText {
-                                        cssClass: ["feed-tag-t"]
-                                        cssPrimitive: "text"
-                                        text: "" + (modelData.tag)
+                                    Css.CssRect {
+                                        cssClass: ["feed-tag"]
+                                        cssPrimitive: "div"
+                                        Css.CssText {
+                                            cssClass: ["feed-tag-t"]
+                                            cssPrimitive: "text"
+                                            text: "" + (modelData.tag)
+                                        }
                                     }
-                                }
-                                Css.CssRect {
-                                    cssClass: ["feed-alert"]
-                                    visible: !!(!modelData.ok)
-                                    cssPrimitive: "div"
-                                    Css.CssText {
-                                        cssClass: ["feed-alert-t"]
-                                        cssPrimitive: "text"
-                                        text: "!"
+                                    Css.CssRect {
+                                        cssClass: ["feed-alert"]
+                                        visible: !!(!modelData.ok)
+                                        cssPrimitive: "div"
+                                        Css.CssText {
+                                            cssClass: ["feed-alert-t"]
+                                            cssPrimitive: "text"
+                                            text: "!"
+                                        }
                                     }
                                 }
                             }

@@ -146,9 +146,13 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
     const paramName = param && t.isIdentifier(param) ? param.name : null;
     const dropScope: Scope = { ...scope, mode: "handler",
       locals: { ...(scope.locals ?? {}), ...(paramName ? { [paramName]: "drop.source.__dragData" } : {}) } };
+    // A draggable card travels WITH the drop hotspot, so its OWN DropArea would receive its
+    // drop (a self-reorder no-op). Disable it while this very element is the drag source.
+    const dragGuard = props.draggable ? `__drag${(scope.hoverCounter?.n ?? 1) - 1}` : null;
     clickLines.push(
       `${pad}${INDENT}DropArea {`,
       `${pad}${INDENT}${INDENT}anchors.fill: parent`,
+      ...(dragGuard ? [`${pad}${INDENT}${INDENT}enabled: !${dragGuard}.drag.active`] : []),
       `${pad}${INDENT}${INDENT}onDropped: (drop) => { ${emitExpr(fn.body, dropScope)} }`,
       `${pad}${INDENT}}`,
     );
@@ -659,19 +663,23 @@ function readWhen(propsArg: t.Node | undefined, scope: Scope): string {
   return "true";
 }
 
-/** <For each={E}>{(item) => …}</For> → Repeater { model: E; <delegate with item=modelData> }. */
+/** <For each={E}>{(item) => …}</For> → Css.CssRepeater { model: E; delegate: Component {…} }.
+ *  KEYED like Solid's <For>: a changed array reuses/moves surviving rows (flyweight) instead
+ *  of tearing everything down the way a plain Repeater does. */
 function emitFor(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
   const each = readEach(propsArg, scope);
   const pad = INDENT.repeat(level);
-  const lines = [`${pad}Repeater {`, ...guardLine(guard, level), `${pad}${INDENT}model: ${each}`];
+  const lines = [`${pad}Css.CssRepeater {`, ...guardLine(guard, level), `${pad}${INDENT}model: ${each}`];
   const delegate = children.find((c) => t.isArrowFunctionExpression(c) || t.isFunctionExpression(c)) as t.ArrowFunctionExpression | t.FunctionExpression | undefined;
   if (delegate) {
     const param = delegate.params[0];
     const itemName = param && t.isIdentifier(param) ? param.name : null;
     const inner: Scope = { ...scope, locals: { ...(scope.locals ?? {}), ...(itemName ? { [itemName]: "modelData" } : {}) } };
     const body = delegate.body;
-    if (isHCall(body)) lines.push(...emitQml(body, inner, level + 1));
-    else throw new Error("For delegate must return a single element in this plan");
+    if (!isHCall(body)) throw new Error("For delegate must return a single element in this plan");
+    lines.push(`${pad}${INDENT}delegate: Component {`);
+    lines.push(...emitQml(body, inner, level + 2));
+    lines.push(`${pad}${INDENT}}`);
   }
   lines.push(`${pad}}`);
   return lines;

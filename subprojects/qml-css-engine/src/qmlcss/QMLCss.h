@@ -11,6 +11,7 @@
 #include "cssicon.h"
 #include "cssimage.h"
 #include "cssincubator.h"
+#include "cssrepeater.h"
 #include "cssitem.h"
 #include "csskeyframes.h"
 #include "csslayout.h"
@@ -36,6 +37,7 @@ inline void registerTypes()
     qmlRegisterType<CssFillLayer>("qmlcss", 1, 0, "CssFillLayer");
     qmlRegisterType<CssItem>("qmlcss", 1, 0, "CssItem");
     qmlRegisterType<CssIncubator>("qmlcss", 1, 0, "CssIncubator");
+    qmlRegisterType<CssRepeater>("qmlcss", 1, 0, "CssRepeater");
     qmlRegisterSingletonType<Contrast>("qmlcss", 1, 0, "Contrast",
         [](QQmlEngine *, QJSEngine *) -> QObject * { return new Contrast(); });
 }

@@ -102,4 +102,8 @@ private slots:
     // overflow-y: auto/scroll composes a real Flickable hosting the content (QML's native
     // scrolling), with contentHeight tracking the laid-out children.
     void overflowScrollComposesFlickable();
+
+    // CssRepeater is KEYED (Solid's <For>): a reorder MOVES the existing delegates
+    // (same instances, re-stacked); only added entries create, removed ones destroy.
+    void cssRepeaterReordersWithoutRecreating();
 };

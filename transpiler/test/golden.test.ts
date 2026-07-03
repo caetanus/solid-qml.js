@@ -27,7 +27,7 @@ test("golden: derived.tsx generates the expected memo QML", async () => {
   assert.equal(got.trimEnd(), want.trimEnd());
 });
 
-test("golden: list.tsx generates the expected Repeater QML", async () => {
+test("golden: list.tsx generates the expected keyed CssRepeater QML", async () => {
   const src = await readFile(`${dir}list.tsx`, "utf8");
   const got = (await generate(src, "list.tsx")).entry;
   const want = await readFile(`${dir}list.expected.qml`, "utf8");
