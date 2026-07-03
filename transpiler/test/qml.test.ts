@@ -282,3 +282,35 @@ test("emitQml: classList without a static class uses empty base array", async ()
   // Base array is empty [], conditional appended
   assert.match(out, /cssClass: \[\]\.concat\(active \? \["active"\] : \[\]\)/);
 });
+
+test("emitQml: <></> fragment children emit inline into the parent (no node of its own)", async () => {
+  const out = await qml(`
+    export function F() {
+      return <div class="host"><><text>a</text><text>b</text></></div>;
+    }
+  `);
+  // Both texts, directly under the host — exactly one CssRect (the host), no wrapper box
+  assert.match(out, /text: "a"[\s\S]*text: "b"/);
+  assert.equal(out.match(/Css\.CssRect \{/g)?.length, 1);
+});
+
+test("emitQml: fragment under Show inherits the guard on each child", async () => {
+  const out = await qml(`
+    export function F() {
+      const [flag, setFlag] = createSignal(false);
+      return <div><Show when={flag()}><><text>x</text><text>y</text></></Show></div>;
+    }
+  `);
+  assert.equal(out.match(/visible: !!\(flag\)/g)?.length, 2);
+});
+
+test("emitComponentType: root <></> fragment wraps in a primitive-less box hosting the children", async () => {
+  const { ast } = await normalize(
+    `export function F(){ return <><text>a</text><text>b</text></>; }`, "f.tsx");
+  const fn = (ast as any).program.body.find((n: any) => n.type === "ExportNamedDeclaration").declaration;
+  const render = findRender(ast)!;
+  const lines = emitComponentType(fn, render, new Map()).join("\n");
+  assert.match(lines, /Css\.CssRect \{/);          // the wrapper host
+  assert.match(lines, /text: "a"[\s\S]*text: "b"/);
+  assert.doesNotMatch(lines, /cssClass:/);          // wrapper carries no class
+});

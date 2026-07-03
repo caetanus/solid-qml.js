@@ -199,11 +199,14 @@ export function Dashboard() {
             <text class="theme-toggle-t">✨</text>
           </div>
           <div class="dash-user" classList={{ open: userOpen() }} onClick={() => setUserOpen(!userOpen())}>
-            <div class="dash-avatar-ring">
-              <div class="dash-avatar"><text class="dash-avatar-t">AL</text></div>
-            </div>
-            <text class="dash-user-n">ada</text>
-            <text class="dash-user-chev">▾</text>
+            {/* fragment on purpose: children must splice inline (no wrapper box) */}
+            <>
+              <div class="dash-avatar-ring">
+                <div class="dash-avatar"><text class="dash-avatar-t">AL</text></div>
+              </div>
+              <text class="dash-user-n">ada</text>
+              <text class="dash-user-chev">▾</text>
+            </>
             <Show when={userOpen()}>
               <div class="user-card">
                 <div class="user-card-head">
