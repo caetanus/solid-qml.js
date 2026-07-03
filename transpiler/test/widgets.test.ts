@@ -548,3 +548,413 @@ test("widgets: radio Templates import is prepended", async () => {
   const out = await qmlType(`export function F(){ return <input type="radio" name="x" />; }`);
   assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
 });
+
+// ---------------------------------------------------------------------------
+// Phase 4: <select> / <option> → T.ComboBox
+// ---------------------------------------------------------------------------
+
+test("widgets: <select> emits wrapper CssFill with cssPrimitive 'select'", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /Css\.CssFill \{/);
+  assert.match(out, /cssPrimitive: "select"/);
+});
+
+test("widgets: <select> emits T.ComboBox inside with background null and leftPadding 12", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /T\.ComboBox \{/);
+  assert.match(out, /id: __input0/);
+  assert.match(out, /anchors\.fill: parent/);
+  assert.match(out, /background: null/);
+  assert.match(out, /leftPadding: 12/);
+});
+
+test("widgets: <select> model array contains option labels in order", async () => {
+  const out = await qml(`export function F(){ return (
+    <select><option value="a">Alpha</option><option value="b">Beta</option></select>
+  ); }`);
+  assert.match(out, /model: \["Alpha", "Beta"\]/);
+});
+
+test("widgets: <select> readonly __values property holds option values", async () => {
+  const out = await qml(`export function F(){ return (
+    <select><option value="a">Alpha</option><option value="b">Beta</option></select>
+  ); }`);
+  assert.match(out, /readonly property var __values: \["a", "b"\]/);
+});
+
+test("widgets: <option> without value attr uses the label as value", async () => {
+  const out = await qml(`export function F(){ return (
+    <select><option>Baz</option></select>
+  ); }`);
+  // Both model label and __values entry should be "Baz"
+  assert.match(out, /model: \["Baz"\]/);
+  assert.match(out, /__values: \["Baz"\]/);
+});
+
+test("widgets: <select> contentItem is CssText with cssClass ['value'] showing displayText", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /contentItem: Css\.CssText \{/);
+  assert.match(out, /cssClass: \["value"\]/);
+  assert.match(out, /text: __input0\.displayText/);
+});
+
+test("widgets: <select> emits a chevron CssText with cssClass ['chevron'] anchored right", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /cssClass: \["chevron"\]/);
+  assert.match(out, /text: "▾"/);
+  assert.match(out, /anchors\.right: parent\.right/);
+  assert.match(out, /anchors\.verticalCenter: parent\.verticalCenter/);
+});
+
+test("widgets: <select> delegate is T.ItemDelegate with explicit width from popup.width", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /delegate: T\.ItemDelegate \{/);
+  assert.match(out, /width: __input0\.popup\.width/);
+  assert.match(out, /implicitHeight: 36/);
+});
+
+test("widgets: <select> delegate background CssFill has cssClass ['option'] and hover/selected cssState", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /cssClass: \["option"\]/);
+  // hover: optDelegate.highlighted; selected: currentIndex === index
+  assert.match(out, /__optDel0\.highlighted \? \["hover"\] : \[\]/);
+  assert.match(out, /__input0\.currentIndex === index \? \["selected"\] : \[\]/);
+});
+
+test("widgets: <select> delegate contentItem is CssText with cssClass ['option-label']", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /cssClass: \["option-label"\]/);
+  assert.match(out, /text: modelData/);
+});
+
+test("widgets: <select> popup is T.Popup with y = combo.height + 2, width = combo.width, padding 1", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /popup: T\.Popup \{/);
+  assert.match(out, /y: __input0\.height \+ 2/);
+  assert.match(out, /width: __input0\.width/);
+  assert.match(out, /padding: 1/);
+});
+
+test("widgets: <select> popup background is CssFill cssClass ['popup']", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /cssClass: \["popup"\]/);
+});
+
+test("widgets: <select> popup contentItem is ListView with delegateModel and capped implicitHeight", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /contentItem: ListView \{/);
+  assert.match(out, /model: __input0\.delegateModel/);
+  assert.match(out, /currentIndex: __input0\.highlightedIndex/);
+  assert.match(out, /implicitHeight: Math\.min\(contentHeight, 240\)/);
+});
+
+test("widgets: <select> cssState carries focus and disabled on the wrapper", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /__input0\.activeFocus \? \["focus"\] : \[\]/);
+  assert.match(out, /!__input0\.enabled \? \["disabled"\] : \[\]/);
+});
+
+test("widgets: <select> value={sig()} emits Binding on currentIndex via indexOf", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [sel, setSel] = createSignal("a");
+      return (
+        <select value={sel()}>
+          <option value="a">Alpha</option>
+          <option value="b">Beta</option>
+        </select>
+      );
+    }
+  `);
+  assert.match(out, /Binding \{/);
+  assert.match(out, /target: __input0/);
+  assert.match(out, /property: "currentIndex"/);
+  assert.match(out, /value: __input0\.__values\.indexOf\(sel\)/);
+  assert.match(out, /restoreMode: Binding\.RestoreNone/);
+});
+
+test("widgets: <select> without value does NOT emit a Binding", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.doesNotMatch(out, /Binding \{/);
+});
+
+test("widgets: <select> onChange wires onActivated with e.target.value → __values[index]", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [sel, setSel] = createSignal("a");
+      return (
+        <select value={sel()} onChange={(e) => setSel(e.target.value)}>
+          <option value="a">Alpha</option>
+        </select>
+      );
+    }
+  `);
+  assert.match(out, /onActivated: \(index\) => \{ sel = __input0\.__values\[index\] \}/);
+});
+
+test("widgets: <select> without onChange does NOT emit onActivated", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.doesNotMatch(out, /onActivated/);
+});
+
+test("widgets: <select> disabled prop sets enabled: false on T.ComboBox", async () => {
+  const out = await qml(`export function F(){ return <select disabled><option>A</option></select>; }`);
+  assert.match(out, /enabled: false/);
+});
+
+test("widgets: <select> Templates import is prepended", async () => {
+  const out = await qmlType(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
+});
+
+test("widgets: dynamic <option> content throws a clear transpiler error", async () => {
+  await assert.rejects(
+    qml(`export function F(){ return <select><option>{someExpr}</option></select>; }`),
+    /dynamic.*option.*not supported/i,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4: <input type="range"> → T.Slider
+// ---------------------------------------------------------------------------
+
+test("widgets: <input type='range'> emits wrapper CssFill with cssPrimitive 'input'", async () => {
+  const out = await qml(`export function F(){ return <input type="range" />; }`);
+  assert.match(out, /Css\.CssFill \{/);
+  assert.match(out, /cssPrimitive: "input"/);
+});
+
+test("widgets: <input type='range'> emits T.Slider anchors.fill:parent inside the wrapper", async () => {
+  const out = await qml(`export function F(){ return <input type="range" />; }`);
+  assert.match(out, /T\.Slider \{/);
+  assert.match(out, /id: __input0/);
+  assert.match(out, /anchors\.fill: parent/);
+});
+
+test("widgets: <input type='range'> defaults from=0 to=100 stepSize=1", async () => {
+  const out = await qml(`export function F(){ return <input type="range" />; }`);
+  assert.match(out, /from: 0/);
+  assert.match(out, /to: 100/);
+  assert.match(out, /stepSize: 1/);
+});
+
+test("widgets: <input type='range' min=5 max=50 step=5> overrides range and step", async () => {
+  const out = await qml(`export function F(){ return <input type="range" min={5} max={50} step={5} />; }`);
+  assert.match(out, /from: 5/);
+  assert.match(out, /to: 50/);
+  assert.match(out, /stepSize: 5/);
+});
+
+test("widgets: <input type='range'> background is CssFill cssClass ['track'] with height 6", async () => {
+  const out = await qml(`export function F(){ return <input type="range" />; }`);
+  assert.match(out, /background: Css\.CssFill \{/);
+  assert.match(out, /cssClass: \["track"\]/);
+  assert.match(out, /height: 6/);
+  assert.match(out, /implicitHeight: 6/);
+});
+
+test("widgets: <input type='range'> track background uses Qt-Basic-style x/y/width geometry", async () => {
+  const out = await qml(`export function F(){ return <input type="range" />; }`);
+  assert.match(out, /x: __input0\.leftPadding/);
+  assert.match(out, /y: __input0\.topPadding \+ \(__input0\.availableHeight - height\) \/ 2/);
+  assert.match(out, /width: __input0\.availableWidth/);
+});
+
+test("widgets: <input type='range'> track contains CssRect cssClass ['track-fill'] width driven by visualPosition", async () => {
+  const out = await qml(`export function F(){ return <input type="range" />; }`);
+  assert.match(out, /cssClass: \["track-fill"\]/);
+  assert.match(out, /width: __input0\.visualPosition \* parent\.width/);
+});
+
+test("widgets: <input type='range'> handle is CssRect cssClass ['handle'] 18x18", async () => {
+  const out = await qml(`export function F(){ return <input type="range" />; }`);
+  assert.match(out, /handle: Css\.CssRect \{/);
+  assert.match(out, /cssClass: \["handle"\]/);
+  assert.match(out, /width: 18/);
+  assert.match(out, /height: 18/);
+  assert.match(out, /implicitWidth: 18/);
+  assert.match(out, /implicitHeight: 18/);
+});
+
+test("widgets: <input type='range'> handle x/y use visualPosition and availableWidth/Height", async () => {
+  const out = await qml(`export function F(){ return <input type="range" />; }`);
+  assert.match(out, /x: __input0\.leftPadding \+ __input0\.visualPosition \* \(__input0\.availableWidth - width\)/);
+  assert.match(out, /y: __input0\.topPadding \+ __input0\.availableHeight \/ 2 - height \/ 2/);
+});
+
+test("widgets: range value={sig()} emits Binding on property 'value'", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [rv, setRv] = createSignal(50);
+      return <input type="range" value={rv()} />;
+    }
+  `);
+  assert.match(out, /Binding \{/);
+  assert.match(out, /target: __input0/);
+  assert.match(out, /property: "value"/);
+  assert.match(out, /value: rv/);
+  assert.match(out, /restoreMode: Binding\.RestoreNone/);
+});
+
+test("widgets: range without value does NOT emit a Binding", async () => {
+  const out = await qml(`export function F(){ return <input type="range" />; }`);
+  assert.doesNotMatch(out, /Binding \{/);
+});
+
+test("widgets: range onInput wires onMoved with e.target.value → ctl.value", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [rv, setRv] = createSignal(0);
+      return <input type="range" value={rv()} onInput={(e) => setRv(e.target.value)} />;
+    }
+  `);
+  assert.match(out, /onMoved: \{ rv = __input0\.value \}/);
+});
+
+test("widgets: range onChange also wires to onMoved (approximation of HTML commit-on-release)", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [rv, setRv] = createSignal(0);
+      return <input type="range" value={rv()} onChange={(e) => setRv(e.target.value)} />;
+    }
+  `);
+  assert.match(out, /onMoved: \{ rv = __input0\.value \}/);
+});
+
+test("widgets: range disabled sets enabled: false on T.Slider", async () => {
+  const out = await qml(`export function F(){ return <input type="range" disabled />; }`);
+  assert.match(out, /enabled: false/);
+});
+
+test("widgets: range cssState carries focus and disabled", async () => {
+  const out = await qml(`export function F(){ return <input type="range" />; }`);
+  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!__input0\.enabled \? \["disabled"\] : \[\]\)/);
+});
+
+test("widgets: range Templates import is prepended", async () => {
+  const out = await qmlType(`export function F(){ return <input type="range" />; }`);
+  assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4: <input type="number"> → T.SpinBox
+// ---------------------------------------------------------------------------
+
+test("widgets: <input type='number'> emits wrapper CssFill with cssPrimitive 'input'", async () => {
+  const out = await qml(`export function F(){ return <input type="number" />; }`);
+  assert.match(out, /Css\.CssFill \{/);
+  assert.match(out, /cssPrimitive: "input"/);
+});
+
+test("widgets: <input type='number'> emits T.SpinBox with editable:true and background:null", async () => {
+  const out = await qml(`export function F(){ return <input type="number" />; }`);
+  assert.match(out, /T\.SpinBox \{/);
+  assert.match(out, /id: __input0/);
+  assert.match(out, /anchors\.fill: parent/);
+  assert.match(out, /background: null/);
+  assert.match(out, /editable: true/);
+});
+
+test("widgets: <input type='number'> defaults from=0 to=100 stepSize=1", async () => {
+  const out = await qml(`export function F(){ return <input type="number" />; }`);
+  assert.match(out, /from: 0/);
+  assert.match(out, /to: 100/);
+  assert.match(out, /stepSize: 1/);
+});
+
+test("widgets: <input type='number' min=1 max=10 step=2> overrides the range", async () => {
+  const out = await qml(`export function F(){ return <input type="number" min={1} max={10} step={2} />; }`);
+  assert.match(out, /from: 1/);
+  assert.match(out, /to: 10/);
+  assert.match(out, /stepSize: 2/);
+});
+
+test("widgets: <input type='number'> contentItem is TextInput with displayText and validator", async () => {
+  const out = await qml(`export function F(){ return <input type="number" />; }`);
+  assert.match(out, /contentItem: TextInput \{/);
+  assert.match(out, /text: __input0\.displayText/);
+  assert.match(out, /validator: __input0\.validator/);
+  assert.match(out, /readOnly: !__input0\.editable/);
+});
+
+test("widgets: <input type='number'> contentItem bridges color/font via ctlId.parent (CssFill wrapper)", async () => {
+  const out = await qml(`export function F(){ return <input type="number" />; }`);
+  // color and font come from the CssFill wrapper via __inputN.parent.inheritedX
+  assert.match(out, /color: cssTheme\.parseColor\(__input0\.parent\.inheritedColor \|\| "#2b2b2b"\)/);
+  assert.match(out, /font\.family: cssTheme\.resolveFontFamily\(__input0\.parent\.inheritedFontFamily/);
+  assert.match(out, /font\.pixelSize: cssTheme\.parseFontSize\(__input0\.parent\.inheritedFontSize/);
+});
+
+test("widgets: <input type='number'> up.indicator is CssFill cssClass ['spin-up'] at top-right", async () => {
+  const out = await qml(`export function F(){ return <input type="number" />; }`);
+  assert.match(out, /up\.indicator: Css\.CssFill \{/);
+  assert.match(out, /cssClass: \["spin-up"\]/);
+  assert.match(out, /x: parent\.width - width/);
+  assert.match(out, /y: 0/);
+  assert.match(out, /width: 24/);
+});
+
+test("widgets: <input type='number'> down.indicator is CssFill cssClass ['spin-down'] at bottom-right", async () => {
+  const out = await qml(`export function F(){ return <input type="number" />; }`);
+  assert.match(out, /down\.indicator: Css\.CssFill \{/);
+  assert.match(out, /cssClass: \["spin-down"\]/);
+  assert.match(out, /y: parent\.height \/ 2/);
+});
+
+test("widgets: <input type='number'> indicators contain CssText '+' and '−' glyphs centred", async () => {
+  const out = await qml(`export function F(){ return <input type="number" />; }`);
+  assert.match(out, /cssClass: \["spin-glyph"\]/);
+  assert.match(out, /text: "\+"/);
+  assert.match(out, /text: "−"/);
+  assert.match(out, /anchors\.centerIn: parent/);
+});
+
+test("widgets: <input type='number'> up/down indicators cssState carries 'active' when pressed", async () => {
+  const out = await qml(`export function F(){ return <input type="number" />; }`);
+  assert.match(out, /__input0\.up\.pressed \? \["active"\] : \[\]/);
+  assert.match(out, /__input0\.down\.pressed \? \["active"\] : \[\]/);
+});
+
+test("widgets: number value={sig()} emits Binding on property 'value'", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [nv, setNv] = createSignal(5);
+      return <input type="number" value={nv()} />;
+    }
+  `);
+  assert.match(out, /Binding \{/);
+  assert.match(out, /target: __input0/);
+  assert.match(out, /property: "value"/);
+  assert.match(out, /value: nv/);
+  assert.match(out, /restoreMode: Binding\.RestoreNone/);
+});
+
+test("widgets: number without value does NOT emit a Binding", async () => {
+  const out = await qml(`export function F(){ return <input type="number" />; }`);
+  assert.doesNotMatch(out, /Binding \{/);
+});
+
+test("widgets: number onChange wires onValueModified with e.target.value → ctl.value", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [nv, setNv] = createSignal(0);
+      return <input type="number" value={nv()} onChange={(e) => setNv(e.target.value)} />;
+    }
+  `);
+  assert.match(out, /onValueModified: \{ nv = __input0\.value \}/);
+});
+
+test("widgets: number disabled sets enabled: false on T.SpinBox", async () => {
+  const out = await qml(`export function F(){ return <input type="number" disabled />; }`);
+  assert.match(out, /enabled: false/);
+});
+
+test("widgets: number cssState carries focus and disabled", async () => {
+  const out = await qml(`export function F(){ return <input type="number" />; }`);
+  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!__input0\.enabled \? \["disabled"\] : \[\]\)/);
+});
+
+test("widgets: number Templates import is prepended", async () => {
+  const out = await qmlType(`export function F(){ return <input type="number" />; }`);
+  assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
+});

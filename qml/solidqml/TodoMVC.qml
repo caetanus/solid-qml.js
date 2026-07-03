@@ -2,6 +2,8 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
+
+import QtQuick.Templates 6.0 as T
 Css.CssRect {
     id: __self
     property var todos: []
@@ -29,33 +31,39 @@ Css.CssRect {
         cssPrimitive: "div"
         Css.CssFill {
             cssClass: ["todo-new"]
-            TextInput {
+            cssPrimitive: "input"
+            cssState: (__input0.activeFocus ? ["focus"] : []).concat(!__input0.enabled ? ["disabled"] : [])
+            implicitWidth: __input0.implicitWidth
+            implicitHeight: __input0.implicitHeight
+            T.TextField {
                 id: __input0
                 anchors.fill: parent
-                anchors.leftMargin: 12
-                anchors.rightMargin: 12
+                background: null
+                color: cssTheme.parseColor(parent.inheritedColor || "#2b2b2b")
+                font.family: cssTheme.resolveFontFamily(parent.inheritedFontFamily || "Sans Serif")
+                font.pixelSize: cssTheme.parseFontSize(parent.inheritedFontSize || "13px", 13)
+                leftPadding: 12
+                rightPadding: 12
                 verticalAlignment: TextInput.AlignVCenter
-                clip: true
                 selectByMouse: true
                 activeFocusOnTab: true
-                color: parent.style && parent.style["color"] ? cssTheme.parseColor(parent.style["color"]) : "#2b2b2b"
-                font.family: parent.style && parent.style["font-family"] ? cssTheme.resolveFontFamily(parent.style["font-family"], "Sans Serif") : cssTheme.resolveFontFamily("Sans Serif")
-                font.pointSize: parent.style && parent.style["font-size"] ? cssTheme.parseFontSize(parent.style["font-size"], 13) : 13
-                Component.onCompleted: text = draft
                 onTextEdited: { draft = text }
                 Keys.onPressed: (event) => { (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && add() }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.left: parent.left
-                    visible: parent.text.length === 0
+                    anchors.leftMargin: parent.leftPadding
+                    visible: parent.text.length === 0 && !parent.activeFocus
                     text: "What needs to be done?"
                     color: "#9aa0a6"
                     font: parent.font
                 }
-                Connections {
-                    target: __self
-                    function onDraftChanged() { if (__input0.text !== draft) __input0.text = draft }
-                }
+            }
+            Binding {
+                target: __input0
+                property: "text"
+                value: draft
+                restoreMode: Binding.RestoreNone
             }
         }
         Css.CssFill {

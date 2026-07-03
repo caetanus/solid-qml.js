@@ -80,6 +80,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
   if (tag === "img") return emitImage(propsArg, props, scope, level, guard);
   if (tag === "input") return emitInput(propsArg, props, scope, level, guard);
   if (tag === "textarea") return emitTextarea(propsArg, props, scope, level, guard);
+  if (tag === "select") return emitSelect(propsArg, props, children as t.Node[], scope, level, guard);
 
   if (TEXT_TAGS.has(tag)) {
     return [
@@ -378,6 +379,8 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
   disabled: boolean; readOnly: boolean; maxLength: string | null;
   // Phase 3: toggle/radio attrs
   role: string; name: string | null; checkedExpr: string | null;
+  // Phase 4: range/number attrs
+  min: string; max: string; step: string;
 } {
   let type = "text";
   let valueExpr: string | null = null;
@@ -392,6 +395,10 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
   let role = "";
   let name: string | null = null;
   let checkedExpr: string | null = null;
+  // Phase 4: range (Slider) and number (SpinBox) attrs; defaults match HTML spec.
+  let min = "0";
+  let max = "100";
+  let step = "1";
 
   if (propsArg && t.isObjectExpression(propsArg)) {
     for (const p of propsArg.properties) {
@@ -430,9 +437,18 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
       if (key === "role" && t.isStringLiteral(p.value)) role = p.value.value;
       // `name` — radio group name; radios sharing a name join the same T.ButtonGroup.
       if (key === "name" && t.isStringLiteral(p.value)) name = p.value.value;
+      // `min` / `max` / `step` — numeric range for T.Slider and T.SpinBox.
+      if ((key === "min" || key === "max" || key === "step") && t.isExpression(p.value)) {
+        const numStr = t.isNumericLiteral(p.value) ? String(p.value.value)
+          : t.isStringLiteral(p.value) ? p.value.value
+          : emitExpr(p.value, { ...scope, mode: "binding" });
+        if (key === "min") min = numStr;
+        else if (key === "max") max = numStr;
+        else step = numStr;
+      }
     }
   }
-  return { type, valueExpr, signalName, placeholder, onInputFn, onChangeFn, onKeyDownFn, disabled, readOnly, maxLength, role, name, checkedExpr };
+  return { type, valueExpr, signalName, placeholder, onInputFn, onChangeFn, onKeyDownFn, disabled, readOnly, maxLength, role, name, checkedExpr, min, max, step };
 }
 
 /** Emit the color + font bindings that bridge the CssFill parent's CSS-inherited properties into a
@@ -475,6 +491,9 @@ function emitInput(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
   if (type === "checkbox" && role === "switch") return emitSwitchToggle(props, scope, level, guard, ctlId, wp);
   if (type === "checkbox") return emitCheckboxToggle(props, scope, level, guard, ctlId, wp);
   if (type === "radio") return emitRadioButton(props, scope, level, guard, ctlId, wp);
+  // Phase 4: range → T.Slider; number → T.SpinBox.
+  if (type === "range") return emitSlider(props, scope, level, guard, ctlId, wp);
+  if (type === "number") return emitSpinBox(props, scope, level, guard, ctlId, wp);
 
   const { valueExpr, signalName, placeholder, onInputFn, onChangeFn, onKeyDownFn, disabled, readOnly, maxLength } = wp;
 
@@ -858,6 +877,412 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
       `${i(2)}target: ${ctlId}`,
       `${i(2)}property: "checked"`,
       `${i(2)}value: ${checkedExpr}`,
+      `${i(2)}restoreMode: Binding.RestoreNone`,
+      `${i(1)}}`,
+    );
+  }
+
+  lines.push(`${pad}}`);
+  return lines;
+}
+
+/** Translate a handler that receives a synthetic event and reads `e.target.value`, mapping
+ *  that accessor to `valueExpr`. Works for onMoved (Slider), onValueModified (SpinBox), and
+ *  onActivated (ComboBox) where the per-event value is expressed as a QML expression string. */
+function translateValueHandler(fn: t.ArrowFunctionExpression | t.FunctionExpression, valueExpr: string, scope: Scope): string {
+  const paramName = fn.params[0] && t.isIdentifier(fn.params[0]) ? fn.params[0].name : null;
+  const inner: Scope = { ...scope, mode: "handler", locals: { ...(scope.locals ?? {}), ...(paramName ? { [paramName]: "__ev" } : {}) } };
+  let body: string;
+  if (t.isBlockStatement(fn.body)) {
+    body = fn.body.body.map((s) => {
+      if (t.isExpressionStatement(s)) return `${emitExpr(s.expression, inner)};`;
+      if (t.isReturnStatement(s) && s.argument) return `return ${emitExpr(s.argument, inner)};`;
+      return "";
+    }).join(" ");
+  } else {
+    body = emitExpr(fn.body, inner);
+  }
+  // Replace the DOM-style accessor with the QML equivalent expression.
+  return body.replace(/__ev\.(?:currentTarget|target)\.value/g, valueExpr);
+}
+
+/** <input type="range" min=… max=… step=… value={} onInput={} onChange={} />
+ *  → wrapper Css.CssFill (cssPrimitive "input") + T.Slider (background: track CssFill containing
+ *    progress fill; handle: CssRect; from/to/stepSize from attrs).
+ *
+ *  Track shape: T.Slider.background is a Css.CssFill (cssClass ["track"]), 6 px tall, centred
+ *  vertically within the control using Qt Basic-style x/y/width bindings (same as Qt's own Basic
+ *  style). The fill CssRect inside the track shows the covered portion. The handle is a CssRect
+ *  (18×18) positioned by T.Slider.visualPosition — no Behavior, dragging must be 1:1 (unlike the
+ *  switch knob which only snaps at toggle time).
+ *
+ *  onChange deviation: HTML fires `change` on mouse-up (committed value); QML T.Slider only has
+ *  `moved` (fires on every positional change) and `valueChanged` (fires on any value write including
+ *  Binding re-assertions). Both onInput and onChange are mapped to onMoved — this approximates the
+ *  HTML semantics close enough for reactive signal wiring; precise mouse-up semantics would need
+ *  onPressedChanged and are deferred. */
+function emitSlider(props: Props, scope: Scope, level: number, guard: string | undefined, ctlId: string, wp: ReturnType<typeof readWidgetProps>): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  const classLine = buildCssClassLine(props, scope, i(1));
+  const { valueExpr, onInputFn, onChangeFn, disabled, min, max, step } = wp;
+
+  const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+  // Both onInput and onChange map to onMoved (see jsdoc for the approximation note).
+  const activeFn = onInputFn ?? onChangeFn;
+  const onMovedBody = activeFn
+    ? translateValueHandler(activeFn, `${ctlId}.value`, scope)
+    : "";
+
+  const lines: string[] = [
+    `${pad}Css.CssFill {`,
+    ...classLine,
+    ...guardLine(guard, level),
+    `${i(1)}cssPrimitive: "input"`,
+    `${i(1)}cssState: ${cssState}`,
+    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
+    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
+    `${i(1)}T.Slider {`,
+    `${i(2)}id: ${ctlId}`,
+    `${i(2)}anchors.fill: parent`,
+    // Track: background slot (fills the control); centred vertically via explicit x/y bindings.
+    // Using Qt Basic-style geometry so the 6px-tall track sits in the middle of the taller handle.
+    `${i(2)}background: Css.CssFill {`,
+    `${i(3)}cssPrimitive: ""`,
+    `${i(3)}cssClass: ["track"]`,
+    `${i(3)}x: ${ctlId}.leftPadding`,
+    `${i(3)}y: ${ctlId}.topPadding + (${ctlId}.availableHeight - height) / 2`,
+    `${i(3)}width: ${ctlId}.availableWidth`,
+    `${i(3)}height: 6`,
+    `${i(3)}implicitHeight: 6`,
+    // Progress fill: a CssRect inside the track growing with visualPosition.
+    `${i(3)}Css.CssRect {`,
+    `${i(4)}cssClass: ["track-fill"]`,
+    `${i(4)}width: ${ctlId}.visualPosition * parent.width`,
+    `${i(4)}height: parent.height`,
+    `${i(3)}}`,
+    `${i(2)}}`,
+    // Handle: a CssRect (18×18) positioned by the slider's own geometry helpers. No Behavior —
+    // dragging must follow the pointer 1:1 (no snap animation like the Switch knob).
+    `${i(2)}handle: Css.CssRect {`,
+    `${i(3)}cssClass: ["handle"]`,
+    `${i(3)}width: 18`,
+    `${i(3)}height: 18`,
+    `${i(3)}implicitWidth: 18`,
+    `${i(3)}implicitHeight: 18`,
+    `${i(3)}x: ${ctlId}.leftPadding + ${ctlId}.visualPosition * (${ctlId}.availableWidth - width)`,
+    `${i(3)}y: ${ctlId}.topPadding + ${ctlId}.availableHeight / 2 - height / 2`,
+    `${i(2)}}`,
+    `${i(2)}from: ${min}`,
+    `${i(2)}to: ${max}`,
+    `${i(2)}stepSize: ${step}`,
+  ];
+
+  if (disabled) lines.push(`${i(2)}enabled: false`);
+  if (onMovedBody) lines.push(`${i(2)}onMoved: { ${onMovedBody} }`);
+
+  lines.push(`${i(1)}}`);
+
+  if (valueExpr !== null) {
+    lines.push(
+      `${i(1)}Binding {`,
+      `${i(2)}target: ${ctlId}`,
+      `${i(2)}property: "value"`,
+      `${i(2)}value: ${valueExpr}`,
+      `${i(2)}restoreMode: Binding.RestoreNone`,
+      `${i(1)}}`,
+    );
+  }
+
+  lines.push(`${pad}}`);
+  return lines;
+}
+
+/** <input type="number" min=… max=… step=… value={} onChange={} />
+ *  → wrapper Css.CssFill (cssPrimitive "input") + T.SpinBox (editable; background null;
+ *    custom contentItem TextInput; up/down indicators as Css.CssFill pairs).
+ *
+ *  Color/font inside contentItem: TextInput cannot read from `parent.inheritedColor` (parent
+ *  is T.SpinBox, not the CssFill wrapper). Resolved via `${ctlId}.parent.inheritedColor` where
+ *  `${ctlId}.parent` is the CssFill wrapper — a valid QML chain since the SpinBox IS a direct
+ *  visual child of the wrapper.
+ *
+ *  up/down indicators: Css.CssFill positioned at the right edge of the SpinBox (x: parent.width -
+ *  width). The "+" and "−" glyphs are CssText children centred inside with anchors.centerIn.
+ *  Their cssState carries "active" when pressed so CSS can colour the pressed state.
+ *
+ *  onChange → onValueModified (T.SpinBox's signal for user-initiated value changes; excludes
+ *  Binding re-assertions, so no echo loop). The synthetic event exposes `.target.value`. */
+function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | undefined, ctlId: string, wp: ReturnType<typeof readWidgetProps>): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  const classLine = buildCssClassLine(props, scope, i(1));
+  const { valueExpr, onChangeFn, disabled, min, max, step } = wp;
+
+  const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+  const onValueModifiedBody = onChangeFn
+    ? translateValueHandler(onChangeFn, `${ctlId}.value`, scope)
+    : "";
+
+  const lines: string[] = [
+    `${pad}Css.CssFill {`,
+    ...classLine,
+    ...guardLine(guard, level),
+    `${i(1)}cssPrimitive: "input"`,
+    `${i(1)}cssState: ${cssState}`,
+    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
+    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
+    `${i(1)}T.SpinBox {`,
+    `${i(2)}id: ${ctlId}`,
+    `${i(2)}anchors.fill: parent`,
+    `${i(2)}background: null`,
+    `${i(2)}from: ${min}`,
+    `${i(2)}to: ${max}`,
+    `${i(2)}stepSize: ${step}`,
+    `${i(2)}editable: true`,
+    // contentItem: a plain TextInput (not Css) — it lives inside the control's item tree, not our
+    // CSS layout engine. Color/font are bridged from the CssFill wrapper via ctlId.parent.inheritedX.
+    `${i(2)}contentItem: TextInput {`,
+    `${i(3)}text: ${ctlId}.displayText`,
+    `${i(3)}validator: ${ctlId}.validator`,
+    `${i(3)}readOnly: !${ctlId}.editable`,
+    `${i(3)}color: cssTheme.parseColor(${ctlId}.parent.inheritedColor || "#2b2b2b")`,
+    `${i(3)}font.family: cssTheme.resolveFontFamily(${ctlId}.parent.inheritedFontFamily || "Sans Serif")`,
+    `${i(3)}font.pixelSize: cssTheme.parseFontSize(${ctlId}.parent.inheritedFontSize || "13px", 13)`,
+    `${i(3)}horizontalAlignment: Qt.AlignHCenter`,
+    `${i(3)}verticalAlignment: Qt.AlignVCenter`,
+    `${i(3)}selectByMouse: true`,
+    `${i(2)}}`,
+    // up indicator: Css.CssFill at the top-right of the SpinBox; cssState "active" when pressed.
+    `${i(2)}up.indicator: Css.CssFill {`,
+    `${i(3)}cssPrimitive: ""`,
+    `${i(3)}cssClass: ["spin-up"]`,
+    `${i(3)}cssState: ${ctlId}.up.pressed ? ["active"] : []`,
+    `${i(3)}x: parent.width - width`,
+    `${i(3)}y: 0`,
+    `${i(3)}width: 24`,
+    `${i(3)}height: parent.height / 2`,
+    `${i(3)}implicitWidth: 24`,
+    `${i(3)}implicitHeight: parent.height / 2`,
+    `${i(3)}Css.CssText {`,
+    `${i(4)}cssPrimitive: ""`,
+    `${i(4)}cssClass: ["spin-glyph"]`,
+    `${i(4)}text: "+"`,
+    `${i(4)}anchors.centerIn: parent`,
+    `${i(3)}}`,
+    `${i(2)}}`,
+    // down indicator: mirrors up, at the bottom-right.
+    `${i(2)}down.indicator: Css.CssFill {`,
+    `${i(3)}cssPrimitive: ""`,
+    `${i(3)}cssClass: ["spin-down"]`,
+    `${i(3)}cssState: ${ctlId}.down.pressed ? ["active"] : []`,
+    `${i(3)}x: parent.width - width`,
+    `${i(3)}y: parent.height / 2`,
+    `${i(3)}width: 24`,
+    `${i(3)}height: parent.height / 2`,
+    `${i(3)}implicitWidth: 24`,
+    `${i(3)}implicitHeight: parent.height / 2`,
+    `${i(3)}Css.CssText {`,
+    `${i(4)}cssPrimitive: ""`,
+    `${i(4)}cssClass: ["spin-glyph"]`,
+    `${i(4)}text: "−"`,
+    `${i(4)}anchors.centerIn: parent`,
+    `${i(3)}}`,
+    `${i(2)}}`,
+  ];
+
+  if (disabled) lines.push(`${i(2)}enabled: false`);
+  if (onValueModifiedBody) lines.push(`${i(2)}onValueModified: { ${onValueModifiedBody} }`);
+
+  lines.push(`${i(1)}}`);
+
+  if (valueExpr !== null) {
+    lines.push(
+      `${i(1)}Binding {`,
+      `${i(2)}target: ${ctlId}`,
+      `${i(2)}property: "value"`,
+      `${i(2)}value: ${valueExpr}`,
+      `${i(2)}restoreMode: Binding.RestoreNone`,
+      `${i(1)}}`,
+    );
+  }
+
+  lines.push(`${pad}}`);
+  return lines;
+}
+
+/** Static option entry parsed from a <option value="v">Label</option> child of <select>. */
+interface OptionEntry { label: string; value: string }
+
+/** Parse the <option> children of a <select> into a list of {label, value} pairs.
+ *  Throws a clear transpiler error on dynamic content (interpolations, sub-elements, computed values). */
+function parseOptions(children: t.Node[]): OptionEntry[] {
+  const entries: OptionEntry[] = [];
+  for (const child of children) {
+    if (!isHCall(child)) continue; // skip whitespace JSXText between options
+    const { tag, props: optProps, children: optChildren } = hParts(child as t.CallExpression);
+    if (!t.isStringLiteral(tag) || tag.value !== "option")
+      throw new Error(`<select> only accepts <option> children, got <${t.isStringLiteral(tag) ? tag.value : "?"}>`);
+    // Collect label text (static strings only).
+    let label = "";
+    for (const c of optChildren) {
+      if (t.isStringLiteral(c)) { label += c.value; }
+      else if (isJsxText(c)) { label += (c as any).value; }
+      else throw new Error("dynamic <option> not supported yet — use static string children only");
+    }
+    label = label.trim();
+    // Collect value prop (defaults to label when absent).
+    let value = label;
+    if (optProps && t.isObjectExpression(optProps)) {
+      for (const p of (optProps as t.ObjectExpression).properties) {
+        if (!t.isObjectProperty(p) || !t.isIdentifier(p.key, { name: "value" })) continue;
+        if (t.isStringLiteral(p.value)) { value = p.value.value; }
+        else if (t.isNumericLiteral(p.value)) { value = String(p.value.value); }
+        else throw new Error("dynamic <option> value not supported yet — use static string/number values only");
+      }
+    }
+    entries.push({ label, value });
+  }
+  return entries;
+}
+
+/** <select value={} onChange={}><option value="v">Label</option>…</select>
+ *  → wrapper Css.CssFill (cssPrimitive "select") + T.ComboBox (model from static options).
+ *
+ *  Values: a `readonly property var __values: [...]` on the T.ComboBox holds the parallel values
+ *  array; the model holds the display labels. Controlled binding: a Binding on `currentIndex`
+ *  computes indexOf(valueExpr) into the values array.
+ *
+ *  Visual structure:
+ *  - contentItem: Css.CssText (cssClass ["value"]) showing displayText; leftPadding: 12 clears the border.
+ *  - Chevron: Css.CssText (cssClass ["chevron"]) as a direct T.ComboBox child, anchored right-center.
+ *  - delegate: T.ItemDelegate per row; background CssFill (cssClass ["option"], cssState "hover" when
+ *    highlighted, "selected" when this row's index == currentIndex); contentItem CssText (["option-label"]).
+ *  - popup: T.Popup (padding: 1 per G3 — prevents popup CssFill border clipping); background CssFill
+ *    (["popup"]); contentItem ListView (clip, cap 240 px, model from delegateModel).
+ *
+ *  onChange → onActivated (index) with synthetic value __input<n>.__values[index].
+ *  Dynamic <option> children (interpolations or <For>) throw a clear transpiler error. */
+function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  const classLine = buildCssClassLine(props, scope, i(1));
+
+  const counter = scope.inputCounter ?? { n: 0 };
+  const idx = counter.n++;
+  const ctlId = `__input${idx}`;
+  const delId = `__optDel${idx}`;
+
+  if (scope.usedWidgets) scope.usedWidgets.flag = true;
+
+  // Parse static <option> children.
+  const options = parseOptions(children);
+  const modelArr = `[${options.map((o) => JSON.stringify(o.label)).join(", ")}]`;
+  const valuesArr = `[${options.map((o) => JSON.stringify(o.value)).join(", ")}]`;
+
+  // Read value and onChange from the <select> propsArg directly.
+  let valueExpr: string | null = null;
+  let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
+  let disabled = false;
+  if (propsArg && t.isObjectExpression(propsArg)) {
+    for (const p of propsArg.properties) {
+      if (!t.isObjectProperty(p) || !t.isIdentifier(p.key)) continue;
+      const key = p.key.name;
+      if (key === "value" && t.isExpression(p.value))
+        valueExpr = emitExpr(p.value, { ...scope, mode: "binding" });
+      if (key === "onChange" && t.isExpression(p.value)
+          && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
+        onChangeFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
+      if (key === "disabled") disabled = !t.isBooleanLiteral(p.value) || p.value.value;
+    }
+  }
+
+  const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+  // onActivated(index): translate onChange so e.target.value → __values[index].
+  const onActivatedBody = onChangeFn
+    ? translateValueHandler(onChangeFn, `${ctlId}.__values[index]`, scope)
+    : "";
+
+  const lines: string[] = [
+    `${pad}Css.CssFill {`,
+    ...classLine,
+    ...guardLine(guard, level),
+    `${i(1)}cssPrimitive: "select"`,
+    `${i(1)}cssState: ${cssState}`,
+    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
+    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
+    `${i(1)}T.ComboBox {`,
+    `${i(2)}id: ${ctlId}`,
+    `${i(2)}anchors.fill: parent`,
+    // No visual chrome from Templates; the CssFill wrapper owns the box painting.
+    `${i(2)}background: null`,
+    // leftPadding keeps the contentItem text clear of the border (G4 from Phase 1 probe).
+    `${i(2)}leftPadding: 12`,
+    // Parallel values array alongside the display-label model.
+    `${i(2)}readonly property var __values: ${valuesArr}`,
+    `${i(2)}model: ${modelArr}`,
+    // contentItem: CssText showing the selected item's display label.
+    `${i(2)}contentItem: Css.CssText {`,
+    `${i(3)}cssPrimitive: ""`,
+    `${i(3)}cssClass: ["value"]`,
+    `${i(3)}text: ${ctlId}.displayText`,
+    `${i(2)}}`,
+    // Chevron: absolutely positioned at the right-centre of the ComboBox.
+    `${i(2)}Css.CssText {`,
+    `${i(3)}cssPrimitive: ""`,
+    `${i(3)}cssClass: ["chevron"]`,
+    `${i(3)}text: "▾"`,
+    `${i(3)}anchors.right: parent.right`,
+    `${i(3)}anchors.rightMargin: 8`,
+    `${i(3)}anchors.verticalCenter: parent.verticalCenter`,
+    `${i(2)}}`,
+    // Delegate: one T.ItemDelegate per model row.
+    `${i(2)}delegate: T.ItemDelegate {`,
+    `${i(3)}id: ${delId}`,
+    // Width must be explicit (G4 from Phase 1): ComboBox does not size delegates automatically.
+    `${i(3)}width: ${ctlId}.popup.width`,
+    `${i(3)}implicitHeight: 36`,
+    `${i(3)}background: Css.CssFill {`,
+    `${i(4)}cssPrimitive: "div"`,
+    `${i(4)}cssClass: ["option"]`,
+    `${i(4)}cssState: (${delId}.highlighted ? ["hover"] : []).concat(${ctlId}.currentIndex === index ? ["selected"] : [])`,
+    `${i(3)}}`,
+    `${i(3)}contentItem: Css.CssText {`,
+    `${i(4)}cssPrimitive: ""`,
+    `${i(4)}cssClass: ["option-label"]`,
+    `${i(4)}text: modelData`,
+    `${i(3)}}`,
+    `${i(2)}}`,
+    // Popup: T.Popup below the control; padding ≥ border-width prevents clip (G3).
+    `${i(2)}popup: T.Popup {`,
+    `${i(3)}y: ${ctlId}.height + 2`,
+    `${i(3)}width: ${ctlId}.width`,
+    `${i(3)}padding: 1`,
+    `${i(3)}background: Css.CssFill {`,
+    `${i(4)}cssPrimitive: "div"`,
+    `${i(4)}cssClass: ["popup"]`,
+    `${i(3)}}`,
+    `${i(3)}contentItem: ListView {`,
+    `${i(4)}clip: true`,
+    `${i(4)}model: ${ctlId}.delegateModel`,
+    `${i(4)}currentIndex: ${ctlId}.highlightedIndex`,
+    `${i(4)}implicitHeight: Math.min(contentHeight, 240)`,
+    `${i(3)}}`,
+    `${i(2)}}`,
+  ];
+
+  if (disabled) lines.push(`${i(2)}enabled: false`);
+  if (onActivatedBody) lines.push(`${i(2)}onActivated: (index) => { ${onActivatedBody} }`);
+
+  lines.push(`${i(1)}}`);
+
+  // Binding: keep currentIndex in sync with the controlled value expression.
+  if (valueExpr !== null) {
+    lines.push(
+      `${i(1)}Binding {`,
+      `${i(2)}target: ${ctlId}`,
+      `${i(2)}property: "currentIndex"`,
+      `${i(2)}value: ${ctlId}.__values.indexOf(${valueExpr})`,
       `${i(2)}restoreMode: Binding.RestoreNone`,
       `${i(1)}}`,
     );
