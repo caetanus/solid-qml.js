@@ -47,9 +47,10 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   const hasCtxBindings = Object.keys(ctxBindings).length > 0;
   const inputCounter = { n: 0 };
   const hoverCounter = { n: 0 };
-  // Mutable flag: set to true by emitInput/emitTextarea when a T.* widget is emitted.
-  // Read after the render pass to decide whether to prepend the Templates import.
-  const usedWidgets = { flag: false };
+  // Mutable flag set by widget emitters during the render pass.
+  // `flag`: any Templates widget emitted → prepend the import.
+  // `calendar`: MonthGrid / DayOfWeekRow used → upgrade to 6.3 (AbstractMonthGrid added in 6.3).
+  const usedWidgets = { flag: false, calendar: false };
   // Radio button group names collected by emitRadioButton; each unique name becomes one
   // T.ButtonGroup { id: __group_<name> } child of the root item (emitted into lifecycle below).
   const buttonGroups = new Set<string>();
@@ -94,10 +95,13 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   }
   const lines = emitQml(renderRoot, scope, 0);
 
-  // If any widget was emitted, prepend the Templates import so T.TextField / T.TextArea resolve.
-  // This line lands between the standard header (emitted by headerFor in index.ts) and the type
-  // body, which is valid QML — imports may appear in any order before the root object.
-  if (usedWidgets.flag) lines.unshift("", "import QtQuick.Templates 6.0 as T");
+  // If any widget was emitted, prepend the Templates import so T.* types resolve.
+  // Calendar / date-input use AbstractMonthGrid / AbstractDayOfWeekRow which were added in
+  // QtQuick.Templates 6.3; 6.3 is a strict superset of 6.0, so upgrading is safe.
+  if (usedWidgets.flag) {
+    const ver = usedWidgets.calendar ? "6.3" : "6.0";
+    lines.unshift("", `import QtQuick.Templates ${ver} as T`);
+  }
 
   const openIdx = lines.findIndex((l) => /\{\s*$/.test(l));
   // The root may already carry an id from a ref={x} (e.g. id: _ref_myDiv). A QML object can have only

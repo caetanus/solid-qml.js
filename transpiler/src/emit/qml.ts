@@ -60,6 +60,10 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
     if (tagArg.name === "Dynamic") return emitDynamic(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "Suspense") return emitSuspense(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "Window") return emitWindow(propsArg, children as t.Node[], scope, level);
+    // Calendar is a builtin widget (Phase 5). It is dispatched BEFORE scope.components so a user
+    // component named "Calendar" is shadowed by the builtin — same precedence as all other
+    // builtin identifiers (control-flow tags win over user components in the import graph too).
+    if (tagArg.name === "Calendar") return emitCalendar(propsArg, scope, level, guard);
     if (CONTROL_TAGS.has(tagArg.name)) throw new Error(`control flow ${tagArg.name} not supported in this plan`);
     if (scope.components?.has(tagArg.name)) return emitInstance(tagArg.name, propsArg, children as t.Node[], scope, level, guard);
     throw new Error(`unknown component or control flow: ${tagArg.name}`);
@@ -494,6 +498,8 @@ function emitInput(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
   // Phase 4: range → T.Slider; number → T.SpinBox.
   if (type === "range") return emitSlider(props, scope, level, guard, ctlId, wp);
   if (type === "number") return emitSpinBox(props, scope, level, guard, ctlId, wp);
+  // Phase 5: date → readOnly text field + MonthGrid popup.
+  if (type === "date") return emitDateInput(propsArg, props, scope, level, guard, ctlId);
 
   const { valueExpr, signalName, placeholder, onInputFn, onChangeFn, onKeyDownFn, disabled, readOnly, maxLength } = wp;
 
@@ -1289,6 +1295,383 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
   }
 
   lines.push(`${pad}}`);
+  return lines;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Phase 5: date + Calendar — MonthGrid / DayOfWeekRow (QtQuick.Templates 6.3)
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Translate an onChange / onInput arrow handler for Calendar / date-input day-click events.
+ *  Maps the synthetic DOM event `e.target.value` / `e.target.valueAsDate` to the QML expression
+ *  `new Date(model.year, model.month, model.day)` — the JS Date for the cell that was clicked.
+ *  `valueAsDate` is checked first (longer match) so the regex alternation is unambiguous. */
+function translateDateClickHandler(fn: t.ArrowFunctionExpression | t.FunctionExpression, scope: Scope): string {
+  const paramName = fn.params[0] && t.isIdentifier(fn.params[0]) ? fn.params[0].name : null;
+  const inner: Scope = { ...scope, mode: "handler", locals: { ...(scope.locals ?? {}), ...(paramName ? { [paramName]: "__ev" } : {}) } };
+  let body: string;
+  if (t.isBlockStatement(fn.body)) {
+    body = fn.body.body.map((s) => {
+      if (t.isExpressionStatement(s)) return `${emitExpr(s.expression, inner)};`;
+      if (t.isReturnStatement(s) && s.argument) return `return ${emitExpr(s.argument, inner)};`;
+      return "";
+    }).join(" ");
+  } else {
+    body = emitExpr(fn.body, inner);
+  }
+  const dateExpr = "new Date(model.year, model.month, model.day)";
+  return body
+    .replace(/__ev\.(?:currentTarget|target)\.valueAsDate/g, dateExpr)
+    .replace(/__ev\.(?:currentTarget|target)\.value/g, dateExpr);
+}
+
+/** Shared month-grid inner structure — emits lines for the calendar header (nav buttons + title),
+ *  the DayOfWeekRow and the AbstractMonthGrid with its day delegate. The CALLER is responsible for
+ *  emitting the surrounding container and the `__calVal<n>`, `__calMonth<n>`, `__calYear<n>`
+ *  properties on it; all inline references use `ownerId.__calXXX<n>`.
+ *
+ *  @param ownerId - QML id of the item that owns __calVal/Month/Year (the calendar wrapper or date-field wrapper)
+ *  @param n       - unique numeric suffix (from inputCounter) used for all generated ids in this calendar instance
+ *  @param clickExtra - optional QML statement(s) appended after the onChange body (e.g. popup.close())
+ *  @param onChangeFn - the author's onChange / onInput handler, or null
+ *  @param level   - indentation level of the CONTAINER's children (the inner Item or popup contentItem)
+ */
+function emitMonthGridLines(
+  ownerId: string,
+  n: number,
+  onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null,
+  clickExtra: string,
+  scope: Scope,
+  level: number,
+): string[] {
+  const i = (d: number) => INDENT.repeat(level + d);
+  const mgId = `__mg${n}`;
+  const delId = `__mgDel${n}`;
+
+  const clickBody = onChangeFn ? translateDateClickHandler(onChangeFn, scope) : "";
+  const fullClick = [clickBody, clickExtra].filter(Boolean).join("; ");
+
+  const selCheck =
+    `${ownerId}.__calVal${n} instanceof Date` +
+    ` && model.year === ${ownerId}.__calVal${n}.getFullYear()` +
+    ` && model.month === ${ownerId}.__calVal${n}.getMonth()` +
+    ` && model.day === ${ownerId}.__calVal${n}.getDate()`;
+  const dayCssState =
+    `(model.today ? ["today"] : [])` +
+    `.concat((${selCheck}) ? ["selected"] : [])` +
+    `.concat(model.month !== ${mgId}.month ? ["outside"] : [])` +
+    `.concat(${delId}.hovered ? ["hover"] : [])`;
+
+  return [
+    // ── prev nav button ────────────────────────────────────────────────────
+    `${i(0)}Css.CssFill {`,
+    `${i(1)}cssPrimitive: "button"`,
+    `${i(1)}cssClass: ["cal-nav"]`,
+    `${i(1)}x: 0`,
+    `${i(1)}y: 0`,
+    `${i(1)}width: 32`,
+    `${i(1)}height: 32`,
+    `${i(1)}implicitWidth: 32`,
+    `${i(1)}implicitHeight: 32`,
+    `${i(1)}Css.CssText { cssPrimitive: ""; text: "‹"; anchors.centerIn: parent }`,
+    `${i(1)}MouseArea {`,
+    `${i(2)}anchors.fill: parent`,
+    `${i(2)}onClicked: {`,
+    `${i(3)}if (${ownerId}.__calMonth${n} === 0) { ${ownerId}.__calYear${n} = ${ownerId}.__calYear${n} - 1; ${ownerId}.__calMonth${n} = 11 }`,
+    `${i(3)}else ${ownerId}.__calMonth${n} = ${ownerId}.__calMonth${n} - 1`,
+    `${i(2)}}`,
+    `${i(1)}}`,
+    `${i(0)}}`,
+    // ── month/year label ───────────────────────────────────────────────────
+    `${i(0)}Css.CssText {`,
+    `${i(1)}cssPrimitive: ""`,
+    `${i(1)}cssClass: ["cal-title"]`,
+    `${i(1)}x: 32`,
+    `${i(1)}y: 0`,
+    `${i(1)}width: parent.width - 64`,
+    `${i(1)}height: 32`,
+    `${i(1)}text: Qt.locale().monthName(${ownerId}.__calMonth${n}) + " " + ${ownerId}.__calYear${n}`,
+    // CssText does not expose horizontalAlignment/verticalAlignment as QML properties.
+    // verticalAlignment is always AlignVCenter inside CssText (hardcoded in applyToText).
+    // horizontal centering is driven by the style map key "text-align".
+    `${i(1)}style: ({"text-align": "center"})`,
+    `${i(0)}}`,
+    // ── next nav button ────────────────────────────────────────────────────
+    `${i(0)}Css.CssFill {`,
+    `${i(1)}cssPrimitive: "button"`,
+    `${i(1)}cssClass: ["cal-nav"]`,
+    `${i(1)}x: parent.width - 32`,
+    `${i(1)}y: 0`,
+    `${i(1)}width: 32`,
+    `${i(1)}height: 32`,
+    `${i(1)}implicitWidth: 32`,
+    `${i(1)}implicitHeight: 32`,
+    `${i(1)}Css.CssText { cssPrimitive: ""; text: "›"; anchors.centerIn: parent }`,
+    `${i(1)}MouseArea {`,
+    `${i(2)}anchors.fill: parent`,
+    `${i(2)}onClicked: {`,
+    `${i(3)}if (${ownerId}.__calMonth${n} === 11) { ${ownerId}.__calYear${n} = ${ownerId}.__calYear${n} + 1; ${ownerId}.__calMonth${n} = 0 }`,
+    `${i(3)}else ${ownerId}.__calMonth${n} = ${ownerId}.__calMonth${n} + 1`,
+    `${i(2)}}`,
+    `${i(1)}}`,
+    `${i(0)}}`,
+    // ── day-of-week row ────────────────────────────────────────────────────
+    `${i(0)}T.AbstractDayOfWeekRow {`,
+    `${i(1)}x: 0`,
+    `${i(1)}y: 32`,
+    `${i(1)}width: parent.width`,
+    `${i(1)}height: 24`,
+    `${i(1)}delegate: Css.CssText {`,
+    `${i(2)}cssPrimitive: ""`,
+    `${i(2)}cssClass: ["dow"]`,
+    `${i(2)}text: model.shortName`,
+    `${i(1)}}`,
+    `${i(0)}}`,
+    // ── month grid ─────────────────────────────────────────────────────────
+    `${i(0)}T.AbstractMonthGrid {`,
+    `${i(1)}id: ${mgId}`,
+    `${i(1)}x: 0`,
+    `${i(1)}y: 56`,
+    `${i(1)}width: parent.width`,
+    `${i(1)}month: ${ownerId}.__calMonth${n}`,
+    `${i(1)}year: ${ownerId}.__calYear${n}`,
+    `${i(1)}delegate: T.AbstractButton {`,
+    `${i(2)}id: ${delId}`,
+    `${i(2)}implicitWidth: 32`,
+    `${i(2)}implicitHeight: 32`,
+    // background: a CssFill carrying the day's CSS class / pseudo-class state
+    `${i(2)}background: Css.CssFill {`,
+    `${i(3)}cssPrimitive: "div"`,
+    `${i(3)}cssClass: ["day"]`,
+    `${i(3)}cssState: ${dayCssState}`,
+    `${i(2)}}`,
+    // contentItem: the day number label
+    `${i(2)}contentItem: Css.CssText {`,
+    `${i(3)}cssPrimitive: ""`,
+    `${i(3)}cssClass: ["day-label"]`,
+    `${i(3)}text: model.day`,
+    `${i(2)}}`,
+    ...(fullClick ? [`${i(2)}onClicked: { ${fullClick} }`] : []),
+    `${i(1)}}`,
+    `${i(0)}}`,
+  ];
+}
+
+/** <Calendar value={expr} onChange={fn} class="…"> — an inline month-grid widget (our tag, not HTML).
+ *
+ *  Wrapper: Css.CssFill (cssPrimitive "div") — participates in the parent's flex/grid layout.
+ *  implicitWidth/Height set to a sane fixed size (7 cells × 32 px wide; header 32 + DOW 24 + grid 6×32).
+ *
+ *  The calendar header, DayOfWeekRow and MonthGrid are hosted inside a plain `Item` so the CSS
+ *  layout engine ignores them (only Css.* direct children are layout participants). The nav buttons
+ *  and title ARE Css.* items but they live inside the Item, so the outer CSS layout does not
+ *  reposition them; explicit x/y values govern their placement.
+ *
+ *  value: reactive `property var __calVal<n>` — the source of truth for the :selected highlight.
+ *  Navigation: `__calMonth<n>` / `__calYear<n>` are initialized from value (binding) and then
+ *  broken by the first nav click (standard QML property-binding semantics), after which they track
+ *  the user's navigation position independently of the value signal.
+ *
+ *  NOTE: Calendar is in BUILTIN_TAGS so it shadows any user component named "Calendar". This is
+ *  intentional — our widget is the canonical Calendar primitive (same precedence as Show/For). */
+function emitCalendar(propsArg: t.Node | undefined, scope: Scope, level: number, guard?: string): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+
+  const props = readProps(propsArg);
+  const classLine = buildCssClassLine(props, scope, i(1));
+
+  const counter = scope.inputCounter ?? { n: 0 };
+  const n = counter.n++;
+
+  if (scope.usedWidgets) { scope.usedWidgets.flag = true; scope.usedWidgets.calendar = true; }
+
+  const calId = `__cal${n}`;
+
+  let valueExpr: string | null = null;
+  let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
+
+  if (propsArg && t.isObjectExpression(propsArg)) {
+    for (const p of propsArg.properties) {
+      if (!t.isObjectProperty(p) || !t.isIdentifier(p.key)) continue;
+      if (p.key.name === "value" && t.isExpression(p.value))
+        valueExpr = emitExpr(p.value, { ...scope, mode: "binding" });
+      if (p.key.name === "onChange" && t.isExpression(p.value)
+        && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
+        onChangeFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
+    }
+  }
+
+  const calValExpr = valueExpr ?? "null";
+
+  return [
+    `${pad}Css.CssFill {`,
+    ...classLine,
+    ...guardLine(guard, level),
+    `${i(1)}id: ${calId}`,
+    `${i(1)}cssPrimitive: "div"`,
+    // Fixed implicit size: 7 cells × 32 px wide; 32 (header) + 24 (DOW) + 6 rows × 32 = 280.
+    `${i(1)}implicitWidth: 224`,
+    `${i(1)}implicitHeight: 280`,
+    // Reactive value property — source of truth for :selected highlight.
+    `${i(1)}property var __calVal${n}: ${calValExpr}`,
+    // View month/year initialized from value; binding breaks after the first nav click (QML semantics),
+    // after which they track the user's navigation position independently.
+    `${i(1)}property int __calMonth${n}: __calVal${n} instanceof Date ? __calVal${n}.getMonth() : new Date().getMonth()`,
+    `${i(1)}property int __calYear${n}: __calVal${n} instanceof Date ? __calVal${n}.getFullYear() : new Date().getFullYear()`,
+    // Plain Item insulates the calendar internals from the outer CSS layout engine (non-Css items
+    // are skipped by isLayoutChild). The nav buttons / title / DOW / MonthGrid use explicit x/y.
+    `${i(1)}Item {`,
+    `${i(2)}anchors.fill: parent`,
+    ...emitMonthGridLines(calId, n, onChangeFn, "", scope, level + 2),
+    `${i(1)}}`,
+    `${pad}}`,
+  ];
+}
+
+/** <input type="date" value={expr} onChange={fn}> → readOnly text field (formatted via Qt.formatDate)
+ *  with a calendar-glyph chevron and a T.Popup containing the shared month-grid structure.
+ *
+ *  - The wrapper Css.CssFill carries CSS identity (cssPrimitive "input") and `:focus` when the
+ *    popup is open, `:disabled` when the text field is disabled.
+ *  - A Binding persistently formats the signal value into the T.TextField text via Qt.formatDate
+ *    (ISO format "yyyy-MM-dd") — the same restoreMode: RestoreNone idiom as other input widgets.
+ *  - Picking a day in the popup fires the onChange synthetic Date event and closes the popup.
+ *  - min/max attrs are NOT supported and throw a clear error (loud failure, like Phase 4 dynamic options).
+ *  - The `ctlId` allocated by emitInput is reused as the T.TextField id to keep counter-monotonicity. */
+function emitDateInput(
+  propsArg: t.Node | undefined,
+  props: Props,
+  scope: Scope,
+  level: number,
+  guard: string | undefined,
+  ctlId: string,
+): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  const classLine = buildCssClassLine(props, scope, i(1));
+
+  // min/max are ISO date range constraints — out of scope for this plan.
+  if (propsArg && t.isObjectExpression(propsArg)) {
+    for (const p of propsArg.properties) {
+      if (!t.isObjectProperty(p) || !t.isIdentifier(p.key)) continue;
+      if (p.key.name === "min" || p.key.name === "max")
+        throw new Error(`<input type="date"> min/max not supported yet — validate the date range in the onChange handler`);
+    }
+  }
+
+  // Derive per-instance ids from the pre-allocated ctlId (avoids an extra counter increment).
+  const wrapId = `${ctlId}W`;   // outer CssFill wrapper (carries state/props)
+  const fldId  = ctlId;          // T.TextField (the text display control)
+  const popId  = `${ctlId}P`;   // T.Popup (the calendar dropdown)
+  // n used for month-grid sub-ids; extract from ctlId e.g. "__input3" → 3.
+  const n = parseInt(ctlId.replace("__input", ""), 10);
+
+  if (scope.usedWidgets) { scope.usedWidgets.flag = true; scope.usedWidgets.calendar = true; }
+
+  let valueExpr: string | null = null;
+  let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
+  let disabled = false;
+
+  if (propsArg && t.isObjectExpression(propsArg)) {
+    for (const p of propsArg.properties) {
+      if (!t.isObjectProperty(p) || !t.isIdentifier(p.key)) continue;
+      const key = p.key.name;
+      if (key === "value" && t.isExpression(p.value))
+        valueExpr = emitExpr(p.value, { ...scope, mode: "binding" });
+      if (key === "onChange" && t.isExpression(p.value)
+        && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
+        onChangeFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
+      if (key === "disabled") disabled = !t.isBooleanLiteral(p.value) || p.value.value;
+    }
+  }
+
+  const calValExpr = valueExpr ?? "null";
+  // cssState: :focus when popup is open (visible = keyboard focus equivalent); :disabled from field.
+  const cssState = `(${popId}.visible ? ["focus"] : []).concat(!${fldId}.enabled ? ["disabled"] : [])`;
+
+  const lines: string[] = [
+    `${pad}Css.CssFill {`,
+    ...classLine,
+    ...guardLine(guard, level),
+    `${i(1)}id: ${wrapId}`,
+    `${i(1)}cssPrimitive: "input"`,
+    `${i(1)}cssState: ${cssState}`,
+    `${i(1)}implicitWidth: 200`,
+    `${i(1)}implicitHeight: 36`,
+    // Reactive value property — source of truth for :selected highlight and formatted display.
+    `${i(1)}property var __calVal${n}: ${calValExpr}`,
+    `${i(1)}property int __calMonth${n}: __calVal${n} instanceof Date ? __calVal${n}.getMonth() : new Date().getMonth()`,
+    `${i(1)}property int __calYear${n}: __calVal${n} instanceof Date ? __calVal${n}.getFullYear() : new Date().getFullYear()`,
+    // ReadOnly text field — display only; typing dates is out of scope.
+    `${i(1)}T.TextField {`,
+    `${i(2)}id: ${fldId}`,
+    `${i(2)}anchors.fill: parent`,
+    `${i(2)}background: null`,
+    `${i(2)}readOnly: true`,
+    ...widgetColorFont(i),
+    `${i(2)}leftPadding: 12`,
+    `${i(2)}rightPadding: 36`,
+    `${i(2)}verticalAlignment: TextInput.AlignVCenter`,
+  ];
+
+  if (disabled) lines.push(`${i(2)}enabled: false`);
+  lines.push(`${i(1)}}`);
+
+  // Binding: keep the displayed text in sync with the signal value, formatted as ISO date.
+  // restoreMode: RestoreNone — the binding survives popup open/close without reverting.
+  lines.push(
+    `${i(1)}Binding {`,
+    `${i(2)}target: ${fldId}`,
+    `${i(2)}property: "text"`,
+    // Guard: Qt.formatDate throws on null/undefined (no Date object yet).
+    `${i(2)}value: ${wrapId}.__calVal${n} instanceof Date ? Qt.formatDate(${wrapId}.__calVal${n}, "yyyy-MM-dd") : ""`,
+    `${i(2)}restoreMode: Binding.RestoreNone`,
+    `${i(1)}}`,
+  );
+
+  // Calendar glyph anchored to the right edge of the wrapper.
+  lines.push(
+    `${i(1)}Css.CssText {`,
+    `${i(2)}cssPrimitive: ""`,
+    `${i(2)}cssClass: ["chevron"]`,
+    `${i(2)}text: "▾"`,
+    `${i(2)}anchors.right: parent.right`,
+    `${i(2)}anchors.rightMargin: 8`,
+    `${i(2)}anchors.verticalCenter: parent.verticalCenter`,
+    `${i(1)}}`,
+  );
+
+  // MouseArea over the whole field: click toggles the popup open/closed.
+  lines.push(
+    `${i(1)}MouseArea {`,
+    `${i(2)}anchors.fill: parent`,
+    `${i(2)}onClicked: { if (${popId}.visible) ${popId}.close(); else ${popId}.open() }`,
+    `${i(1)}}`,
+  );
+
+  // Popup: T.Popup renders on the window overlay; padding ≥ 1 prevents CssFill border clip (G3).
+  // The contentItem is a plain Item holding the shared month-grid structure (same as Calendar).
+  // Nav buttons inside the popup reference wrapId.__calMonth/Year (shared nav state).
+  lines.push(
+    `${i(1)}T.Popup {`,
+    `${i(2)}id: ${popId}`,
+    `${i(2)}y: ${wrapId}.height + 2`,
+    `${i(2)}padding: 1`,
+    `${i(2)}background: Css.CssFill {`,
+    `${i(3)}cssPrimitive: "div"`,
+    `${i(3)}cssClass: ["popup"]`,
+    `${i(2)}}`,
+    `${i(2)}contentItem: Item {`,
+    `${i(3)}implicitWidth: 224`,
+    `${i(3)}implicitHeight: 280`,
+    // Shared month-grid structure: nav + DOW + MonthGrid; clicking a day fires onChange + close.
+    ...emitMonthGridLines(wrapId, n, onChangeFn, `${popId}.close()`, scope, level + 3),
+    `${i(2)}}`,
+    `${i(1)}}`,
+    `${pad}}`,
+  );
+
   return lines;
 }
 

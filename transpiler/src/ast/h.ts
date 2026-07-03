@@ -1,7 +1,9 @@
 import * as t from "@babel/types";
 
 export const CONTROL_TAGS = new Set(["Show", "For", "Index", "Switch", "Match", "Suspense", "Dynamic"]);
-export const BUILTIN_TAGS = new Set(["Window", ...CONTROL_TAGS]);
+// Calendar is a builtin widget (Phase 5): treated like a builtin so it is not followed as a user
+// component module. It is NOT a control-flow tag — it's dispatched explicitly in emitQml.
+export const BUILTIN_TAGS = new Set(["Window", "Calendar", ...CONTROL_TAGS]);
 
 export interface HCallParts {
   tag: t.Expression | t.PrivateName;

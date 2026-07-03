@@ -958,3 +958,259 @@ test("widgets: number Templates import is prepended", async () => {
   const out = await qmlType(`export function F(){ return <input type="number" />; }`);
   assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
 });
+
+// ---------------------------------------------------------------------------
+// Phase 5: <Calendar> — inline month grid
+// ---------------------------------------------------------------------------
+
+test("widgets: <Calendar> emits wrapper CssFill with cssPrimitive 'div'", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  assert.match(out, /Css\.CssFill \{/);
+  assert.match(out, /cssPrimitive: "div"/);
+});
+
+test("widgets: <Calendar> emits T.AbstractMonthGrid with month and year bound to view properties", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  assert.match(out, /T\.AbstractMonthGrid \{/);
+  assert.match(out, /month: __cal0\.__calMonth0/);
+  assert.match(out, /year: __cal0\.__calYear0/);
+});
+
+test("widgets: <Calendar> emits T.AbstractDayOfWeekRow with Css.CssText delegate", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  assert.match(out, /T\.AbstractDayOfWeekRow \{/);
+  assert.match(out, /cssClass: \["dow"\]/);
+  assert.match(out, /text: model\.shortName/);
+});
+
+test("widgets: <Calendar> emits prev/next cal-nav buttons and cal-title label", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  assert.match(out, /cssClass: \["cal-nav"\]/);
+  assert.match(out, /cssClass: \["cal-title"\]/);
+  assert.match(out, /text: "‹"/);
+  assert.match(out, /text: "›"/);
+});
+
+test("widgets: <Calendar> nav prev button wraps Dec→Jan on month 0", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  // Month wrap: if month==0, year-- and month=11
+  assert.match(out, /__cal0\.__calMonth0 === 0/);
+  assert.match(out, /__cal0\.__calYear0 = __cal0\.__calYear0 - 1/);
+  assert.match(out, /__cal0\.__calMonth0 = 11/);
+});
+
+test("widgets: <Calendar> nav next button wraps Dec→Jan on month 11", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  assert.match(out, /__cal0\.__calMonth0 === 11/);
+  assert.match(out, /__cal0\.__calYear0 = __cal0\.__calYear0 \+ 1/);
+  assert.match(out, /__cal0\.__calMonth0 = 0/);
+});
+
+test("widgets: <Calendar> day delegate carries cssState: today/selected/outside/hover", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  assert.match(out, /cssClass: \["day"\]/);
+  assert.match(out, /model\.today \? \["today"\]/);
+  assert.match(out, /\["selected"\]/);
+  assert.match(out, /model\.month !== __mg0\.month \? \["outside"\]/);
+  assert.match(out, /__mgDel0\.hovered \? \["hover"\]/);
+});
+
+test("widgets: <Calendar> day delegate contentItem is Css.CssText with class 'day-label'", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  assert.match(out, /cssClass: \["day-label"\]/);
+  assert.match(out, /text: model\.day/);
+});
+
+test("widgets: <Calendar> day delegate is T.AbstractButton with 32x32 implicit size", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  assert.match(out, /T\.AbstractButton \{/);
+  assert.match(out, /implicitWidth: 32/);
+  assert.match(out, /implicitHeight: 32/);
+});
+
+test("widgets: <Calendar> value={sig()} emits reactive __calVal0 property and :selected check", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [d, setD] = createSignal(null);
+      return <Calendar value={d()} />;
+    }
+  `);
+  assert.match(out, /property var __calVal0: d/);
+  // :selected check compares model.year/month/day to the calVal Date
+  assert.match(out, /__cal0\.__calVal0 instanceof Date/);
+  assert.match(out, /model\.year === __cal0\.__calVal0\.getFullYear\(\)/);
+  assert.match(out, /model\.month === __cal0\.__calVal0\.getMonth\(\)/);
+  assert.match(out, /model\.day === __cal0\.__calVal0\.getDate\(\)/);
+});
+
+test("widgets: <Calendar> with no value emits __calVal0: null and falls back to today", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  assert.match(out, /property var __calVal0: null/);
+  assert.match(out, /new Date\(\)\.getMonth\(\)/);
+  assert.match(out, /new Date\(\)\.getFullYear\(\)/);
+});
+
+test("widgets: <Calendar> view month/year initialized from value when present", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [d, setD] = createSignal(null);
+      return <Calendar value={d()} />;
+    }
+  `);
+  assert.match(out, /property int __calMonth0: __calVal0 instanceof Date \? __calVal0\.getMonth\(\) : new Date\(\)\.getMonth\(\)/);
+  assert.match(out, /property int __calYear0: __calVal0 instanceof Date \? __calVal0\.getFullYear\(\) : new Date\(\)\.getFullYear\(\)/);
+});
+
+test("widgets: <Calendar> onChange fires synthetic Date via new Date(model.year, model.month, model.day)", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [d, setD] = createSignal(null);
+      return <Calendar value={d()} onChange={(e) => setD(e.target.value)} />;
+    }
+  `);
+  assert.match(out, /onClicked: \{ d = new Date\(model\.year, model\.month, model\.day\) \}/);
+});
+
+test("widgets: <Calendar> onChange also handles e.target.valueAsDate", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [d, setD] = createSignal(null);
+      return <Calendar value={d()} onChange={(e) => setD(e.target.valueAsDate)} />;
+    }
+  `);
+  assert.match(out, /onClicked: \{ d = new Date\(model\.year, model\.month, model\.day\) \}/);
+});
+
+test("widgets: <Calendar class='my-cal'> passes class to wrapper cssClass", async () => {
+  const out = await qml(`export function F(){ return <Calendar class="my-cal" />; }`);
+  assert.match(out, /cssClass: \["my-cal"\]/);
+});
+
+test("widgets: <Calendar> Templates import uses version 6.3", async () => {
+  const out = await qmlType(`export function F(){ return <Calendar />; }`);
+  assert.match(out, /import QtQuick\.Templates 6\.3 as T/);
+});
+
+test("widgets: <Calendar> is dispatched as builtin even when Calendar is in scope.components", async () => {
+  // Calendar in BUILTIN_TAGS means isComponentIdentifier returns false for it, so scope.components
+  // can contain it but the emitter dispatch fires our builtin BEFORE the user-component check.
+  const { ast } = await normalize(`export function F() { return <Calendar />; }`, "f.tsx");
+  const render = findRender(ast)!;
+  const scope: Scope = {
+    table: new Map(),
+    mode: "binding",
+    inputCounter: { n: 0 },
+    hoverCounter: { n: 0 },
+    components: new Map([["Calendar", "MyCalendarComp"]]),   // user component shadowed
+    usedWidgets: { flag: false, calendar: false },
+  };
+  const out = emitQml(render, scope).join("\n");
+  // Our builtin emits T.AbstractMonthGrid; user component MyCalendarComp must NOT appear.
+  assert.match(out, /T\.AbstractMonthGrid/);
+  assert.doesNotMatch(out, /MyCalendarComp/);
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5: <input type="date"> — readOnly field + calendar popup
+// ---------------------------------------------------------------------------
+
+test("widgets: <input type='date'> emits wrapper CssFill with cssPrimitive 'input'", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /Css\.CssFill \{/);
+  assert.match(out, /cssPrimitive: "input"/);
+});
+
+test("widgets: <input type='date'> emits readOnly T.TextField inside the wrapper", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /T\.TextField \{/);
+  assert.match(out, /readOnly: true/);
+  assert.match(out, /background: null/);
+});
+
+test("widgets: <input type='date'> Binding formats value via Qt.formatDate", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [d, setD] = createSignal(null);
+      return <input type="date" value={d()} />;
+    }
+  `);
+  assert.match(out, /Binding \{/);
+  assert.match(out, /property: "text"/);
+  assert.match(out, /value: __input0W\.__calVal0 instanceof Date \? Qt\.formatDate\(__input0W\.__calVal0, "yyyy-MM-dd"\) : ""/);
+  assert.match(out, /restoreMode: Binding\.RestoreNone/);
+});
+
+test("widgets: <input type='date'> emits chevron glyph anchored to the right", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /cssClass: \["chevron"\]/);
+  assert.match(out, /text: "▾"/);
+  assert.match(out, /anchors\.right: parent\.right/);
+});
+
+test("widgets: <input type='date'> MouseArea toggles popup open/close", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /onClicked: \{ if \(__input0P\.visible\) __input0P\.close\(\); else __input0P\.open\(\) \}/);
+});
+
+test("widgets: <input type='date'> cssState: focus when popup open, disabled when field disabled", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /__input0P\.visible \? \["focus"\]/);
+  assert.match(out, /!__input0\.enabled \? \["disabled"\]/);
+});
+
+test("widgets: <input type='date'> popup is T.Popup below the field with padding 1 and .popup background", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /T\.Popup \{/);
+  assert.match(out, /y: __input0W\.height \+ 2/);
+  assert.match(out, /padding: 1/);
+  assert.match(out, /cssClass: \["popup"\]/);
+});
+
+test("widgets: <input type='date'> popup contains T.AbstractMonthGrid", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /T\.AbstractMonthGrid \{/);
+});
+
+test("widgets: <input type='date'> day click fires onChange and closes popup", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [d, setD] = createSignal(null);
+      return <input type="date" value={d()} onChange={(e) => setD(e.target.value)} />;
+    }
+  `);
+  // onClick body must include both the onChange action and popup.close()
+  assert.match(out, /d = new Date\(model\.year, model\.month, model\.day\)/);
+  assert.match(out, /__input0P\.close\(\)/);
+});
+
+test("widgets: <input type='date'> popup day cssState carries today/selected/outside/hover", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /model\.today \? \["today"\]/);
+  assert.match(out, /\["selected"\]/);
+  assert.match(out, /model\.month !== __mg0\.month \? \["outside"\]/);
+  assert.match(out, /__mgDel0\.hovered \? \["hover"\]/);
+});
+
+test("widgets: <input type='date'> disabled sets enabled: false on T.TextField", async () => {
+  const out = await qml(`export function F(){ return <input type="date" disabled />; }`);
+  assert.match(out, /enabled: false/);
+});
+
+test("widgets: <input type='date'> Templates import uses version 6.3", async () => {
+  const out = await qmlType(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /import QtQuick\.Templates 6\.3 as T/);
+});
+
+test("widgets: <input type='date'> min throws a clear not-supported error", async () => {
+  await assert.rejects(
+    () => qml(`export function F(){ return <input type="date" min="2025-01-01" />; }`),
+    /min\/max not supported yet/,
+  );
+});
+
+test("widgets: <input type='date'> max throws a clear not-supported error", async () => {
+  await assert.rejects(
+    () => qml(`export function F(){ return <input type="date" max="2026-12-31" />; }`),
+    /min\/max not supported yet/,
+  );
+});
