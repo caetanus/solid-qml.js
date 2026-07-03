@@ -1,27 +1,61 @@
 # qml-css-engine
 
-Shared Qt/QML CSS engine, 100% C++. Parses CSS (cascade, specificity, `!important`, gradients,
-box-shadow, transitions, `@keyframes`, transforms, `@media`, descendant selectors scoped by the
-full ancestor chain) and applies it to Qt Quick items via a reverse-slot (`CssTheme::loadCss`),
-AND does layout (the C++ `CssLayoutEngine`: flex/grid/block, calc/min/max/clamp, vw/vh,
-padding/margin/aspect-ratio, absolute, plus transform-keyframe animation).
+**A real CSS engine for Qt Quick, 100% C++.** Style native scene-graph items with
+plain CSS — cascade, specificity, `!important`, descendant selectors scoped by the
+real ancestor chain, `:hover` on any element, `@media`, `@keyframes`, `@font-face`
+(remote, cached), transitions that actually animate — and a C++ layout engine
+(flex, grid, block, `calc()`/`min`/`max`/`clamp`, `vw`/`vh`, absolute positioning,
+`overflow-y` scrolling via a composed `Flickable`).
 
-C++ primitives (registered under `import qmlcss 1.0`): `CssRect` (Shape fill:
-solid/gradient/border/shadow + layout container), `CssText`, `CssFill`, `CssFillLayer`,
-`CssIcon`, `CssImage`, `CssHr`, `CssItem`, `CssDropShadow`, `CssKeyframes`, and the `Contrast`
-singleton (WCAG utilities). One include + one call registers everything:
+The stylesheet stays live at runtime: hot reload on file change, runtime override
+layers for theme switching (`loadLayeredString`), and every restyle re-resolves
+through the same cascade. No build-time flattening.
+
+## Components (`import qmlcss 1.0`)
+
+C++ types, registered by one call:
 
 ```cpp
 #include "qmlcss/QMLCss.h"
 QmlCss::registerTypes(); // → import qmlcss 1.0
 ```
 
-Consumers provide a `cssTheme` context property (a `CssTheme`) and a `cssLayout`
-(`CssLayoutEngine`). Used by `solid-qml-native` and `qbar` as a **meson subproject**:
+`CssRect` (box: paint + layout container), `CssText`, `CssFill`, `CssFillLayer`,
+`CssImage`, `CssIcon`, `CssHr`, `CssItem`, `CssDropShadow`, `CssKeyframes`,
+`CssIncubator` (async subtree mount, atomic reveal), `CssRepeater` (keyed flyweight
+repeater — reorders move delegates instead of recreating), and the `Contrast`
+singleton (WCAG utilities).
+
+## Performance model
+
+Cost follows the CSS, decided per (re)apply:
+
+- **Shape × Rectangle policy** — rectangle-safe styles paint with a real, batchable
+  `QQuickRectangle`; gradients/shadows/per-side borders compose the full Shape shell.
+  The verdict swaps live when the style changes.
+- **Lazy composition** — paint shells, effects, hover tracking, scrolling and
+  animation drivers only exist once the style demands them; layout-only boxes carry
+  no paint machinery at all.
+- **One compile per snippet** (`QmlCss::cachedComponent`), **one write per style
+  apply** (single `cssIn` map), **indexed + memoized selector matching**, **layout
+  hibernation** for bulk passes (N applies → one flush), and a **resize fast-path**
+  (`@media`-signature check — retiles are free).
+
+Run any consumer with `SQ_MOUNT_STATS=1` for per-phase mount timing and apply-origin
+counters.
+
+## Consuming
+
+Meson subproject (used by `solid-qml.js` and `qbar`):
 
 ```meson
 qmlcss = subproject('qml-css-engine')
 qml_css_engine_dep = qmlcss.get_variable('qml_css_engine_dep')
 ```
 
-Styled objects carry: `cssId`, `cssClass`, `cssState`, `cssPart`, `cssPrimitive`, `style`.
+Provide two context properties — `cssTheme` (a `CssTheme`) and `cssLayout`
+(a `CssLayoutEngine`) — and give styled items the CSS signature
+(`cssId` / `cssClass` / `cssState` / `cssPrimitive` / `style`).
+
+Full documentation under `docs/`: overview & performance architecture, CSS support
+matrix, component reference, C++ API, integration guide.

@@ -86,12 +86,12 @@ Children are included in the layout only when they carry a `style` or `cssPrimit
 property (i.e., they are `CssRect`, `CssText`, etc.). `display: none` removes a child
 from both view and layout.
 
-## QML components — `qrc:/qmlcss`
+## QML components — `import qmlcss 1.0` (C++ types)
 
 The components are compiled QML files embedded as Qt resources. They are accessed via:
 
 ```qml
-import "qrc:/qmlcss" as Css
+import qmlcss 1.0 as Css
 ```
 
 They expect two **context properties** to be present in the QML engine:
@@ -139,3 +139,40 @@ See [Components](components.md) for the full component reference.
                                   ─ assigns x/y/width/height to children
                                   ─ drives @keyframes transform animation
 ```
+
+## Performance architecture
+
+The engine is built so that **cost follows the CSS**, decided at runtime on every
+(re)apply — the live stylesheet stays the source of truth (no build-time flattening).
+
+- **Shape × Rectangle policy** — a resolved style that only needs solid colour +
+  radius (uniform or per-corner) + a uniform border composes a REAL `QQuickRectangle`
+  (the scene graph's batchable rect node). Gradients, `url()` backgrounds,
+  `box-shadow`, per-side borders and %-radii take the full Shape shell. The verdict
+  re-evaluates per apply and swaps the composition live (a `:hover` or theme change can
+  move a box between paths).
+- **Lazy composition everywhere** — the paint shell itself, the fill, borders, bevels,
+  the shadow effect stack, text shadows, text backgrounds, `Translate`, the
+  `@keyframes` driver, hover tracking and the scroll `Flickable` are only composed
+  when the style first demands them. A layout-only `<div>` costs a `CssRect` and its
+  content holder — nothing else.
+- **Compiled-component cache** — every composed snippet is compiled ONCE per engine
+  (`QmlCss::cachedComponent`) instead of per instance.
+- **Single-shot mount** — the style is resolved and applied BEFORE the render subtree
+  exists, so the first evaluation of every composed binding reads final values; style
+  pushes ride ONE `cssIn` map (one write per apply, each derived binding evaluates once).
+- **Selector index + memoization** — rules are bucketed by subject class/element/id and
+  resolution is memoized per input signature (cleared when the active rules change);
+  `resolveFontFamily` is memoized against QFontDatabase.
+- **Layout hibernation** — bulk style passes (`reapplyAll`, descendant sweeps) bracket
+  themselves with `CssLayoutEngine::beginBatch()/endBatch()`: N applies, one layout
+  flush. Outside a batch the flush stays synchronous (the resize stale-frame guarantee).
+- **Resize fast-path** — `setViewport()` only rebuilds and re-applies when the SET of
+  matching `@media` groups changes; a tiling-WM retile within the same breakpoints
+  costs nothing.
+- **Async mounts + keyed lists** — `CssIncubator` streams a subtree in without blocking
+  the frame (revealed atomically with a short fade); `CssRepeater` reconciles its model
+  by value, so reorders MOVE existing delegates instead of recreating them.
+
+Instrumentation: run any consumer with `SQ_MOUNT_STATS=1` to dump per-phase mount
+timing, apply origins and per-class apply counts at exit.

@@ -57,7 +57,7 @@ sheet, then strips the declarations before the cascade runs.
 #card:hover  { border-color: @accent_hi; }
 ```
 
-`Contrast.js` (bundled under `qrc:/qmlcss`) complements this with WCAG luminance/contrast helpers,
+The `Contrast` C++ singleton (`Css.Contrast`) complements this with WCAG luminance/contrast helpers,
 e.g. to pick a readable text colour over a variable background.
 
 ---
@@ -255,3 +255,43 @@ Consumed by `CssIcon`:
 |----------|-------|
 | `icon` / `icon-image` | `url(path)` — file path or `qrc:/` resource |
 | `icon-name` | XDG/theme icon name (requires a `image://themeicon/` provider) |
+
+## Descendant selectors (ancestor scoping)
+
+Descendant selectors are scoped by the element's REAL ancestor chain, like the web:
+`.nav button` matches only buttons under a `.nav` element; `.gallery .nav button`
+requires both ancestors in outer→inner order. Class, type and id ancestors all work,
+and a class/state change on an ANCESTOR restyles the scoped descendants automatically
+(`.sidebar.collapsed .label { display: none }` folds every label when the sidebar
+gains `collapsed`).
+
+## `:hover` on any element
+
+An applicable `:hover` rule makes the engine hover-track the element itself: the theme
+detects the rule during apply and the box composes a `HoverHandler` on demand. No
+wiring is required from the consumer — `.card:hover { box-shadow: … }` just works.
+
+## Transitions
+
+`transition: <property> <duration> <easing>` animates instead of snapping:
+
+- `opacity` — the item fades (carousel crossfades);
+- `width` / `height` — the layout engine tweens geometry writes (collapsible panels);
+- `background-color` / border colour — colour fades on both render paths.
+
+## Scrolling
+
+`overflow-y: auto` (or `scroll`) turns the box's content area into a REAL `Flickable`
+(QML's native scrolling — wheel, touch drag, bounds behaviour), with `contentHeight`
+tracking the laid-out children. `overflow: hidden | clip` clips without scrolling.
+
+## `display: none` semantics
+
+`display: none` removes the element from layout and painting WITHOUT touching the
+`visible` property — author bindings (e.g. a transpiled `<Show>` guard that owns
+`visible:`) survive any number of display round-trips.
+
+## Text backgrounds
+
+`background-color` (+ `border-radius`) paints behind text elements too, like the web —
+a Shape underlay composed on demand.

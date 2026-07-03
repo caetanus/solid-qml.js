@@ -3,7 +3,7 @@
 All components are available after:
 
 ```qml
-import "qrc:/qmlcss" as Css
+import qmlcss 1.0 as Css
 ```
 
 They expect the `cssTheme` (`CssTheme *`) and `cssLayout` (`CssLayoutEngine *`) context
@@ -304,7 +304,7 @@ Used internally by `CssText` for `text-shadow`.
 A `.pragma library` JS module with colour-contrast utilities. Import in QML:
 
 ```qml
-import "qrc:/qmlcss/Contrast.js" as Contrast
+import qmlcss 1.0 as Css // Contrast is the C++ singleton `Css.Contrast`
 ```
 
 | Function | Signature | Description |
@@ -323,3 +323,50 @@ import "qrc:/qmlcss/Contrast.js" as Contrast
 | `needsDarkIcon(bg)` | `color → bool` | True when the background needs dark icons |
 | `contrastColor(bg)` | `color → string` | High-contrast icon/text colour (`"#ffffff"` or charcoal) |
 | `contrastFill(bg, alpha)` | `(color, real) → string` | `rgba(…)` contrast fill string |
+
+## `CssRect` render policy (Shape × Rectangle)
+
+`CssRect` picks its paint composition per resolved style: rectangle-safe styles (solid
+colour, uniform/per-corner radius, uniform border) use a real `QQuickRectangle`
+(batchable); gradients, `url()` backgrounds, `box-shadow`, per-side borders and
+%-radii compose the full Shape shell. The choice re-evaluates on every apply and the
+composition swaps live. Layout-only boxes compose neither.
+
+## `CssIncubator`
+
+Async branch mount (used by the solid-qml transpiler for `<Switch>` branches, and
+usable directly): while `active`, incubates `sourceComponent` asynchronously
+(`QQmlIncubator`, time-sliced by the window's incubation controller) and reparents the
+ready item to the incubator's parent — so it becomes a direct layout child, exactly
+like a declared one. The item is held transparent until the layout settles and then
+fades in (~120ms): the page appears as one finished frame instead of streaming.
+
+```qml
+Css.CssIncubator {
+    active: currentPage === "reports"
+    sourceComponent: Component { ReportsPage { } }
+}
+```
+
+Properties: `active` (bool), `sourceComponent` (Component). Deactivation cancels a
+pending incubation and destroys the item.
+
+## `CssRepeater`
+
+Keyed repeater with flyweight semantics (Solid's `<For>`): when the `model` array
+changes, entries whose VALUE survives keep their delegate — moved to the new document
+order, `index` refreshed — removed entries destroy theirs, and only new entries
+instantiate. A plain `Repeater` tears everything down on any wholesale model change
+(a drag-and-drop reorder would recreate every row).
+
+```qml
+Css.CssRepeater {
+    model: order          // any JS array (strings, objects…)
+    delegate: Component {
+        Css.CssRect { cssClass: ["card"]; cssPrimitive: "div" /* modelData, index in scope */ }
+    }
+}
+```
+
+Delegates instantiate in a child context exposing `modelData` and `index`, with the
+base URL inherited so relative asset paths resolve.

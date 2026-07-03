@@ -113,10 +113,10 @@ reload, so it always wins the cascade without being overwritten.
 
 ## Step 3 — Import the QML components
 
-The components live in the Qt resource at `qrc:/qmlcss`. Import them in any QML file:
+The components are C++ types registered by ONE call — `QmlCss::registerTypes()` from `qmlcss/QMLCss.h` — under `import qmlcss 1.0`. Import them in any QML file:
 
 ```qml
-import "qrc:/qmlcss" as Css
+import qmlcss 1.0 as Css
 ```
 
 You can use any alias; `Css` is conventional.
@@ -125,7 +125,7 @@ You can use any alias; `Css` is conventional.
 
 ```qml
 import QtQuick
-import "qrc:/qmlcss" as Css
+import qmlcss 1.0 as Css
 
 Css.CssRect {
     id: card
@@ -254,7 +254,7 @@ int main(int argc, char **argv)
 ```qml
 import QtQuick
 import QtQuick.Window
-import "qrc:/qmlcss" as Css
+import qmlcss 1.0 as Css
 
 Window {
     width: 300; height: 120; visible: true

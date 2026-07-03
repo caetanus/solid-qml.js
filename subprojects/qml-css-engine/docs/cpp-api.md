@@ -383,3 +383,34 @@ QVariantMap parseAnimation(const QString &cssValue);
 `splitTopLevel` splits on `sep` while respecting nested parentheses (so commas inside
 `rgba()` or `linear-gradient()` are not treated as list separators).
 `splitTopLevelWhitespace` does the same for whitespace tokens.
+
+## Registration — `QMLCss.h`
+
+One include, one call registers every type under `import qmlcss 1.0`:
+
+```cpp
+#include "qmlcss/QMLCss.h"
+QmlCss::registerTypes();
+```
+
+## Newer `CssTheme` API
+
+- `resolveWithAncestors(ancestors, id, classes, pseudo, primitive)` — C++-side resolve
+  with an explicit outer→inner ancestor chain (what `applyCssTo` builds from the item
+  tree; powers web-parity descendant scoping).
+- `setLayoutEngine(CssLayoutEngine *)` — wired automatically by the layout engine's
+  constructor; lets bulk apply passes hibernate the layout.
+- `loadLayeredString(css)` — the runtime override layer (theme switching): appended
+  last, highest priority, re-applied to every live element in one batched pass.
+
+## `CssLayoutEngine` batching
+
+`beginBatch()` / `endBatch()` — while a batch is open, `requestLayout()` only records;
+`endBatch()` runs ONE flush for everything. Bulk passes inside the theme bracket
+themselves; brackets nest (a depth counter). Outside a batch the flush is synchronous.
+
+## `QmlCss::cachedComponent`
+
+`cachedComponent(engine, key, qml)` (componentcache.h) — one compiled `QQmlComponent`
+per (engine, key), reused for every `create()`. Use it for any composed snippet; a
+per-instance `QQmlComponent::setData` recompiles the same source every time.
