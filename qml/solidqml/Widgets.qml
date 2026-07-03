@@ -1001,11 +1001,13 @@ Css.CssRect {
                         }
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: { if (__input16P.visible) __input16P.close(); else __input16P.open() }
+                            onClicked: { if (__input16P.visible) __input16P.close(); else if (Date.now() - __input16P.__closedAt > 150) __input16P.open() }
                         }
                     }
                     T.Popup {
                         id: __input16P
+                        property double __closedAt: 0
+                        onClosed: __closedAt = Date.now()
                         popupType: T.Popup.Window
                         y: (__input16W.mapToGlobal(0, __input16W.height + 2).y + height > Screen.height) ? -(height + 2) : __input16W.height + 2
                         implicitWidth: contentWidth + leftPadding + rightPadding

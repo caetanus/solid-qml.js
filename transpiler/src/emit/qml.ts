@@ -1807,11 +1807,14 @@ function emitDateInput(
     `${i(2)}}`,
   );
 
-  // MouseArea over the whole field: click toggles the popup open/closed.
+  // MouseArea over the whole field: click toggles the popup. CloseOnPressOutside fires on
+  // the PRESS, so by the time the click lands here the popup already closed — a naive
+  // visible-check reopens it. The popup stamps its close time; a click right after a
+  // close (same interaction) is a toggle-close, not an open.
   lines.push(
     `${i(2)}MouseArea {`,
     `${i(3)}anchors.fill: parent`,
-    `${i(3)}onClicked: { if (${popId}.visible) ${popId}.close(); else ${popId}.open() }`,
+    `${i(3)}onClicked: { if (${popId}.visible) ${popId}.close(); else if (Date.now() - ${popId}.__closedAt > 150) ${popId}.open() }`,
     `${i(2)}}`,
   );
   lines.push(`${i(1)}}`);
@@ -1822,6 +1825,8 @@ function emitDateInput(
   lines.push(
     `${i(1)}T.Popup {`,
     `${i(2)}id: ${popId}`,
+    `${i(2)}property double __closedAt: 0`,
+    `${i(2)}onClosed: __closedAt = Date.now()`,
     // Desktop dropdown: native window + flip above on screen overflow (see emitSelect).
     `${i(2)}popupType: T.Popup.Window`,
     `${i(2)}y: (${wrapId}.mapToGlobal(0, ${wrapId}.height + 2).y + height > Screen.height) ? -(height + 2) : ${wrapId}.height + 2`,

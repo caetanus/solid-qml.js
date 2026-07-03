@@ -1154,9 +1154,9 @@ test("widgets: <input type='date'> emits chevron glyph anchored to the right", a
   assert.match(out, /anchors\.right: parent\.right/);
 });
 
-test("widgets: <input type='date'> MouseArea toggles popup open/close", async () => {
+test("widgets: <input type='date'> MouseArea toggles popup open/close (with reopen guard)", async () => {
   const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /onClicked: \{ if \(__input0P\.visible\) __input0P\.close\(\); else __input0P\.open\(\) \}/);
+  assert.match(out, /onClicked: \{ if \(__input0P\.visible\) __input0P\.close\(\); else if \(Date\.now\(\) - __input0P\.__closedAt > 150\) __input0P\.open\(\) \}/);
 });
 
 test("widgets: <input type='date'> cssState: focus when popup open, disabled when field disabled", async () => {
@@ -1457,4 +1457,11 @@ test("popups: widgets bump the Templates import to 6.8 (popupType)", async () =>
 test("select: delegate binds highlighted to the combo's highlightedIndex (keyboard nav visible)", async () => {
   const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
   assert.match(out, /T\.ItemDelegate \{[\s\S]*?highlighted: __input0\.highlightedIndex === index/);
+});
+
+test("date: field click after a press-outside close does not reopen (toggle race)", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /property double __closedAt: 0/);
+  assert.match(out, /onClosed: __closedAt = Date\.now\(\)/);
+  assert.match(out, /onClicked: \{ if \(__input0P\.visible\) __input0P\.close\(\); else if \(Date\.now\(\) - __input0P\.__closedAt > 150\) __input0P\.open\(\) \}/);
 });
