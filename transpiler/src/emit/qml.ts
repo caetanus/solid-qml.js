@@ -1433,6 +1433,7 @@ function emitMonthGridLines(
     `${i(1)}x: 0`,
     `${i(1)}y: 56`,
     `${i(1)}width: parent.width`,
+    `${i(1)}height: parent.height - 56`,
     `${i(1)}month: ${ownerId}.__calMonth${n}`,
     `${i(1)}year: ${ownerId}.__calYear${n}`,
     `${i(1)}delegate: T.AbstractButton {`,

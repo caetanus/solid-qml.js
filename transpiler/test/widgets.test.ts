@@ -976,6 +976,12 @@ test("widgets: <Calendar> emits T.AbstractMonthGrid with month and year bound to
   assert.match(out, /year: __cal0\.__calYear0/);
 });
 
+test("widgets: <Calendar> T.AbstractMonthGrid carries height: parent.height - 56 so rows are visible", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  // Without explicit height, T.AbstractMonthGrid collapses to 0 and no day cells render.
+  assert.match(out, /height: parent\.height - 56/);
+});
+
 test("widgets: <Calendar> emits T.AbstractDayOfWeekRow with Css.CssText delegate", async () => {
   const out = await qml(`export function F(){ return <Calendar />; }`);
   assert.match(out, /T\.AbstractDayOfWeekRow \{/);

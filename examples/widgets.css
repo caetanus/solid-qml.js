@@ -1,0 +1,521 @@
+/* Widgets gallery — scoped under .widgets so no rules bleed into the dashboard or other examples.
+   Aesthetic: matches the dashboard's modern palette (#176b87 accent, clean whites, soft shadows).
+   Every widget rule carries an explicit height (T.* controls have implicitWidth/Height 0 by default). */
+
+/* ─── Page shell ──────────────────────────────────────────────────────────────────────── */
+.widgets {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px;
+  background: #f1f4f9;
+  height: calc(100vh - 88px);
+  overflow-y: auto;
+}
+
+.widgets .wg-cols {
+  display: flex;
+  flex-direction: row;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+/* ─── Section card ─────────────────────────────────────────────────────────────────────── */
+.widgets .wg-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-grow: 1;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(23, 34, 44, 0.05);
+}
+
+.widgets .wg-cal-section {
+  flex-grow: 0;
+}
+
+.widgets .wg-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #17222c;
+  letter-spacing: 0.3px;
+}
+
+/* ─── Field wrapper ────────────────────────────────────────────────────────────────────── */
+.widgets .wg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.widgets .wg-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  height: 16px;
+}
+
+.widgets .wg-sublabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  height: 16px;
+  margin-top: 4px;
+}
+
+/* ─── Text input ───────────────────────────────────────────────────────────────────────── */
+.widgets .wg-input {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid #d5dee8;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 14px;
+  color: #17222c;
+}
+
+.widgets .wg-input:focus {
+  border: 2px solid #176b87;
+  background: #ffffff;
+}
+
+.widgets .wg-input:disabled {
+  background: #f1f4f9;
+  border: 1px solid #e8eef5;
+}
+
+/* ─── Textarea ─────────────────────────────────────────────────────────────────────────── */
+.widgets .wg-textarea {
+  height: 72px;
+  padding: 8px 12px;
+  border: 1px solid #d5dee8;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 14px;
+  color: #17222c;
+}
+
+.widgets .wg-textarea:focus {
+  border: 2px solid #176b87;
+  background: #ffffff;
+}
+
+/* ─── Check row (checkbox / switch / radio + label) ────────────────────────────────────── */
+.widgets .wg-check-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  height: 28px;
+}
+
+.widgets .wg-check-label {
+  font-size: 13px;
+  color: #17222c;
+  height: 20px;
+}
+
+/* ─── Checkbox ─────────────────────────────────────────────────────────────────────────── */
+/* Geometry: indicator fixed at 20×20 in QML — CSS controls colours/radius only. */
+.widgets .wg-checkbox {
+  width: 20px;
+  height: 20px;
+}
+
+.widgets .wg-checkbox .indicator {
+  border: 2px solid #c8d3de;
+  border-radius: 5px;
+  background: #f8fafc;
+}
+
+.widgets .wg-checkbox:checked .indicator {
+  background: #176b87;
+  border: 2px solid #176b87;
+}
+
+.widgets .wg-checkbox:disabled .indicator {
+  background: #f1f4f9;
+  border: 2px solid #e2e8f0;
+}
+
+.widgets .wg-checkbox .indicator-glyph {
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* ─── Switch ───────────────────────────────────────────────────────────────────────────── */
+/* Track: 36×20; knob: 16×16 — all hardcoded in QML, CSS sets colours/radius only. */
+.widgets .wg-switch {
+  width: 36px;
+  height: 20px;
+}
+
+.widgets .wg-switch .track {
+  border-radius: 10px;
+  background: #c8d3de;
+}
+
+.widgets .wg-switch:checked .track {
+  background: #176b87;
+}
+
+.widgets .wg-switch .knob {
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(23, 34, 44, 0.24);
+}
+
+/* ─── Radio ────────────────────────────────────────────────────────────────────────────── */
+/* Indicator: 20×20; dot: 8×8 — hardcoded in QML, CSS sets colours/radius only. */
+.widgets .wg-radio {
+  width: 20px;
+  height: 20px;
+}
+
+.widgets .wg-radio .indicator {
+  border: 2px solid #c8d3de;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.widgets .wg-radio:checked .indicator {
+  border: 2px solid #176b87;
+  background: #eef7fb;
+}
+
+.indicator:checked .indicator-dot {
+  border-radius: 4px;
+  background: #176b87;
+}
+
+/* ─── Select / ComboBox ────────────────────────────────────────────────────────────────── */
+.widgets .wg-select {
+  height: 38px;
+  border: 1px solid #d5dee8;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 14px;
+}
+
+.widgets .wg-select:focus {
+  border: 2px solid #176b87;
+  background: #ffffff;
+}
+
+.widgets .wg-select .value {
+  color: #17222c;
+  font-size: 14px;
+  height: 36px;
+  padding-left: 4px;
+}
+
+.widgets .wg-select .chevron {
+  color: #64748b;
+  font-size: 12px;
+  padding-right: 10px;
+  height: 36px;
+}
+
+.widgets .wg-select .popup {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(23, 34, 44, 0.12);
+}
+
+/* Option rows — scoped from .widgets (ancestor chain includes the combo wrapper). */
+.widgets .option {
+  height: 36px;
+  background: #ffffff;
+}
+
+.widgets .option:hover {
+  background: #f0f7fb;
+}
+
+.widgets .option:selected {
+  background: #e8f3f9;
+}
+
+.widgets .option-label {
+  font-size: 13px;
+  color: #17222c;
+  height: 36px;
+  padding-left: 12px;
+}
+
+/* ─── Range / Slider ───────────────────────────────────────────────────────────────────── */
+.widgets .wg-range-header {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  height: 18px;
+}
+
+.widgets .wg-range-val {
+  font-size: 12px;
+  font-weight: 600;
+  color: #176b87;
+  height: 18px;
+}
+
+/* Wrapper needs height for the handle (18px) + padding. */
+.widgets .wg-range {
+  height: 36px;
+}
+
+/* Track: 6px height, hardcoded in QML — CSS sets colour/radius. */
+.widgets .wg-range .track {
+  border-radius: 3px;
+  background: #e2e8f0;
+  height: 6px;
+}
+
+.widgets .wg-range .track-fill {
+  border-radius: 3px;
+  background: #176b87;
+  height: 6px;
+}
+
+/* Handle: 18×18 hardcoded in QML — CSS sets colour/radius/shadow. */
+.widgets .wg-range .handle {
+  border-radius: 9px;
+  background: #176b87;
+  box-shadow: 0 2px 6px rgba(23, 107, 135, 0.35);
+  width: 18px;
+  height: 18px;
+}
+
+.widgets .wg-range:focus .handle {
+  background: #1d7fa0;
+  box-shadow: 0 2px 8px rgba(23, 107, 135, 0.5);
+}
+
+/* ─── Number / SpinBox ─────────────────────────────────────────────────────────────────── */
+.widgets .wg-number {
+  height: 38px;
+  border: 1px solid #d5dee8;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 14px;
+  padding: 0 28px 0 10px;
+}
+
+.widgets .wg-number:focus {
+  border: 2px solid #176b87;
+  background: #ffffff;
+}
+
+.widgets .wg-number .spin-up {
+  background: #f1f4f9;
+  border-radius: 0 8px 0 0;
+  border-left: 1px solid #e2e8f0;
+  width: 24px;
+  height: 19px;
+}
+
+.widgets .wg-number .spin-down {
+  background: #f1f4f9;
+  border-radius: 0 0 8px 0;
+  border-left: 1px solid #e2e8f0;
+  border-top: 1px solid #e2e8f0;
+  width: 24px;
+  height: 19px;
+}
+
+.widgets .wg-number .spin-up:active {
+  background: #e2e8f0;
+}
+
+.widgets .wg-number .spin-down:active {
+  background: #e2e8f0;
+}
+
+.widgets .wg-number .spin-glyph {
+  font-size: 12px;
+  color: #445263;
+  height: 19px;
+}
+
+/* ─── Date input ───────────────────────────────────────────────────────────────────────── */
+.widgets .wg-date {
+  height: 38px;
+  border: 1px solid #d5dee8;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 14px;
+  padding: 0 36px 0 12px;
+}
+
+.widgets .wg-date:focus {
+  border: 2px solid #176b87;
+  background: #ffffff;
+}
+
+.widgets .wg-date .chevron {
+  color: #64748b;
+  font-size: 13px;
+  height: 36px;
+  padding-right: 10px;
+}
+
+.widgets .wg-date .popup {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(23, 34, 44, 0.14);
+  padding: 8px;
+}
+
+/* ─── Calendar ─────────────────────────────────────────────────────────────────────────── */
+/* Emitter hardcodes implicitWidth: 224, implicitHeight: 280 on the wrapper. */
+.widgets .wg-cal {
+  width: 224px;
+  height: 280px;
+}
+
+.widgets .wg-cal .cal-nav {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.widgets .wg-cal .cal-nav:hover {
+  background: #f0f7fb;
+}
+
+.widgets .wg-cal .chevron {
+  font-size: 14px;
+  color: #445263;
+  height: 28px;
+}
+
+.widgets .wg-cal .cal-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #17222c;
+  height: 28px;
+}
+
+.widgets .wg-cal .dow {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 600;
+  width: 32px;
+  height: 24px;
+  text-align: center;
+}
+
+/* Day cells: 32×32 hardcoded in QML — CSS sets colours/radius. */
+.widgets .wg-cal .day {
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+}
+
+.widgets .wg-cal .day:hover {
+  background: #f0f7fb;
+}
+
+.widgets .wg-cal .day:today {
+  border: 2px solid #41cd52;
+}
+
+.widgets .wg-cal .day:selected {
+  background: #176b87;
+}
+
+.widgets .wg-cal .day:outside {
+  opacity: 0.3;
+}
+
+.widgets .wg-cal .day-label {
+  font-size: 12px;
+  color: #17222c;
+  height: 32px;
+  text-align: center;
+}
+
+.widgets .wg-cal .day:selected .day-label {
+  color: #ffffff;
+}
+
+/* ─── Form state summary ────────────────────────────────────────────────────────────────── */
+.widgets .wg-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(23, 34, 44, 0.05);
+}
+
+.widgets .wg-kv-grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.widgets .wg-kv-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+}
+
+.widgets .wg-kv {
+  width: 52px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  height: 18px;
+}
+
+.widgets .wg-kv-v {
+  min-width: 60px;
+  font-size: 12px;
+  color: #17222c;
+  font-weight: 500;
+  height: 18px;
+}
+
+/* ─── Reset button ─────────────────────────────────────────────────────────────────────── */
+.widgets .wg-reset {
+  height: 34px;
+  padding: 0 20px;
+  align-self: flex-start;
+  border: 1px solid #d5dee8;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.widgets .wg-reset text {
+  font-size: 13px;
+  color: #445263;
+  font-weight: 600;
+}
+
+.widgets .wg-reset:hover {
+  background: #176b87;
+  border: 1px solid #176b87;
+}
+
+.widgets .wg-reset:hover text {
+  color: #ffffff;
+}
