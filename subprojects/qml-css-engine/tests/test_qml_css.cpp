@@ -785,8 +785,11 @@ void QmlCssTests::cssTextOverflowEllipsis()
 void QmlCssTests::cssRectCppComposesShapeAndContains()
 {
     CssTheme theme;
+    // A gradient forces the SHAPE path of the Shape x Rectangle policy (a plain solid box
+    // now takes the cheap Rectangle path — covered by rectanglePolicyFastPathAndSwap).
     theme.loadFromString(QStringLiteral(
-        "#box { background-color: #2244aa; border: 2px solid #ffcc00; border-radius: 8px; "
+        "#box { background: linear-gradient(180deg, #2244aa, #112255); "
+        "border: 2px solid #ffcc00; border-radius: 8px; "
         "display: flex; flex-direction: row; gap: 0px; }"));
 
     CssLayoutEngine layout(&theme);
@@ -817,7 +820,8 @@ void QmlCssTests::cssRectCppComposesShapeAndContains()
 
     // loadCss pushed the resolved style.
     const QVariantMap style = rect->property("style").toMap();
-    QCOMPARE(style.value(QStringLiteral("background-color")).toString(), QStringLiteral("#2244aa"));
+    QCOMPARE(style.value(QStringLiteral("background")).toString(),
+             QStringLiteral("linear-gradient(180deg, #2244aa, #112255)"));
     QCOMPARE(style.value(QStringLiteral("border-radius")).toString(), QStringLiteral("8px"));
 
     // The composed render subtree root carries the resolved CSS values (bg/border/radius) that
@@ -833,8 +837,10 @@ void QmlCssTests::cssRectCppComposesShapeAndContains()
     QCOMPARE(renderRoot->property("radiusStr").toString(), QStringLiteral("8px"));
     QCOMPARE(renderRoot->property("borderWidth").toReal(), 2.0);
     QCOMPARE(renderRoot->property("borderColorOpaque").value<QColor>(), QColor(QStringLiteral("#ffcc00")));
-    const QColor solid = renderRoot->property("solid").value<QColor>();
-    QCOMPARE(solid, QColor(QStringLiteral("#2244aa")));
+    // Gradient path (the policy sends solid boxes to the Rectangle fast path instead).
+    QVERIFY(renderRoot->property("hasGradient").toBool());
+    const QVariantMap gradient = renderRoot->property("gradient").toMap();
+    QCOMPARE(gradient.value(QStringLiteral("stops")).toList().size(), 2);
 
     // The box fill is a genuine QtQuick Shape (NOT a Rectangle), somewhere under the render root.
     bool hasShape = false;
@@ -2131,6 +2137,57 @@ void QmlCssTests::cssRepeaterReordersWithoutRecreating()
     root->setProperty("order", QVariant(QStringList{QStringLiteral("c"), QStringLiteral("a")}));
     QTRY_COMPARE_WITH_TIMEOUT(rows().size(), 2, 2000);
     QCOMPARE(rows().value(QStringLiteral("row-a")), a);
+}
+
+// The Shape x Rectangle policy: a rectangle-safe style composes a REAL QQuickRectangle
+// (batchable scene-graph node) and NO Shape shell; a reapply that demands Shape features
+// (gradient) swaps the composition — and back.
+void QmlCssTests::rectanglePolicyFastPathAndSwap()
+{
+    CssTheme theme;
+    theme.loadFromString(QStringLiteral(R"(
+        .card { background-color: #2244aa; border: 2px solid #ffcc00; border-radius: 6px 6px 0 0; }
+        .card.fancy { background: linear-gradient(180deg, #2244aa, #112255); }
+    )"));
+    CssLayoutEngine layoutEngine(&theme);
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &theme);
+    engine.rootContext()->setContextProperty(QStringLiteral("cssLayout"), &layoutEngine);
+    QQmlComponent component(&engine);
+    component.setData(R"(
+        import QtQuick
+        import qmlcss
+        CssRect { objectName: "card"; cssClass: ["card"]; cssPrimitive: "div"; width: 100; height: 40 }
+    )", QUrl());
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY2(root, qPrintable(component.errorString()));
+
+    auto findClass = [&](const char *cls) -> QQuickItem * {
+        for (QQuickItem *k : root->findChildren<QQuickItem *>()) {
+            if (QString::fromLatin1(k->metaObject()->className()).contains(QLatin1String(cls)))
+                return k;
+        }
+        return nullptr;
+    };
+
+    // Fast path: a Rectangle, no Shape.
+    QQuickItem *rect = findClass("QQuickRectangle");
+    QVERIFY2(rect, "rectangle-safe style did not take the fast Rectangle path");
+    QVERIFY(!findClass("QQuickShape"));
+    QCOMPARE(rect->property("color").value<QColor>(), QColor(QStringLiteral("#2244aa")));
+    QCOMPARE(rect->property("topLeftRadius").toReal(), 6.0);
+    QCOMPARE(rect->property("bottomRightRadius").toReal(), 0.0);
+
+    // Reapply with a gradient: the policy swaps to the Shape shell.
+    root->setProperty("cssClass", QVariant(QStringList{QStringLiteral("card"), QStringLiteral("fancy")}));
+    QTRY_VERIFY_WITH_TIMEOUT(findClass("QQuickShape") != nullptr, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(findClass("QQuickRectangle") == nullptr, 2000);
+
+    // And back.
+    root->setProperty("cssClass", QVariant(QStringList{QStringLiteral("card")}));
+    QTRY_VERIFY_WITH_TIMEOUT(findClass("QQuickRectangle") != nullptr, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(findClass("QQuickShape") == nullptr, 2000);
 }
 
 QTEST_MAIN(QmlCssTests)

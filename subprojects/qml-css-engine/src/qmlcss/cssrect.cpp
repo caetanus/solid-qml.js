@@ -3,6 +3,7 @@
 
 #include "qmlcss/csslayout.h"
 #include "qmlcss/csstheme.h"
+#include "qmlcss/valueparser.h"
 
 #include <QEasingCurve>
 #include <QElapsedTimer>
@@ -13,6 +14,8 @@
 #include <QQmlEngine>
 #include <QQmlListReference>
 #include <QQmlProperty>
+#include <QRegularExpression>
+#include <QVarLengthArray>
 #include <QUrl>
 
 #include <algorithm>
@@ -795,13 +798,73 @@ static bool stylePaints(const QVariantMap &style)
     return false;
 }
 
+// The Shape x Rectangle POLICY (owner's design): the full Shape shell is only composed when
+// the style demands what Rectangle cannot do. Conservative by explicit list — anything not
+// provably rectangle-safe takes the Shape path. Qt >= 6.7 Rectangle covers per-corner radii.
+static bool needsShape(const QVariantMap &style)
+{
+    const auto str = [&](const char *k) { return style.value(QLatin1String(k)).toString(); };
+    // BOTH background keys can be present (different cascade rules contribute each); the
+    // shell paints the gradient when either carries one — the policy must mirror that.
+    for (const char *k : { "background", "background-color" }) {
+        const QString v = str(k);
+        if (v.contains(QLatin1String("gradient(")) || v.contains(QLatin1String("url(")))
+            return true;
+    }
+    if (!str("background-image").isEmpty())
+        return true;
+    if (!str("box-shadow").isEmpty())
+        return true; // outset shadow sources a Shape; inset bevels are Shape bars
+    for (const char *side : { "border-top", "border-right", "border-bottom", "border-left" }) {
+        if (!str(side).isEmpty())
+            return true; // per-side borders
+    }
+    if (str("border-radius").contains(QLatin1Char('%')))
+        return true; // %-radii resolve against geometry in the shell
+    return false;
+}
+
+// border-radius shorthand -> 4 px corners [tl, tr, br, bl] (no %, guaranteed by the policy).
+static void parseRadiiPx(const QString &value, qreal fallback, qreal out[4])
+{
+    out[0] = out[1] = out[2] = out[3] = fallback;
+    const QStringList parts = value.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+    QVarLengthArray<double, 4> v;
+    for (const QString &part : parts) {
+        double px = 0;
+        if (CssValueParser::parseLengthPx(part, &px))
+            v.append(px);
+        if (v.size() == 4)
+            break;
+    }
+    if (v.size() == 1) { out[0] = out[1] = out[2] = out[3] = v[0]; }
+    else if (v.size() == 2) { out[0] = out[2] = v[0]; out[1] = out[3] = v[1]; }
+    else if (v.size() == 3) { out[0] = v[0]; out[1] = out[3] = v[1]; out[2] = v[2]; }
+    else if (v.size() == 4) { out[0] = v[0]; out[1] = v[1]; out[2] = v[2]; out[3] = v[3]; }
+}
+
 void CssRect::recompute()
 {
-    // Lean shell: compose the paint subtree only when the style actually paints; until
-    // then the whole map build + push is skipped (item-level things — opacity, transform,
-    // @keyframes, layout — are applied by setStyle/applyTransform regardless).
-    if (!m_render && stylePaints(m_style))
+    // Lean shell + Shape x Rectangle policy: nothing composes until the style paints, and a
+    // paintable style takes the CHEAP QQuickRectangle path unless it demands the Shape shell
+    // (gradients, per-side borders, shadows, %-radii). The verdict re-evaluates on EVERY
+    // (re)apply — a hover/theme change swaps the composition.
+    const bool paints = stylePaints(m_style);
+    const bool shapePath = paints && needsShape(m_style);
+    if (m_render && !shapePath) {
+        m_render->deleteLater();
+        m_render = nullptr;
+    }
+    if (m_fastRect && (shapePath || !paints)) {
+        m_fastRect->deleteLater();
+        m_fastRect = nullptr;
+    }
+    if (shapePath && !m_render)
         ensureRenderShell();
+    if (!shapePath && paints) {
+        ensureFastRect();
+        pushFastRect();
+    }
     if (!m_render) {
         applyStaticTransformAndAnim();
         return;
@@ -1073,7 +1136,7 @@ void CssRect::layoutChildren()
 {
     const qreal w = width();
     const qreal h = height();
-    for (QQuickItem *child : {m_render.data(), m_flickable ? m_flickable.data() : m_contentHolder.data()}) {
+    for (QQuickItem *child : {m_render.data(), m_fastRect.data(), m_flickable ? m_flickable.data() : m_contentHolder.data()}) {
         if (!child)
             continue;
         child->setX(0);
@@ -1331,6 +1394,107 @@ void CssRect::ensureRenderShell()
         }
     } else {
         qWarning("CssRect: failed to compose render subtree: %s", qPrintable(comp->errorString()));
+    }
+}
+
+void CssRect::ensureFastRect()
+{
+    if (m_fastRect || !isComponentComplete())
+        return;
+    QQmlEngine *eng = qmlEngine(this);
+    if (!eng)
+        return;
+    // The REAL QtQuick Rectangle — the scene graph's cheap, batchable rect node. Color and
+    // border fades keep the CSS `transition` semantics of the Shape path.
+    QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-fastrect"),
+        "import QtQuick\n"
+        "Rectangle {\n"
+        "    id: fr\n"
+        "    property int transitionMs: 0\n"
+        "    property int transitionEasing: Easing.InOutQuad\n"
+        "    color: \"transparent\"\n"
+        "    Behavior on color { enabled: fr.transitionMs > 0; ColorAnimation { duration: fr.transitionMs; easing.type: fr.transitionEasing } }\n"
+        "    Behavior on border.color { enabled: fr.transitionMs > 0; ColorAnimation { duration: fr.transitionMs; easing.type: fr.transitionEasing } }\n"
+        "}\n");
+    if (QObject *o = comp->create(qmlContext(this))) {
+        if (QQuickItem *rect = qobject_cast<QQuickItem *>(o)) {
+            rect->setParent(this);
+            rect->setParentItem(this);
+            QQuickItem *contentAnchor = m_flickable ? m_flickable.data() : m_contentHolder.data();
+            if (contentAnchor)
+                rect->stackBefore(contentAnchor);
+            m_fastRect = rect;
+            layoutChildren();
+        } else {
+            o->deleteLater();
+        }
+    } else {
+        qWarning("CssRect: failed to compose fast Rectangle: %s", qPrintable(comp->errorString()));
+    }
+}
+
+void CssRect::pushFastRect()
+{
+    if (!m_fastRect)
+        return;
+    auto str = [&](const char *k) { return m_style.value(QLatin1String(k)).toString(); };
+    auto has = [&](const char *k) { return !m_style.value(QLatin1String(k)).toString().isEmpty(); };
+
+    // Solid fill (the policy guarantees no gradient/url here).
+    QColor solid;
+    const QString bgc = str("background-color");
+    const QString bg = str("background");
+    if (!bgc.isEmpty() && m_theme)
+        solid = m_theme->parseColor(bgc);
+    else if (!bg.isEmpty() && m_theme)
+        solid = m_theme->parseColor(bg);
+    if (!solid.isValid())
+        solid = m_defaultColor;
+    m_fastRect->setProperty("transitionMs", m_transMs);
+    m_fastRect->setProperty("transitionEasing", m_transEasing);
+    m_fastRect->setProperty("color", solid.isValid() ? solid : QColor(Qt::transparent));
+
+    // Radii: uniform -> radius; mixed -> per-corner (Rectangle, Qt >= 6.7).
+    qreal radii[4];
+    parseRadiiPx(str("border-radius"), m_radius, radii);
+    const bool uniform = qFuzzyCompare(radii[0], radii[1]) && qFuzzyCompare(radii[1], radii[2])
+        && qFuzzyCompare(radii[2], radii[3]);
+    if (uniform) {
+        m_fastRect->setProperty("radius", radii[0]);
+        m_fastRect->setProperty("topLeftRadius", QVariant());
+        m_fastRect->setProperty("topRightRadius", QVariant());
+        m_fastRect->setProperty("bottomRightRadius", QVariant());
+        m_fastRect->setProperty("bottomLeftRadius", QVariant());
+    } else {
+        m_fastRect->setProperty("topLeftRadius", radii[0]);
+        m_fastRect->setProperty("topRightRadius", radii[1]);
+        m_fastRect->setProperty("bottomRightRadius", radii[2]);
+        m_fastRect->setProperty("bottomLeftRadius", radii[3]);
+    }
+
+    // Uniform border (per-side borders take the Shape path).
+    QVariantMap borderShorthand;
+    if (m_theme && has("border"))
+        borderShorthand = m_theme->parseBorder(str("border"));
+    QColor borderColor;
+    if (has("border-color") && m_theme)
+        borderColor = m_theme->parseColor(str("border-color"));
+    else if (borderShorthand.contains(QStringLiteral("color")))
+        borderColor = borderShorthand.value(QStringLiteral("color")).value<QColor>();
+    else
+        borderColor = m_defaultBorderColor;
+    qreal borderWidth;
+    if (has("border-width"))
+        borderWidth = parseLeadingFloat(str("border-width"), m_defaultBorderWidth);
+    else if (borderShorthand.contains(QStringLiteral("width")))
+        borderWidth = borderShorthand.value(QStringLiteral("width")).toReal();
+    else
+        borderWidth = m_defaultBorderWidth;
+    const bool borderOn = borderWidth > 0 && borderColor.alphaF() > 0;
+    QObject *border = qvariant_cast<QObject *>(m_fastRect->property("border"));
+    if (border) {
+        border->setProperty("width", borderOn ? borderWidth : 0.0);
+        border->setProperty("color", borderOn ? borderColor : QColor(Qt::transparent));
     }
 }
 

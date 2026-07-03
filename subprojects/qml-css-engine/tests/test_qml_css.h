@@ -106,4 +106,8 @@ private slots:
     // CssRepeater is KEYED (Solid's <For>): a reorder MOVES the existing delegates
     // (same instances, re-stacked); only added entries create, removed ones destroy.
     void cssRepeaterReordersWithoutRecreating();
+
+    // Shape x Rectangle policy: rectangle-safe styles compose a cheap QQuickRectangle; a
+    // reapply that needs Shape features swaps the composition, and back.
+    void rectanglePolicyFastPathAndSwap();
 };

@@ -140,6 +140,9 @@ public:
     void ensureAnim();
     // Compose the paint subtree on demand (lean shell: layout-only boxes skip it entirely).
     void ensureRenderShell();
+    // The cheap Rectangle path of the Shape x Rectangle policy (see needsShape in the .cpp).
+    void ensureFastRect();
+    void pushFastRect();
     // Item-level effects that apply with or without the shell (static transform + @keyframes).
     void applyStaticTransformAndAnim();
     Q_SLOT void syncScrollContent();
@@ -265,6 +268,8 @@ private:
 
     // overflow(-y): auto/scroll — composed Flickable hosting the contentHolder.
     QPointer<QQuickItem> m_flickable;
+    // Fast paint path: a REAL QQuickRectangle when the style is rectangle-safe.
+    QPointer<QQuickItem> m_fastRect;
 
     // Engine-driven hover tracking (see cssHoverStyled/cssEngineHover above).
     bool m_hoverStyled = false;
