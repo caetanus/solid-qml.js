@@ -79,6 +79,11 @@ private slots:
     // and a class/state change on an ANCESTOR restyles the scoped descendants too.
     void ancestorScopedRulesStyleTheTree();
 
+    // `property Item cssAncestor: owner` re-anchors the ancestor walk for subtrees Qt
+    // reparents out of the item tree (Popup contents under the window Overlay), so
+    // `.wg-select .popup` keeps matching.
+    void cssAncestorReanchorsDetachedSubtree();
+
     // CssText must paint `background-color` (+ border-radius) behind the composed Text,
     // like the web does for any element (cssgaps `.wrap/.nowrap/.ellipsis` tiles).
     void cssTextCppPaintsBackground();

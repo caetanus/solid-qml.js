@@ -261,6 +261,20 @@ function emitWindow(propsArg: t.Node | undefined, children: t.Node[], scope: Sco
   if (w.height !== null) lines.push(`${i(1)}height: ${w.height}`);
   if (w.title !== null) lines.push(`${i(1)}title: ${w.title}`);
   lines.push(
+    // Ctrl+Tab / Ctrl+Shift+Tab walk the same focus chain as Tab. Qt Quick's own tab
+    // handling skips key events carrying Control/Alt (qquickitem.cpp deliverKeyEvent),
+    // so without these shortcuts Ctrl+Tab is dead — and it's the desktop way OUT of a
+    // textarea, where plain Tab types a tab character.
+    `${i(1)}Shortcut {`,
+    `${i(2)}sequences: ["Ctrl+Tab"]`,
+    `${i(2)}enabled: solidTabstop.enabled`,
+    `${i(2)}onActivated: { var __it = __self.activeFocusItem || __self.contentItem; var __nx = __it.nextItemInFocusChain(true); if (__nx) __nx.forceActiveFocus(Qt.TabFocusReason) }`,
+    `${i(1)}}`,
+    `${i(1)}Shortcut {`,
+    `${i(2)}sequences: ["Ctrl+Shift+Tab", "Ctrl+Backtab"]`,
+    `${i(2)}enabled: solidTabstop.enabled`,
+    `${i(2)}onActivated: { var __it = __self.activeFocusItem || __self.contentItem; var __nx = __it.nextItemInFocusChain(false); if (__nx) __nx.forceActiveFocus(Qt.BacktabFocusReason) }`,
+    `${i(1)}}`,
     `${i(1)}Css.CssRect {`,
     `${i(2)}anchors.fill: parent`,
     `${i(2)}cssClass: ["qml-window"]`,
@@ -697,7 +711,7 @@ function emitCheckboxToggle(props: Props, scope: Scope, level: number, guard: st
   const i = (n: number) => INDENT.repeat(level + n);
   const classLine = buildCssClassLine(props, scope, i(1));
   const { checkedExpr, onChangeFn, disabled } = wp;
-  const checkState = `(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+  const checkState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
 
   const lines: string[] = [
     `${pad}Css.CssFill {`,
@@ -765,7 +779,7 @@ function emitSwitchToggle(props: Props, scope: Scope, level: number, guard: stri
   const i = (n: number) => INDENT.repeat(level + n);
   const classLine = buildCssClassLine(props, scope, i(1));
   const { checkedExpr, onChangeFn, disabled } = wp;
-  const switchState = `(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+  const switchState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
 
   const lines: string[] = [
     `${pad}Css.CssFill {`,
@@ -838,7 +852,7 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
   const i = (n: number) => INDENT.repeat(level + n);
   const classLine = buildCssClassLine(props, scope, i(1));
   const { checkedExpr, onChangeFn, disabled, name } = wp;
-  const radioState = `(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+  const radioState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
 
   // Register this group name so emitComponentType can emit T.ButtonGroup { id: __group_<name> }.
   if (name && scope.buttonGroups) scope.buttonGroups.add(name);
@@ -1069,10 +1083,12 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
     `${i(2)}rightPadding: 32`,
     // HTML semantics: the wheel steps the value, but ONLY while the field has focus;
     // unfocused, the event must fall through to the page scroll. valueModified() reuses
-    // the onChange wiring.
+    // the onChange wiring. Stepping writes `value` directly: Qt 6.11's SpinBox refactor
+    // (QQuickAbstractSpinBox) dropped the Q_INVOKABLE from increase()/decrease() — they
+    // no longer exist from QML and the call was a silent TypeError.
     `${i(2)}WheelHandler {`,
     `${i(3)}enabled: ${ctlId}.activeFocus`,
-    `${i(3)}onWheel: (ev) => { if (ev.angleDelta.y > 0) ${ctlId}.increase(); else ${ctlId}.decrease(); ${ctlId}.valueModified() }`,
+    `${i(3)}onWheel: (ev) => { ${ctlId}.value = ev.angleDelta.y > 0 ? Math.min(${ctlId}.to, ${ctlId}.value + ${ctlId}.stepSize) : Math.max(${ctlId}.from, ${ctlId}.value - ${ctlId}.stepSize); ${ctlId}.valueModified() }`,
     `${i(2)}}`,
     // contentItem: a plain TextInput (not Css) — it lives inside the control's item tree, not our
     // CSS layout engine. Color/font are bridged from the CssFill wrapper via ctlId.parent.inheritedX.
@@ -1090,17 +1106,19 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
     `${i(3)}verticalAlignment: Qt.AlignVCenter`,
     `${i(3)}selectByMouse: true`,
     `${i(2)}}`,
-    // up indicator: Css.CssFill at the top-right of the SpinBox; cssState "active" when pressed.
+    // up indicator: Css.CssFill at the top-right of the SpinBox; cssState "active" when
+    // pressed. Inset 2px from the wrapper's edge so the buttons sit INSIDE the rounded
+    // border instead of overlapping it (they looked clipped at the corner).
     `${i(2)}up.indicator: Css.CssFill {`,
     `${i(3)}cssPrimitive: ""`,
     `${i(3)}cssClass: ["spin-up"]`,
     `${i(3)}cssState: ${ctlId}.up.pressed ? ["active"] : []`,
-    `${i(3)}x: parent.width - width`,
-    `${i(3)}y: 0`,
+    `${i(3)}x: parent.width - width - 2`,
+    `${i(3)}y: 2`,
     `${i(3)}width: 24`,
-    `${i(3)}height: parent.height / 2`,
+    `${i(3)}height: (parent.height - 4) / 2`,
     `${i(3)}implicitWidth: 24`,
-    `${i(3)}implicitHeight: parent.height / 2`,
+    `${i(3)}implicitHeight: (parent.height - 4) / 2`,
     // Plain Text, NOT CssText: a Css child inside this CssFill is re-laid-out by the CSS
     // engine (isLayoutChild is true for every Css type), which stomps the centerIn anchor.
     // A plain primitive is invisible to the layout; the nested CssItem injects the CSS
@@ -1111,17 +1129,17 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
     `${i(4)}Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }`,
     `${i(3)}}`,
     `${i(2)}}`,
-    // down indicator: mirrors up, at the bottom-right.
+    // down indicator: mirrors up, at the bottom-right (same 2px inset).
     `${i(2)}down.indicator: Css.CssFill {`,
     `${i(3)}cssPrimitive: ""`,
     `${i(3)}cssClass: ["spin-down"]`,
     `${i(3)}cssState: ${ctlId}.down.pressed ? ["active"] : []`,
-    `${i(3)}x: parent.width - width`,
+    `${i(3)}x: parent.width - width - 2`,
     `${i(3)}y: parent.height / 2`,
     `${i(3)}width: 24`,
-    `${i(3)}height: parent.height / 2`,
+    `${i(3)}height: (parent.height - 4) / 2`,
     `${i(3)}implicitWidth: 24`,
-    `${i(3)}implicitHeight: parent.height / 2`,
+    `${i(3)}implicitHeight: (parent.height - 4) / 2`,
     `${i(3)}Text {`,
     `${i(4)}text: "−"`,
     `${i(4)}anchors.centerIn: parent`,
@@ -1301,11 +1319,17 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
     `${i(3)}width: ${ctlId}.width`,
     `${i(3)}implicitHeight: contentHeight + topPadding + bottomPadding`,
     `${i(3)}padding: 1`,
+    // cssAncestor: popup contents are reparented to the window Overlay, severing the
+    // visual chain `.wg-select .popup` matches against — re-anchor the engine's ancestor
+    // walk at the control. background and contentItem are SIBLING slots; every popup
+    // descendant's walk passes through one of them, so these two properties cover all rows.
     `${i(3)}background: Css.CssFill {`,
+    `${i(4)}property Item cssAncestor: ${ctlId}`,
     `${i(4)}cssPrimitive: "div"`,
     `${i(4)}cssClass: ["popup"]`,
     `${i(3)}}`,
     `${i(3)}contentItem: ListView {`,
+    `${i(4)}property Item cssAncestor: ${ctlId}`,
     `${i(4)}clip: true`,
     `${i(4)}model: ${ctlId}.delegateModel`,
     `${i(4)}currentIndex: ${ctlId}.highlightedIndex`,
@@ -1738,11 +1762,15 @@ function emitDateInput(
     `${i(2)}implicitWidth: contentWidth + leftPadding + rightPadding`,
     `${i(2)}implicitHeight: contentHeight + topPadding + bottomPadding`,
     `${i(2)}padding: 1`,
+    // cssAncestor: overlay reparenting severs the visual chain (see emitSelect) — re-anchor
+    // at the date wrapper so `.wg-date .popup` / `.wg-date .day` keep matching.
     `${i(2)}background: Css.CssFill {`,
+    `${i(3)}property Item cssAncestor: ${wrapId}`,
     `${i(3)}cssPrimitive: "div"`,
     `${i(3)}cssClass: ["popup"]`,
     `${i(2)}}`,
     `${i(2)}contentItem: Item {`,
+    `${i(3)}property Item cssAncestor: ${wrapId}`,
     `${i(3)}implicitWidth: 224`,
     `${i(3)}implicitHeight: 280`,
     // Shared month-grid structure: nav + DOW + MonthGrid; clicking a day fires onChange + close.

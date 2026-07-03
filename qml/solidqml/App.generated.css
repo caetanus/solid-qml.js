@@ -1215,6 +1215,11 @@ button:hover {
   background: #f8fafc;
 }
 
+.widgets .wg-checkbox:focus .indicator {
+  border: 2px solid #176b87;
+  box-shadow: 0 0 0 3px rgba(23, 107, 135, 0.25);
+}
+
 .widgets .wg-checkbox:checked .indicator {
   background: #176b87;
   border: 2px solid #176b87;
@@ -1243,6 +1248,10 @@ button:hover {
   background: #c8d3de;
 }
 
+.widgets .wg-switch:focus .track {
+  box-shadow: 0 0 0 3px rgba(23, 107, 135, 0.25);
+}
+
 .widgets .wg-switch:checked .track {
   background: #176b87;
 }
@@ -1264,6 +1273,11 @@ button:hover {
   border: 2px solid #c8d3de;
   border-radius: 10px;
   background: #f8fafc;
+}
+
+.widgets .wg-radio:focus .indicator {
+  border: 2px solid #176b87;
+  box-shadow: 0 0 0 3px rgba(23, 107, 135, 0.25);
 }
 
 .widgets .wg-radio:checked .indicator {

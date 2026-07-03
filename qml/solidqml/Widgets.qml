@@ -271,7 +271,7 @@ Css.CssRect {
                 Css.CssFill {
                     cssClass: ["wg-checkbox"]
                     cssPrimitive: "input"
-                    cssState: (__input5.checked ? ["checked"] : []).concat(!__input5.enabled ? ["disabled"] : [])
+                    cssState: (__input5.activeFocus ? ["focus"] : []).concat(__input5.checked ? ["checked"] : []).concat(!__input5.enabled ? ["disabled"] : [])
                     implicitWidth: __input5.implicitWidth
                     implicitHeight: __input5.implicitHeight
                     T.CheckBox {
@@ -283,7 +283,7 @@ Css.CssRect {
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
-                            cssState: (__input5.checked ? ["checked"] : []).concat(!__input5.enabled ? ["disabled"] : [])
+                            cssState: (__input5.activeFocus ? ["focus"] : []).concat(__input5.checked ? ["checked"] : []).concat(!__input5.enabled ? ["disabled"] : [])
                             width: 20
                             height: 20
                             implicitWidth: 20
@@ -316,7 +316,7 @@ Css.CssRect {
                 Css.CssFill {
                     cssClass: ["wg-checkbox"]
                     cssPrimitive: "input"
-                    cssState: (__input6.checked ? ["checked"] : []).concat(!__input6.enabled ? ["disabled"] : [])
+                    cssState: (__input6.activeFocus ? ["focus"] : []).concat(__input6.checked ? ["checked"] : []).concat(!__input6.enabled ? ["disabled"] : [])
                     implicitWidth: __input6.implicitWidth
                     implicitHeight: __input6.implicitHeight
                     T.CheckBox {
@@ -328,7 +328,7 @@ Css.CssRect {
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
-                            cssState: (__input6.checked ? ["checked"] : []).concat(!__input6.enabled ? ["disabled"] : [])
+                            cssState: (__input6.activeFocus ? ["focus"] : []).concat(__input6.checked ? ["checked"] : []).concat(!__input6.enabled ? ["disabled"] : [])
                             width: 20
                             height: 20
                             implicitWidth: 20
@@ -361,7 +361,7 @@ Css.CssRect {
                 Css.CssFill {
                     cssClass: ["wg-switch"]
                     cssPrimitive: "input"
-                    cssState: (__input7.checked ? ["checked"] : []).concat(!__input7.enabled ? ["disabled"] : [])
+                    cssState: (__input7.activeFocus ? ["focus"] : []).concat(__input7.checked ? ["checked"] : []).concat(!__input7.enabled ? ["disabled"] : [])
                     implicitWidth: __input7.implicitWidth
                     implicitHeight: __input7.implicitHeight
                     T.Switch {
@@ -373,7 +373,7 @@ Css.CssRect {
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["track"]
-                            cssState: (__input7.checked ? ["checked"] : []).concat(!__input7.enabled ? ["disabled"] : [])
+                            cssState: (__input7.activeFocus ? ["focus"] : []).concat(__input7.checked ? ["checked"] : []).concat(!__input7.enabled ? ["disabled"] : [])
                             width: 36
                             height: 20
                             implicitWidth: 36
@@ -410,7 +410,7 @@ Css.CssRect {
                 Css.CssFill {
                     cssClass: ["wg-checkbox"]
                     cssPrimitive: "input"
-                    cssState: (__input8.checked ? ["checked"] : []).concat(!__input8.enabled ? ["disabled"] : [])
+                    cssState: (__input8.activeFocus ? ["focus"] : []).concat(__input8.checked ? ["checked"] : []).concat(!__input8.enabled ? ["disabled"] : [])
                     implicitWidth: __input8.implicitWidth
                     implicitHeight: __input8.implicitHeight
                     T.CheckBox {
@@ -422,7 +422,7 @@ Css.CssRect {
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
-                            cssState: (__input8.checked ? ["checked"] : []).concat(!__input8.enabled ? ["disabled"] : [])
+                            cssState: (__input8.activeFocus ? ["focus"] : []).concat(__input8.checked ? ["checked"] : []).concat(!__input8.enabled ? ["disabled"] : [])
                             width: 20
                             height: 20
                             implicitWidth: 20
@@ -449,7 +449,7 @@ Css.CssRect {
                 Css.CssFill {
                     cssClass: ["wg-switch"]
                     cssPrimitive: "input"
-                    cssState: (__input9.checked ? ["checked"] : []).concat(!__input9.enabled ? ["disabled"] : [])
+                    cssState: (__input9.activeFocus ? ["focus"] : []).concat(__input9.checked ? ["checked"] : []).concat(!__input9.enabled ? ["disabled"] : [])
                     implicitWidth: __input9.implicitWidth
                     implicitHeight: __input9.implicitHeight
                     T.Switch {
@@ -461,7 +461,7 @@ Css.CssRect {
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["track"]
-                            cssState: (__input9.checked ? ["checked"] : []).concat(!__input9.enabled ? ["disabled"] : [])
+                            cssState: (__input9.activeFocus ? ["focus"] : []).concat(__input9.checked ? ["checked"] : []).concat(!__input9.enabled ? ["disabled"] : [])
                             width: 36
                             height: 20
                             implicitWidth: 36
@@ -503,7 +503,7 @@ Css.CssRect {
                 Css.CssFill {
                     cssClass: ["wg-radio"]
                     cssPrimitive: "input"
-                    cssState: (__input10.checked ? ["checked"] : []).concat(!__input10.enabled ? ["disabled"] : [])
+                    cssState: (__input10.activeFocus ? ["focus"] : []).concat(__input10.checked ? ["checked"] : []).concat(!__input10.enabled ? ["disabled"] : [])
                     implicitWidth: __input10.implicitWidth
                     implicitHeight: __input10.implicitHeight
                     T.RadioButton {
@@ -516,7 +516,7 @@ Css.CssRect {
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
-                            cssState: (__input10.checked ? ["checked"] : []).concat(!__input10.enabled ? ["disabled"] : [])
+                            cssState: (__input10.activeFocus ? ["focus"] : []).concat(__input10.checked ? ["checked"] : []).concat(!__input10.enabled ? ["disabled"] : [])
                             width: 20
                             height: 20
                             implicitWidth: 20
@@ -552,7 +552,7 @@ Css.CssRect {
                 Css.CssFill {
                     cssClass: ["wg-radio"]
                     cssPrimitive: "input"
-                    cssState: (__input11.checked ? ["checked"] : []).concat(!__input11.enabled ? ["disabled"] : [])
+                    cssState: (__input11.activeFocus ? ["focus"] : []).concat(__input11.checked ? ["checked"] : []).concat(!__input11.enabled ? ["disabled"] : [])
                     implicitWidth: __input11.implicitWidth
                     implicitHeight: __input11.implicitHeight
                     T.RadioButton {
@@ -565,7 +565,7 @@ Css.CssRect {
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
-                            cssState: (__input11.checked ? ["checked"] : []).concat(!__input11.enabled ? ["disabled"] : [])
+                            cssState: (__input11.activeFocus ? ["focus"] : []).concat(__input11.checked ? ["checked"] : []).concat(!__input11.enabled ? ["disabled"] : [])
                             width: 20
                             height: 20
                             implicitWidth: 20
@@ -601,7 +601,7 @@ Css.CssRect {
                 Css.CssFill {
                     cssClass: ["wg-radio"]
                     cssPrimitive: "input"
-                    cssState: (__input12.checked ? ["checked"] : []).concat(!__input12.enabled ? ["disabled"] : [])
+                    cssState: (__input12.activeFocus ? ["focus"] : []).concat(__input12.checked ? ["checked"] : []).concat(!__input12.enabled ? ["disabled"] : [])
                     implicitWidth: __input12.implicitWidth
                     implicitHeight: __input12.implicitHeight
                     T.RadioButton {
@@ -614,7 +614,7 @@ Css.CssRect {
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
-                            cssState: (__input12.checked ? ["checked"] : []).concat(!__input12.enabled ? ["disabled"] : [])
+                            cssState: (__input12.activeFocus ? ["focus"] : []).concat(__input12.checked ? ["checked"] : []).concat(!__input12.enabled ? ["disabled"] : [])
                             width: 20
                             height: 20
                             implicitWidth: 20
@@ -713,10 +713,12 @@ Css.CssRect {
                             implicitHeight: contentHeight + topPadding + bottomPadding
                             padding: 1
                             background: Css.CssFill {
+                                property Item cssAncestor: __input13
                                 cssPrimitive: "div"
                                 cssClass: ["popup"]
                             }
                             contentItem: ListView {
+                                property Item cssAncestor: __input13
                                 clip: true
                                 model: __input13.delegateModel
                                 currentIndex: __input13.highlightedIndex
@@ -823,7 +825,7 @@ Css.CssRect {
                         rightPadding: 32
                         WheelHandler {
                             enabled: __input15.activeFocus
-                            onWheel: (ev) => { if (ev.angleDelta.y > 0) __input15.increase(); else __input15.decrease(); __input15.valueModified() }
+                            onWheel: (ev) => { __input15.value = ev.angleDelta.y > 0 ? Math.min(__input15.to, __input15.value + __input15.stepSize) : Math.max(__input15.from, __input15.value - __input15.stepSize); __input15.valueModified() }
                         }
                         contentItem: TextInput {
                             focus: true
@@ -841,12 +843,12 @@ Css.CssRect {
                             cssPrimitive: ""
                             cssClass: ["spin-up"]
                             cssState: __input15.up.pressed ? ["active"] : []
-                            x: parent.width - width
-                            y: 0
+                            x: parent.width - width - 2
+                            y: 2
                             width: 24
-                            height: parent.height / 2
+                            height: (parent.height - 4) / 2
                             implicitWidth: 24
-                            implicitHeight: parent.height / 2
+                            implicitHeight: (parent.height - 4) / 2
                             Text {
                                 text: "+"
                                 anchors.centerIn: parent
@@ -857,12 +859,12 @@ Css.CssRect {
                             cssPrimitive: ""
                             cssClass: ["spin-down"]
                             cssState: __input15.down.pressed ? ["active"] : []
-                            x: parent.width - width
+                            x: parent.width - width - 2
                             y: parent.height / 2
                             width: 24
-                            height: parent.height / 2
+                            height: (parent.height - 4) / 2
                             implicitWidth: 24
-                            implicitHeight: parent.height / 2
+                            implicitHeight: (parent.height - 4) / 2
                             Text {
                                 text: "−"
                                 anchors.centerIn: parent
@@ -937,10 +939,12 @@ Css.CssRect {
                         implicitHeight: contentHeight + topPadding + bottomPadding
                         padding: 1
                         background: Css.CssFill {
+                            property Item cssAncestor: __input16W
                             cssPrimitive: "div"
                             cssClass: ["popup"]
                         }
                         contentItem: Item {
+                            property Item cssAncestor: __input16W
                             implicitWidth: 224
                             implicitHeight: 280
                             Css.CssFill {

@@ -996,6 +996,21 @@ QVariantMap CssTheme::resolveMerged(const QList<CssAncestorInfo> &ancestors, con
     return merged;
 }
 
+// One hop up the element tree. Normally the visual parent — but a subtree that Qt reparents
+// out of the item tree (Popup/Menu contents live under the window Overlay) severs the visual
+// chain, so descendant selectors written against the logical owner (`.wg-select .popup`)
+// stop matching. A `property Item cssAncestor: owner` declared on the subtree root re-anchors
+// the walk at the owner, restoring the logical chain. The metaobject probe keeps the cost to
+// a meta lookup for items that don't declare it.
+static QQuickItem *nextCssAncestorHop(QQuickItem *n)
+{
+    if (n->metaObject()->indexOfProperty("cssAncestor") >= 0) {
+        if (auto *redirect = n->property("cssAncestor").value<QQuickItem *>())
+            return redirect;
+    }
+    return n->parentItem();
+}
+
 // Walk the item tree upward collecting the CSS identity of every ancestor element (outer→inner).
 // Plain Items in between (content holders, transpiler wrappers) carry no CSS signature and are
 // skipped — they are not elements.
@@ -1005,7 +1020,7 @@ static QList<CssAncestorInfo> collectCssAncestors(QObject *target)
     auto *item = qobject_cast<QQuickItem *>(target);
     if (!item)
         return chain;
-    for (QQuickItem *p = item->parentItem(); p; p = p->parentItem()) {
+    for (QQuickItem *p = nextCssAncestorHop(item); p; p = nextCssAncestorHop(p)) {
         const QMetaObject *mo = p->metaObject();
         if (mo->indexOfProperty("cssPrimitive") < 0 && mo->indexOfProperty("cssClass") < 0)
             continue;

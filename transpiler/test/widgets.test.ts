@@ -463,9 +463,9 @@ test("widgets: switch onChange wires onToggled with translated handler", async (
   assert.match(out, /onToggled: \{ sw = __input0\.checked \}/);
 });
 
-test("widgets: switch wrapper cssState carries checked/disabled", async () => {
+test("widgets: switch wrapper cssState carries focus/checked/disabled", async () => {
   const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
-  assert.match(out, /cssState: \(__input0\.checked \? \["checked"\] : \[\]\)\.concat\(!__input0\.enabled \? \["disabled"\] : \[\]\)/);
+  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)\.concat\(__input0\.checked \? \["checked"\] : \[\]\)\.concat\(!__input0\.enabled \? \["disabled"\] : \[\]\)/);
 });
 
 // ---------------------------------------------------------------------------
@@ -889,8 +889,9 @@ test("widgets: <input type='number'> up.indicator is CssFill cssClass ['spin-up'
   const out = await qml(`export function F(){ return <input type="number" />; }`);
   assert.match(out, /up\.indicator: Css\.CssFill \{/);
   assert.match(out, /cssClass: \["spin-up"\]/);
-  assert.match(out, /x: parent\.width - width/);
-  assert.match(out, /y: 0/);
+  // 2px inset keeps the buttons inside the wrapper's rounded border.
+  assert.match(out, /x: parent\.width - width - 2/);
+  assert.match(out, /y: 2/);
   assert.match(out, /width: 24/);
 });
 
@@ -1251,7 +1252,10 @@ test("emitQml 6.5: select popup carries the implicit-height formula", async () =
 test("emitQml 6.5: spinbox pads for the buttons and steps on wheel only when focused", async () => {
   const out = await qml(`export function F(){ return <input type="number" />; }`);
   assert.match(out, /rightPadding: 32/);
-  assert.match(out, /WheelHandler \{[\s\S]*?enabled: __input\d+\.activeFocus[\s\S]*?increase\(\)/);
+  // Steps by writing `value` directly: Qt 6.11 dropped the Q_INVOKABLE from
+  // increase()/decrease() (QQuickAbstractSpinBox refactor) — calling them is a TypeError.
+  assert.match(out, /WheelHandler \{[\s\S]*?enabled: __input\d+\.activeFocus[\s\S]*?Math\.min\(__input\d+\.to, __input\d+\.value \+ __input\d+\.stepSize\)/);
+  assert.doesNotMatch(out, /increase\(\)/);
 });
 
 // --- Tab navigation (desktop): every interactive widget is a tab stop, bound to the
@@ -1336,4 +1340,52 @@ test("calendar: cells size declaratively (incubated creation misses the C++ resi
   const out = await qml(`export function F(){ return <Calendar />; }`);
   assert.match(out, /delegate: Item \{[\s\S]*?width: \(__dow\d+\.contentItem\.width - 6 \* __dow\d+\.spacing\) \/ 7/);
   assert.match(out, /T\.AbstractButton \{[\s\S]*?width: \(__mg\d+\.contentItem\.width - 6 \* __mg\d+\.spacing\) \/ 7[\s\S]*?height: \(__mg\d+\.contentItem\.height - 5 \* __mg\d+\.spacing\) \/ 6/);
+});
+
+// --- Toggles must SHOW tab focus: AbstractButton already takes tab focus in C++
+// (setActiveFocusOnTab(true) + StrongFocus in its constructor), but without "focus"
+// in cssState there is no visual feedback and the tab stop looks dead. ---
+
+test("tabstop: checkbox cssState carries focus alongside checked/disabled", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" />; }`);
+  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)\.concat\(__input0\.checked \? \["checked"\] : \[\]\)\.concat\(!__input0\.enabled \? \["disabled"\] : \[\]\)/);
+});
+
+test("tabstop: switch cssState carries focus", async () => {
+  const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
+  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)\.concat\(__input0\.checked/);
+});
+
+test("tabstop: radio cssState carries focus", async () => {
+  const out = await qml(`export function F(){ return <input type="radio" name="g" />; }`);
+  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)\.concat\(__input0\.checked/);
+});
+
+// --- Ctrl+Tab: Qt Quick's tab chain explicitly SKIPS events with Control/Alt modifiers
+// (qquickitem.cpp deliverKeyEvent), so Ctrl+Tab never navigates on its own. The Window
+// emits a pair of Shortcuts walking nextItemInFocusChain — the desktop way out of a
+// textarea, where plain Tab types. Respects the tabstop opt-out. ---
+
+test("tabstop: Window emits Ctrl+Tab / Ctrl+Shift+Tab shortcuts honoring solidTabstop", async () => {
+  const out = await qml(`export function F(){ return <Window title="t"><input /></Window>; }`);
+  assert.match(out, /Shortcut \{[\s\S]*?sequences: \["Ctrl\+Tab"\][\s\S]*?enabled: solidTabstop\.enabled[\s\S]*?nextItemInFocusChain\(true\)/);
+  assert.match(out, /Shortcut \{[\s\S]*?sequences: \["Ctrl\+Shift\+Tab", "Ctrl\+Backtab"\][\s\S]*?nextItemInFocusChain\(false\)/);
+});
+
+// --- Popup styling across the Overlay: Qt reparents popup contents to the window
+// overlay, severing the visual chain that `.wg-select .popup` matches against. The
+// emitted `property Item cssAncestor` re-anchors the engine's ancestor walk at the
+// control; background and contentItem each carry it (they are SIBLING slots — every
+// popup descendant walks through one of them). ---
+
+test("select: popup background and contentItem re-anchor the CSS chain at the control", async () => {
+  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
+  assert.match(out, /popup: T\.Popup \{[\s\S]*?background: Css\.CssFill \{[\s\S]*?property Item cssAncestor: __input0/);
+  assert.match(out, /contentItem: ListView \{[\s\S]*?property Item cssAncestor: __input0/);
+});
+
+test("date: popup background and contentItem re-anchor the CSS chain at the wrapper", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /T\.Popup \{[\s\S]*?background: Css\.CssFill \{[\s\S]*?property Item cssAncestor: __input0W/);
+  assert.match(out, /T\.Popup \{[\s\S]*?contentItem: Item \{[\s\S]*?property Item cssAncestor: __input0W/);
 });

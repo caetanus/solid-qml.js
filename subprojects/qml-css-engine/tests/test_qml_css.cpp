@@ -1802,6 +1802,63 @@ void QmlCssTests::ancestorScopedRulesStyleTheTree()
              QStringLiteral("#ffffff"));
 }
 
+// Popup/Menu contents are reparented by Qt to the window Overlay, severing the visual
+// parent chain that descendant selectors are matched against. The declared
+// `property Item cssAncestor: owner` must re-anchor the walk at the logical owner so
+// `.wg-select .popup` still styles the popup — and rules NOT scoped to the owner must
+// keep NOT matching.
+void QmlCssTests::cssAncestorReanchorsDetachedSubtree()
+{
+    CssTheme theme;
+    theme.loadFromString(QStringLiteral(R"(
+        .wg-select .popup { background-color: #ffffff; }
+        .other .popup { background-color: #ff0000; }
+    )"));
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &theme);
+
+    QQmlComponent component(&engine);
+    component.setData(R"(
+        import QtQuick
+        import qmlcss
+        Item {
+            width: 400; height: 200
+            CssFill {
+                id: sel
+                objectName: "select"
+                cssClass: ["wg-select"]
+                cssPrimitive: "select"
+            }
+            Item {
+                objectName: "overlay" // plain Item: simulates the window Overlay (no CSS identity)
+                CssFill {
+                    objectName: "popup"
+                    cssPrimitive: "div"
+                    cssClass: ["popup"]
+                    property Item cssAncestor: sel
+                }
+                CssFill {
+                    objectName: "orphan"
+                    cssPrimitive: "div"
+                    cssClass: ["popup"] // same class, NO re-anchor: scoped rules must not match
+                }
+            }
+        }
+    )", QUrl());
+
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY2(root, qPrintable(component.errorString()));
+
+    QObject *popup = root->findChild<QObject *>(QStringLiteral("popup"));
+    QObject *orphan = root->findChild<QObject *>(QStringLiteral("orphan"));
+    QVERIFY(popup && orphan);
+
+    QCOMPARE(popup->property("style").toMap().value(QStringLiteral("background-color")).toString(),
+             QStringLiteral("#ffffff"));
+    QVERIFY(!orphan->property("style").toMap().contains(QStringLiteral("background-color")));
+}
+
 // text-shadow must not blank the label: MultiEffect sources the composed Text, and a
 // visible:false source yields an EMPTY texture on the RHI path (the caption vanished).
 // The label stays visible; the effect paints the same glyphs + shadow above it.

@@ -8,6 +8,16 @@ Window {
     width: 760
     height: 520
     title: "solid-qml"
+    Shortcut {
+        sequences: ["Ctrl+Tab"]
+        enabled: solidTabstop.enabled
+        onActivated: { var __it = __self.activeFocusItem || __self.contentItem; var __nx = __it.nextItemInFocusChain(true); if (__nx) __nx.forceActiveFocus(Qt.TabFocusReason) }
+    }
+    Shortcut {
+        sequences: ["Ctrl+Shift+Tab", "Ctrl+Backtab"]
+        enabled: solidTabstop.enabled
+        onActivated: { var __it = __self.activeFocusItem || __self.contentItem; var __nx = __it.nextItemInFocusChain(false); if (__nx) __nx.forceActiveFocus(Qt.BacktabFocusReason) }
+    }
     Css.CssRect {
         anchors.fill: parent
         cssClass: ["qml-window"]
