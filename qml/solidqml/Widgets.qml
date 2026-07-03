@@ -292,11 +292,14 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 20
                             implicitHeight: 20
-                            Text {
-                                text: "✓"
-                                visible: __input5.checked
-                                anchors.centerIn: parent
-                                Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }
+                            Item {
+                                anchors.fill: parent
+                                Text {
+                                    text: "✓"
+                                    visible: __input5.checked
+                                    anchors.centerIn: parent
+                                    Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }
+                                }
                             }
                         }
                         onToggled: { chk1 = __input5.checked }
@@ -341,11 +344,14 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 20
                             implicitHeight: 20
-                            Text {
-                                text: "✓"
-                                visible: __input6.checked
-                                anchors.centerIn: parent
-                                Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }
+                            Item {
+                                anchors.fill: parent
+                                Text {
+                                    text: "✓"
+                                    visible: __input6.checked
+                                    anchors.centerIn: parent
+                                    Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }
+                                }
                             }
                         }
                         onToggled: { chk2 = __input6.checked }
@@ -390,15 +396,18 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 36
                             implicitHeight: 20
-                            Rectangle {
-                                width: 16
-                                height: 16
-                                radius: 8
-                                color: "#ffffff"
-                                y: (parent.height - height) / 2
-                                x: __input7.visualPosition * (parent.width - width)
-                                Behavior on x { NumberAnimation { duration: 120 } }
-                                Css.CssItem { cssPrimitive: "rect"; cssClass: ["knob"] }
+                            Item {
+                                anchors.fill: parent
+                                Rectangle {
+                                    width: 16
+                                    height: 16
+                                    radius: 8
+                                    color: "#ffffff"
+                                    y: (parent.height - height) / 2
+                                    x: __input7.visualPosition * (parent.width - width)
+                                    Behavior on x { NumberAnimation { duration: 120 } }
+                                    Css.CssItem { cssPrimitive: "rect"; cssClass: ["knob"] }
+                                }
                             }
                         }
                         onToggled: { sw = __input7.checked }
@@ -443,11 +452,14 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 20
                             implicitHeight: 20
-                            Text {
-                                text: "✓"
-                                visible: __input8.checked
-                                anchors.centerIn: parent
-                                Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }
+                            Item {
+                                anchors.fill: parent
+                                Text {
+                                    text: "✓"
+                                    visible: __input8.checked
+                                    anchors.centerIn: parent
+                                    Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }
+                                }
                             }
                         }
                         enabled: false
@@ -486,15 +498,18 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 36
                             implicitHeight: 20
-                            Rectangle {
-                                width: 16
-                                height: 16
-                                radius: 8
-                                color: "#ffffff"
-                                y: (parent.height - height) / 2
-                                x: __input9.visualPosition * (parent.width - width)
-                                Behavior on x { NumberAnimation { duration: 120 } }
-                                Css.CssItem { cssPrimitive: "rect"; cssClass: ["knob"] }
+                            Item {
+                                anchors.fill: parent
+                                Rectangle {
+                                    width: 16
+                                    height: 16
+                                    radius: 8
+                                    color: "#ffffff"
+                                    y: (parent.height - height) / 2
+                                    x: __input9.visualPosition * (parent.width - width)
+                                    Behavior on x { NumberAnimation { duration: 120 } }
+                                    Css.CssItem { cssPrimitive: "rect"; cssClass: ["knob"] }
+                                }
                             }
                         }
                         onToggled: { tabs = __input9.checked; solidTabstop.enabled = __input9.checked; }
@@ -546,14 +561,17 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 20
                             implicitHeight: 20
-                            Rectangle {
-                                visible: __input10.checked
-                                anchors.centerIn: parent
-                                width: 8
-                                height: 8
-                                radius: 4
-                                color: "#ffffff"
-                                Css.CssItem { cssPrimitive: "rect"; cssClass: ["indicator-dot"] }
+                            Item {
+                                anchors.fill: parent
+                                Rectangle {
+                                    visible: __input10.checked
+                                    anchors.centerIn: parent
+                                    width: 8
+                                    height: 8
+                                    radius: 4
+                                    color: "#2b2b2b"
+                                    Css.CssItem { cssPrimitive: "rect"; cssClass: __input10.checked ? ["indicator-dot", "checked"] : ["indicator-dot"] }
+                                }
                             }
                         }
                         onToggled: { plan = "free" }
@@ -600,14 +618,17 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 20
                             implicitHeight: 20
-                            Rectangle {
-                                visible: __input11.checked
-                                anchors.centerIn: parent
-                                width: 8
-                                height: 8
-                                radius: 4
-                                color: "#ffffff"
-                                Css.CssItem { cssPrimitive: "rect"; cssClass: ["indicator-dot"] }
+                            Item {
+                                anchors.fill: parent
+                                Rectangle {
+                                    visible: __input11.checked
+                                    anchors.centerIn: parent
+                                    width: 8
+                                    height: 8
+                                    radius: 4
+                                    color: "#2b2b2b"
+                                    Css.CssItem { cssPrimitive: "rect"; cssClass: __input11.checked ? ["indicator-dot", "checked"] : ["indicator-dot"] }
+                                }
                             }
                         }
                         onToggled: { plan = "pro" }
@@ -654,14 +675,17 @@ Css.CssRect {
                             height: 20
                             implicitWidth: 20
                             implicitHeight: 20
-                            Rectangle {
-                                visible: __input12.checked
-                                anchors.centerIn: parent
-                                width: 8
-                                height: 8
-                                radius: 4
-                                color: "#ffffff"
-                                Css.CssItem { cssPrimitive: "rect"; cssClass: ["indicator-dot"] }
+                            Item {
+                                anchors.fill: parent
+                                Rectangle {
+                                    visible: __input12.checked
+                                    anchors.centerIn: parent
+                                    width: 8
+                                    height: 8
+                                    radius: 4
+                                    color: "#2b2b2b"
+                                    Css.CssItem { cssPrimitive: "rect"; cssClass: __input12.checked ? ["indicator-dot", "checked"] : ["indicator-dot"] }
+                                }
                             }
                         }
                         onToggled: { plan = "team" }

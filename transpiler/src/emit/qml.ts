@@ -741,16 +741,18 @@ function emitCheckboxToggle(props: Props, scope: Scope, level: number, guard: st
     `${i(3)}height: 20`,
     `${i(3)}implicitWidth: 20`,
     `${i(3)}implicitHeight: 20`,
-    // Plain Text, NOT CssText: any Css child of this CssFill is re-laid-out by the CSS
-    // engine (isLayoutChild is true for every Css type — it stretched the glyph to the
-    // full indicator and pinned it top-left). A plain primitive is invisible to the
-    // layout, so the anchor holds; the nested CssItem injects color/font from the
-    // .indicator-glyph rule without joining the layout.
-    `${i(3)}Text {`,
-    `${i(4)}text: "✓"`,
-    `${i(4)}visible: ${ctlId}.checked`,
-    `${i(4)}anchors.centerIn: parent`,
-    `${i(4)}Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }`,
+    // Anchored Item host: once the indicator's CSS carries box rules (border etc.) the
+    // layout engine runs a flex pass over contentHolder children and pins plain children
+    // top-left; an anchors.fill Item is skipped, and anchors hold inside it. The nested
+    // CssItem injects color/font from the .indicator-glyph rule without joining any layout.
+    `${i(3)}Item {`,
+    `${i(4)}anchors.fill: parent`,
+    `${i(4)}Text {`,
+    `${i(5)}text: "✓"`,
+    `${i(5)}visible: ${ctlId}.checked`,
+    `${i(5)}anchors.centerIn: parent`,
+    `${i(5)}Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }`,
+    `${i(4)}}`,
     `${i(3)}}`,
     `${i(2)}}`,
   ];
@@ -813,20 +815,22 @@ function emitSwitchToggle(props: Props, scope: Scope, level: number, guard: stri
     `${i(3)}height: 20`,
     `${i(3)}implicitWidth: 36`,
     `${i(3)}implicitHeight: 20`,
-    // Plain Rectangle, NOT CssRect: the CSS layout engine lays out every Css child (it
-    // stretched the knob to 36x0 and zeroed the x binding). A plain primitive keeps its
-    // geometry bindings; the nested CssItem injects background-color/radius/border from
-    // the .knob rule.
-    `${i(3)}Rectangle {`,
-    `${i(4)}width: 16`,
-    `${i(4)}height: 16`,
-    `${i(4)}radius: 8`,
-    `${i(4)}color: "#ffffff"`,
-    `${i(4)}y: (parent.height - height) / 2`,
+    // Anchored Item host insulates the knob from the CSS flex pass (see the checkbox
+    // glyph note); the geometry bindings live on the plain Rectangle inside. The nested
+    // CssItem injects background-color/radius/border from the .knob rule.
+    `${i(3)}Item {`,
+    `${i(4)}anchors.fill: parent`,
+    `${i(4)}Rectangle {`,
+    `${i(5)}width: 16`,
+    `${i(5)}height: 16`,
+    `${i(5)}radius: 8`,
+    `${i(5)}color: "#ffffff"`,
+    `${i(5)}y: (parent.height - height) / 2`,
     // visualPosition goes 0→1 as the switch toggles; multiply by the remaining track width.
-    `${i(4)}x: ${ctlId}.visualPosition * (parent.width - width)`,
-    `${i(4)}Behavior on x { NumberAnimation { duration: 120 } }`,
-    `${i(4)}Css.CssItem { cssPrimitive: "rect"; cssClass: ["knob"] }`,
+    `${i(5)}x: ${ctlId}.visualPosition * (parent.width - width)`,
+    `${i(5)}Behavior on x { NumberAnimation { duration: 120 } }`,
+    `${i(5)}Css.CssItem { cssPrimitive: "rect"; cssClass: ["knob"] }`,
+    `${i(4)}}`,
     `${i(3)}}`,
     `${i(2)}}`,
   ];
@@ -906,17 +910,23 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
     `${i(3)}height: 20`,
     `${i(3)}implicitWidth: 20`,
     `${i(3)}implicitHeight: 20`,
-    // Inner dot: plain Rectangle, NOT CssRect — the CSS layout engine lays out every Css
-    // child, stomping the centerIn anchor and the 8x8 size. The nested CssItem injects
-    // background-color/radius from the .indicator-dot rule.
-    `${i(3)}Rectangle {`,
-    `${i(4)}visible: ${ctlId}.checked`,
-    `${i(4)}anchors.centerIn: parent`,
-    `${i(4)}width: 8`,
-    `${i(4)}height: 8`,
-    `${i(4)}radius: 4`,
-    `${i(4)}color: "#ffffff"`,
-    `${i(4)}Css.CssItem { cssPrimitive: "rect"; cssClass: ["indicator-dot"] }`,
+    // Anchored Item host insulates the dot from the CSS flex pass (see the checkbox glyph
+    // note). The nested CssItem injects background-color/radius from the .indicator-dot rule.
+    `${i(3)}Item {`,
+    `${i(4)}anchors.fill: parent`,
+    `${i(4)}Rectangle {`,
+    `${i(5)}visible: ${ctlId}.checked`,
+    `${i(5)}anchors.centerIn: parent`,
+    `${i(5)}width: 8`,
+    `${i(5)}height: 8`,
+    `${i(5)}radius: 4`,
+    `${i(5)}color: "#2b2b2b"`,
+    // State rides the CssItem's OWN class (`.indicator-dot.checked`): an ancestor-state
+    // rule (`.indicator:checked .indicator-dot`) resolves at mount only — the engine's
+    // ancestor-restyle pass does not reach CssItems hosted under plain items (engine gap,
+    // queued). A class binding re-resolves the CssItem itself on every toggle.
+    `${i(5)}Css.CssItem { cssPrimitive: "rect"; cssClass: ${ctlId}.checked ? ["indicator-dot", "checked"] : ["indicator-dot"] }`,
+    `${i(4)}}`,
     `${i(3)}}`,
     `${i(2)}}`,
   );

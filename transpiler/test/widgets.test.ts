@@ -476,7 +476,7 @@ test("widgets: <input type='radio'> emits T.RadioButton + indicator CssFill + in
   const out = await qml(`export function F(){ return <input type="radio" name="g" />; }`);
   assert.match(out, /T\.RadioButton \{/);
   assert.match(out, /cssClass: \["indicator"\]/);
-  assert.match(out, /cssClass: \["indicator-dot"\]/);
+  assert.match(out, /cssClass: __input0\.checked \? \["indicator-dot", "checked"\] : \["indicator-dot"\]/);
 });
 
 test("widgets: radio indicator-dot is visible when checked and centred", async () => {
@@ -1239,9 +1239,11 @@ test("emitQml 6.5: switch knob is a plain Rectangle styled via CssItem, x follow
   assert.doesNotMatch(out, /Css\.CssRect \{[\s\S]*?\["knob"\]/);
 });
 
-test("emitQml 6.5: radio dot is a plain Rectangle styled via CssItem", async () => {
+test("emitQml 6.5: radio dot is a plain Rectangle styled via CssItem with state-on-class", async () => {
   const out = await qml(`export function F(){ return <input type="radio" name="g" />; }`);
-  assert.match(out, /Rectangle \{[\s\S]*?Css\.CssItem \{ cssPrimitive: "rect"; cssClass: \["indicator-dot"\] \}/);
+  // The checked state rides the CssItem's own class (`.indicator-dot.checked`): the engine's
+  // ancestor-restyle pass does not reach CssItems hosted under plain items.
+  assert.match(out, /Rectangle \{[\s\S]*?Css\.CssItem \{ cssPrimitive: "rect"; cssClass: __input0\.checked \? \["indicator-dot", "checked"\] : \["indicator-dot"\] \}/);
 });
 
 test("emitQml 6.5: select popup carries the implicit-height formula", async () => {

@@ -205,7 +205,7 @@
   background: #eef7fb;
 }
 
-.indicator:checked .indicator-dot {
+.indicator-dot.checked {
   border-radius: 4px;
   background: #176b87;
 }
