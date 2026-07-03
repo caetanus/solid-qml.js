@@ -991,12 +991,13 @@ Css.CssRect {
                             value: __input16W.__calVal16 instanceof Date ? Qt.formatDate(__input16W.__calVal16, "yyyy-MM-dd") : ""
                             restoreMode: Binding.RestoreNone
                         }
-                        Text {
+                        Css.CssText {
+                            cssPrimitive: ""
+                            cssClass: ["chevron"]
                             text: "▾"
                             anchors.right: parent.right
                             anchors.rightMargin: 8
                             anchors.verticalCenter: parent.verticalCenter
-                            Css.CssItem { cssPrimitive: "text"; cssClass: ["chevron"] }
                         }
                         MouseArea {
                             anchors.fill: parent

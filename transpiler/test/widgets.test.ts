@@ -1423,9 +1423,9 @@ test("wheel: slider steps value when focused and re-emits moved()", async () => 
   assert.match(out, /WheelHandler \{[\s\S]*?acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*?__input0\.moved\(\)/);
 });
 
-test("date: chevron is a plain Text anchored right (a Css child of the wrapper gets re-laid-out left)", async () => {
+test("date: chevron is the same CssText as the select's, anchored right inside the host Item", async () => {
   const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /Text \{[\s\S]*?text: "▾"[\s\S]*?anchors\.right: parent\.right[\s\S]*?Css\.CssItem \{ cssPrimitive: "text"; cssClass: \["chevron"\] \}/);
+  assert.match(out, /Css\.CssText \{\n\s*cssPrimitive: ""\n\s*cssClass: \["chevron"\]\n\s*text: "▾"\n\s*anchors\.right: parent\.right\n\s*anchors\.rightMargin: 8/);
 });
 
 test("calendar: the day label carries the day states (sibling slots — no ancestor relation)", async () => {

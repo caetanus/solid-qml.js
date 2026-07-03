@@ -1793,15 +1793,17 @@ function emitDateInput(
     `${i(2)}}`,
   );
 
-  // Calendar glyph — right-aligned like the <select> chevron (owner directive). Plain Text
-  // + CssItem so the `.chevron` rule styles it without joining any layout.
+  // Calendar glyph — a CssText IDENTICAL to the <select> chevron (same class, same CSS
+  // box: `.chevron { padding-right; height }` applies), so the two dropdowns align.
+  // Living inside the anchored host Item keeps it out of the wrapper's CSS layout pass.
   lines.push(
-    `${i(2)}Text {`,
+    `${i(2)}Css.CssText {`,
+    `${i(3)}cssPrimitive: ""`,
+    `${i(3)}cssClass: ["chevron"]`,
     `${i(3)}text: "▾"`,
     `${i(3)}anchors.right: parent.right`,
     `${i(3)}anchors.rightMargin: 8`,
     `${i(3)}anchors.verticalCenter: parent.verticalCenter`,
-    `${i(3)}Css.CssItem { cssPrimitive: "text"; cssClass: ["chevron"] }`,
     `${i(2)}}`,
   );
 
