@@ -165,7 +165,9 @@ void CssFill::setCssAlternateId(const QVariant &v)
 
 void CssFill::setCssClass(const QVariant &v)
 {
-    if (m_cssClass == v)
+    // Value-compare: QML re-binds hand a FRESH array each evaluation; an equal
+    // list must not trigger a restyle (it double-applied every element on mount).
+    if (m_cssClass == v || toStringList(m_cssClass) == toStringList(v))
         return;
     m_cssClass = v;
     emit cssClassChanged();
@@ -175,7 +177,9 @@ void CssFill::setCssClass(const QVariant &v)
 
 void CssFill::setCssState(const QVariant &v)
 {
-    if (m_cssState == v)
+    // Value-compare: QML re-binds hand a FRESH array each evaluation; an equal
+    // list must not trigger a restyle (it double-applied every element on mount).
+    if (m_cssState == v || toStringList(m_cssState) == toStringList(v))
         return;
     m_cssState = v;
     emit cssStateChanged();
@@ -208,9 +212,12 @@ void CssFill::setStyle(const QVariantMap &v)
     m_style = v;
     emit styleChanged();
     recompute();
-    requestRelayout();
-    if (m_layout)
-        m_layout->notifyParentLayout(this);
+    // Pre-mount applies must not trigger layout (completion issues one requestRelayout).
+    if (isComponentComplete()) {
+        requestRelayout();
+        if (m_layout)
+            m_layout->notifyParentLayout(this);
+    }
     emit inheritedChanged();
 }
 
@@ -410,6 +417,10 @@ void CssFill::componentComplete()
         m_theme = qobject_cast<CssTheme *>(ctx->contextProperty(QStringLiteral("cssTheme")).value<QObject *>());
         m_layout = qobject_cast<CssLayoutEngine *>(ctx->contextProperty(QStringLiteral("cssLayout")).value<QObject *>());
     }
+
+    // SINGLE-SHOT mount: resolve + set the style before the layers exist (recompute no-ops
+    // on null layers); their first configuration below already reads the final style.
+    // (style already resolved+registered above — single-shot mount)
 
     if (QQmlEngine *eng = qmlEngine(this)) {
         // Compose bottom -> top; stackBefore(contentHolder) keeps the declared children on top.

@@ -245,6 +245,20 @@ private:
                             const QStringList &classes, const QString &pseudoElement,
                             const QString &primitive = {}) const;
 
+    // resolveImpl memo (input signature -> resolved map); cleared on rebuildRules().
+    mutable QHash<QString, QVariantMap> m_resolveCache;
+    // resolveFontFamily memo; cleared when a downloaded font registers.
+    mutable QHash<QString, QString> m_fontFamilyCache;
+    QString resolveFontFamilyUncached(const QString &value, const QString &fallback) const;
+
+    // Rule index (rebuilt with m_rules): candidate rule indices by subject class/element/id,
+    // plus the rules with an unconstrained subject. resolveImpl unions the element's buckets
+    // instead of scanning every rule — the classic selector-matching index.
+    QMultiHash<QString, int> m_rulesByClass;
+    QMultiHash<QString, int> m_rulesByElement;
+    QMultiHash<QString, int> m_rulesById;
+    QList<int> m_rulesUnkeyed;
+
     // Merge the waybar alias(es) under the primary id (primary wins), for `classes`.
     QVariantMap resolveMerged(const QList<CssAncestorInfo> &ancestors, const QString &cssId,
                               const QStringList &alternateIds, const QStringList &classes,

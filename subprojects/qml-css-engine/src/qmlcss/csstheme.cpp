@@ -6,6 +6,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QFile>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QFont>
 #include <QFontDatabase>
@@ -19,6 +20,7 @@
 #include <QQuickItem>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QVarLengthArray>
 #include <QUrl>
 #include <algorithm>
 
@@ -767,6 +769,7 @@ void CssTheme::loadFromString(const QString &css)
 
 void CssTheme::rebuildRules()
 {
+    m_resolveCache.clear();
     m_rules = m_baseRules;
     // Append matching @media rules AFTER the base so they override on equal specificity
     // (CSS source order: @media blocks follow and refine the base).
@@ -774,10 +777,30 @@ void CssTheme::rebuildRules()
         if (mediaMatches(group.query, m_viewportWidth, m_viewportHeight))
             m_rules += group.rules;
     }
+
+    // Rebuild the selector index: a rule is bucketed under ONE key of its subject (a class,
+    // else the element, else the id); subject-unconstrained rules go to the unkeyed list.
+    // resolveImpl only visits the union of the element's buckets.
+    m_rulesByClass.clear();
+    m_rulesByElement.clear();
+    m_rulesById.clear();
+    m_rulesUnkeyed.clear();
+    for (int i = 0; i < m_rules.size(); ++i) {
+        const CssSimpleSelector &sel = m_rules.at(i).selector;
+        if (!sel.classes.isEmpty())
+            m_rulesByClass.insert(sel.classes.first(), i);
+        else if (!sel.element.isEmpty())
+            m_rulesByElement.insert(sel.element, i);
+        else if (!sel.id.isEmpty())
+            m_rulesById.insert(sel.id, i);
+        else
+            m_rulesUnkeyed.append(i);
+    }
 }
 
 void CssTheme::registerFontData(const QByteArray &bytes)
 {
+    m_fontFamilyCache.clear();
     if (bytes.isEmpty())
         return;
     const int id = QFontDatabase::addApplicationFontFromData(bytes);
@@ -945,8 +968,24 @@ static QList<CssAncestorInfo> collectCssAncestors(QObject *target)
     return chain;
 }
 
+namespace {
+struct ApplyStats {
+    qint64 chainNs = 0, resolveNs = 0, hoverNs = 0, pushNs = 0; int count = 0;
+    bool enabled = qEnvironmentVariableIntValue("SQ_MOUNT_STATS") != 0;
+    ~ApplyStats() {
+        if (enabled && count > 0)
+            fprintf(stderr, "[apply-stats] x%d | chain: %.1fms | resolve: %.1fms | hover: %.1fms | push: %.1fms\n",
+                    count, chainNs / 1e6, resolveNs / 1e6, hoverNs / 1e6, pushNs / 1e6);
+    }
+};
+ApplyStats g_applyStats;
+} // namespace
+
 void CssTheme::applyCssTo(QObject *target) const
 {
+    QElapsedTimer t;
+    if (g_applyStats.enabled)
+        t.start();
     if (!target)
         return;
 
@@ -973,8 +1012,11 @@ void CssTheme::applyCssTo(QObject *target) const
         style = resolvePart(cssId, cssPart, classes);
     } else {
         const QStringList alternateIds = cssVariantToStringList(target->property("cssAlternateId"));
+        const qint64 t0 = g_applyStats.enabled ? t.nsecsElapsed() : 0;
         const QList<CssAncestorInfo> ancestors = collectCssAncestors(target);
+        const qint64 t1 = g_applyStats.enabled ? t.nsecsElapsed() : 0;
         style = resolveMerged(ancestors, cssId, alternateIds, classes, cssPrimitive);
+        const qint64 t2 = g_applyStats.enabled ? t.nsecsElapsed() : 0;
 
         // An applicable `:hover` rule makes the element hover-track ITSELF (it composes a
         // HoverHandler behind cssHoverStyled) — the web hovers any element, and only
@@ -991,11 +1033,22 @@ void CssTheme::applyCssTo(QObject *target) const
                 resolveMerged(ancestors, cssId, alternateIds, on, cssPrimitive) != offStyle;
             target->setProperty("cssHoverStyled", hoverStyled);
         }
+        if (g_applyStats.enabled) {
+            const qint64 t3 = t.nsecsElapsed();
+            g_applyStats.chainNs += t1 - t0;
+            g_applyStats.resolveNs += t2 - t1;
+            g_applyStats.hoverNs += t3 - t2;
+        }
     }
 
     // Push the resolved map into the target's `style` sink; its renderer keys off it
     // (gradient/box-shadow/bevel with the alpha-fix a plain Rectangle cannot do).
+    const qint64 tp = g_applyStats.enabled ? t.nsecsElapsed() : 0;
     target->setProperty("style", style);
+    if (g_applyStats.enabled) {
+        g_applyStats.pushNs += t.nsecsElapsed() - tp;
+        ++g_applyStats.count;
+    }
 }
 
 void CssTheme::loadCss(QObject *target)
@@ -1095,6 +1148,30 @@ QVariantMap CssTheme::resolveImpl(const QList<CssAncestorInfo> &ancestors, const
                                   const QStringList &classes, const QString &pseudoElement,
                                   const QString &primitive) const
 {
+    // Memoized: page creation resolves IDENTICAL inputs over and over (every feed row, every
+    // menu item shares classes/primitive/ancestry). Keyed by the full input signature;
+    // cleared whenever the active rules change (rebuildRules).
+    QString key;
+    key.reserve(96);
+    key += id;
+    key += QLatin1Char('\x1f');
+    key += classes.join(QLatin1Char('\x1e'));
+    key += QLatin1Char('\x1f');
+    key += pseudoElement;
+    key += QLatin1Char('\x1f');
+    key += primitive;
+    for (const CssAncestorInfo &a : ancestors) {
+        key += QLatin1Char('\x1d');
+        key += a.id;
+        key += QLatin1Char('\x1e');
+        key += a.classes.join(QLatin1Char('\x1e'));
+        key += QLatin1Char('\x1e');
+        key += a.primitive;
+    }
+    const auto cached = m_resolveCache.constFind(key);
+    if (cached != m_resolveCache.constEnd())
+        return *cached;
+
     struct Match {
         int specificity;
         int sourceOrder;
@@ -1102,8 +1179,25 @@ QVariantMap CssTheme::resolveImpl(const QList<CssAncestorInfo> &ancestors, const
         QVariantMap important;
     };
 
+    // Candidate rules: union of the element's class buckets + element bucket + id bucket +
+    // the unkeyed rules — instead of scanning the whole rule list per resolve.
+    QVarLengthArray<int, 64> candidates;
+    for (const QString &cls : classes)
+        for (auto it = m_rulesByClass.constFind(cls); it != m_rulesByClass.constEnd() && it.key() == cls; ++it)
+            candidates.append(it.value());
+    if (!primitive.isEmpty())
+        for (auto it = m_rulesByElement.constFind(primitive); it != m_rulesByElement.constEnd() && it.key() == primitive; ++it)
+            candidates.append(it.value());
+    if (!id.isEmpty())
+        for (auto it = m_rulesById.constFind(id); it != m_rulesById.constEnd() && it.key() == id; ++it)
+            candidates.append(it.value());
+    for (int i : m_rulesUnkeyed)
+        candidates.append(i);
+    std::sort(candidates.begin(), candidates.end());
+    candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+
     QList<Match> matches;
-    for (int i = 0; i < m_rules.size(); ++i) {
+    for (int i : candidates) {
         const CssRule &rule = m_rules.at(i);
         // A descendant rule only matches when the element's real ancestor chain satisfies the
         // selector's ancestor chain. Rules with no ancestor requirement match in all contexts.
@@ -1128,6 +1222,7 @@ QVariantMap CssTheme::resolveImpl(const QList<CssAncestorInfo> &ancestors, const
         for (auto it = m.important.constBegin(); it != m.important.constEnd(); ++it)
             result.insert(it.key(), it.value());
     }
+    m_resolveCache.insert(key, result);
     return result;
 }
 
@@ -1342,6 +1437,18 @@ QVariantMap CssTheme::borderSide(const QVariantMap &style, const QString &side,
 }
 
 QString CssTheme::resolveFontFamily(const QString &value, const QString &fallback) const
+{
+    // Memoized: applyToText re-resolves the family on every (re)apply — 70+ labels per page
+    // times inheritance re-applies hammered QFontDatabase. Cleared when a downloaded
+    // @font-face registers (see registerFontData).
+    const QString cacheKey = value + QLatin1Char('\x1f') + fallback;
+    const auto hit = m_fontFamilyCache.constFind(cacheKey);
+    if (hit != m_fontFamilyCache.constEnd())
+        return *hit;
+    return *m_fontFamilyCache.insert(cacheKey, resolveFontFamilyUncached(value, fallback));
+}
+
+QString CssTheme::resolveFontFamilyUncached(const QString &value, const QString &fallback) const
 {
     const QStringList families = QFontDatabase::families();
     const auto hasFamily = [&](const QString &candidate) {

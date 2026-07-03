@@ -135,6 +135,9 @@ public:
     Q_SLOT void onEngineHoverChanged(); // composed HoverHandler.hoveredChanged -> cssEngineHover
     // Compose the Flickable and move the content holder into it (overflow-y: auto/scroll).
     void ensureScrollable();
+    // Lazy composition of the per-box extras (most boxes never need them).
+    void ensureTranslate();
+    void ensureAnim();
     Q_SLOT void syncScrollContent();
 
     bool hasCssIdentity() const;

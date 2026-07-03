@@ -5,6 +5,7 @@
 #include "qmlcss/csstheme.h"
 
 #include <QEasingCurve>
+#include <QElapsedTimer>
 #include <QJSValue>
 #include <QQmlComponent>
 #include <QQmlContext>
@@ -17,6 +18,25 @@
 #include <algorithm>
 
 namespace {
+
+// SQ_MOUNT_STATS=1: aggregate per-phase mount timing (style resolve vs shell composition),
+// dumped at exit — the "before-mount / on-mount" breakdown.
+struct MountStats {
+    qint64 resolveNs = 0;
+    qint64 shellNs = 0;
+    qint64 restNs = 0;
+    int count = 0;
+    bool enabled = qEnvironmentVariableIntValue("SQ_MOUNT_STATS") != 0;
+    ~MountStats()
+    {
+        if (enabled && count > 0)
+            fprintf(stderr,
+                    "[mount-stats] CssRect x%d | before-mount(resolve): %.1fms | shell: %.1fms | rest: %.1fms\n",
+                    count, resolveNs / 1e6, shellNs / 1e6, restNs / 1e6);
+    }
+};
+MountStats g_mountStats;
+
 
 // Mirror of csstheme.cpp's identity coercion, used only for the hasCssIdentity check.
 QStringList toStringList(const QVariant &v)
@@ -153,8 +173,17 @@ Item {
         return [values[0], values[1], values[2], values[3]]
     }
     readonly property var borderRadii: r.parseBorderRadius(r.radiusStr)
+    // Pre-clamped corner radii as PROPERTIES: the path elements below used to call
+    // clampedRadius() from every x/y/radius binding — 7000+ JS function calls on one page
+    // mount (the single hottest line in the click profile). A property read is cheap and
+    // re-evaluates only when radii or size actually change.
+    readonly property real halfMin: Math.min(r.width / 2, r.height / 2)
+    readonly property real cr0: Math.max(0, Math.min(r.borderRadii[0], r.halfMin))
+    readonly property real cr1: Math.max(0, Math.min(r.borderRadii[1], r.halfMin))
+    readonly property real cr2: Math.max(0, Math.min(r.borderRadii[2], r.halfMin))
+    readonly property real cr3: Math.max(0, Math.min(r.borderRadii[3], r.halfMin))
     function clampedRadius(index) {
-        return Math.max(0, Math.min(r.borderRadii[index], r.width / 2, r.height / 2))
+        return index === 0 ? r.cr0 : index === 1 ? r.cr1 : index === 2 ? r.cr2 : r.cr3
     }
     readonly property bool partiallyRounded: r.borderRadii[0] > 0 || r.borderRadii[1] > 0
         || r.borderRadii[2] > 0 || r.borderRadii[3] > 0
@@ -199,15 +228,15 @@ Item {
                 strokeColor: "transparent"
                 strokeWidth: 0
                 fillColor: r.shadowFillColor
-                startX: r.clampedRadius(0); startY: 0
-                PathLine { x: Math.max(r.clampedRadius(0), r.width - r.clampedRadius(1)); y: 0 }
-                PathArc { x: r.width; y: r.clampedRadius(1); radiusX: r.clampedRadius(1); radiusY: r.clampedRadius(1); direction: PathArc.Clockwise }
-                PathLine { x: r.width; y: Math.max(r.clampedRadius(1), r.height - r.clampedRadius(2)) }
-                PathArc { x: r.width - r.clampedRadius(2); y: r.height; radiusX: r.clampedRadius(2); radiusY: r.clampedRadius(2); direction: PathArc.Clockwise }
-                PathLine { x: r.clampedRadius(3); y: r.height }
-                PathArc { x: 0; y: r.height - r.clampedRadius(3); radiusX: r.clampedRadius(3); radiusY: r.clampedRadius(3); direction: PathArc.Clockwise }
-                PathLine { x: 0; y: r.clampedRadius(0) }
-                PathArc { x: r.clampedRadius(0); y: 0; radiusX: r.clampedRadius(0); radiusY: r.clampedRadius(0); direction: PathArc.Clockwise }
+                startX: r.cr0; startY: 0
+                PathLine { x: Math.max(r.cr0, r.width - r.cr1); y: 0 }
+                PathArc { x: r.width; y: r.cr1; radiusX: r.cr1; radiusY: r.cr1; direction: PathArc.Clockwise }
+                PathLine { x: r.width; y: Math.max(r.cr1, r.height - r.cr2) }
+                PathArc { x: r.width - r.cr2; y: r.height; radiusX: r.cr2; radiusY: r.cr2; direction: PathArc.Clockwise }
+                PathLine { x: r.cr3; y: r.height }
+                PathArc { x: 0; y: r.height - r.cr3; radiusX: r.cr3; radiusY: r.cr3; direction: PathArc.Clockwise }
+                PathLine { x: 0; y: r.cr0 }
+                PathArc { x: r.cr0; y: 0; radiusX: r.cr0; radiusY: r.cr0; direction: PathArc.Clockwise }
             }
         }
         MultiEffect {
@@ -224,8 +253,13 @@ Item {
         }
     }
 
-    // --- the fill (solid colour or linear gradient). Alpha rides on opacity. -------------
-    Shape {
+    // --- the fill (solid colour or linear gradient). Alpha rides on opacity. Lazy: most
+    // boxes are layout-only (transparent) and skip the whole path/gradient machinery. -----
+    readonly property bool hasFill: (r.solid.a > 0) || r.hasGradient
+    Loader {
+        anchors.fill: parent
+        active: r.hasFill
+        sourceComponent: Shape {
         id: fill
         anchors.fill: parent
         preferredRendererType: Shape.CurveRenderer
@@ -243,15 +277,15 @@ Item {
                 enabled: r.transitionMs > 0
                 ColorAnimation { duration: r.transitionMs; easing.type: r.transitionEasing }
             }
-            startX: r.clampedRadius(0); startY: 0
-            PathLine { x: Math.max(r.clampedRadius(0), r.width - r.clampedRadius(1)); y: 0 }
-            PathArc { x: r.width; y: r.clampedRadius(1); radiusX: r.clampedRadius(1); radiusY: r.clampedRadius(1); direction: PathArc.Clockwise }
-            PathLine { x: r.width; y: Math.max(r.clampedRadius(1), r.height - r.clampedRadius(2)) }
-            PathArc { x: r.width - r.clampedRadius(2); y: r.height; radiusX: r.clampedRadius(2); radiusY: r.clampedRadius(2); direction: PathArc.Clockwise }
-            PathLine { x: r.clampedRadius(3); y: r.height }
-            PathArc { x: 0; y: r.height - r.clampedRadius(3); radiusX: r.clampedRadius(3); radiusY: r.clampedRadius(3); direction: PathArc.Clockwise }
-            PathLine { x: 0; y: r.clampedRadius(0) }
-            PathArc { x: r.clampedRadius(0); y: 0; radiusX: r.clampedRadius(0); radiusY: r.clampedRadius(0); direction: PathArc.Clockwise }
+            startX: r.cr0; startY: 0
+            PathLine { x: Math.max(r.cr0, r.width - r.cr1); y: 0 }
+            PathArc { x: r.width; y: r.cr1; radiusX: r.cr1; radiusY: r.cr1; direction: PathArc.Clockwise }
+            PathLine { x: r.width; y: Math.max(r.cr1, r.height - r.cr2) }
+            PathArc { x: r.width - r.cr2; y: r.height; radiusX: r.cr2; radiusY: r.cr2; direction: PathArc.Clockwise }
+            PathLine { x: r.cr3; y: r.height }
+            PathArc { x: 0; y: r.height - r.cr3; radiusX: r.cr3; radiusY: r.cr3; direction: PathArc.Clockwise }
+            PathLine { x: 0; y: r.cr0 }
+            PathArc { x: r.cr0; y: 0; radiusX: r.cr0; radiusY: r.cr0; direction: PathArc.Clockwise }
         }
         LinearGradient {
             id: linearGradient
@@ -259,6 +293,23 @@ Item {
             y1: r.height / 2 - r.dirY * r.lineLen / 2
             x2: r.width / 2 + r.dirX * r.lineLen / 2
             y2: r.height / 2 + r.dirY * r.lineLen / 2
+        }
+        // Opaque gradient stops; the gradient's alpha is carried on this Shape's opacity.
+        Component { id: stopComponent; GradientStop {} }
+        function rebuildStops() {
+            var built = []
+            var g = r.gradient
+            var list = (g && g.stops !== undefined) ? g.stops : []
+            for (var i = 0; i < list.length; ++i) {
+                var c = list[i].color
+                built.push(stopComponent.createObject(linearGradient,
+                    { position: list[i].position, color: Qt.rgba(c.r, c.g, c.b, 1.0) }))
+            }
+            linearGradient.stops = built
+        }
+        property var gradTrack: r.hasGradient ? r.gradient : null
+        onGradTrackChanged: rebuildStops()
+        Component.onCompleted: rebuildStops()
         }
     }
 
@@ -268,7 +319,7 @@ Item {
         CssFillLayer {
             anchors.fill: parent
             spec: modelData
-            radii: [r.clampedRadius(0), r.clampedRadius(1), r.clampedRadius(2), r.clampedRadius(3)]
+            radii: [r.cr0, r.cr1, r.cr2, r.cr3]
         }
     }
 
@@ -284,15 +335,15 @@ Item {
             strokeColor: r.borderColorOpaque
             strokeWidth: r.borderWidth
             fillColor: "transparent"
-            startX: r.clampedRadius(0); startY: 0
-            PathLine { x: Math.max(r.clampedRadius(0), r.width - r.clampedRadius(1)); y: 0 }
-            PathArc { x: r.width; y: r.clampedRadius(1); radiusX: r.clampedRadius(1); radiusY: r.clampedRadius(1); direction: PathArc.Clockwise }
-            PathLine { x: r.width; y: Math.max(r.clampedRadius(1), r.height - r.clampedRadius(2)) }
-            PathArc { x: r.width - r.clampedRadius(2); y: r.height; radiusX: r.clampedRadius(2); radiusY: r.clampedRadius(2); direction: PathArc.Clockwise }
-            PathLine { x: r.clampedRadius(3); y: r.height }
-            PathArc { x: 0; y: r.height - r.clampedRadius(3); radiusX: r.clampedRadius(3); radiusY: r.clampedRadius(3); direction: PathArc.Clockwise }
-            PathLine { x: 0; y: r.clampedRadius(0) }
-            PathArc { x: r.clampedRadius(0); y: 0; radiusX: r.clampedRadius(0); radiusY: r.clampedRadius(0); direction: PathArc.Clockwise }
+            startX: r.cr0; startY: 0
+            PathLine { x: Math.max(r.cr0, r.width - r.cr1); y: 0 }
+            PathArc { x: r.width; y: r.cr1; radiusX: r.cr1; radiusY: r.cr1; direction: PathArc.Clockwise }
+            PathLine { x: r.width; y: Math.max(r.cr1, r.height - r.cr2) }
+            PathArc { x: r.width - r.cr2; y: r.height; radiusX: r.cr2; radiusY: r.cr2; direction: PathArc.Clockwise }
+            PathLine { x: r.cr3; y: r.height }
+            PathArc { x: 0; y: r.height - r.cr3; radiusX: r.cr3; radiusY: r.cr3; direction: PathArc.Clockwise }
+            PathLine { x: 0; y: r.cr0 }
+            PathArc { x: r.cr0; y: 0; radiusX: r.cr0; radiusY: r.cr0; direction: PathArc.Clockwise }
         }
         }
     }
@@ -339,25 +390,25 @@ Item {
         Bar { // top — shadow
             visible: r.bevelEdge(0, 1)
             anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
-            anchors.leftMargin: r.clampedRadius(0); anchors.rightMargin: r.clampedRadius(1)
+            anchors.leftMargin: r.cr0; anchors.rightMargin: r.cr1
             height: 1; barColor: r.insetDark
         }
         Bar { // left — shadow
             visible: r.bevelEdge(0, 3)
             anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
-            anchors.topMargin: r.clampedRadius(0); anchors.bottomMargin: r.clampedRadius(3)
+            anchors.topMargin: r.cr0; anchors.bottomMargin: r.cr3
             width: 1; barColor: r.insetDark
         }
         Bar { // bottom — highlight
             visible: r.bevelEdge(3, 2)
             anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-            anchors.leftMargin: r.clampedRadius(3); anchors.rightMargin: r.clampedRadius(2)
+            anchors.leftMargin: r.cr3; anchors.rightMargin: r.cr2
             height: 1; barColor: r.insetLight
         }
         Bar { // right — highlight
             visible: r.bevelEdge(1, 2)
             anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
-            anchors.topMargin: r.clampedRadius(1); anchors.bottomMargin: r.clampedRadius(2)
+            anchors.topMargin: r.cr1; anchors.bottomMargin: r.cr2
             width: 1; barColor: r.insetLight
         }
         }
@@ -388,21 +439,6 @@ Item {
         }
     }
 
-    // Opaque gradient stops; the gradient's alpha is carried on the fill Shape's opacity.
-    Component { id: stopComponent; GradientStop {} }
-    function rebuildStops() {
-        var built = []
-        var g = r.gradient
-        var list = (g && g.stops !== undefined) ? g.stops : []
-        for (var i = 0; i < list.length; ++i) {
-            var c = list[i].color
-            built.push(stopComponent.createObject(linearGradient,
-                { position: list[i].position, color: Qt.rgba(c.r, c.g, c.b, 1.0) }))
-        }
-        linearGradient.stops = built
-    }
-    onGradientChanged: rebuildStops()
-    Component.onCompleted: rebuildStops()
 }
 )QML";
 
@@ -445,7 +481,9 @@ void CssRect::setCssAlternateId(const QVariant &v)
 
 void CssRect::setCssClass(const QVariant &v)
 {
-    if (m_cssClass == v)
+    // Value-compare: QML re-binds hand a FRESH array each evaluation; an equal
+    // list must not trigger a restyle (it double-applied every element on mount).
+    if (m_cssClass == v || toStringList(m_cssClass) == toStringList(v))
         return;
     m_cssClass = v;
     emit cssClassChanged();
@@ -455,7 +493,9 @@ void CssRect::setCssClass(const QVariant &v)
 
 void CssRect::setCssState(const QVariant &v)
 {
-    if (m_cssState == v)
+    // Value-compare: QML re-binds hand a FRESH array each evaluation; an equal
+    // list must not trigger a restyle (it double-applied every element on mount).
+    if (m_cssState == v || toStringList(m_cssState) == toStringList(v))
         return;
     m_cssState = v;
     emit cssStateChanged();
@@ -542,9 +582,13 @@ void CssRect::setStyle(const QVariantMap &v)
     setClip(!m_flickable && (overflow == QLatin1String("hidden") || overflow == QLatin1String("clip")));
 
     recompute();
-    requestRelayout();
-    if (m_layout)
-        m_layout->notifyParentLayout(this);
+    // Pre-mount applies must NOT trigger layout: componentComplete finishes with ONE
+    // requestRelayout for the whole element (the in-construction storm was O(N) flushes).
+    if (isComponentComplete()) {
+        requestRelayout();
+        if (m_layout)
+            m_layout->notifyParentLayout(this);
+    }
     emit inheritedChanged();
 }
 
@@ -880,7 +924,12 @@ void CssRect::recompute()
     in.insert(QStringLiteral("transitionMs"), QVariant::fromValue(transitionMs));
     in.insert(QStringLiteral("transitionEasing"), QVariant::fromValue(transitionEasing));
 
-    g->setProperty("cssIn", in);
+    // Convert ONCE to a JS object: a QVariantMap-typed `var` re-converts on every property
+    // read in the shell (36 derived bindings × map conversion each — the remaining mount cost).
+    if (QQmlEngine *eng = qmlEngine(this))
+        g->setProperty("cssIn", QVariant::fromValue(eng->toScriptValue(in)));
+    else
+        g->setProperty("cssIn", in);
 
     // --- static transform (rotate/scale/translate) — applied to us so content transforms too ---
     QVariantMap tf;
@@ -931,6 +980,8 @@ void CssRect::recompute()
                                  m.value(QStringLiteral("ty")).toDouble() });
     }
 
+    if (m_animActive)
+        ensureAnim(); // lazy: only boxes with a live @keyframes pay for the animation object
     if (m_anim) {
         // Stop first so reconfiguration takes effect cleanly (matching QML reactive rebuild).
         m_anim->setProperty("running", false);
@@ -973,6 +1024,10 @@ void CssRect::applyTransform()
     //                          y: root._animActive ? root._animTy : (root._staticTransform.translateY ?? 0) }
     setRotation(m_animActive ? m_animRotate : m_staticRotate);
     setScale(m_animActive ? m_animScale : m_staticScale);
+    const qreal wantTx = m_animActive ? m_animTx : m_staticTx;
+    const qreal wantTy = m_animActive ? m_animTy : m_staticTy;
+    if (!m_translate && (wantTx != 0.0 || wantTy != 0.0))
+        ensureTranslate(); // lazy: most boxes never translate
     if (m_translate) {
         m_translate->setProperty("x", m_animActive ? m_animTx : m_staticTx);
         m_translate->setProperty("y", m_animActive ? m_animTy : m_staticTy);
@@ -1051,6 +1106,18 @@ void CssRect::componentComplete()
         m_layout = qobject_cast<CssLayoutEngine *>(ctx->contextProperty(QStringLiteral("cssLayout")).value<QObject *>());
     }
 
+    QElapsedTimer mountTimer;
+    if (g_mountStats.enabled)
+        mountTimer.start();
+
+    // SINGLE-SHOT mount: resolve + apply the style BEFORE the render subtree exists.
+    // recompute() no-ops while m_render is null, so the shell's very first evaluation
+    // already reads the FINAL values — one pass, no default-then-restyle double work.
+    if (m_theme && hasCssIdentity())
+        m_theme->loadCss(this);
+
+    const qint64 tResolve = g_mountStats.enabled ? mountTimer.nsecsElapsed() : 0;
+
     if (QQmlEngine *eng = qmlEngine(this)) {
         // The REAL QtQuick render subtree (Shapes + MultiEffect), via the type-system.
         {
@@ -1071,37 +1138,10 @@ void CssRect::componentComplete()
             }
         }
 
-        // A REAL QtQuick Translate appended to our transform list (static/animated translate).
-        {
-            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-92acf9f1"),
-                "import QtQuick\nTranslate {}");
-            if (QObject *o = comp->create(qmlContext(this))) {
-                QQmlListReference ref(this, "transform");
-                if (ref.isValid())
-                    ref.append(o);
-                m_translate = o;
-            }
-        }
+        // Translate composed LAZILY in ensureTranslate() — most boxes never translate.
 
-        // A REAL QtQuick NumberAnimation on our `animTick` property (0→1), driving the @keyframes
-        // interpolation. Created once here; reconfigured (duration/loops/easing/running) in every
-        // recompute() when the style changes. Equivalent QML:
-        //   NumberAnimation on animTick { from: 0.0; to: 1.0; ... running: root._animActive }
-        {
-            QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-382c9393"),
-                
-                "import QtQuick\n"
-                "NumberAnimation { from: 0.0; to: 1.0 }\n");
-            if (QObject *o = comp->create(qmlContext(this))) {
-                o->setParent(this);
-                o->setProperty("target", QVariant::fromValue(static_cast<QObject *>(this)));
-                o->setProperty("property", QStringLiteral("animTick"));
-                m_anim = o;
-            } else {
-                qWarning("CssRect: failed to compose anim NumberAnimation: %s",
-                         qPrintable(comp->errorString()));
-            }
-        }
+        // The @keyframes NumberAnimation is composed LAZILY in recompute() when an
+        // animation actually activates — most boxes never animate.
     }
 
     // React to implicit-size / visibility changes like the QML on*Changed handlers.
@@ -1121,13 +1161,19 @@ void CssRect::componentComplete()
     if (QObject *anc = cssInheritingAncestor(this))
         connect(anc, SIGNAL(inheritedChanged()), this, SIGNAL(inheritedChanged()));
 
-    layoutChildren();
-    recompute();
+    const qint64 tShell = g_mountStats.enabled ? mountTimer.nsecsElapsed() : 0;
 
-    // QML Component.onCompleted.
-    if (m_theme && hasCssIdentity())
-        m_theme->loadCss(this);
+    layoutChildren();
+    recompute(); // first and only full evaluation — the style is already final (see above)
+
     requestRelayout();
+    if (g_mountStats.enabled) {
+        const qint64 tEnd = mountTimer.nsecsElapsed();
+        g_mountStats.resolveNs += tResolve;
+        g_mountStats.shellNs += tShell - tResolve;
+        g_mountStats.restNs += tEnd - tShell;
+        ++g_mountStats.count;
+    }
     if (m_layout)
         m_layout->notifyParentLayout(this);
 }
@@ -1212,3 +1258,37 @@ void CssRect::onEngineHoverChanged()
         setCssEngineHover(m_hoverHandler->property("hovered").toBool());
 }
 
+void CssRect::ensureTranslate()
+{
+    if (m_translate || !isComponentComplete())
+        return;
+    QQmlEngine *eng = qmlEngine(this);
+    if (!eng)
+        return;
+    QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-translate"),
+        "import QtQuick\nTranslate {}");
+    if (QObject *o = comp->create(qmlContext(this))) {
+        o->setParent(this);
+        QQmlListReference ref(this, "transform");
+        if (ref.isValid())
+            ref.append(o);
+        m_translate = o;
+    }
+}
+
+void CssRect::ensureAnim()
+{
+    if (m_anim || !isComponentComplete())
+        return;
+    QQmlEngine *eng = qmlEngine(this);
+    if (!eng)
+        return;
+    QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("cssrect-numberanim"),
+        "import QtQuick\nNumberAnimation { from: 0.0; to: 1.0 }\n");
+    if (QObject *o = comp->create(qmlContext(this))) {
+        o->setParent(this);
+        o->setProperty("target", QVariant::fromValue(static_cast<QObject *>(this)));
+        o->setProperty("property", QStringLiteral("animTick"));
+        m_anim = o;
+    }
+}

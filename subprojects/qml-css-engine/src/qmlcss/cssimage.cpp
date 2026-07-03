@@ -98,7 +98,9 @@ void CssImage::setCssAlternateId(const QVariant &v)
 
 void CssImage::setCssClass(const QVariant &v)
 {
-    if (m_cssClass == v)
+    // Value-compare: QML re-binds hand a FRESH array each evaluation; an equal
+    // list must not trigger a restyle (it double-applied every element on mount).
+    if (m_cssClass == v || toStringList(m_cssClass) == toStringList(v))
         return;
     m_cssClass = v;
     emit cssClassChanged();
@@ -108,7 +110,9 @@ void CssImage::setCssClass(const QVariant &v)
 
 void CssImage::setCssState(const QVariant &v)
 {
-    if (m_cssState == v)
+    // Value-compare: QML re-binds hand a FRESH array each evaluation; an equal
+    // list must not trigger a restyle (it double-applied every element on mount).
+    if (m_cssState == v || toStringList(m_cssState) == toStringList(v))
         return;
     m_cssState = v;
     emit cssStateChanged();

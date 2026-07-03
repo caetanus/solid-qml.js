@@ -87,7 +87,9 @@ void CssText::setCssAlternateId(const QVariant &v)
 
 void CssText::setCssClass(const QVariant &v)
 {
-    if (m_cssClass == v)
+    // Value-compare: QML re-binds hand a FRESH array each evaluation; an equal
+    // list must not trigger a restyle (it double-applied every element on mount).
+    if (m_cssClass == v || toStringList(m_cssClass) == toStringList(v))
         return;
     m_cssClass = v;
     emit cssClassChanged();
@@ -97,7 +99,9 @@ void CssText::setCssClass(const QVariant &v)
 
 void CssText::setCssState(const QVariant &v)
 {
-    if (m_cssState == v)
+    // Value-compare: QML re-binds hand a FRESH array each evaluation; an equal
+    // list must not trigger a restyle (it double-applied every element on mount).
+    if (m_cssState == v || toStringList(m_cssState) == toStringList(v))
         return;
     m_cssState = v;
     emit cssStateChanged();
@@ -134,8 +138,8 @@ void CssText::setStyle(const QVariantMap &v)
     applyShadow();
     applyBackground();
 
-    // QML: onStyleChanged -> _notifyParent()
-    if (m_layout)
+    // QML: onStyleChanged -> _notifyParent(); pre-mount applies must not trigger layout.
+    if (isComponentComplete() && m_layout)
         m_layout->notifyParentLayout(this);
     emit inheritedChanged();
 }
@@ -403,6 +407,11 @@ void CssText::componentComplete()
         m_layout = qobject_cast<CssLayoutEngine *>(ctx->contextProperty(QStringLiteral("cssLayout")).value<QObject *>());
     }
 
+    // SINGLE-SHOT mount: resolve + set the style before the Text exists (the apply helpers
+    // no-op on a null label); the composed Text's first configuration is already final.
+    if (m_theme && hasCssIdentity())
+        m_theme->loadCss(this);
+
     if (QQmlEngine *eng = qmlEngine(this)) {
         // The REAL QtQuick Text, via the Qt type-system (we forward everything onto it).
         {
@@ -466,9 +475,7 @@ void CssText::componentComplete()
     applyShadow();
     applyBackground(); // a pre-completion style may already carry a background
 
-    // QML Component.onCompleted.
-    if (m_theme && hasCssIdentity())
-        m_theme->loadCss(this); // sets `style` -> setStyle re-applies + notifies layout
+    // (style already resolved+registered above — single-shot mount)
     if (m_layout)
         m_layout->notifyParentLayout(this);
 }
