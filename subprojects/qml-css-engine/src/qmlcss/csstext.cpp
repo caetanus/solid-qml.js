@@ -2,6 +2,7 @@
 
 #include "qmlcss/csslayout.h"
 #include "qmlcss/csstheme.h"
+#include "qmlcss/valueparser.h"
 
 #include <QFont>
 #include <QJSValue>
@@ -130,6 +131,7 @@ void CssText::setStyle(const QVariantMap &v)
 
     applyToText();
     applyShadow();
+    applyBackground();
 
     // QML: onStyleChanged -> _notifyParent()
     if (m_layout)
@@ -343,6 +345,12 @@ void CssText::layoutChild()
         m_shadow->setWidth(m_label->width());
         m_shadow->setHeight(m_label->height());
     }
+    if (m_bg) {
+        m_bg->setX(0);
+        m_bg->setY(0);
+        m_bg->setWidth(m_label->width());
+        m_bg->setHeight(m_label->height());
+    }
 }
 
 void CssText::mirrorImplicit()
@@ -449,6 +457,7 @@ void CssText::componentComplete()
     layoutChild();
     applyToText();
     applyShadow();
+    applyBackground(); // a pre-completion style may already carry a background
 
     // QML Component.onCompleted.
     if (m_theme && hasCssIdentity())
@@ -461,6 +470,72 @@ void CssText::geometryChange(const QRectF &newGeometry, const QRectF &oldGeometr
 {
     QQuickItem::geometryChange(newGeometry, oldGeometry);
     layoutChild();
+}
+
+// QML equivalent (what the underlay would look like declared in CssText.qml):
+//   Shape {
+//       z: -1; visible: bgColor.a > 0
+//       ShapePath {
+//           strokeColor: "transparent"; strokeWidth: 0; fillColor: bgColor
+//           PathRectangle { width: parent.width; height: parent.height; radius: bgRadius }
+//       }
+//   }
+void CssText::applyBackground()
+{
+    // `background-color` wins; a plain-colour `background` shorthand also paints (gradient
+    // strings parse invalid and are skipped — text gradients are not mapped).
+    QString bgValue = m_style.value(QStringLiteral("background-color")).toString().trimmed();
+    if (bgValue.isEmpty())
+        bgValue = m_style.value(QStringLiteral("background")).toString().trimmed();
+    const QColor color = bgValue.isEmpty() ? QColor() : CssValueParser::parseColor(bgValue);
+
+    if (!color.isValid() || color.alpha() == 0) {
+        if (m_bg)
+            m_bg->setProperty("bgColor", QColor(Qt::transparent));
+        return;
+    }
+
+    if (!m_bg && isComponentComplete()) {
+        if (QQmlEngine *eng = qmlEngine(this)) {
+            QQmlComponent comp(eng);
+            comp.setData(R"(import QtQuick
+import QtQuick.Shapes
+Shape {
+    id: bgroot
+    objectName: "cssTextBg"
+    property color bgColor: "transparent"
+    property real bgRadius: 0
+    z: -1
+    visible: bgColor.a > 0
+    preferredRendererType: Shape.CurveRenderer
+    ShapePath {
+        strokeColor: "transparent"
+        strokeWidth: 0
+        fillColor: bgroot.bgColor
+        PathRectangle { x: 0; y: 0; width: bgroot.width; height: bgroot.height; radius: bgroot.bgRadius }
+    }
+})", QUrl());
+            if (QObject *o = comp.create(qmlContext(this))) {
+                if (QQuickItem *bg = qobject_cast<QQuickItem *>(o)) {
+                    bg->setParent(this); // C++ ownership (mirrors CssRect's composed scene)
+                    bg->setParentItem(this);
+                    m_bg = bg;
+                } else {
+                    o->deleteLater();
+                }
+            } else {
+                qWarning("CssText: failed to compose background Shape: %s", qPrintable(comp.errorString()));
+            }
+        }
+    }
+    if (!m_bg)
+        return;
+
+    double radius = 0;
+    CssValueParser::parseLengthPx(m_style.value(QStringLiteral("border-radius")).toString(), &radius);
+    m_bg->setProperty("bgColor", color);
+    m_bg->setProperty("bgRadius", radius);
+    layoutChild(); // size the fresh underlay to the current box
 }
 
 void CssText::onAncestorInheritedChanged()

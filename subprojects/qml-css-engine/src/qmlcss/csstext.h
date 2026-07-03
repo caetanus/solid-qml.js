@@ -151,6 +151,9 @@ private:
     void applyToText();
     // Recompute + push the text-shadow drop-shadow onto the composed MultiEffect.
     void applyShadow();
+    // Paint `background-color` (+ border-radius) behind the Text — a lazily-composed Shape
+    // underlay (the web paints backgrounds on any element, text included).
+    void applyBackground();
     // Keep the composed Text (and shadow) sized to us; when unmanaged (no assigned size), let the
     // Text use its own implicit size so it never collapses.
     void layoutChild();
@@ -180,4 +183,5 @@ private:
     QPointer<CssLayoutEngine> m_layout;
     QPointer<QQuickItem> m_label; // the REAL QtQuick Text, via the type-system
     QPointer<QQuickItem> m_shadow; // the REAL QtQuick.Effects MultiEffect drop-shadow (text-shadow)
+    QPointer<QQuickItem> m_bg; // background underlay Shape, composed on first background-color
 };

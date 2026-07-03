@@ -1796,4 +1796,46 @@ void QmlCssTests::ancestorScopedRulesStyleTheTree()
              QStringLiteral("#ffffff"));
 }
 
+// The web paints `background-color` behind ANY element, text included — CssText composes a
+// Shape underlay (never Rectangle) sized to its box. No background declared → underlay hidden.
+void QmlCssTests::cssTextCppPaintsBackground()
+{
+    CssTheme theme;
+    theme.loadFromString(QStringLiteral(
+        ".tile { background-color: #313244; border-radius: 4px; color: #cdd6f4; }"));
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &theme);
+
+    QQmlComponent component(&engine);
+    component.setData(R"(
+        import QtQuick
+        import qmlcss
+        Item {
+            width: 300; height: 60
+            CssText { objectName: "tiled"; cssClass: ["tile"]; cssPrimitive: "text"; text: "hi"; width: 260; height: 20 }
+            CssText { objectName: "bare"; cssPrimitive: "text"; text: "plain" }
+        }
+    )", QUrl());
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY2(root, qPrintable(component.errorString()));
+
+    QObject *tiled = root->findChild<QObject *>(QStringLiteral("tiled"));
+    QObject *bare = root->findChild<QObject *>(QStringLiteral("bare"));
+    QVERIFY(tiled && bare);
+
+    QObject *bg = tiled->findChild<QObject *>(QStringLiteral("cssTextBg"));
+    QVERIFY2(bg, "CssText did not compose the background underlay");
+    QCOMPARE(bg->property("bgColor").value<QColor>(), QColor(QStringLiteral("#313244")));
+    QCOMPARE(bg->property("bgRadius").toReal(), 4.0);
+    QVERIFY(bg->property("visible").toBool());
+    // The underlay tracks the item's box.
+    QCOMPARE(bg->property("width").toReal(), 260.0);
+    QCOMPARE(bg->property("height").toReal(), 20.0);
+
+    // No background declared → the underlay stays hidden (or is never created).
+    QObject *bareBg = bare->findChild<QObject *>(QStringLiteral("cssTextBg"));
+    QVERIFY(!bareBg || !bareBg->property("visible").toBool());
+}
+
 QTEST_MAIN(QmlCssTests)

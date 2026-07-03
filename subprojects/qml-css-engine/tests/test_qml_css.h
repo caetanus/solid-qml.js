@@ -78,4 +78,8 @@ private slots:
     // Ancestor-scoped rules end-to-end: `.nav button` styles only buttons under `.nav`,
     // and a class/state change on an ANCESTOR restyles the scoped descendants too.
     void ancestorScopedRulesStyleTheTree();
+
+    // CssText must paint `background-color` (+ border-radius) behind the composed Text,
+    // like the web does for any element (cssgaps `.wrap/.nowrap/.ellipsis` tiles).
+    void cssTextCppPaintsBackground();
 };
