@@ -1529,7 +1529,7 @@ button:hover {
   background: #176b87;
 }
 
-.widgets .wg-cal .day:outside {
+.widgets .wg-cal .day-label:outside {
   opacity: 0.3;
 }
 

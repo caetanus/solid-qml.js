@@ -1389,3 +1389,44 @@ test("date: popup background and contentItem re-anchor the CSS chain at the wrap
   assert.match(out, /T\.Popup \{[\s\S]*?background: Css\.CssFill \{[\s\S]*?property Item cssAncestor: __input0W/);
   assert.match(out, /T\.Popup \{[\s\S]*?contentItem: Item \{[\s\S]*?property Item cssAncestor: __input0W/);
 });
+
+// --- Arrow keys (desktop): radios navigate AND check within their ButtonGroup (HTML/desktop
+// semantics); checkbox/switch arrows move focus along the tab chain (dialog semantics),
+// gated by the tabstop opt-out. Slider gains the same focused-wheel stepping as SpinBox. ---
+
+test("arrows: radio steps its ButtonGroup (focus + check + toggled) on all four arrows", async () => {
+  const out = await qml(`export function F(){ return <input type="radio" name="g" />; }`);
+  assert.match(out, /function __step\(d\) \{ var bs = __group_g\.buttons;[\s\S]*?forceActiveFocus\(Qt\.TabFocusReason\)[\s\S]*?checked = true;[\s\S]*?toggled\(\)/);
+  assert.match(out, /Keys\.onDownPressed: __step\(1\)/);
+  assert.match(out, /Keys\.onRightPressed: __step\(1\)/);
+  assert.match(out, /Keys\.onUpPressed: __step\(-1\)/);
+  assert.match(out, /Keys\.onLeftPressed: __step\(-1\)/);
+});
+
+test("arrows: radio without a name emits no arrow handlers", async () => {
+  const out = await qml(`export function F(){ return <input type="radio" />; }`);
+  assert.doesNotMatch(out, /Keys\.onDownPressed/);
+});
+
+test("arrows: checkbox and switch move focus along the chain, honoring the tabstop opt-out", async () => {
+  for (const src of [`<input type="checkbox" />`, `<input type="checkbox" role="switch" />`]) {
+    const out = await qml(`export function F(){ return ${src}; }`);
+    assert.match(out, /Keys\.onDownPressed: \{ if \(solidTabstop\.enabled\) \{ var __n = __input0\.nextItemInFocusChain\(true\); if \(__n\) __n\.forceActiveFocus\(Qt\.TabFocusReason\) \} \}/);
+    assert.match(out, /Keys\.onUpPressed: \{ if \(solidTabstop\.enabled\) \{ var __n = __input0\.nextItemInFocusChain\(false\)/);
+  }
+});
+
+test("wheel: slider steps value when focused and re-emits moved()", async () => {
+  const out = await qml(`export function F(){ return <input type="range" />; }`);
+  assert.match(out, /WheelHandler \{[\s\S]*?enabled: __input0\.activeFocus[\s\S]*?Math\.min\(__input0\.to, __input0\.value \+ __input0\.stepSize\)[\s\S]*?__input0\.moved\(\)/);
+});
+
+test("date: chevron is a plain Text anchored right (a Css child of the wrapper gets re-laid-out left)", async () => {
+  const out = await qml(`export function F(){ return <input type="date" />; }`);
+  assert.match(out, /Text \{[\s\S]*?text: "▾"[\s\S]*?anchors\.right: parent\.right[\s\S]*?Css\.CssItem \{ cssPrimitive: "text"; cssClass: \["chevron"\] \}/);
+});
+
+test("calendar: the day label carries the day states (sibling slots — no ancestor relation)", async () => {
+  const out = await qml(`export function F(){ return <Calendar />; }`);
+  assert.match(out, /cssClass: \["day-label"\]\n\s*cssState: \(model\.today \? \["today"\] : \[\]\)/);
+});

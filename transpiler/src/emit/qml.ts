@@ -473,11 +473,11 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
  *  native text control (T.TextField or T.TextArea). The CssFill exposes `inheritedColor`,
  *  `inheritedFontFamily`, and `inheritedFontSize` as resolved CSS string values; cssTheme helpers
  *  parse them into the QML types the native control expects. Fallbacks match existing gallery defaults. */
-function widgetColorFont(i: (n: number) => string): string[] {
+function widgetColorFont(i: (n: number) => string, extraIndent = 0, source = "parent"): string[] {
   return [
-    `${i(2)}color: cssTheme.parseColor(parent.inheritedColor || "#2b2b2b")`,
-    `${i(2)}font.family: cssTheme.resolveFontFamily(parent.inheritedFontFamily || "Sans Serif")`,
-    `${i(2)}font.pixelSize: cssTheme.parseFontSize(parent.inheritedFontSize || "13px", 13)`,
+    `${i(2 + extraIndent)}color: cssTheme.parseColor(${source}.inheritedColor || "#2b2b2b")`,
+    `${i(2 + extraIndent)}font.family: cssTheme.resolveFontFamily(${source}.inheritedFontFamily || "Sans Serif")`,
+    `${i(2 + extraIndent)}font.pixelSize: cssTheme.parseFontSize(${source}.inheritedFontSize || "13px", 13)`,
   ];
 }
 
@@ -727,6 +727,11 @@ function emitCheckboxToggle(props: Props, scope: Scope, level: number, guard: st
     `${i(2)}background: null`,
     `${i(2)}contentItem: null`,
     `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
+    // Arrows move focus along the chain (desktop dialog semantics), same opt-out as Tab.
+    `${i(2)}Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
+    `${i(2)}Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
+    `${i(2)}Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
+    `${i(2)}Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
     // indicator: a fixed-size Css item (not in a Css layout container — geometry is hardcoded).
     `${i(2)}indicator: Css.CssFill {`,
     `${i(3)}cssPrimitive: "span"`,
@@ -795,6 +800,11 @@ function emitSwitchToggle(props: Props, scope: Scope, level: number, guard: stri
     `${i(2)}background: null`,
     `${i(2)}contentItem: null`,
     `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
+    // Arrows move focus along the chain (desktop dialog semantics), same opt-out as Tab.
+    `${i(2)}Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
+    `${i(2)}Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
+    `${i(2)}Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
+    `${i(2)}Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
     `${i(2)}indicator: Css.CssFill {`,
     `${i(3)}cssPrimitive: "span"`,
     `${i(3)}cssClass: ["track"]`,
@@ -876,6 +886,16 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
 
   // Attach to the group if a name was given; the group is declared at root level by emitComponentType.
   if (groupId) lines.push(`${i(2)}T.ButtonGroup.group: ${groupId}`);
+
+  // Arrow keys step the radio group (HTML/desktop semantics): focus AND check the
+  // neighbour, wrapping. toggled() re-fires so the author's onChange wiring runs.
+  if (groupId) lines.push(
+    `${i(2)}function __step(d) { var bs = ${groupId}.buttons; var j = (bs.indexOf(${ctlId}) + d + bs.length) % bs.length; var b = bs[j]; b.forceActiveFocus(Qt.TabFocusReason); b.checked = true; b.toggled() }`,
+    `${i(2)}Keys.onDownPressed: __step(1)`,
+    `${i(2)}Keys.onRightPressed: __step(1)`,
+    `${i(2)}Keys.onUpPressed: __step(-1)`,
+    `${i(2)}Keys.onLeftPressed: __step(-1)`,
+  );
 
   lines.push(
     `${i(2)}indicator: Css.CssFill {`,
@@ -1012,6 +1032,12 @@ function emitSlider(props: Props, scope: Scope, level: number, guard: string | u
     `${i(2)}from: ${min}`,
     `${i(2)}to: ${max}`,
     `${i(2)}stepSize: ${step}`,
+    // Focused wheel steps the value (same semantics as the SpinBox); moved() re-fires
+    // so the author's onInput/onChange wiring runs.
+    `${i(2)}WheelHandler {`,
+    `${i(3)}enabled: ${ctlId}.activeFocus`,
+    `${i(3)}onWheel: (ev) => { ${ctlId}.value = ev.angleDelta.y > 0 ? Math.min(${ctlId}.to, ${ctlId}.value + ${ctlId}.stepSize) : Math.max(${ctlId}.from, ${ctlId}.value - ${ctlId}.stepSize); ${ctlId}.moved() }`,
+    `${i(2)}}`,
   ];
 
   if (disabled) lines.push(`${i(2)}enabled: false`);
@@ -1540,10 +1566,13 @@ function emitMonthGridLines(
     `${i(3)}cssClass: ["day"]`,
     `${i(3)}cssState: ${dayCssState}`,
     `${i(2)}}`,
-    // contentItem: the day number label
+    // contentItem: the day number label. It carries the SAME state list as the background —
+    // background and contentItem are sibling slots, so `.day:outside .day-label` can never
+    // match (no ancestor relation); `.day-label:outside` does.
     `${i(2)}contentItem: Css.CssText {`,
     `${i(3)}cssPrimitive: ""`,
     `${i(3)}cssClass: ["day-label"]`,
+    `${i(3)}cssState: ${dayCssState}`,
     `${i(3)}text: model.day`,
     `${i(2)}}`,
     ...(fullClick ? [`${i(2)}onClicked: { ${fullClick} }`] : []),
@@ -1698,57 +1727,66 @@ function emitDateInput(
     `${i(1)}property var __calVal${n}: ${calValExpr}`,
     `${i(1)}property int __calMonth${n}: __calVal${n} instanceof Date ? __calVal${n}.getMonth() : new Date().getMonth()`,
     `${i(1)}property int __calYear${n}: __calVal${n} instanceof Date ? __calVal${n}.getFullYear() : new Date().getFullYear()`,
-    // ReadOnly text field — display only; typing dates is out of scope.
-    `${i(1)}T.TextField {`,
-    `${i(2)}id: ${fldId}`,
+    // Anchored plain-Item host: the wrapper is a Css container, and once the author's CSS
+    // gives it box rules (e.g. `.wg-date { padding: … }`) the layout engine runs a flex pass
+    // over ALL contentHolder children — plain ones included — stretching the chevron Text to
+    // the content box (measured: 1-glyph Text at width 560) and squeezing the TextField. An
+    // anchors.fill Item is skipped by the layout; everything inside keeps its anchors. Same
+    // insulation pattern as the inline <Calendar>.
+    `${i(1)}Item {`,
     `${i(2)}anchors.fill: parent`,
-    `${i(2)}background: null`,
-    `${i(2)}readOnly: true`,
-    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
+    // ReadOnly text field — display only; typing dates is out of scope.
+    `${i(2)}T.TextField {`,
+    `${i(3)}id: ${fldId}`,
+    `${i(3)}anchors.fill: parent`,
+    `${i(3)}background: null`,
+    `${i(3)}readOnly: true`,
+    `${i(3)}activeFocusOnTab: solidTabstop.enabled`,
     // Keyboard affordance for the tab stop: Enter/Space toggles the calendar popup
     // (the field is readOnly, so neither key edits text).
-    `${i(2)}Keys.onReturnPressed: ${popId}.visible ? ${popId}.close() : ${popId}.open()`,
-    `${i(2)}Keys.onSpacePressed: ${popId}.visible ? ${popId}.close() : ${popId}.open()`,
-    ...widgetColorFont(i),
-    `${i(2)}leftPadding: 12`,
-    `${i(2)}rightPadding: 36`,
-    `${i(2)}verticalAlignment: TextInput.AlignVCenter`,
+    `${i(3)}Keys.onReturnPressed: ${popId}.visible ? ${popId}.close() : ${popId}.open()`,
+    `${i(3)}Keys.onSpacePressed: ${popId}.visible ? ${popId}.close() : ${popId}.open()`,
+    ...widgetColorFont(i, 1, wrapId),
+    `${i(3)}leftPadding: 12`,
+    `${i(3)}rightPadding: 36`,
+    `${i(3)}verticalAlignment: TextInput.AlignVCenter`,
   ];
 
-  if (disabled) lines.push(`${i(2)}enabled: false`);
-  lines.push(`${i(1)}}`);
+  if (disabled) lines.push(`${i(3)}enabled: false`);
+  lines.push(`${i(2)}}`);
 
   // Binding: keep the displayed text in sync with the signal value, formatted as ISO date.
   // restoreMode: RestoreNone — the binding survives popup open/close without reverting.
   lines.push(
-    `${i(1)}Binding {`,
-    `${i(2)}target: ${fldId}`,
-    `${i(2)}property: "text"`,
+    `${i(2)}Binding {`,
+    `${i(3)}target: ${fldId}`,
+    `${i(3)}property: "text"`,
     // Guard: Qt.formatDate throws on null/undefined (no Date object yet).
-    `${i(2)}value: ${wrapId}.__calVal${n} instanceof Date ? Qt.formatDate(${wrapId}.__calVal${n}, "yyyy-MM-dd") : ""`,
-    `${i(2)}restoreMode: Binding.RestoreNone`,
-    `${i(1)}}`,
+    `${i(3)}value: ${wrapId}.__calVal${n} instanceof Date ? Qt.formatDate(${wrapId}.__calVal${n}, "yyyy-MM-dd") : ""`,
+    `${i(3)}restoreMode: Binding.RestoreNone`,
+    `${i(2)}}`,
   );
 
-  // Calendar glyph anchored to the right edge of the wrapper.
+  // Calendar glyph — right-aligned like the <select> chevron (owner directive). Plain Text
+  // + CssItem so the `.chevron` rule styles it without joining any layout.
   lines.push(
-    `${i(1)}Css.CssText {`,
-    `${i(2)}cssPrimitive: ""`,
-    `${i(2)}cssClass: ["chevron"]`,
-    `${i(2)}text: "▾"`,
-    `${i(2)}anchors.right: parent.right`,
-    `${i(2)}anchors.rightMargin: 8`,
-    `${i(2)}anchors.verticalCenter: parent.verticalCenter`,
-    `${i(1)}}`,
+    `${i(2)}Text {`,
+    `${i(3)}text: "▾"`,
+    `${i(3)}anchors.right: parent.right`,
+    `${i(3)}anchors.rightMargin: 8`,
+    `${i(3)}anchors.verticalCenter: parent.verticalCenter`,
+    `${i(3)}Css.CssItem { cssPrimitive: "text"; cssClass: ["chevron"] }`,
+    `${i(2)}}`,
   );
 
   // MouseArea over the whole field: click toggles the popup open/closed.
   lines.push(
-    `${i(1)}MouseArea {`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}onClicked: { if (${popId}.visible) ${popId}.close(); else ${popId}.open() }`,
-    `${i(1)}}`,
+    `${i(2)}MouseArea {`,
+    `${i(3)}anchors.fill: parent`,
+    `${i(3)}onClicked: { if (${popId}.visible) ${popId}.close(); else ${popId}.open() }`,
+    `${i(2)}}`,
   );
+  lines.push(`${i(1)}}`);
 
   // Popup: T.Popup renders on the window overlay; padding ≥ 1 prevents CssFill border clip (G3).
   // The contentItem is a plain Item holding the shared month-grid structure (same as Calendar).

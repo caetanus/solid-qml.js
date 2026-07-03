@@ -280,6 +280,10 @@ Css.CssRect {
                         background: null
                         contentItem: null
                         activeFocusOnTab: solidTabstop.enabled
+                        Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = __input5.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = __input5.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = __input5.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = __input5.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
@@ -325,6 +329,10 @@ Css.CssRect {
                         background: null
                         contentItem: null
                         activeFocusOnTab: solidTabstop.enabled
+                        Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = __input6.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = __input6.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = __input6.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = __input6.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
@@ -370,6 +378,10 @@ Css.CssRect {
                         background: null
                         contentItem: null
                         activeFocusOnTab: solidTabstop.enabled
+                        Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = __input7.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = __input7.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = __input7.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = __input7.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["track"]
@@ -419,6 +431,10 @@ Css.CssRect {
                         background: null
                         contentItem: null
                         activeFocusOnTab: solidTabstop.enabled
+                        Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = __input8.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = __input8.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = __input8.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = __input8.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
@@ -458,6 +474,10 @@ Css.CssRect {
                         background: null
                         contentItem: null
                         activeFocusOnTab: solidTabstop.enabled
+                        Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = __input9.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = __input9.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = __input9.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+                        Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = __input9.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["track"]
@@ -513,6 +533,11 @@ Css.CssRect {
                         contentItem: null
                         activeFocusOnTab: solidTabstop.enabled
                         T.ButtonGroup.group: __group_plan
+                        function __step(d) { var bs = __group_plan.buttons; var j = (bs.indexOf(__input10) + d + bs.length) % bs.length; var b = bs[j]; b.forceActiveFocus(Qt.TabFocusReason); b.checked = true; b.toggled() }
+                        Keys.onDownPressed: __step(1)
+                        Keys.onRightPressed: __step(1)
+                        Keys.onUpPressed: __step(-1)
+                        Keys.onLeftPressed: __step(-1)
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
@@ -562,6 +587,11 @@ Css.CssRect {
                         contentItem: null
                         activeFocusOnTab: solidTabstop.enabled
                         T.ButtonGroup.group: __group_plan
+                        function __step(d) { var bs = __group_plan.buttons; var j = (bs.indexOf(__input11) + d + bs.length) % bs.length; var b = bs[j]; b.forceActiveFocus(Qt.TabFocusReason); b.checked = true; b.toggled() }
+                        Keys.onDownPressed: __step(1)
+                        Keys.onRightPressed: __step(1)
+                        Keys.onUpPressed: __step(-1)
+                        Keys.onLeftPressed: __step(-1)
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
@@ -611,6 +641,11 @@ Css.CssRect {
                         contentItem: null
                         activeFocusOnTab: solidTabstop.enabled
                         T.ButtonGroup.group: __group_plan
+                        function __step(d) { var bs = __group_plan.buttons; var j = (bs.indexOf(__input12) + d + bs.length) % bs.length; var b = bs[j]; b.forceActiveFocus(Qt.TabFocusReason); b.checked = true; b.toggled() }
+                        Keys.onDownPressed: __step(1)
+                        Keys.onRightPressed: __step(1)
+                        Keys.onUpPressed: __step(-1)
+                        Keys.onLeftPressed: __step(-1)
                         indicator: Css.CssFill {
                             cssPrimitive: "span"
                             cssClass: ["indicator"]
@@ -788,6 +823,10 @@ Css.CssRect {
                         from: 0
                         to: 100
                         stepSize: 1
+                        WheelHandler {
+                            enabled: __input14.activeFocus
+                            onWheel: (ev) => { __input14.value = ev.angleDelta.y > 0 ? Math.min(__input14.to, __input14.value + __input14.stepSize) : Math.max(__input14.from, __input14.value - __input14.stepSize); __input14.moved() }
+                        }
                         onMoved: { volume = __input14.value }
                     }
                     Binding {
@@ -899,38 +938,40 @@ Css.CssRect {
                     property var __calVal16: inputDate
                     property int __calMonth16: __calVal16 instanceof Date ? __calVal16.getMonth() : new Date().getMonth()
                     property int __calYear16: __calVal16 instanceof Date ? __calVal16.getFullYear() : new Date().getFullYear()
-                    T.TextField {
-                        id: __input16
+                    Item {
                         anchors.fill: parent
-                        background: null
-                        readOnly: true
-                        activeFocusOnTab: solidTabstop.enabled
-                        Keys.onReturnPressed: __input16P.visible ? __input16P.close() : __input16P.open()
-                        Keys.onSpacePressed: __input16P.visible ? __input16P.close() : __input16P.open()
-                        color: cssTheme.parseColor(parent.inheritedColor || "#2b2b2b")
-                        font.family: cssTheme.resolveFontFamily(parent.inheritedFontFamily || "Sans Serif")
-                        font.pixelSize: cssTheme.parseFontSize(parent.inheritedFontSize || "13px", 13)
-                        leftPadding: 12
-                        rightPadding: 36
-                        verticalAlignment: TextInput.AlignVCenter
-                    }
-                    Binding {
-                        target: __input16
-                        property: "text"
-                        value: __input16W.__calVal16 instanceof Date ? Qt.formatDate(__input16W.__calVal16, "yyyy-MM-dd") : ""
-                        restoreMode: Binding.RestoreNone
-                    }
-                    Css.CssText {
-                        cssPrimitive: ""
-                        cssClass: ["chevron"]
-                        text: "▾"
-                        anchors.right: parent.right
-                        anchors.rightMargin: 8
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: { if (__input16P.visible) __input16P.close(); else __input16P.open() }
+                        T.TextField {
+                            id: __input16
+                            anchors.fill: parent
+                            background: null
+                            readOnly: true
+                            activeFocusOnTab: solidTabstop.enabled
+                            Keys.onReturnPressed: __input16P.visible ? __input16P.close() : __input16P.open()
+                            Keys.onSpacePressed: __input16P.visible ? __input16P.close() : __input16P.open()
+                            color: cssTheme.parseColor(__input16W.inheritedColor || "#2b2b2b")
+                            font.family: cssTheme.resolveFontFamily(__input16W.inheritedFontFamily || "Sans Serif")
+                            font.pixelSize: cssTheme.parseFontSize(__input16W.inheritedFontSize || "13px", 13)
+                            leftPadding: 12
+                            rightPadding: 36
+                            verticalAlignment: TextInput.AlignVCenter
+                        }
+                        Binding {
+                            target: __input16
+                            property: "text"
+                            value: __input16W.__calVal16 instanceof Date ? Qt.formatDate(__input16W.__calVal16, "yyyy-MM-dd") : ""
+                            restoreMode: Binding.RestoreNone
+                        }
+                        Text {
+                            text: "▾"
+                            anchors.right: parent.right
+                            anchors.rightMargin: 8
+                            anchors.verticalCenter: parent.verticalCenter
+                            Css.CssItem { cssPrimitive: "text"; cssClass: ["chevron"] }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: { if (__input16P.visible) __input16P.close(); else __input16P.open() }
+                        }
                     }
                     T.Popup {
                         id: __input16P
@@ -1046,6 +1087,7 @@ Css.CssRect {
                                     contentItem: Css.CssText {
                                         cssPrimitive: ""
                                         cssClass: ["day-label"]
+                                        cssState: (model.today ? ["today"] : []).concat((__input16W.__calVal16 instanceof Date && model.year === __input16W.__calVal16.getFullYear() && model.month === __input16W.__calVal16.getMonth() && model.day === __input16W.__calVal16.getDate()) ? ["selected"] : []).concat(model.month !== __mg16.month ? ["outside"] : []).concat(__mgDel16.hovered ? ["hover"] : [])
                                         text: model.day
                                     }
                                     onClicked: { inputDate = new Date(model.year, model.month, model.day); __input16P.close() }
@@ -1174,6 +1216,7 @@ Css.CssRect {
                             contentItem: Css.CssText {
                                 cssPrimitive: ""
                                 cssClass: ["day-label"]
+                                cssState: (model.today ? ["today"] : []).concat((__cal17.__calVal17 instanceof Date && model.year === __cal17.__calVal17.getFullYear() && model.month === __cal17.__calVal17.getMonth() && model.day === __cal17.__calVal17.getDate()) ? ["selected"] : []).concat(model.month !== __mg17.month ? ["outside"] : []).concat(__mgDel17.hovered ? ["hover"] : [])
                                 text: model.day
                             }
                             onClicked: { calDate = new Date(model.year, model.month, model.day) }

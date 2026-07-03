@@ -44,3 +44,19 @@ h6 { font-size: 0.67em; font-weight: bold; }
 [data-qml-type="CssText"].inline { display: inline; }
 
 cite { font-style: italic; }
+
+/* The selected-value label inside a <select> must elide when the control is narrow — the
+ * browser's native select does this in its UA chrome; the native target maps text-overflow
+ * to Text.elide in CssText. An authored rule still wins. */
+select .value {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Calendar cells outside the displayed month read muted by default — native date pickers
+ * (and the browser's) all do this. The state lives on the label itself (background and
+ * label are sibling slots of the cell, not ancestor/descendant). An authored rule wins. */
+.day-label:outside {
+  color: #b6bfc9;
+}
