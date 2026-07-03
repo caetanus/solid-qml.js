@@ -80,6 +80,9 @@ select .value {
   font-size: 13px;
   font-weight: 600;
   height: 28px;
+  /* Centered between the nav buttons — the emitter's inline style is clobbered when the
+   * resolved rule map is pushed into the style sink, so the UA rule must carry it. */
+  text-align: center;
 }
 
 .dow {
