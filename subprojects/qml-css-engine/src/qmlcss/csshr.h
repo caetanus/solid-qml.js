@@ -106,4 +106,5 @@ private:
     QPointer<CssTheme> m_theme;
     QPointer<CssLayoutEngine> m_layout;
     QPointer<QQuickItem> m_shape; // the REAL QtQuick Shape (ShapePath + PathRectangle), via the type-system
+    bool m_displayHidden = false; // we hid via display:none (so only we restore visible)
 };

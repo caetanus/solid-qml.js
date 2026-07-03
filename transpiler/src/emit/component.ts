@@ -47,9 +47,27 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   const hasCtxBindings = Object.keys(ctxBindings).length > 0;
   const inputCounter = { n: 0 };
   const hoverCounter = { n: 0 };
+  // Module-level `const NAME = <pure literal>` data tables (menus, slides, feeds…) referenced by
+  // this component. QML property names cannot start with an upper-case letter (and these usually
+  // do), so each one is surfaced as `__const_NAME` and the identifier is aliased in scope.
+  const moduleConstDecls = new Map<string, t.Expression>();
+  if (moduleFile) {
+    const consts = moduleLevelConsts(moduleFile);
+    if (consts.size > 0) {
+      const referenced = collectIdentifierNames(fn);
+      for (const [name, init] of consts) {
+        if (!referenced.has(name)) continue;
+        if (table.has(name) || renderLocalsMap.has(name) || mutableLocalsMap.has(name) || helpersMap.has(name)) continue;
+        moduleConstDecls.set(name, init);
+      }
+    }
+  }
+  const constAliases: Record<string, string> = {};
+  for (const name of moduleConstDecls.keys()) constAliases[name] = `__const_${safeName(name)}`;
   const scope: Scope = {
     table, mode: "binding", propsParam: props.param ?? undefined, propAliases, components, contexts, refs: collectedRefs,
     inputCounter, hoverCounter, resources: resources.map((r) => r.name), jsImports,
+    ...(moduleConstDecls.size > 0 ? { locals: { ...constAliases } } : {}),
     ...(mutableLocals ? { mutableLocals } : {}),
     ...(helpers ? { helpers } : {}),
     ...(hasCtxBindings ? { ctxBindings, ctxValueShape: ctx?.ctxValueShape } : {}),
@@ -109,6 +127,9 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   for (const [name, init] of renderLocalsMap) {
     decls.push(`${INDENT}readonly property var ${safeName(name)}: ${emitExpr(init, initScope)}`);
   }
+  // Module-const data tables (collected above; aliased in scope as __const_NAME).
+  for (const [name, init] of moduleConstDecls)
+    decls.push(`${INDENT}readonly property var ${constAliases[name]}: ${emitExpr(init, initScope)}`);
   // Mutable locals (`let x = <literal>` mutated in handlers): emit as `property var x: <init>` so
   // handler closures share a persistent slot on the instance rather than a local var in onCompleted.
   for (const [name, init] of mutableLocalsMap) {
@@ -144,6 +165,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   if (helpersMap.size > 0) {
     const helperScope: Scope = {
       table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, jsImports,
+      ...(moduleConstDecls.size > 0 ? { locals: { ...constAliases } } : {}),
       ...(mutableLocals ? { mutableLocals } : {}),
       ...(helpers ? { helpers } : {}),
     };
@@ -179,7 +201,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
       )
     );
   });
-  const setupScope: Scope = { table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, locals: refLocals, jsImports, ...(mutableLocals ? { mutableLocals } : {}) };
+  const setupScope: Scope = { table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, locals: { ...constAliases, ...refLocals }, jsImports, ...(mutableLocals ? { mutableLocals } : {}) };
   const onCompletedBody: string[] = [
     ...filteredSetup.map((s) => emitStmt(s, setupScope)),
     ...onMount.map((b) => t.isBlockStatement(b)
@@ -335,4 +357,49 @@ function validateChildrenSlot(render: t.CallExpression, propsParam: string | nul
     }
   };
   walk(render);
+}
+
+/** Module-level `const NAME = <pure literal>` declarations — static data tables usable as
+ *  Repeater models / binding sources. Anything with calls, references or spreads is skipped. */
+function moduleLevelConsts(file: t.File): Map<string, t.Expression> {
+  const out = new Map<string, t.Expression>();
+  for (const st of file.program.body) {
+    if (!t.isVariableDeclaration(st) || st.kind !== "const") continue;
+    for (const d of st.declarations) {
+      if (t.isIdentifier(d.id) && d.init && isPureLiteral(d.init)) out.set(d.id.name, d.init);
+    }
+  }
+  return out;
+}
+
+function isPureLiteral(n: t.Node): boolean {
+  if (t.isStringLiteral(n) || t.isNumericLiteral(n) || t.isBooleanLiteral(n) || t.isNullLiteral(n)) return true;
+  if (t.isUnaryExpression(n) && n.operator === "-") return isPureLiteral(n.argument);
+  if (t.isTemplateLiteral(n)) return n.expressions.length === 0;
+  if (t.isArrayExpression(n))
+    return n.elements.every((e) => e != null && !t.isSpreadElement(e) && isPureLiteral(e));
+  if (t.isObjectExpression(n))
+    return n.properties.every((p) => t.isObjectProperty(p) && !p.computed
+      && (t.isIdentifier(p.key) || t.isStringLiteral(p.key))
+      && t.isExpression(p.value) && isPureLiteral(p.value));
+  return false;
+}
+
+/** Every Identifier name appearing in the component function — an over-approximation of what it
+ *  references (shadowing ignored; module data tables are distinctive names in practice). */
+function collectIdentifierNames(fn: t.Function): Set<string> {
+  const names = new Set<string>();
+  const walk = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) { for (const e of node) walk(e); return; }
+    const n = node as { type?: string; name?: string };
+    if (n.type === "Identifier" && n.name) names.add(n.name);
+    for (const key of Object.keys(n)) {
+      if (key === "loc" || key === "leadingComments" || key === "trailingComments" || key === "innerComments") continue;
+      walk((n as Record<string, unknown>)[key]);
+    }
+  };
+  walk(fn.params);
+  walk(fn.body);
+  return names;
 }

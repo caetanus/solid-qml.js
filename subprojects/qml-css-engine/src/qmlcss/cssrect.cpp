@@ -465,8 +465,16 @@ void CssRect::setStyle(const QVariantMap &v)
     m_style = v;
     emit styleChanged();
 
+    // Only a DECLARED display drives visible: an unconditional setVisible would sever author
+    // `visible:` bindings (<Show> guards on delegates). Restore true only if WE hid it.
     const QString display = m_style.value(QStringLiteral("display")).toString();
-    setVisible(display != QLatin1String("none"));
+    if (display == QLatin1String("none")) {
+        setVisible(false);
+        m_displayHidden = true;
+    } else if (m_displayHidden) {
+        setVisible(true);
+        m_displayHidden = false;
+    }
 
     // visibility:hidden -> painted invisible (opacity 0) and inert (enabled false), but STILL in flow.
     const bool hidden = m_style.value(QStringLiteral("visibility")).toString() == QLatin1String("hidden");

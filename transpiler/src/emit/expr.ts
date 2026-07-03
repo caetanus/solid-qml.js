@@ -60,6 +60,20 @@ export interface Scope {
 
 /** A reactive cell / prop / mutable-local name as a QML reference: always BARE — it's a property on
  *  the component's QML root object, resolved by name through QML's object scope. One place owns this. */
+// JS operator precedence (subset the transpiler emits) — larger binds tighter.
+function binPrec(op: string): number {
+  switch (op) {
+    case "??": case "||": return 3;
+    case "&&": return 4;
+    case "==": case "!=": case "===": case "!==": return 8;
+    case "<": case ">": case "<=": case ">=": case "in": case "instanceof": return 9;
+    case "+": case "-": return 11;
+    case "*": case "/": case "%": return 12;
+    case "**": return 13;
+    default: return 20;
+  }
+}
+
 function cellRef(name: string, _scope: Scope): string {
   // A component's reactive cells / locals are properties on its QML root object; any closure in the
   // component's object tree (onCompleted, nested callbacks, Connections handlers) resolves them by
@@ -104,8 +118,24 @@ export function emitExpr(node: t.Node, scope: Scope): string {
   }
 
   if (t.isBinaryExpression(node) || t.isLogicalExpression(node)) {
-    const left = t.isPrivateName(node.left) ? node.left.id.name : emitExpr(node.left, scope);
-    return `${left} ${node.operator} ${emitExpr(node.right, scope)}`;
+    // Re-parenthesize by precedence: the AST has no parens, so `(slide + 2) % 3` would
+    // otherwise flatten to `slide + 2 % 3` (a different expression).
+    const prec = binPrec(node.operator);
+    const guard = (child: t.Node, emitted: string, isRight: boolean): string => {
+      if (t.isConditionalExpression(child) || t.isAssignmentExpression(child) || t.isSequenceExpression(child))
+        return `(${emitted})`;
+      if (t.isBinaryExpression(child) || t.isLogicalExpression(child)) {
+        const p = binPrec(child.operator);
+        if (p < prec) return `(${emitted})`;
+        // Equal precedence on the RIGHT changes grouping (`a - (b - c)`, `"x" + (1 + 2)`)
+        // except for the truly associative logical operators.
+        if (p === prec && isRight && node.operator !== "&&" && node.operator !== "||")
+          return `(${emitted})`;
+      }
+      return emitted;
+    };
+    const left = t.isPrivateName(node.left) ? node.left.id.name : guard(node.left, emitExpr(node.left, scope), false);
+    return `${left} ${node.operator} ${guard(node.right, emitExpr(node.right, scope), true)}`;
   }
 
   if (t.isConditionalExpression(node)) {

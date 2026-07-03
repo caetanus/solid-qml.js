@@ -239,6 +239,22 @@ Css.CssRect {
                 onClicked: view = "cssgaps"
             }
         }
+        Css.CssFill {
+            cssClass: [].concat(view === "dashboard" ? ["active"] : [])
+            cssState: __hover14.containsMouse ? ["hover"] : []
+            cssPrimitive: "button"
+            Css.CssText {
+                cssPrimitive: "text"
+                text: "Dashboard"
+            }
+            MouseArea {
+                id: __hover14
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: view = "dashboard"
+            }
+        }
     }
     Repeater {
         model: (view === "hello") ? 1 : 0
@@ -308,6 +324,11 @@ Css.CssRect {
     Repeater {
         model: ((view === "cssgaps") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch") || (view === "todomvc") || (view === "nodeimports"))) ? 1 : 0
         CssGaps {
+        }
+    }
+    Repeater {
+        model: ((view === "dashboard") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch") || (view === "todomvc") || (view === "nodeimports") || (view === "cssgaps"))) ? 1 : 0
+        Dashboard {
         }
     }
 }

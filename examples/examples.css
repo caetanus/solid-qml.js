@@ -14,6 +14,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
+  height: 100vh;
 }
 
 /* Full-window hero gradient, painted behind everything (declared first → lowest paint order).

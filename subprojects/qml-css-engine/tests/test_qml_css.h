@@ -82,4 +82,11 @@ private slots:
     // CssText must paint `background-color` (+ border-radius) behind the composed Text,
     // like the web does for any element (cssgaps `.wrap/.nowrap/.ellipsis` tiles).
     void cssTextCppPaintsBackground();
+
+    // Applying a style with NO `display` must not touch the item's `visible` — an imperative
+    // setVisible(true) destroys author bindings like `visible: cond` (the <Show> guard).
+    void styleApplyPreservesVisibleBinding();
+
+    // text-shadow keeps the composed Text visible (a hidden MultiEffect source renders empty).
+    void cssTextShadowKeepsLabelVisible();
 };

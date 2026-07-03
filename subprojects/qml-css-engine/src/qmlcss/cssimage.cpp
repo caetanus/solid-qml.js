@@ -138,8 +138,15 @@ void CssImage::setStyle(const QVariantMap &v)
     m_style = v;
     emit styleChanged();
 
-    // QML: visible: !(style && style["display"] === "none")
-    setVisible(m_style.value(QStringLiteral("display")).toString() != QLatin1String("none"));
+    // Only a DECLARED display drives visible (an unconditional write severs author bindings).
+    const QString display = m_style.value(QStringLiteral("display")).toString();
+    if (display == QLatin1String("none")) {
+        setVisible(false);
+        m_displayHidden = true;
+    } else if (m_displayHidden) {
+        setVisible(true);
+        m_displayHidden = false;
+    }
 
     // QML: _fillMode / _radius / _rounded bindings all read `style` -> re-push onto the children.
     recompute();

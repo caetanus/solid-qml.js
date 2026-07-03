@@ -83,13 +83,35 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
     refLine.push(`${pad}${INDENT}id: _ref_${safeName(props.ref)}`);
     if (scope.refs) scope.refs.push(props.ref);
   }
+  // onClick on a plain element (the web allows it anywhere): a filling MouseArea like the
+  // button's, hover-tracked the same way — an interactive element is exactly where `:hover`
+  // rules land (menu items, carousel dots, list rows).
+  const clickLines: string[] = [];
+  const stateLine: string[] = [];
+  const clickHandler = emitHandler(props.onClick, scope);
+  if (clickHandler) {
+    const counter = scope.hoverCounter ?? { n: 0 };
+    const maId = `__hover${counter.n++}`;
+    stateLine.push(`${pad}${INDENT}cssState: ${maId}.containsMouse ? ["hover"] : []`);
+    clickLines.push(
+      `${pad}${INDENT}MouseArea {`,
+      `${pad}${INDENT}${INDENT}id: ${maId}`,
+      `${pad}${INDENT}${INDENT}anchors.fill: parent`,
+      `${pad}${INDENT}${INDENT}hoverEnabled: true`,
+      `${pad}${INDENT}${INDENT}cursorShape: Qt.PointingHandCursor`,
+      `${pad}${INDENT}${INDENT}onClicked: ${clickHandler}`,
+      `${pad}${INDENT}}`,
+    );
+  }
   return [
     `${pad}Css.CssRect {`,
     ...classLine,
+    ...stateLine,
     ...refLine,
     ...guardLine(guard, level),
     `${pad}${INDENT}cssPrimitive: ${JSON.stringify(tag)}`,
     ...emitChildren(children as t.Node[], scope, level + 1),
+    ...clickLines,
     `${pad}}`,
   ];
 }

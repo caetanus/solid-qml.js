@@ -211,6 +211,7 @@ private:
     //   onAnimTickChanged: if (cssLayout) cssLayout.applyAnim(root, _animStops, animTick)
     qreal m_animTick = 0.0;
     bool m_animActive = false;           // _animStops.length >= 2
+    bool m_displayHidden = false;        // we hid via display:none (so only we restore visible)
     QVariantList m_animStops;            // buildAnimStops output for current @keyframes
     QPointer<QObject> m_anim;            // REAL QtQuick NumberAnimation on animTick (0→1)
 

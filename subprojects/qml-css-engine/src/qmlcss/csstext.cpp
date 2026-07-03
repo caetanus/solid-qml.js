@@ -287,8 +287,14 @@ void CssText::applyToText()
     t->setProperty("horizontalAlignment", static_cast<int>(halign));
 
     // display:none hides the whole item (drops out of layout); visibility:hidden -> opacity 0.
-    const bool displayVisible = styleStr("display") != QLatin1String("none");
-    setVisible(displayVisible);
+    // Only a DECLARED display drives visible (an unconditional write severs author bindings).
+    if (styleStr("display") == QLatin1String("none")) {
+        setVisible(false);
+        m_displayHidden = true;
+    } else if (m_displayHidden) {
+        setVisible(true);
+        m_displayHidden = false;
+    }
     if (styleStr("visibility") == QLatin1String("hidden"))
         setOpacity(0);
     else
@@ -320,10 +326,12 @@ void CssText::applyShadow()
     m_shadow->setProperty("shadowBlur",
                           hasShadow ? std::min<qreal>(1.0, shadow.value(QStringLiteral("blur")).toReal() / 32.0) : 0.0);
 
-    // The MultiEffect draws the Text (plus shadow) when active; otherwise the Text draws itself.
+    // The MultiEffect draws the Text (plus shadow) when active — ABOVE the still-visible label
+    // (same glyphs, so no double vision). Hiding the label empties the effect's source texture
+    // on the RHI path, blanking the text entirely.
     m_shadow->setVisible(hasShadow);
     if (m_label)
-        m_label->setVisible(!hasShadow);
+        m_label->setVisible(true);
 }
 
 void CssText::layoutChild()

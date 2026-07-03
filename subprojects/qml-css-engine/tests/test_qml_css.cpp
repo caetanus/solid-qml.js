@@ -1796,6 +1796,31 @@ void QmlCssTests::ancestorScopedRulesStyleTheTree()
              QStringLiteral("#ffffff"));
 }
 
+// text-shadow must not blank the label: MultiEffect sources the composed Text, and a
+// visible:false source yields an EMPTY texture on the RHI path (the caption vanished).
+// The label stays visible; the effect paints the same glyphs + shadow above it.
+void QmlCssTests::cssTextShadowKeepsLabelVisible()
+{
+    CssTheme theme;
+    theme.loadFromString(QStringLiteral(
+        ".cap { text-shadow: 0 2px 8px rgba(0, 0, 0, 0.65); color: #ffffff; }"));
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &theme);
+    QQmlComponent component(&engine);
+    component.setData(R"(
+        import QtQuick
+        import qmlcss
+        CssText { cssClass: ["cap"]; cssPrimitive: "text"; text: "hi" }
+    )", QUrl());
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY2(root, qPrintable(component.errorString()));
+
+    QQuickItem *label = composedText(root.data());
+    QVERIFY(label);
+    QVERIFY2(label->isVisible(), "text-shadow hid the composed Text (empty-texture source)");
+}
+
 // The web paints `background-color` behind ANY element, text included — CssText composes a
 // Shape underlay (never Rectangle) sized to its box. No background declared → underlay hidden.
 void QmlCssTests::cssTextCppPaintsBackground()
@@ -1836,6 +1861,44 @@ void QmlCssTests::cssTextCppPaintsBackground()
     // No background declared → the underlay stays hidden (or is never created).
     QObject *bareBg = bare->findChild<QObject *>(QStringLiteral("cssTextBg"));
     QVERIFY(!bareBg || !bareBg->property("visible").toBool());
+}
+
+// The transpiler's <Show> gate is a `visible:` BINDING on the delegate root. CssRect used to
+// run setVisible(display != "none") on EVERY style apply — an imperative write that severs the
+// binding, so every <Show> inside a styled tree leaked visible. Only a declared `display` may
+// drive visible.
+void QmlCssTests::styleApplyPreservesVisibleBinding()
+{
+    CssTheme theme;
+    theme.loadFromString(QStringLiteral(".badge { background-color: #41cd52; }"));
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &theme);
+
+    QQmlComponent component(&engine);
+    component.setData(R"(
+        import QtQuick
+        import qmlcss
+        Item {
+            width: 100; height: 40
+            property bool showIt: false
+            CssRect { objectName: "badge"; cssClass: ["badge"]; cssPrimitive: "div"; visible: parent.showIt }
+        }
+    )", QUrl());
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY2(root, qPrintable(component.errorString()));
+
+    auto *badge = root->findChild<QQuickItem *>(QStringLiteral("badge"));
+    QVERIFY(badge);
+    // The style (no `display`) was applied on completion; the binding must have survived.
+    QCOMPARE(badge->isVisible(), false);
+    root->setProperty("showIt", true);
+    QCOMPARE(badge->isVisible(), true);
+
+    // And `display: none` still hides (a declared display drives visible).
+    theme.loadFromString(QStringLiteral(".badge { display: none; }"));
+    theme.loadCss(badge);
+    QCOMPARE(badge->isVisible(), false);
 }
 
 QTEST_MAIN(QmlCssTests)

@@ -128,4 +128,5 @@ private:
     QPointer<QQuickItem> m_image;  // REAL QtQuick Image
     QPointer<QQuickItem> m_effect; // REAL QtQuick.Effects MultiEffect (rounded-corner mask)
     QPointer<QQuickItem> m_mask;   // REAL QtQuick Shape (rounded-rect) used as the MultiEffect maskSource
+    bool m_displayHidden = false; // we hid via display:none (so only we restore visible)
 };

@@ -29,3 +29,4 @@ subprojects/qml-css-engine/.cache/
 
 # internal planning/specs (not for the public repo)
 docs/superpowers/
+.grabtmp/

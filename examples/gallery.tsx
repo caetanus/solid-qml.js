@@ -17,6 +17,7 @@ import { Fetch } from "./fetch";
 import { TodoMVC } from "./todomvc";
 import { NodeImports } from "./nodeimports";
 import { CssGaps } from "./cssgaps";
+import { Dashboard } from "./dashboard";
 import "./examples.css";
 
 export function Gallery() {
@@ -44,6 +45,7 @@ export function Gallery() {
         <button classList={{ active: view() === "todomvc" }} onClick={() => setView("todomvc")}>TodoMVC</button>
         <button classList={{ active: view() === "nodeimports" }} onClick={() => setView("nodeimports")}>Node imports</button>
         <button classList={{ active: view() === "cssgaps" }} onClick={() => setView("cssgaps")}>CSS gaps</button>
+        <button classList={{ active: view() === "dashboard" }} onClick={() => setView("dashboard")}>Dashboard</button>
       </div>
       <Switch>
         <Match when={view() === "hello"}><Hello /></Match>
@@ -60,6 +62,7 @@ export function Gallery() {
         <Match when={view() === "todomvc"}><TodoMVC /></Match>
         <Match when={view() === "nodeimports"}><NodeImports /></Match>
         <Match when={view() === "cssgaps"}><CssGaps /></Match>
+        <Match when={view() === "dashboard"}><Dashboard /></Match>
       </Switch>
     </div>
   );
