@@ -78,6 +78,20 @@ CssLayoutEngine::CssLayoutEngine(CssTheme *theme, QObject *parent)
     // The theme brackets its bulk apply passes with our batch gate.
     if (m_theme)
         m_theme->setLayoutEngine(this);
+    // vw/vh lengths resolve at LAYOUT time: a viewport change must re-run layout for every
+    // known root even when no @media group flips. Without this, a tiling WM's single
+    // height-only resize leaves vh-derived heights stale (a manual drag "works" only
+    // because its event stream makes the next relayout read a nearly-final viewport).
+    if (m_theme)
+        connect(m_theme, &CssTheme::viewportChanged, this, &CssLayoutEngine::relayoutKnownRoots);
+}
+
+void CssLayoutEngine::relayoutKnownRoots()
+{
+    for (auto it = m_known.cbegin(); it != m_known.cend(); ++it) {
+        if (it.value())
+            requestLayout(it.key(), it.value());
+    }
 }
 
 void CssLayoutEngine::endBatch()
@@ -92,6 +106,13 @@ void CssLayoutEngine::requestLayout(QQuickItem *root, QQuickItem *content)
 {
     if (!root || !content)
         return;
+    // Registry of every root ever laid out (for viewport-driven relayouts); pruned on death.
+    if (!m_known.contains(root)) {
+        m_known.insert(root, content);
+        connect(root, &QObject::destroyed, this, [this](QObject *obj) {
+            m_known.remove(static_cast<QQuickItem *>(obj));
+        });
+    }
     m_pending.insert(root, content);
     // Hibernating (batch open): only record — endBatch runs the single flush.
     if (m_batchDepth > 0)

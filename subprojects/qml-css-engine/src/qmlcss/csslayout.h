@@ -52,6 +52,11 @@ public:
     Q_INVOKABLE QVariantList buildAnimStops(const QVariantList &frames) const;
     Q_INVOKABLE void applyAnim(QQuickItem *root, const QVariantList &stops, qreal progress) const;
 
+public slots:
+    // Re-queue layout for every registered root — wired to CssTheme::viewportChanged so
+    // vh/vw-derived lengths follow the window on single-event (tiling) resizes.
+    void relayoutKnownRoots();
+
 private slots:
     void flush();
 
@@ -95,6 +100,7 @@ private:
 
     CssTheme *m_theme;
     QHash<QQuickItem *, QPointer<QQuickItem>> m_pending; // root -> content
+    QHash<QQuickItem *, QPointer<QQuickItem>> m_known;   // every root ever laid out (viewport relayout)
     QTimer *m_flushTimer;
     int m_batchDepth = 0;
     bool m_flushing = false;

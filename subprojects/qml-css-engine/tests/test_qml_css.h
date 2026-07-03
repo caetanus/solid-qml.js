@@ -75,6 +75,10 @@ private slots:
     // (no requestRelayout()) is skipped silently, not invoked-and-warned.
     void layoutNotifyParentSkipsNonBoxAncestors();
 
+    // A viewport height change alone must re-run layout: vh lengths resolve at layout
+    // time, and a tiling WM resizes in ONE event (no second event to converge on).
+    void viewportChangeRelayoutsVhHeights();
+
     // Ancestor-scoped rules end-to-end: `.nav button` styles only buttons under `.nav`,
     // and a class/state change on an ANCESTOR restyles the scoped descendants too.
     void ancestorScopedRulesStyleTheTree();

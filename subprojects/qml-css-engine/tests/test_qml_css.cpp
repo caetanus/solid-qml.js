@@ -1802,6 +1802,47 @@ void QmlCssTests::ancestorScopedRulesStyleTheTree()
              QStringLiteral("#ffffff"));
 }
 
+// vh heights must follow setViewport without any item geometry change: the layout engine
+// re-queues every known root on viewportChanged (single-event tiling resizes went stale).
+void QmlCssTests::viewportChangeRelayoutsVhHeights()
+{
+    CssTheme theme;
+    theme.loadFromString(QStringLiteral(".page { height: calc(100vh - 40px); }"));
+    theme.setViewport(800, 400);
+
+    QQmlEngine engine;
+    CssLayoutEngine layout(&theme);
+    engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &theme);
+    engine.rootContext()->setContextProperty(QStringLiteral("cssLayout"), &layout);
+
+    QQmlComponent component(&engine);
+    component.setData(R"(
+        import QtQuick
+        import qmlcss
+        CssRect {
+            cssPrimitive: ""
+            width: 800; height: 1000
+            style: ({ "display": "flex", "flex-direction": "column" })
+            CssRect {
+                objectName: "page"
+                cssClass: ["page"]
+                cssPrimitive: "div"
+            }
+        }
+    )", QUrl());
+
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY2(root, qPrintable(component.errorString()));
+    QObject *page = root->findChild<QObject *>(QStringLiteral("page"));
+    QVERIFY(page);
+    QTRY_COMPARE(page->property("height").toReal(), 360.0); // 400 - 40
+
+    // Height-only viewport change (the tiling case): no item geometry changes, ONLY the
+    // viewport — the page must still follow.
+    theme.setViewport(800, 600);
+    QTRY_COMPARE(page->property("height").toReal(), 560.0); // 600 - 40
+}
+
 // Popup/Menu contents are reparented by Qt to the window Overlay, severing the visual
 // parent chain that descendant selectors are matched against. The declared
 // `property Item cssAncestor: owner` must re-anchor the walk at the logical owner so
