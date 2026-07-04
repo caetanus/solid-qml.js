@@ -86,8 +86,8 @@ Css.CssRect {
                     acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                     onWheel: (ev) => { __acc += ev.angleDelta.y !== 0 ? ev.angleDelta.y : ev.pixelDelta.y * 8; var s = 0; while (__acc >= 120) { __acc -= 120; s++ } while (__acc <= -120) { __acc += 120; s-- } if (s !== 0) { __input0.first.value = Math.max(__input0.from, Math.min(__input0.to, __input0.first.value + s * __input0.stepSize)); __input0.first.moved() } }
                 }
-                first.onMoved: { lo = __input0.first.value; hi = __input0.second.value; }
-                second.onMoved: { lo = __input0.first.value; hi = __input0.second.value; }
+                first.onMoved: { __self.lo = __input0.first.value; __self.hi = __input0.second.value; }
+                second.onMoved: { __self.lo = __input0.first.value; __self.hi = __input0.second.value; }
             }
             Binding {
                 target: __input0.first
@@ -145,7 +145,7 @@ Css.CssRect {
                     x: __input1.background.x + __input1.background.width / 2 - width / 2 + Math.sin(__input1.angle * Math.PI / 180) * (__input1.background.width / 2 - 12)
                     y: __input1.background.y + __input1.background.height / 2 - height / 2 - Math.cos(__input1.angle * Math.PI / 180) * (__input1.background.width / 2 - 12)
                 }
-                onMoved: { angle = __input1.value }
+                onMoved: { __self.angle = __input1.value }
             }
             Binding {
                 target: __input1
@@ -200,7 +200,7 @@ Css.CssRect {
                     preferredHighlightEnd: height / 2 + height / __input2.visibleItemCount / 2
                     clip: true
                 }
-                onCurrentIndexChanged: { size = __input2.model[__input2.currentIndex] }
+                onCurrentIndexChanged: { __self.size = __input2.model[__input2.currentIndex] }
             }
             Binding {
                 target: __input2
@@ -248,7 +248,7 @@ Css.CssRect {
                     cssPrimitive: "text"
                     text: "Hold to arm"
                 }
-                onActivated: { armed = true }
+                onActivated: { __self.armed = true }
             }
         }
         Css.CssText {
@@ -401,7 +401,7 @@ Css.CssRect {
                 hoverEnabled: true
                 background: null
                 contentItem: null
-                onClicked: { clicks = clicks + 1 }
+                onClicked: { __self.clicks = clicks + 1 }
             }
         }
         Css.CssFill {
@@ -443,7 +443,7 @@ Css.CssRect {
                 hoverEnabled: true
                 background: null
                 contentItem: null
-                onClicked: { clicks = 0 }
+                onClicked: { __self.clicks = 0 }
             }
         }
         Css.CssText {

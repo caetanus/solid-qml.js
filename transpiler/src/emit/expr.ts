@@ -16,6 +16,10 @@ export interface Scope {
   /** Emitted type names that are foreign hand-written `.qml` components (not Css roots): their
    *  instances are wrapped in a Css box so they participate in the CSS layout (escape hatch). */
   foreignQml?: Set<string>;
+  /** Root object id to qualify signal WRITES with (setter assignments only). Set when a handler
+   *  runs INSIDE a Template control whose own properties (value/angle/position/…) would otherwise
+   *  shadow a same-named component signal. Reads stay bare so QML's binding tracker still sees them. */
+  selfId?: string;
   /** Collector: ref variable names seen during emitQml (pushed by the container emitter when
    *  ref={x} is encountered). Read by emitComponentType after emitting the render tree to populate
    *  setupScope.locals so onMount bodies resolve the ref to its QML id. */
@@ -296,7 +300,10 @@ function emitStoreSetter(store: string, args: t.Node[], scope: Scope): string {
 
 /** setX(value) / setX(prev => expr) → `<signal> = <value>` (the setter mutates its bare property). */
 function emitSetter(signal: string, arg: t.Node | undefined, scope: Scope): string {
-  const target = cellRef(signal, scope);
+  // Qualify the write target with the component root id when set — a handler nested inside a
+  // Template control (e.g. T.Dial's onMoved) resolves a bare `angle` to the CONTROL's read-only
+  // `angle`, not the component's `angle` signal. Reads elsewhere stay bare (tracking).
+  const target = scope.selfId ? `${scope.selfId}.${safeName(signal)}` : cellRef(signal, scope);
   if (arg && (t.isArrowFunctionExpression(arg) || t.isFunctionExpression(arg))) {
     const param = arg.params[0];
     const inner: Scope = { ...scope, locals: { ...(scope.locals ?? {}) } };

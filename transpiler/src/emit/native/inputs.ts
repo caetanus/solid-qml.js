@@ -110,7 +110,7 @@ function translateArgsHandler(fn: Fn, argExprs: string[], scope: Scope): string 
   fn.params.forEach((p, idx) => {
     if (t.isIdentifier(p) && argExprs[idx]) locals[p.name] = argExprs[idx];
   });
-  return fnBody(fn, { ...scope, mode: "handler", locals });
+  return fnBody(fn, { ...scope, mode: "handler", locals, selfId: "__self" });
 }
 
 /** Zero/value-arg event handler: inline arrows (expr or block body) or a local helper name. */

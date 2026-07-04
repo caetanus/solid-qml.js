@@ -109,8 +109,8 @@ test("native-inputs: <RangeSlider onChange> fires from first.onMoved AND second.
       return <RangeSlider first={lo()} second={hi()} onChange={(a, b) => { setLo(a); setHi(b); }} />;
     }
   `);
-  assert.match(out, /first\.onMoved: \{ lo = __input0\.first\.value; hi = __input0\.second\.value; \}/);
-  assert.match(out, /second\.onMoved: \{ lo = __input0\.first\.value; hi = __input0\.second\.value; \}/);
+  assert.match(out, /first\.onMoved: \{ __self\.lo = __input0\.first\.value; __self\.hi = __input0\.second\.value; \}/);
+  assert.match(out, /second\.onMoved: \{ __self\.lo = __input0\.first\.value; __self\.hi = __input0\.second\.value; \}/);
 });
 
 test("native-inputs: <RangeSlider> focused wheel steps the FIRST handle (accumulator, Mouse|TouchPad)", async () => {
@@ -169,7 +169,7 @@ test("native-inputs: <Dial value> emits a Binding on value; onChange={(v)=>…} 
   assert.match(out, /property: "value"/);
   assert.match(out, /value: a/);
   assert.match(out, /restoreMode: Binding\.RestoreNone/);
-  assert.match(out, /onMoved: \{ a = __input0\.value \}/);
+  assert.match(out, /onMoved: \{ __self\.a = __input0\.value \}/);
 });
 
 // ---------------------------------------------------------------------------
@@ -222,7 +222,7 @@ test("native-inputs: <Tumbler onChange> fires from onCurrentIndexChanged with th
       return <Tumbler options={["S", "M"]} value={size()} onChange={(v) => setSize(v)} />;
     }
   `);
-  assert.match(out, /onCurrentIndexChanged: \{ size = __input0\.model\[__input0\.currentIndex\] \}/);
+  assert.match(out, /onCurrentIndexChanged: \{ __self\.size = __input0\.model\[__input0\.currentIndex\] \}/);
 });
 
 // ---------------------------------------------------------------------------
@@ -255,7 +255,7 @@ test("native-inputs: <DelayButton onActivated> maps to onActivated", async () =>
       return <DelayButton delay={500} onActivated={() => setArmed(true)}>Hold</DelayButton>;
     }
   `);
-  assert.match(out, /onActivated: \{ armed = true \}/);
+  assert.match(out, /onActivated: \{ __self\.armed = true \}/);
 });
 
 test("native-inputs: <DelayButton> carries the full button state list", async () => {
@@ -325,7 +325,7 @@ test("native-inputs: <RoundButton onClick> maps to onClicked", async () => {
       return <RoundButton onClick={() => setN(n() + 1)}>+</RoundButton>;
     }
   `);
-  assert.match(out, /onClicked: \{ n = n \+ 1 \}/);
+  assert.match(out, /onClicked: \{ __self\.n = n \+ 1 \}/);
 });
 
 test("native-inputs: <ToolButton> mirrors RoundButton with the 'tool' class", async () => {
