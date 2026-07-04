@@ -3,8 +3,6 @@ import QtQuick
 import qmlcss 1.0 as Css
 
 
-import Qt.labs.platform 1.1 as Platform
-
 import QtQuick.Templates 6.8 as T
 Css.CssRect {
     id: __self
@@ -451,20 +449,18 @@ Css.CssRect {
             text: "selected: " + (selNode)
         }
     }
-    Item {
-        width: 0
-        height: 0
-        Platform.SystemTrayIcon {
-            id: __tray15
-            visible: true
-            tooltip: "solid-qml"
-            onActivated: { lastAction = "tray activated" }
-            menu: Platform.Menu {
-                Platform.MenuItem {
-                    text: "Say hello"
-                    onTriggered: { lastAction = "tray: hello" }
-                }
-            }
+    Css.CssRect {
+        cssClass: ["nv-row"]
+        cssPrimitive: "div"
+        Css.CssText {
+            cssClass: ["nv-label"]
+            cssPrimitive: "text"
+            text: "Tray"
+        }
+        Css.CssText {
+            cssClass: ["nv-echo"]
+            cssPrimitive: "text"
+            text: "<Tray> — native SystemTrayIcon (not shown here; see tests)"
         }
     }
 }

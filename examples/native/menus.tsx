@@ -67,10 +67,15 @@ export function MenusAndViews() {
         <text class="nv-echo">selected: {selNode()}</text>
       </div>
 
-      {/* ── system tray icon (invisible chrome — just declared) ─────────────── */}
-      <Tray tooltip="solid-qml" onActivate={() => setLastAction("tray activated")}>
-        <MenuItem onClick={() => setLastAction("tray: hello")}>Say hello</MenuItem>
-      </Tray>
+      {/* <Tray> is real (Platform.SystemTrayIcon) and TESTED, but NOT instantiated here:
+          a SystemTrayIcon registers a StatusNotifierItem in the OS tray, and a gallery that
+          is launched/killed constantly during dev would leave ghost icons behind (SIGKILL
+          never deregisters the D-Bus item). It belongs in a real app with a clean shutdown,
+          not a showcase. See transpiler/test/native-menus.test.ts for its emission. */}
+      <div class="nv-row">
+        <text class="nv-label">Tray</text>
+        <text class="nv-echo">&lt;Tray&gt; — native SystemTrayIcon (not shown here; see tests)</text>
+      </div>
     </div>
   );
 }
