@@ -225,6 +225,7 @@ Css.CssRect {
                 activeFocusOnTab: solidTabstop.enabled
                 hoverEnabled: true
                 delay: 1200
+                transition: Transition { NumberAnimation { duration: __input3.delay * (__input3.pressed ? 1.0 - __input3.progress : 0.3 * __input3.progress) } }
                 horizontalPadding: 16
                 verticalPadding: 8
                 implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)

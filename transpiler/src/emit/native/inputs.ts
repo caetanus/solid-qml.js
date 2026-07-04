@@ -487,6 +487,10 @@ const emitDelayButton: NativeEmit = (propsArg, children, scope, level, guard) =>
     `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
     `${i(2)}hoverEnabled: true`,
     `${i(2)}delay: ${delay}`,
+    // T.DelayButton has no built-in progress animation: without a `transition`, pressing sets
+    // `progress` straight to 1.0 → the button arms on a single click. This is the Basic style's
+    // transition (hold ramps 0→1 over `delay`; release eases back). Same class of bug as <Drawer>.
+    `${i(2)}transition: Transition { NumberAnimation { duration: ${ctlId}.delay * (${ctlId}.pressed ? 1.0 - ${ctlId}.progress : 0.3 * ${ctlId}.progress) } }`,
     `${i(2)}horizontalPadding: 16`,
     `${i(2)}verticalPadding: 8`,
     ...implicitFormula(i),
