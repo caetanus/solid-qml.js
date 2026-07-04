@@ -769,8 +769,8 @@ Css.CssRect {
                             }
                         }
                         popup: T.Popup {
-                            popupType: T.Popup.Window
-                            y: (__input13.mapToGlobal(0, __input13.height + 2).y + height > Screen.height) ? -(height + 2) : __input13.height + 2
+                            popupType: T.Popup.Item
+                            y: (__input13.mapToItem(null, 0, __input13.height + 2).y + height > (__input13.Window.height || Screen.height)) ? -(height + 2) : __input13.height + 2
                             width: __input13.width
                             implicitHeight: contentHeight + topPadding + bottomPadding
                             padding: 1
@@ -1024,8 +1024,8 @@ Css.CssRect {
                         property double __closedAt: 0
                         onOpened: __input16W.__calCursor16 = __input16W.__calVal16 instanceof Date ? __input16W.__calVal16 : new Date()
                         onClosed: { __closedAt = Date.now(); __input16W.__calCursor16 = null }
-                        popupType: T.Popup.Window
-                        y: (__input16W.mapToGlobal(0, __input16W.height + 2).y + height > Screen.height) ? -(height + 2) : __input16W.height + 2
+                        popupType: T.Popup.Item
+                        y: (__input16W.mapToItem(null, 0, __input16W.height + 2).y + height > (__input16W.Window.height || Screen.height)) ? -(height + 2) : __input16W.height + 2
                         implicitWidth: contentWidth + leftPadding + rightPadding
                         implicitHeight: contentHeight + topPadding + bottomPadding
                         padding: 1

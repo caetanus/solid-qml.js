@@ -1404,10 +1404,12 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
     // Templates popups have NO implicit-size policy of their own (that's the style's job,
     // and we ARE the style) — without this line the popup opens 0px tall.
     `${i(2)}popup: T.Popup {`,
-    // Desktop dropdown: a REAL native window (escapes the app window bounds, Qt 6.8+),
-    // flipping ABOVE the control when opening below would overflow the screen.
-    `${i(3)}popupType: T.Popup.Window`,
-    `${i(3)}y: (${ctlId}.mapToGlobal(0, ${ctlId}.height + 2).y + height > Screen.height) ? -(height + 2) : ${ctlId}.height + 2`,
+    // In-scene overlay popup (NOT Popup.Window): Wayland compositors don't honor client
+    // toplevel positioning, so a window-type popup lands wherever the compositor drops it
+    // (top of screen) once the app window floats. Item popups position relative to the control
+    // reliably. Flip ABOVE when opening below would overflow the WINDOW (not the whole screen).
+    `${i(3)}popupType: T.Popup.Item`,
+    `${i(3)}y: (${ctlId}.mapToItem(null, 0, ${ctlId}.height + 2).y + height > (${ctlId}.Window.height || Screen.height)) ? -(height + 2) : ${ctlId}.height + 2`,
     `${i(3)}width: ${ctlId}.width`,
     `${i(3)}implicitHeight: contentHeight + topPadding + bottomPadding`,
     `${i(3)}padding: 1`,
@@ -1896,9 +1898,10 @@ function emitDateInput(
     `${i(2)}property double __closedAt: 0`,
     `${i(2)}onOpened: ${wrapId}.__calCursor${n} = ${wrapId}.__calVal${n} instanceof Date ? ${wrapId}.__calVal${n} : new Date()`,
     `${i(2)}onClosed: { __closedAt = Date.now(); ${wrapId}.__calCursor${n} = null }`,
-    // Desktop dropdown: native window + flip above on screen overflow (see emitSelect).
-    `${i(2)}popupType: T.Popup.Window`,
-    `${i(2)}y: (${wrapId}.mapToGlobal(0, ${wrapId}.height + 2).y + height > Screen.height) ? -(height + 2) : ${wrapId}.height + 2`,
+    // In-scene overlay popup, flip on WINDOW overflow (see emitSelect — Popup.Window
+    // mis-positions on Wayland once the app window floats).
+    `${i(2)}popupType: T.Popup.Item`,
+    `${i(2)}y: (${wrapId}.mapToItem(null, 0, ${wrapId}.height + 2).y + height > (${wrapId}.Window.height || Screen.height)) ? -(height + 2) : ${wrapId}.height + 2`,
     // Templates popups have no implicit-size policy (style's job — ours): without these
     // two lines the calendar dropdown opens 0x0.
     `${i(2)}implicitWidth: contentWidth + leftPadding + rightPadding`,

@@ -1451,16 +1451,16 @@ test("calendar: the day label carries the day states (sibling slots — no ances
 // Templates 6.8+) so they escape the app window, and they flip ABOVE the control when
 // opening below would overflow the screen. ---
 
-test("popups: select popup is a native window and flips above on screen overflow", async () => {
+test("popups: select popup is an in-scene item popup and flips above on window overflow", async () => {
   const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /popup: T\.Popup \{[\s\S]*?popupType: T\.Popup\.Window/);
-  assert.match(out, /y: \(__input0\.mapToGlobal\(0, __input0\.height \+ 2\)\.y \+ height > Screen\.height\) \? -\(height \+ 2\) : __input0\.height \+ 2/);
+  assert.match(out, /popup: T\.Popup \{[\s\S]*?popupType: T\.Popup\.Item/);
+  assert.match(out, /y: \(__input0\.mapToItem\(null, 0, __input0\.height \+ 2\)\.y \+ height > \(__input0\.Window\.height \|\| Screen\.height\)\) \? -\(height \+ 2\) : __input0\.height \+ 2/);
 });
 
-test("popups: date popup is a native window and flips above on screen overflow", async () => {
+test("popups: date popup is an in-scene item popup and flips above on window overflow", async () => {
   const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /T\.Popup \{[\s\S]*?popupType: T\.Popup\.Window/);
-  assert.match(out, /y: \(__input0W\.mapToGlobal\(0, __input0W\.height \+ 2\)\.y \+ height > Screen\.height\) \? -\(height \+ 2\) : __input0W\.height \+ 2/);
+  assert.match(out, /T\.Popup \{[\s\S]*?popupType: T\.Popup\.Item/);
+  assert.match(out, /y: \(__input0W\.mapToItem\(null, 0, __input0W\.height \+ 2\)\.y \+ height > \(__input0W\.Window\.height \|\| Screen\.height\)\) \? -\(height \+ 2\) : __input0W\.height \+ 2/);
 });
 
 test("popups: widgets bump the Templates import to 6.8 (popupType)", async () => {
