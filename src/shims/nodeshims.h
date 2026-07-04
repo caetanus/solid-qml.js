@@ -43,6 +43,8 @@ public:
     Q_INVOKABLE QString cwd() const;
     Q_INVOKABLE QVariantMap env() const;
     Q_INVOKABLE QString platform() const;
+    Q_INVOKABLE QString qtVersion() const;
+    Q_INVOKABLE QString solidQmlVersion() const;
     Q_INVOKABLE QStringList argv() const;
 
     // --- fs (synchronous) --- each returns a { ok, ... } map; the JS layer throws a Node-style error

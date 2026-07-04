@@ -6,6 +6,7 @@ import "modules/index_1602359716.mjs" as Js1
 
 Css.CssRect {
     id: __self
+    readonly property var runtime: typeof process !== "undefined" && process.versions && process.versions.solidQml ? "solid-qml " + process.versions.solidQml + " (Qt " + process.versions.qt + ", " + process.platform + ")" : "browser"
     readonly property var encoded: Js0.Base64.encode("solid-qml")
     readonly property var decoded: Js0.Base64.decode(encoded)
     readonly property var wrapped: Js1.Default("wrap-ansi pulls a small dependency tree with a diamond on strip-ansi", 24)
@@ -15,6 +16,10 @@ Css.CssRect {
         cssClass: ["title"]
         cssPrimitive: "text"
         text: "node module imports"
+    }
+    Css.CssText {
+        cssPrimitive: "text"
+        text: "runtime: " + (runtime)
     }
     Css.CssText {
         cssPrimitive: "text"

@@ -14,6 +14,9 @@ project(
 
 qt6 = import('qt6')
 
+# The project version, visible to app code as process.versions.solidQml (Electron idiom).
+add_project_arguments('-DSOLID_QML_VERSION="' + meson.project_version() + '"', language: 'cpp')
+
 # Compile in QML/JS debugging (the V4 debug server, activated at runtime by
 # -qmljsdebugger=...). Dev builds only; the server only listens when the arg is passed.
 if get_option('qml_debug')

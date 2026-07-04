@@ -225,10 +225,13 @@ export function emitExpr(node: t.Node, scope: Scope): string {
     return `function(${params}) { return ${emitExpr(node.body, scope)} }`;
   }
 
-  // `!x` / `-x` / `typeof x` etc — prefix (or postfix) unary operators
+  // `!x` / `-x` / `typeof x` etc — prefix (or postfix) unary operators. Word operators
+  // (typeof/void/delete) need the separating space — `typeof process` emitted as
+  // `typeofprocess` (an undefined identifier) without it.
   if (t.isUnaryExpression(node)) {
     const arg = emitExpr(node.argument, scope);
-    return node.prefix ? `${node.operator}${arg}` : `${arg}${node.operator}`;
+    const sep = /^[a-z]/.test(node.operator) ? " " : "";
+    return node.prefix ? `${node.operator}${sep}${arg}` : `${arg}${sep}${node.operator}`;
   }
 
   // `x++` / `++x` / `x--` / `--x` — emit with the resolved argument (mutable local → __self.x)

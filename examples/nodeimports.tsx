@@ -17,6 +17,11 @@ import wrapAnsi from "wrap-ansi";
 import { div, text } from "../src/solid-qml/runtime";
 
 export function NodeImports() {
+  // Electron-idiom runtime probe: `process` is an ambient V4 global on the native
+  // target and undefined in the browser — one shared source, two truths.
+  const runtime = typeof process !== "undefined" && process.versions && process.versions.solidQml
+    ? "solid-qml " + process.versions.solidQml + " (Qt " + process.versions.qt + ", " + process.platform + ")"
+    : "browser";
   const encoded = Base64.encode("solid-qml");
   const decoded = Base64.decode(encoded);
   const wrapped = wrapAnsi(
@@ -27,6 +32,7 @@ export function NodeImports() {
   return (
     <div class="app">
       <text class="title">node module imports</text>
+      <text>runtime: {runtime}</text>
       <text>Base64.encode("solid-qml") = {encoded}</text>
       <text>Base64.decode(...) = {decoded}</text>
       <text>wrapAnsi(text, 24) →</text>

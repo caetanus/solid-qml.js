@@ -65,8 +65,26 @@ QString NodeShims::platform() const
     return QStringLiteral("win32");
 #elif defined(Q_OS_MACOS)
     return QStringLiteral("darwin");
+#elif defined(Q_OS_ANDROID)
+    return QStringLiteral("android");
+#elif defined(Q_OS_IOS)
+    return QStringLiteral("ios");
 #else
     return QStringLiteral("linux");
+#endif
+}
+
+QString NodeShims::qtVersion() const
+{
+    return QString::fromLatin1(qVersion());
+}
+
+QString NodeShims::solidQmlVersion() const
+{
+#ifdef SOLID_QML_VERSION
+    return QStringLiteral(SOLID_QML_VERSION);
+#else
+    return QStringLiteral("dev");
 #endif
 }
 
@@ -239,7 +257,9 @@ static const char *kNodeShim = R"JS(
         nextTick: function (cb) { var a = Array.prototype.slice.call(arguments, 1); Promise.resolve().then(function () { cb.apply(null, a); }); },
         exit: function () {},
         version: "v18.0.0-solidqml",
-        versions: { node: "18.0.0" }
+        // Electron idiom: `process.versions.solidQml` IS the native-runtime probe —
+        // `typeof process !== "undefined" && !!process.versions?.solidQml`.
+        versions: { node: "18.0.0", solidQml: B.solidQmlVersion(), qt: B.qtVersion() }
     };
 
     return { fs: fs, child_process: child_process, process: process };
@@ -272,4 +292,9 @@ void NodeShims::install(QQmlEngine *engine)
         engine->registerModule(QString::fromUtf8(name), mod);
         engine->registerModule(QStringLiteral("node:") + QString::fromUtf8(name), mod);
     }
+
+    // Electron parity: `process` is also an ambient GLOBAL (owner directive) — QML
+    // bindings, handlers and mirrored npm modules all see it without an import; on the
+    // web target it stays undefined, which IS the platform signal.
+    global.setProperty(QStringLiteral("process"), api.property(QStringLiteral("process")));
 }

@@ -139,3 +139,15 @@ test("emitStmt: BlockStatement emits all child statements", async () => {
   const stmt = await stmtIn("{ setCount(1); setCount(2); }");
   assert.equal(emitStmt(stmt, scope), "count = 1; count = 2;");
 });
+
+test("expr: word unary operators keep their separating space (typeof/void/delete)", async () => {
+  const { normalize } = await import("../src/babel/transform.ts");
+  const { emitExpr } = await import("../src/emit/expr.ts");
+  const t = (await import("@babel/types"));
+  const { ast } = await normalize(`const x = typeof process !== "undefined";`, "f.ts");
+  let expr;
+  const body = (ast as any).program.body;
+  expr = body[0].declarations[0].init;
+  const out = emitExpr(expr, { table: new Map(), mode: "binding" } as any);
+  if (!/typeof process/.test(out)) throw new Error("missing space: " + out);
+});
