@@ -199,14 +199,15 @@ export function Dashboard() {
             <text class="theme-toggle-t">✨</text>
           </div>
           <div class="dash-user" classList={{ open: userOpen() }} onClick={() => setUserOpen(!userOpen())}>
-            {/* fragment on purpose: children must splice inline (no wrapper box) */}
-            <>
-              <div class="dash-avatar-ring">
-                <div class="dash-avatar"><text class="dash-avatar-t">AL</text></div>
-              </div>
-              <text class="dash-user-n">ada</text>
-              <text class="dash-user-chev">▾</text>
-            </>
+            {/* NOTE: an inline <>fragment</> here showcased the native splice, but
+                dom-expressions (the WEB target) only accepts top-level fragments — and an
+                inline fragment splices children exactly like having none, so both targets
+                agree without it. Fragment coverage lives in the transpiler tests. */}
+            <div class="dash-avatar-ring">
+              <div class="dash-avatar"><text class="dash-avatar-t">AL</text></div>
+            </div>
+            <text class="dash-user-n">ada</text>
+            <text class="dash-user-chev">▾</text>
             <Show when={userOpen()}>
               <div class="user-card">
                 <div class="user-card-head">
