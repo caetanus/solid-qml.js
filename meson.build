@@ -3,6 +3,9 @@ project(
   'cpp',
   version: '0.1.0',
   license: 'MIT',
+  # The CSS engine lives in vendor/ as a git submodule (its own repo, shared with other
+  # projects) — meson resolves subproject('qml-css-engine') against this directory.
+  subproject_dir: 'vendor',
   default_options: [
     'cpp_std=c++20',
     'warning_level=2',

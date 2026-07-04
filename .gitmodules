@@ -1,0 +1,3 @@
+[submodule "vendor/qml-css-engine"]
+	path = vendor/qml-css-engine
+	url = git@github.com:caetanus/qml-css-engine.git
