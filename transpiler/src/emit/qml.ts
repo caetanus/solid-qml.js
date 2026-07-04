@@ -196,6 +196,22 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
 function emitInstance(name: string, propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
   const pad = INDENT.repeat(level);
   const typeName = scope.components?.get(name) ?? name;
+  // A foreign `.qml` component (escape hatch) has a plain (non-Css) root, so the layout engine
+  // can't flow it. Wrap the instance in a bare Css box: the engine sizes the box to the foreign
+  // child's implicit size and places it, so it participates in the parent's flex/grid.
+  if (scope.foreignQml?.has(typeName)) {
+    const i = (n: number) => INDENT.repeat(level + n);
+    const inner = [`${i(1)}${typeName} {`];
+    if (propsArg && t.isObjectExpression(propsArg)) {
+      for (const p of propsArg.properties) {
+        if (t.isObjectProperty(p) && t.isIdentifier(p.key) && p.key.name !== "children" && t.isExpression(p.value))
+          inner.push(`${i(2)}${safeName(p.key.name)}: ${emitExpr(p.value, { ...scope, mode: "binding" })}`);
+      }
+    }
+    inner.push(...emitChildren(children, scope, level + 2));
+    inner.push(`${i(1)}}`);
+    return [`${pad}Css.CssRect {`, `${i(1)}cssPrimitive: "div"`, ...guardLine(guard, level), ...inner, `${pad}}`];
+  }
   const meta = scope.componentMeta?.get(name);
   const lines = [`${pad}${typeName} {`, ...guardLine(guard, level)];
 

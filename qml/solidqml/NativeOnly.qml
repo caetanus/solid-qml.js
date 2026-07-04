@@ -19,6 +19,9 @@ Css.CssRect {
     MenusAndViews {
         visible: !!(isNative)
     }
+    CustomQml {
+        visible: !!(isNative)
+    }
     Css.CssRect {
         visible: !(isNative)
         cssClass: ["native-fallback"]

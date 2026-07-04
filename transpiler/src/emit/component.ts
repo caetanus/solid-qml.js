@@ -27,7 +27,7 @@ export interface CtxWiring {
  * and one reactive `property` per signal (initial value via emitExpr). The signal properties are
  * the bare names the render's bindings read.
  */
-export function emitComponentType(fn: t.Function, render: t.CallExpression, components?: Map<string, string>, contexts?: Set<string>, provider?: ProviderInfo | null, ctx?: CtxWiring, moduleFile?: t.File, jsImports?: Record<string, string>, moduleInit?: string[]): string[] {
+export function emitComponentType(fn: t.Function, render: t.CallExpression, components?: Map<string, string>, contexts?: Set<string>, provider?: ProviderInfo | null, ctx?: CtxWiring, moduleFile?: t.File, jsImports?: Record<string, string>, moduleInit?: string[], foreignQml?: Set<string>): string[] {
   const table = analyzeSignals(fn);
   const props = analyzeProps(fn);
   const resources = analyzeResources(fn);
@@ -73,7 +73,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   const constAliases: Record<string, string> = {};
   for (const name of moduleConstDecls.keys()) constAliases[name] = `__const_${safeName(name)}`;
   const scope: Scope = {
-    table, mode: "binding", propsParam: props.param ?? undefined, propAliases, components, contexts, refs: collectedRefs,
+    table, mode: "binding", propsParam: props.param ?? undefined, propAliases, components, contexts, refs: collectedRefs, foreignQml,
     inputCounter, hoverCounter, usedWidgets, buttonGroups, resources: resources.map((r) => r.name), jsImports,
     ...(moduleConstDecls.size > 0 ? { locals: { ...constAliases } } : {}),
     ...(mutableLocals ? { mutableLocals } : {}),

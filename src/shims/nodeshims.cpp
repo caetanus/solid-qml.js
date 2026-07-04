@@ -259,7 +259,7 @@ static const char *kNodeShim = R"JS(
         version: "v18.0.0-solidqml",
         // Electron idiom: `process.versions.solidQml` IS the native-runtime probe —
         // `typeof process !== "undefined" && !!process.versions?.solidQml`.
-        versions: { node: "18.0.0", solidQml: B.solidQmlVersion(), qt: B.qtVersion() }
+        versions: { node: "18.0.0", solidQml: B.solidQmlVersion(), qml: B.solidQmlVersion(), qt: B.qtVersion() }
     };
 
     return { fs: fs, child_process: child_process, process: process };

@@ -11,7 +11,9 @@ import { emitStmt } from "./emit/stmt.ts";
 export interface GeneratedApp {
   /** The entry (app-root) component's QML type. */
   entry: string;
-  /** Other referenced component types, QML-type-name → QML source. */
+  /** Other referenced component types, QML-type-name → QML source. Includes verbatim-copied
+   *  custom `.qml` files imported from TSX (`import Fancy from "./Fancy.qml"`) — they are written
+   *  as `<name>.qml` next to the generated output and instantiated by type name like any component. */
   components: Record<string, string>;
   /** Concatenated CSS from every `import "./x.css"` side-effect import across the module graph (in
    *  discovery order, deduped). The dev loop / vite plugin loads this as the app's base layer. */
@@ -206,6 +208,9 @@ export async function generate(source: string, filename: string, opts: GenerateO
   interface Node { absPath: string; declName: string; mod: Mod; edges: Map<string, string>; } // useName → target key
   const nodes = new Map<string, Node>();
   const keyOf = (absPath: string, name: string) => `${absPath}#${name}`;
+  // Custom `.qml` imports (the native escape hatch): copied VERBATIM to the output and
+  // instantiated by type name. Keyed `qml:<abs>` in the edge graph; never transpiled.
+  const qmlForeign = new Map<string, { typeName: string; source: string }>();
 
   const visit = async (absPath: string, mod: Mod, declName: string): Promise<void> => {
     const key = keyOf(absPath, declName);
@@ -217,6 +222,20 @@ export async function generate(source: string, filename: string, opts: GenerateO
     for (const tag of usedComponentTags(mod.comps.get(declName)!.render, known)) {
       if (mod.comps.has(tag)) { edges.set(tag, keyOf(absPath, tag)); await visit(absPath, mod, tag); continue; }
       const imp = mod.imports.get(tag)!;
+      // A `.qml` specifier is a hand-written QML component — copy it verbatim, instantiate by
+      // type name (QML resolves a sibling `<Base>.qml` file automatically, like our own emitted
+      // components). NOT transpiled; not recursed. Deep local `.qml` deps are a follow-up —
+      // for now import each helper `.qml` you reference, or keep the file self-contained.
+      if (imp.spec.endsWith(".qml")) {
+        const qabs = path.resolve(mod.dir, imp.spec);
+        const base = path.basename(qabs, ".qml");
+        if (!/^[A-Z][A-Za-z0-9_]*$/.test(base))
+          throw new Error(`custom QML import needs a Capitalized, identifier-safe filename (a QML type name): ${imp.spec}`);
+        const qkey = `qml:${qabs}`;
+        if (!qmlForeign.has(qkey)) qmlForeign.set(qkey, { typeName: base, source: await readFile(qabs) });
+        edges.set(tag, qkey);
+        continue;
+      }
       const res = await resolveModule(mod.dir, imp.spec, readFile);
       if (!res) continue;
       const childMod = await load(res.path, res.source);
@@ -236,6 +255,8 @@ export async function generate(source: string, filename: string, opts: GenerateO
     if (keys.length === 1) typeName.set(keys[0], decl);
     else for (const key of keys) typeName.set(key, `${decl}_${pathPrefix(nodes.get(key)!.absPath)}`);
   }
+  // Foreign `.qml` nodes carry their filename basename as the QML type name.
+  for (const [qkey, { typeName: tn }] of qmlForeign) typeName.set(qkey, tn);
 
   // Phase 1b — context roles: classify each node as a provider (provides a ctx + value shape) and/or
   // a consumer (useContext bindings). Build the cross-graph ctx → value-shape table that consumers
@@ -280,10 +301,13 @@ export async function generate(source: string, filename: string, opts: GenerateO
     };
     // Import-time module statements across the whole graph run once, at the entry's boot.
     const moduleInit = key === entryKey ? [...modules.values()].flatMap((m) => m.moduleInit) : undefined;
-    const qml = [...headerFor(node.mod), ...emitComponentType(info.fn, info.render, typeMap, node.mod.contexts, role.provider, ctxWiring, node.mod.file, node.mod.jsImports, moduleInit), ""].join("\n");
+    const foreignQml = new Set([...qmlForeign.values()].map((q) => q.typeName));
+    const qml = [...headerFor(node.mod), ...emitComponentType(info.fn, info.render, typeMap, node.mod.contexts, role.provider, ctxWiring, node.mod.file, node.mod.jsImports, moduleInit, foreignQml), ""].join("\n");
     if (key === entryKey) entry = qml;
     else components[typeName.get(key)!] = qml;
   }
+  // Custom `.qml` files ride `components` verbatim — gen.mjs writes each as `<name>.qml`.
+  for (const [, { typeName: tn, source }] of qmlForeign) components[tn] = source;
   // CSS sidecar: concatenate every imported .css across the graph, in discovery order.
   let css = "";
   for (const f of cssFiles) {

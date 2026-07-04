@@ -13,6 +13,9 @@ export interface Scope {
   propsParam?: string;
   /** Use-name (the tag in h(Tag,…)) → emitted QML type name. */
   components?: Map<string, string>;
+  /** Emitted type names that are foreign hand-written `.qml` components (not Css roots): their
+   *  instances are wrapped in a Css box so they participate in the CSS layout (escape hatch). */
+  foreignQml?: Set<string>;
   /** Collector: ref variable names seen during emitQml (pushed by the container emitter when
    *  ref={x} is encountered). Read by emitComponentType after emitting the render tree to populate
    *  setupScope.locals so onMount bodies resolve the ref to its QML id. */

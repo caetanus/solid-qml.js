@@ -6,6 +6,7 @@ import { HtmlWidgets } from "./native/htmlwidgets";
 import { Containers } from "./native/containers";
 import { ExtraInputs } from "./native/inputs";
 import { MenusAndViews } from "./native/menus";
+import { CustomQml } from "./native/customqml";
 import "./native.css";
 
 export function NativeOnly() {
@@ -24,6 +25,7 @@ export function NativeOnly() {
         <Containers />
         <ExtraInputs />
         <MenusAndViews />
+        <CustomQml />
       </Show>
     </div>
   );
