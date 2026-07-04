@@ -132,6 +132,13 @@
   box-shadow: 0 12px 28px rgba(23, 107, 135, 0.24);
 }
 
+/* Needs its own :hover: the generic `button:hover` (0,1,1) outranks `.hello-cta` (0,1,0),
+   so without this the teal CTA went pale grey on hover — in the browser too (parity ✓). */
+.hello-cta:hover {
+  background: #135a72;
+  box-shadow: 0 12px 28px rgba(23, 107, 135, 0.34);
+}
+
 /* The label wins white via its OWN class — a class selector beats the `text {}`/`span {}` type
    defaults, so it never falls back to the dark base text colour on the teal button. */
 .hello-cta-label {
