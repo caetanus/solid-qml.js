@@ -149,7 +149,7 @@ int main(int argc, char **argv)
     if (!miniNodePath.isEmpty())
         return runMiniNode(app, miniNodePath);
 
-    CssTheme cssTheme;
+    QmlCss::CssTheme cssTheme;
     // Base layer: the app stylesheet(s) from disk/qrc. Inline-style rules synthesised by the
     // transpiler are appended on top later, from QML, via cssTheme.loadLayeredString().
     QStringList cssPaths = parser.values(QStringLiteral("css"));
@@ -192,7 +192,7 @@ int main(int argc, char **argv)
     const QString qmlPath = parser.value(QStringLiteral("qml"));
     const QUrl url = qmlUrl(qmlPath);
 
-    CssLayoutEngine cssLayout(&cssTheme);
+    QmlCss::CssLayoutEngine cssLayout(&cssTheme);
 
     // The CSS primitives are C++ QQuickItems since the qml/ dir was retired; generated QML
     // does `import qmlcss 1.0 as Css`.
