@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js";
 import type { JSX } from "solid-js";
 // Normalise UA chrome, then apply the shared base defaults, so the browser preview matches the
 // native QML render (which loads the same base layer) and the shared stylesheet is authoritative.
@@ -78,6 +79,62 @@ export function button(props: PrimitiveProps) {
     >
       {props.children}
     </button>
+  );
+}
+
+// <Calendar> — the native target's inline month grid, mirrored for the browser preview so
+// the shared source renders on both targets. Same class surface as the native emission
+// (.cal-nav/.cal-title/.dow/.day/.day-label with selected/today/outside states), so the
+// factory sheet and authored rules style both identically.
+export function Calendar(props: {
+  value?: Date | null;
+  onChange?: (e: { target: { value: Date; valueAsDate: Date } }) => void;
+  class?: string;
+  className?: string;
+}) {
+  const [shown, setShown] = createSignal(
+    props.value instanceof Date ? new Date(props.value.getFullYear(), props.value.getMonth(), 1) : new Date(),
+  );
+  const nav = (d: number) => setShown((m) => new Date(m.getFullYear(), m.getMonth() + d, 1));
+  const cells = () => {
+    const m = shown();
+    const first = new Date(m.getFullYear(), m.getMonth(), 1);
+    const start = new Date(first.getFullYear(), first.getMonth(), 1 - first.getDay());
+    return Array.from({ length: 42 }, (_, i) =>
+      new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
+  };
+  const same = (a: Date | null | undefined, b: Date) =>
+    a instanceof Date && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  const dows = ["dom.", "seg.", "ter.", "qua.", "qui.", "sex.", "sáb."];
+  return (
+    <div class={["qml", props.class, props.className].filter(Boolean).join(" ")} data-qml-type="Calendar"
+         style={{ position: "relative" }}>
+      <div style={{ display: "flex", "align-items": "center" }}>
+        <button class="cal-nav" type="button" onClick={() => nav(-1)}>‹</button>
+        <span class="cal-title" style={{ flex: "1", "text-align": "center" }}>
+          {shown().toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+        </span>
+        <button class="cal-nav" type="button" onClick={() => nav(1)}>›</button>
+      </div>
+      <div style={{ display: "grid", "grid-template-columns": "repeat(7, 1fr)" }}>
+        {dows.map((d) => <span class="dow">{d}</span>)}
+        {cells().map((d) => {
+          const today = same(new Date(), d);
+          const outside = () => d.getMonth() !== shown().getMonth();
+          const selected = () => same(props.value ?? null, d);
+          return (
+            <button type="button"
+              class={["day", selected() ? "selected" : "", today ? "today" : "", outside() ? "outside" : ""].filter(Boolean).join(" ")}
+              style={{ border: "none", background: "transparent", padding: "0" }}
+              onClick={() => props.onChange?.({ target: { value: d, valueAsDate: d } })}>
+              <span class={["day-label", selected() ? "selected" : "", outside() ? "outside" : ""].filter(Boolean).join(" ")}>
+                {d.getDate()}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

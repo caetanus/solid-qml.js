@@ -3,7 +3,7 @@
 // bottom echoes all values reactively and provides a Reset button.
 import { createSignal } from "solid-js";
 import { tabstop } from "qml-solid";
-import { div, text, button } from "../src/solid-qml/runtime";
+import { div, text, button, Calendar } from "../src/solid-qml/runtime";
 import "./widgets.css";
 
 export function Widgets() {

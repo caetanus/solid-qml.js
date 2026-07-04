@@ -63,3 +63,19 @@ sugar over `QObject`/`QQuickItem` construction — the mapping is direct:
 ## Web target
 - Today `vite-plugin-solid` renders in the browser for preview; keep parity with the QML target
   as the engine evolves.
+
+## Native-only track (post-milestone-1)
+
+Web parity is the floor, not the ceiling. Native-only capabilities, in intended order:
+
+- **All QtQuick widgets** — complete the native widget surface beyond the HTML-mappable
+  set (tree views, tables, dock/split layouts, menus/menu bars, system tray, dialogs).
+- **Native C++ integration** — import and call the user's own C++ code from app sources
+  (typed bindings, zero-overhead calls), the same way npm modules import today.
+- **Component generation for legacy projects** — emit consumable QML/C++ components from
+  app sources so existing Qt codebases can adopt pieces incrementally.
+- **Native app examples** — real applications proving the model end to end: a terminal,
+  a media player, a photo album, a simple browser.
+- **Threading** — worker threads with a web-worker-like API surface over Qt's threading.
+- **Background services (mobile)** — long-running work on Android/iOS lifecycles.
+- **Push notifications** — native push wiring on desktop and mobile.
