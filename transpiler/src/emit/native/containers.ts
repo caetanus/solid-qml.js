@@ -351,6 +351,13 @@ const emitDrawer: NativeEmit = (propsArg, children, scope, level, guard) => {
     `${i(2)}dragMargin: 0`,
     `${i(2)}width: parent ? ${horizontal ? `parent.width * (${size})` : "parent.width"} : 0`,
     `${i(2)}height: parent ? ${horizontal ? "parent.height" : `parent.height * (${size})`} : 0`,
+    // T.Drawer carries no built-in open/close animation — the STYLE must supply enter/exit
+    // transitions that drive `position` 0↔1. Without them `open()`/`visible:true` set
+    // `opened:true` but `position` stays 0, leaving the panel anchored off-screen.
+    `${i(2)}enter: Transition { NumberAnimation { property: "position"; to: 1.0; duration: 220; easing.type: Easing.OutCubic } }`,
+    `${i(2)}exit: Transition { NumberAnimation { property: "position"; to: 0.0; duration: 180; easing.type: Easing.InCubic } }`,
+    // Semi-transparent modal scrim (default style provides none → an opaque dim).
+    `${i(2)}T.Overlay.modal: Rectangle { color: "#66000000" }`,
     `${i(2)}background: Css.CssFill {`,
     `${i(3)}property Item cssAncestor: ${wrapId}`,
     `${i(3)}cssPrimitive: "div"`,

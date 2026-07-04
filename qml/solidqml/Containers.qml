@@ -281,6 +281,9 @@ Css.CssRect {
             dragMargin: 0
             width: parent ? parent.width * (0.34) : 0
             height: parent ? parent.height : 0
+            enter: Transition { NumberAnimation { property: "position"; to: 1.0; duration: 220; easing.type: Easing.OutCubic } }
+            exit: Transition { NumberAnimation { property: "position"; to: 0.0; duration: 180; easing.type: Easing.InCubic } }
+            T.Overlay.modal: Rectangle { color: "#66000000" }
             background: Css.CssFill {
                 property Item cssAncestor: __drawer2W
                 cssPrimitive: "div"
