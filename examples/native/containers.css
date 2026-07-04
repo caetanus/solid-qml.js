@@ -1,0 +1,211 @@
+/* Containers group sheet — scoped under .containers (the group's .nv-section card).
+   Palette matches examples/widgets.css: #176b87 teal accent, clean whites, soft borders.
+   Every widget rule carries an explicit height (T.* controls have no implicit size of their own). */
+
+/* ─── ToolBar ─────────────────────────────────────────────────────────────────────────── */
+.containers .ct-toolbar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 10px;
+  background: #176b87;
+  border-radius: 10px;
+}
+
+.containers .ct-tool {
+  height: 32px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.containers .ct-tool:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* ─── TabBar ──────────────────────────────────────────────────────────────────────────── */
+.containers .ct-tabs {
+  height: 40px;
+  background: #eef2f7;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.containers .ct-tabs .tab {
+  background: transparent;
+  border-radius: 10px;
+}
+
+.containers .ct-tabs .tab.hover {
+  background: #e0e8f0;
+}
+
+.containers .ct-tabs .tab.selected {
+  background: #176b87;
+}
+
+.containers .ct-tabs .tab-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.containers .ct-tabs .tab-label.selected {
+  color: #ffffff;
+}
+
+/* ─── StackView (phase-1: visible page host) ──────────────────────────────────────────── */
+.containers .ct-stack {
+  height: 84px;
+}
+
+.containers .ct-page {
+  display: flex;
+  align-items: center;
+  height: 84px;
+  padding: 0 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.containers .ct-page-t {
+  font-size: 13px;
+  color: #17222c;
+}
+
+/* ─── SplitView ───────────────────────────────────────────────────────────────────────── */
+.containers .ct-split {
+  height: 110px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.containers .ct-split .handle {
+  background: #e2e8f0;
+}
+
+.containers .ct-split .handle.hover {
+  background: #b8c8d8;
+}
+
+.containers .ct-split .handle.active {
+  background: #176b87;
+}
+
+.containers .ct-pane {
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  background: #f8fafc;
+}
+
+.containers .ct-pane-alt {
+  background: #eef6f9;
+}
+
+.containers .ct-pane-t {
+  font-size: 13px;
+  color: #17222c;
+}
+
+/* ─── Drawer ──────────────────────────────────────────────────────────────────────────── */
+.containers .ct-open,
+.containers .ct-nav {
+  height: 32px;
+  padding: 0 14px;
+  background: #176b87;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.containers .ct-open:hover,
+.containers .ct-nav:hover {
+  background: #1d86a8;
+}
+
+.containers .ct-state {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.ct-drawer .panel {
+  background: #ffffff;
+  border-right: 1px solid #e2e8f0;
+}
+
+.ct-drawer .content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 16px;
+}
+
+.ct-drawer .ct-drawer-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #17222c;
+  height: 26px;
+}
+
+.ct-drawer .ct-drawer-item {
+  font-size: 13px;
+  color: #44566b;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.ct-drawer .ct-close {
+  height: 32px;
+  margin-top: 12px;
+  padding: 0 14px;
+  background: #176b87;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ─── SwipeView + PageIndicator ───────────────────────────────────────────────────────── */
+.containers .ct-swipe {
+  height: 96px;
+  border-radius: 10px;
+}
+
+.containers .ct-slide {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+}
+
+.containers .ct-slide-a { background: #176b87; }
+.containers .ct-slide-b { background: #2a9d8f; }
+.containers .ct-slide-c { background: #35586d; }
+
+.containers .ct-slide-t {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.containers .ct-dots {
+  height: 16px;
+}
+
+.containers .ct-dots .dot {
+  background: #c7d3e0;
+  border-radius: 4px;
+}
+
+.containers .ct-dots .dot.selected {
+  background: #176b87;
+}

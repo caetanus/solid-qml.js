@@ -1,0 +1,55 @@
+/* Native-only showcase shell — group sheets live in examples/native/<group>.css. */
+.native {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px;
+  background: #f1f4f9;
+  height: calc(100vh - 88px);
+  overflow-y: auto;
+}
+
+.native-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  background: #ffffff;
+  border: 1px dashed #c8d3de;
+  border-radius: 12px;
+}
+
+.native-fallback-t {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.native .nv-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.native .nv-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #17222c;
+}
+
+.native .nv-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.native .nv-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+}

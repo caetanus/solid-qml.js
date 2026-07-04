@@ -1620,3 +1620,717 @@ button:hover {
 .widgets .wg-reset:hover text {
   color: #ffffff;
 }
+
+
+/* Native-only showcase shell — group sheets live in examples/native/<group>.css. */
+.native {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px;
+  background: #f1f4f9;
+  height: calc(100vh - 88px);
+  overflow-y: auto;
+}
+
+.native-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  background: #ffffff;
+  border: 1px dashed #c8d3de;
+  border-radius: 12px;
+}
+
+.native-fallback-t {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.native .nv-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.native .nv-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #17222c;
+}
+
+.native .nv-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.native .nv-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+
+/* HTML-widgets group sheet — scoped under .native so nothing bleeds into other pages.
+   Aesthetic: matches examples/widgets.css (#176b87 teal accent, clean whites, soft borders).
+   T.* controls report 0×0 without chrome, so widget rules carry explicit sizes. */
+
+/* ─── Buttons (shared by the progress/dialog rows) ────────────────────────────────────── */
+.native .hw-btn {
+  height: 30px;
+  padding: 0 14px;
+  background: #176b87;
+  border-radius: 8px;
+}
+
+.native .hw-btn:hover {
+  background: #1d7fa0;
+}
+
+.native .hw-btn text {
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ─── <progress> ──────────────────────────────────────────────────────────────────────── */
+.native .hw-progress {
+  width: 220px;
+  height: 8px;
+}
+
+/* Track fills the wrapper; bar width is driven by visualPosition in QML. */
+.native .hw-progress .track {
+  background: #e2e8f0;
+  border-radius: 4px;
+}
+
+.native .hw-progress .bar {
+  background: #176b87;
+  border-radius: 4px;
+}
+
+/* The sliding busy segment reads slightly lighter than a committed value. */
+.native .hw-progress:indeterminate .bar {
+  background: #4da3bd;
+}
+
+/* ─── <fieldset> / <legend> ───────────────────────────────────────────────────────────── */
+.native .hw-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid #d5dee8;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.native .hw-fieldset .legend {
+  font-size: 11px;
+  font-weight: 700;
+  color: #176b87;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  height: 16px;
+}
+
+.native .hw-line {
+  font-size: 13px;
+  color: #334155;
+}
+
+/* ─── <dialog> ────────────────────────────────────────────────────────────────────────── */
+/* The dialog paints on the window Overlay; `.popup` is the T.Dialog background slot
+   (cssAncestor re-anchors it under .hw-dialog, so this scoped rule matches). */
+.native .hw-dialog .popup {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(23, 34, 44, 0.18);
+}
+
+.native .hw-dialog .hw-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  width: 320px;
+}
+
+.native .hw-dialog .hw-dialog-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #17222c;
+}
+
+/* ─── <details> / <summary> ───────────────────────────────────────────────────────────── */
+.native .hw-details {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #d5dee8;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+/* Header row: padding-left clears the "▸" marker (anchored at the left edge in QML). */
+.native .hw-details summary {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 34px;
+  padding-left: 24px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #17222c;
+  border-radius: 10px;
+}
+
+.native .hw-details summary:hover {
+  background: #f0f7fb;
+}
+
+.native .hw-details summary:open {
+  color: #176b87;
+}
+
+.native .hw-details .marker {
+  color: #176b87;
+  font-size: 12px;
+}
+
+.native .hw-details .content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px 12px 24px;
+}
+
+
+/* Containers group sheet — scoped under .containers (the group's .nv-section card).
+   Palette matches examples/widgets.css: #176b87 teal accent, clean whites, soft borders.
+   Every widget rule carries an explicit height (T.* controls have no implicit size of their own). */
+
+/* ─── ToolBar ─────────────────────────────────────────────────────────────────────────── */
+.containers .ct-toolbar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 10px;
+  background: #176b87;
+  border-radius: 10px;
+}
+
+.containers .ct-tool {
+  height: 32px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.containers .ct-tool:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* ─── TabBar ──────────────────────────────────────────────────────────────────────────── */
+.containers .ct-tabs {
+  height: 40px;
+  background: #eef2f7;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.containers .ct-tabs .tab {
+  background: transparent;
+  border-radius: 10px;
+}
+
+.containers .ct-tabs .tab.hover {
+  background: #e0e8f0;
+}
+
+.containers .ct-tabs .tab.selected {
+  background: #176b87;
+}
+
+.containers .ct-tabs .tab-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.containers .ct-tabs .tab-label.selected {
+  color: #ffffff;
+}
+
+/* ─── StackView (phase-1: visible page host) ──────────────────────────────────────────── */
+.containers .ct-stack {
+  height: 84px;
+}
+
+.containers .ct-page {
+  display: flex;
+  align-items: center;
+  height: 84px;
+  padding: 0 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.containers .ct-page-t {
+  font-size: 13px;
+  color: #17222c;
+}
+
+/* ─── SplitView ───────────────────────────────────────────────────────────────────────── */
+.containers .ct-split {
+  height: 110px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.containers .ct-split .handle {
+  background: #e2e8f0;
+}
+
+.containers .ct-split .handle.hover {
+  background: #b8c8d8;
+}
+
+.containers .ct-split .handle.active {
+  background: #176b87;
+}
+
+.containers .ct-pane {
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  background: #f8fafc;
+}
+
+.containers .ct-pane-alt {
+  background: #eef6f9;
+}
+
+.containers .ct-pane-t {
+  font-size: 13px;
+  color: #17222c;
+}
+
+/* ─── Drawer ──────────────────────────────────────────────────────────────────────────── */
+.containers .ct-open,
+.containers .ct-nav {
+  height: 32px;
+  padding: 0 14px;
+  background: #176b87;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.containers .ct-open:hover,
+.containers .ct-nav:hover {
+  background: #1d86a8;
+}
+
+.containers .ct-state {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.ct-drawer .panel {
+  background: #ffffff;
+  border-right: 1px solid #e2e8f0;
+}
+
+.ct-drawer .content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 16px;
+}
+
+.ct-drawer .ct-drawer-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #17222c;
+  height: 26px;
+}
+
+.ct-drawer .ct-drawer-item {
+  font-size: 13px;
+  color: #44566b;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.ct-drawer .ct-close {
+  height: 32px;
+  margin-top: 12px;
+  padding: 0 14px;
+  background: #176b87;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ─── SwipeView + PageIndicator ───────────────────────────────────────────────────────── */
+.containers .ct-swipe {
+  height: 96px;
+  border-radius: 10px;
+}
+
+.containers .ct-slide {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+}
+
+.containers .ct-slide-a { background: #176b87; }
+.containers .ct-slide-b { background: #2a9d8f; }
+.containers .ct-slide-c { background: #35586d; }
+
+.containers .ct-slide-t {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.containers .ct-dots {
+  height: 16px;
+}
+
+.containers .ct-dots .dot {
+  background: #c7d3e0;
+  border-radius: 4px;
+}
+
+.containers .ct-dots .dot.selected {
+  background: #176b87;
+}
+
+
+/* Extra native inputs — group sheet for examples/native/inputs.tsx.
+   Palette matches examples/widgets.css (teal #176b87 accent, clean whites, soft shadows).
+   T.* controls have implicitWidth/Height 0-ish by default, so every widget wrapper carries
+   an explicit size; internal geometry (handles, spokes, sep) is hardcoded in QML — CSS
+   drives colours/radius/shadows only. */
+
+/* ─── RangeSlider ──────────────────────────────────────────────────────────────────────── */
+.native .ni-range {
+  width: 260px;
+  height: 36px;
+}
+
+.native .ni-range .track {
+  border-radius: 3px;
+  background: #e2e8f0;
+  height: 6px;
+}
+
+.native .ni-range .track-fill {
+  border-radius: 3px;
+  background: #176b87;
+  height: 6px;
+}
+
+.native .ni-range .handle {
+  border-radius: 9px;
+  background: #176b87;
+  box-shadow: 0 2px 6px rgba(23, 107, 135, 0.35);
+  width: 18px;
+  height: 18px;
+}
+
+.native .ni-range:focus .handle {
+  background: #1d7fa0;
+  box-shadow: 0 2px 8px rgba(23, 107, 135, 0.5);
+}
+
+/* ─── Dial ─────────────────────────────────────────────────────────────────────────────── */
+.native .ni-dial {
+  width: 96px;
+  height: 96px;
+}
+
+.native .ni-dial .dial {
+  background: #f8fafc;
+  border: 2px solid #dbe4ee;
+  border-radius: 48px;
+}
+
+.native .ni-dial:focus .dial {
+  border: 2px solid #176b87;
+}
+
+.native .ni-dial .handle {
+  background: #176b87;
+  border-radius: 6px;
+  width: 12px;
+  height: 12px;
+}
+
+.native .ni-dial:active .handle {
+  background: #1d7fa0;
+}
+
+/* ─── Tumbler ──────────────────────────────────────────────────────────────────────────── */
+.native .ni-tumbler {
+  width: 80px;
+  height: 180px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.native .ni-tumbler:focus {
+  border: 2px solid #176b87;
+}
+
+.native .ni-tumbler .item {
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.native .ni-tumbler .item:selected {
+  color: #176b87;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+/* ─── DelayButton ──────────────────────────────────────────────────────────────────────── */
+.native .ni-delay {
+  width: 160px;
+  height: 36px;
+  color: #17222c;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.native .ni-delay .delay {
+  background: #f8fafc;
+  border: 1px solid #d5dee8;
+  border-radius: 18px;
+}
+
+.native .ni-delay:hover .delay {
+  border: 1px solid #176b87;
+}
+
+.native .ni-delay .delay-fill {
+  background: rgba(23, 107, 135, 0.35);
+  border-radius: 18px;
+}
+
+.native .ni-delay:checked .delay {
+  background: #176b87;
+  border: 1px solid #176b87;
+}
+
+.native .ni-delay:checked text {
+  color: #ffffff;
+}
+
+/* ─── BusyIndicator ────────────────────────────────────────────────────────────────────── */
+.native .ni-busy {
+  width: 40px;
+  height: 40px;
+}
+
+.native .ni-busy .spoke {
+  background-color: #176b87;
+}
+
+/* Plain toggle button next to the indicator (regular <button>). */
+.native .ni-btn {
+  height: 30px;
+  padding: 0 14px;
+  background: #176b87;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.native .ni-btn text {
+  color: #ffffff;
+}
+
+.native .ni-btn:hover {
+  background: #1d7fa0;
+}
+
+/* ─── RoundButton / ToolButton / ToolSeparator ─────────────────────────────────────────── */
+.native .ni-round {
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  background: #176b87;
+  box-shadow: 0 2px 6px rgba(23, 107, 135, 0.35);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.native .ni-round text {
+  color: #ffffff;
+}
+
+.native .ni-round:hover {
+  background: #1d7fa0;
+}
+
+.native .ni-round:active {
+  background: #145d75;
+}
+
+.native .ni-tool {
+  height: 32px;
+  padding: 0 12px;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.native .ni-tool text {
+  color: #176b87;
+}
+
+.native .ni-tool:hover {
+  background: #e8eef5;
+}
+
+.native .ni-tool:active {
+  background: #dbe4ee;
+}
+
+.native .ni-sep {
+  width: 9px;
+  height: 32px;
+}
+
+.native .ni-sep .sep {
+  background: #dbe4ee;
+}
+
+
+/* Menus & views group sheet — teal accent (#176b87), consistent with examples/widgets.css.
+ * Popup contents reparent to the window Overlay; the emitters re-anchor the CSS walk at the
+ * declaring item (cssAncestor), so `.native .popup` / `.native .option` scope as if the menu
+ * were still inside its section. */
+
+.nv-menus .nv-echo {
+  font-size: 12px;
+  color: #176b87;
+}
+
+/* ─── Menu / MenuBar drop-down popups ──────────────────────────────────────── */
+
+.native .popup {
+  background: #ffffff;
+  border: 1px solid #d5e0e8;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(23, 34, 44, 0.14);
+}
+
+.native .option {
+  height: 32px;
+  background: #ffffff;
+}
+
+.native .option:hover {
+  background: #e6f2f7;
+}
+
+.native .option-label {
+  font-size: 13px;
+  color: #17222c;
+  height: 32px;
+  padding-left: 12px;
+}
+
+.native .sep {
+  background: #e2e8f0;
+}
+
+/* ─── MenuBar strip ────────────────────────────────────────────────────────── */
+
+/* Native-widget wrappers host plain (non-Css) internals, so the engine's content pass measures
+ * 0 and overwrites their implicit sizes — size the boxes here, like .wg-cal/.wg-date do. */
+.native .nv-menubar {
+  width: 132px;
+  height: 34px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.native .menubar {
+  background: #f7fafc;
+  border-radius: 8px;
+}
+
+.native .menubar-item {
+  background: transparent;
+  border-radius: 6px;
+}
+
+.native .menubar-item:hover {
+  background: #e6f2f7;
+}
+
+/* background/contentItem are sibling slots — an :open label rule could not match through the
+ * background, so the open tint stays light enough for the plain label colour. */
+.native .menubar-item:open {
+  background: #cde5ee;
+}
+
+.native .menubar-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #17222c;
+}
+
+/* ─── TreeView ─────────────────────────────────────────────────────────────── */
+
+.native .nv-tree {
+  width: 260px;
+  height: 320px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.native .tree-row {
+  background: transparent;
+}
+
+.native .tree-row:hover {
+  background: #e6f2f7;
+}
+
+.native .tree-disclosure {
+  font-size: 10px;
+  color: #176b87;
+}
+
+.native .tree-label {
+  font-size: 13px;
+  color: #17222c;
+}

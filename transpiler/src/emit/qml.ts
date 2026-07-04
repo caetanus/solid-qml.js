@@ -2,8 +2,9 @@ import * as t from "@babel/types";
 import { emitExpr, type Scope } from "./expr.ts";
 import { safeName } from "../names/safe.ts";
 import { CONTROL_TAGS, hParts, isFragmentTag, isHCall } from "../ast/h.ts";
+import { nativeTags } from "./native/index.ts";
 
-const INDENT = "    ";
+export const INDENT = "    ";
 const TEXT_TAGS = new Set(["text", "span", "h1", "h2", "h3", "h4", "h5", "h6", "p", "cite", "bio"]);
 
 interface Props {
@@ -24,7 +25,7 @@ interface Props {
  *  - With classList → reactive concat expression:
  *    `cssClass: ["a"].concat(cond1 ? ["cls1"] : []).concat(cond2 ? ["cls2"] : [])`
  *  This keeps existing golden output byte-identical when classList is absent. */
-function buildCssClassLine(props: Props, scope: Scope, pad: string): string[] {
+export function buildCssClassLine(props: Props, scope: Scope, pad: string): string[] {
   const { classes, classList } = props;
   if (classes.length === 0 && classList.length === 0) return [];
   if (classList.length === 0) {
@@ -64,6 +65,10 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
     // component named "Calendar" is shadowed by the builtin — same precedence as all other
     // builtin identifiers (control-flow tags win over user components in the import graph too).
     if (tagArg.name === "Calendar") return emitCalendar(propsArg, scope, level, guard);
+    // Native-only tag registry (plan phases 2–3): registered tags shadow user components,
+    // same precedence as Calendar above.
+    if (nativeTags.has(tagArg.name))
+      return nativeTags.get(tagArg.name)!(propsArg, children as t.Node[], scope, level, guard);
     if (CONTROL_TAGS.has(tagArg.name)) throw new Error(`control flow ${tagArg.name} not supported in this plan`);
     if (scope.components?.has(tagArg.name)) return emitInstance(tagArg.name, propsArg, children as t.Node[], scope, level, guard);
     throw new Error(`unknown component or control flow: ${tagArg.name}`);
@@ -82,6 +87,8 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
 
   if (tag === "button") return emitButton(props, children as t.Node[], scope, level, guard);
   if (tag === "img") return emitImage(propsArg, props, scope, level, guard);
+  // Native-only registry also owns lowercase HTML mappings (<progress>, <fieldset>, <dialog>, …).
+  if (nativeTags.has(tag)) return nativeTags.get(tag)!(propsArg, children as t.Node[], scope, level, guard);
   if (tag === "input") return emitInput(propsArg, props, scope, level, guard);
   if (tag === "textarea") return emitTextarea(propsArg, props, scope, level, guard);
   if (tag === "select") return emitSelect(propsArg, props, children as t.Node[], scope, level, guard);
@@ -239,7 +246,7 @@ function emitProvider(children: t.Node[], scope: Scope, level: number, guard?: s
   ];
 }
 
-function guardLine(guard: string | undefined, level: number): string[] {
+export function guardLine(guard: string | undefined, level: number): string[] {
   return guard ? [`${INDENT.repeat(level)}${INDENT}visible: !!(${guard})`] : [];
 }
 
@@ -473,7 +480,7 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
  *  native text control (T.TextField or T.TextArea). The CssFill exposes `inheritedColor`,
  *  `inheritedFontFamily`, and `inheritedFontSize` as resolved CSS string values; cssTheme helpers
  *  parse them into the QML types the native control expects. Fallbacks match existing gallery defaults. */
-function widgetColorFont(i: (n: number) => string, extraIndent = 0, source = "parent"): string[] {
+export function widgetColorFont(i: (n: number) => string, extraIndent = 0, source = "parent"): string[] {
   return [
     `${i(2 + extraIndent)}color: cssTheme.parseColor(${source}.inheritedColor || "#2b2b2b")`,
     `${i(2 + extraIndent)}font.family: cssTheme.resolveFontFamily(${source}.inheritedFontFamily || "Sans Serif")`,
@@ -1903,7 +1910,7 @@ function emitDateInput(
 }
 
 /** Children that are elements (recurse) interleaved with text/interpolation runs (one CssText each). */
-function emitChildren(children: t.Node[], scope: Scope, level: number): string[] {
+export function emitChildren(children: t.Node[], scope: Scope, level: number): string[] {
   const out: string[] = [];
   let run: t.Node[] = [];
   const flush = () => {

@@ -1,0 +1,201 @@
+/* Extra native inputs — group sheet for examples/native/inputs.tsx.
+   Palette matches examples/widgets.css (teal #176b87 accent, clean whites, soft shadows).
+   T.* controls have implicitWidth/Height 0-ish by default, so every widget wrapper carries
+   an explicit size; internal geometry (handles, spokes, sep) is hardcoded in QML — CSS
+   drives colours/radius/shadows only. */
+
+/* ─── RangeSlider ──────────────────────────────────────────────────────────────────────── */
+.native .ni-range {
+  width: 260px;
+  height: 36px;
+}
+
+.native .ni-range .track {
+  border-radius: 3px;
+  background: #e2e8f0;
+  height: 6px;
+}
+
+.native .ni-range .track-fill {
+  border-radius: 3px;
+  background: #176b87;
+  height: 6px;
+}
+
+.native .ni-range .handle {
+  border-radius: 9px;
+  background: #176b87;
+  box-shadow: 0 2px 6px rgba(23, 107, 135, 0.35);
+  width: 18px;
+  height: 18px;
+}
+
+.native .ni-range:focus .handle {
+  background: #1d7fa0;
+  box-shadow: 0 2px 8px rgba(23, 107, 135, 0.5);
+}
+
+/* ─── Dial ─────────────────────────────────────────────────────────────────────────────── */
+.native .ni-dial {
+  width: 96px;
+  height: 96px;
+}
+
+.native .ni-dial .dial {
+  background: #f8fafc;
+  border: 2px solid #dbe4ee;
+  border-radius: 48px;
+}
+
+.native .ni-dial:focus .dial {
+  border: 2px solid #176b87;
+}
+
+.native .ni-dial .handle {
+  background: #176b87;
+  border-radius: 6px;
+  width: 12px;
+  height: 12px;
+}
+
+.native .ni-dial:active .handle {
+  background: #1d7fa0;
+}
+
+/* ─── Tumbler ──────────────────────────────────────────────────────────────────────────── */
+.native .ni-tumbler {
+  width: 80px;
+  height: 180px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.native .ni-tumbler:focus {
+  border: 2px solid #176b87;
+}
+
+.native .ni-tumbler .item {
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.native .ni-tumbler .item:selected {
+  color: #176b87;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+/* ─── DelayButton ──────────────────────────────────────────────────────────────────────── */
+.native .ni-delay {
+  width: 160px;
+  height: 36px;
+  color: #17222c;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.native .ni-delay .delay {
+  background: #f8fafc;
+  border: 1px solid #d5dee8;
+  border-radius: 18px;
+}
+
+.native .ni-delay:hover .delay {
+  border: 1px solid #176b87;
+}
+
+.native .ni-delay .delay-fill {
+  background: rgba(23, 107, 135, 0.35);
+  border-radius: 18px;
+}
+
+.native .ni-delay:checked .delay {
+  background: #176b87;
+  border: 1px solid #176b87;
+}
+
+.native .ni-delay:checked text {
+  color: #ffffff;
+}
+
+/* ─── BusyIndicator ────────────────────────────────────────────────────────────────────── */
+.native .ni-busy {
+  width: 40px;
+  height: 40px;
+}
+
+.native .ni-busy .spoke {
+  background-color: #176b87;
+}
+
+/* Plain toggle button next to the indicator (regular <button>). */
+.native .ni-btn {
+  height: 30px;
+  padding: 0 14px;
+  background: #176b87;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.native .ni-btn text {
+  color: #ffffff;
+}
+
+.native .ni-btn:hover {
+  background: #1d7fa0;
+}
+
+/* ─── RoundButton / ToolButton / ToolSeparator ─────────────────────────────────────────── */
+.native .ni-round {
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  background: #176b87;
+  box-shadow: 0 2px 6px rgba(23, 107, 135, 0.35);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.native .ni-round text {
+  color: #ffffff;
+}
+
+.native .ni-round:hover {
+  background: #1d7fa0;
+}
+
+.native .ni-round:active {
+  background: #145d75;
+}
+
+.native .ni-tool {
+  height: 32px;
+  padding: 0 12px;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.native .ni-tool text {
+  color: #176b87;
+}
+
+.native .ni-tool:hover {
+  background: #e8eef5;
+}
+
+.native .ni-tool:active {
+  background: #dbe4ee;
+}
+
+.native .ni-sep {
+  width: 9px;
+  height: 32px;
+}
+
+.native .ni-sep .sep {
+  background: #dbe4ee;
+}

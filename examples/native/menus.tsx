@@ -1,0 +1,76 @@
+// Menus & views group (native-only plan, phase 3): <Menu>, <MenuBar>, <TreeView>, <Tray>.
+// Native-only tags are registry-dispatched by the transpiler (no runtime import — the QML
+// emitter resolves <Menu>/<MenuBar>/<TreeView>/<Tray> before user components); this module only
+// ever renders in the QML loader (native.tsx gates it behind the process.versions.solidQml probe).
+import { createSignal } from "solid-js";
+import { div, text, button } from "../../src/solid-qml/runtime";
+import "./menus.css";
+
+declare const Menu: any, MenuItem: any, MenuSeparator: any, MenuBar: any, TreeView: any, Tray: any;
+
+export function MenusAndViews() {
+  const [menuOpen, setMenuOpen] = createSignal(false);
+  const [lastAction, setLastAction] = createSignal("none yet");
+  const [selNode, setSelNode] = createSignal("nothing");
+
+  const treeData = [
+    {
+      label: "src",
+      children: [
+        { label: "emit", children: [{ label: "qml.ts" }, { label: "expr.ts" }] },
+        { label: "resolve", children: [{ label: "node.ts" }] },
+        { label: "index.ts" },
+      ],
+    },
+    { label: "docs", children: [{ label: "roadmap.md" }] },
+    { label: "package.json" },
+  ];
+
+  return (
+    <div class="nv-section nv-menus">
+      <text class="nv-title">Menus & views</text>
+
+      {/* ── context/action menu, controlled by a signal ─────────────────────── */}
+      <div class="nv-row">
+        <text class="nv-label">menu</text>
+        <button onClick={() => setMenuOpen(true)}>Actions ▾</button>
+        <text class="nv-echo">last action: {lastAction()}</text>
+        <Menu open={menuOpen()} x={64} y={40} onClose={() => setMenuOpen(false)}>
+          <MenuItem onClick={() => setLastAction("new file")}>New file</MenuItem>
+          <MenuItem onClick={() => setLastAction("duplicate")}>Duplicate</MenuItem>
+          <MenuSeparator />
+          <MenuItem onClick={() => setLastAction("delete")}>Delete</MenuItem>
+        </Menu>
+      </div>
+
+      {/* ── menu bar ─────────────────────────────────────────────────────────── */}
+      <div class="nv-row">
+        <text class="nv-label">menubar</text>
+        <MenuBar class="nv-menubar">
+          <Menu title="File">
+            <MenuItem onClick={() => setLastAction("open…")}>Open…</MenuItem>
+            <MenuItem onClick={() => setLastAction("save")}>Save</MenuItem>
+            <MenuSeparator />
+            <MenuItem onClick={() => setLastAction("quit")}>Quit</MenuItem>
+          </Menu>
+          <Menu title="Edit">
+            <MenuItem onClick={() => setLastAction("copy")}>Copy</MenuItem>
+            <MenuItem onClick={() => setLastAction("paste")}>Paste</MenuItem>
+          </Menu>
+        </MenuBar>
+      </div>
+
+      {/* ── recursive tree view ──────────────────────────────────────────────── */}
+      <div class="nv-row nv-tree-row-host">
+        <text class="nv-label">treeview</text>
+        <TreeView class="nv-tree" data={treeData} onSelect={(node) => setSelNode(node.label)} />
+        <text class="nv-echo">selected: {selNode()}</text>
+      </div>
+
+      {/* ── system tray icon (invisible chrome — just declared) ─────────────── */}
+      <Tray tooltip="solid-qml" onActivate={() => setLastAction("tray activated")}>
+        <MenuItem onClick={() => setLastAction("tray: hello")}>Say hello</MenuItem>
+      </Tray>
+    </div>
+  );
+}

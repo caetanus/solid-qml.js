@@ -59,7 +59,7 @@ export interface Scope {
   /** Mutable flag set by widget emitters when a T.* control is emitted.
    *  `flag`: any widget present → prepend Templates import.
    *  `calendar`: AbstractMonthGrid/AbstractDayOfWeekRow are used → needs Templates 6.3 (not 6.0). */
-  usedWidgets?: { flag: boolean; calendar: boolean; popupWindow: boolean };
+  usedWidgets?: { flag: boolean; calendar: boolean; popupWindow: boolean; extraImports?: Set<string> };
   /** Button group names collected by emitRadioButton; emitComponentType reads this after
    *  the render pass to emit one T.ButtonGroup { id: __group_<name> } per unique name. */
   buttonGroups?: Map<string, string[]>; // group name -> radio ctlIds in DECLARATION order

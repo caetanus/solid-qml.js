@@ -271,6 +271,22 @@ Css.CssRect {
                 onClicked: view = "widgets"
             }
         }
+        Css.CssFill {
+            cssClass: [].concat(view === "native" ? ["active"] : [])
+            cssState: __hover16.containsMouse ? ["hover"] : []
+            cssPrimitive: "button"
+            Css.CssText {
+                cssPrimitive: "text"
+                text: "Native"
+            }
+            MouseArea {
+                id: __hover16
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: view = "native"
+            }
+        }
     }
     Css.CssIncubator {
         active: (view === "hello") ? true : false
@@ -381,6 +397,13 @@ Css.CssRect {
         active: ((view === "widgets") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch") || (view === "todomvc") || (view === "nodeimports") || (view === "cssgaps") || (view === "dashboard"))) ? true : false
         sourceComponent: Component {
             Widgets {
+            }
+        }
+    }
+    Css.CssIncubator {
+        active: ((view === "native") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch") || (view === "todomvc") || (view === "nodeimports") || (view === "cssgaps") || (view === "dashboard") || (view === "widgets"))) ? true : false
+        sourceComponent: Component {
+            NativeOnly {
             }
         }
     }

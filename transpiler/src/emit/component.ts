@@ -50,7 +50,8 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   // Mutable flag set by widget emitters during the render pass.
   // `flag`: any Templates widget emitted → prepend the import.
   // `calendar`: MonthGrid / DayOfWeekRow used → upgrade to 6.3 (AbstractMonthGrid added in 6.3).
-  const usedWidgets = { flag: false, calendar: false, popupWindow: false };
+  const usedWidgets: { flag: boolean; calendar: boolean; popupWindow: boolean; extraImports?: Set<string> } =
+    { flag: false, calendar: false, popupWindow: false };
   // Radio button group names collected by emitRadioButton; each unique name becomes one
   // T.ButtonGroup { id: __group_<name> } child of the root item (emitted into lifecycle below).
   const buttonGroups = new Map<string, string[]>();
@@ -102,6 +103,10 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   if (usedWidgets.flag) {
     const ver = usedWidgets.popupWindow ? "6.8" : usedWidgets.calendar ? "6.3" : "6.0";
     lines.unshift("", `import QtQuick.Templates ${ver} as T`);
+  }
+  // Extra QML imports requested by native-tag emitters (Qt.labs.platform, QtQuick.Dialogs, …).
+  if (usedWidgets.extraImports?.size) {
+    lines.unshift("", ...[...usedWidgets.extraImports].sort());
   }
 
   const openIdx = lines.findIndex((l) => /\{\s*$/.test(l));
