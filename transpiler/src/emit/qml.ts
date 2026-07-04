@@ -869,7 +869,10 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
   const radioState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
 
   // Register this group name so emitComponentType can emit T.ButtonGroup { id: __group_<name> }.
-  if (name && scope.buttonGroups) scope.buttonGroups.add(name);
+  if (name && scope.buttonGroups) {
+    if (!scope.buttonGroups.has(name)) scope.buttonGroups.set(name, []);
+    scope.buttonGroups.get(name)!.push(ctlId);
+  }
   const groupId = name ? `__group_${safeName(name)}` : null;
 
   const lines: string[] = [
@@ -895,10 +898,11 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
   // Attach to the group if a name was given; the group is declared at root level by emitComponentType.
   if (groupId) lines.push(`${i(2)}T.ButtonGroup.group: ${groupId}`);
 
-  // Arrow keys step the radio group (HTML/desktop semantics): focus AND check the
-  // neighbour, wrapping. toggled() re-fires so the author's onChange wiring runs.
+  // Arrow keys move FOCUS through the group in DECLARATION order (the group's `order`
+  // list — ButtonGroup.buttons follows attachment order, which incubation scrambles),
+  // wrapping. Space CHECKS the focused radio (AbstractButton native) — owner semantics.
   if (groupId) lines.push(
-    `${i(2)}function __step(d) { var bs = ${groupId}.buttons; var j = (bs.indexOf(${ctlId}) + d + bs.length) % bs.length; var b = bs[j]; b.forceActiveFocus(Qt.TabFocusReason); b.checked = true; b.toggled() }`,
+    `${i(2)}function __step(d) { var bs = ${groupId}.order; var j = (bs.indexOf(${ctlId}) + d + bs.length) % bs.length; bs[j].forceActiveFocus(Qt.TabFocusReason) }`,
     `${i(2)}Keys.onDownPressed: __step(1)`,
     `${i(2)}Keys.onRightPressed: __step(1)`,
     `${i(2)}Keys.onUpPressed: __step(-1)`,

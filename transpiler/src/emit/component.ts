@@ -53,7 +53,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   const usedWidgets = { flag: false, calendar: false, popupWindow: false };
   // Radio button group names collected by emitRadioButton; each unique name becomes one
   // T.ButtonGroup { id: __group_<name> } child of the root item (emitted into lifecycle below).
-  const buttonGroups = new Set<string>();
+  const buttonGroups = new Map<string, string[]>();
   // Module-level `const NAME = <pure literal>` data tables (menus, slides, feeds…) referenced by
   // this component. QML property names cannot start with an upper-case letter (and these usually
   // do), so each one is surfaced as `__const_NAME` and the identifier is aliased in scope.
@@ -303,8 +303,10 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   }
   const lifecycle: string[] = [];
   // One T.ButtonGroup per unique radio `name`; attached property on each T.RadioButton wires exclusivity.
-  for (const gname of buttonGroups) {
-    lifecycle.push(`${INDENT}T.ButtonGroup { id: __group_${safeName(gname)} }`);
+  for (const [gname, ids] of buttonGroups) {
+    // `order` carries the radios in DECLARATION order — ButtonGroup.buttons follows
+    // attachment order, which incubation scrambles (arrows walked Free→Team→Pro).
+    lifecycle.push(`${INDENT}T.ButtonGroup { id: __group_${safeName(gname)}; readonly property var order: [${ids.join(", ")}] }`);
   }
   if (onCompletedBody.length) {
     lifecycle.push(`${INDENT}property var __cleanups: []`);

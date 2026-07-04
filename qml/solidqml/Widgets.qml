@@ -21,7 +21,7 @@ Css.CssRect {
     property var inputDate: null
     property var calDate: null
     function reset() { inputName = ""; inputPass = ""; inputSearch = ""; inputNotes = ""; chk1 = false; chk2 = true; sw = false; plan = "free"; fruit = "apple"; volume = 50; qty = 1; inputDate = null; calDate = null; }
-    T.ButtonGroup { id: __group_plan }
+    T.ButtonGroup { id: __group_plan; readonly property var order: [__input10, __input11, __input12] }
     cssClass: ["widgets"]
     cssPrimitive: "div"
     Css.CssRect {
@@ -548,7 +548,7 @@ Css.CssRect {
                         contentItem: null
                         activeFocusOnTab: solidTabstop.enabled && (__input10.checked || (!__group_plan.checkedButton && __group_plan.buttons.length > 0 && __group_plan.buttons[0] === __input10))
                         T.ButtonGroup.group: __group_plan
-                        function __step(d) { var bs = __group_plan.buttons; var j = (bs.indexOf(__input10) + d + bs.length) % bs.length; var b = bs[j]; b.forceActiveFocus(Qt.TabFocusReason); b.checked = true; b.toggled() }
+                        function __step(d) { var bs = __group_plan.order; var j = (bs.indexOf(__input10) + d + bs.length) % bs.length; bs[j].forceActiveFocus(Qt.TabFocusReason) }
                         Keys.onDownPressed: __step(1)
                         Keys.onRightPressed: __step(1)
                         Keys.onUpPressed: __step(-1)
@@ -605,7 +605,7 @@ Css.CssRect {
                         contentItem: null
                         activeFocusOnTab: solidTabstop.enabled && (__input11.checked || (!__group_plan.checkedButton && __group_plan.buttons.length > 0 && __group_plan.buttons[0] === __input11))
                         T.ButtonGroup.group: __group_plan
-                        function __step(d) { var bs = __group_plan.buttons; var j = (bs.indexOf(__input11) + d + bs.length) % bs.length; var b = bs[j]; b.forceActiveFocus(Qt.TabFocusReason); b.checked = true; b.toggled() }
+                        function __step(d) { var bs = __group_plan.order; var j = (bs.indexOf(__input11) + d + bs.length) % bs.length; bs[j].forceActiveFocus(Qt.TabFocusReason) }
                         Keys.onDownPressed: __step(1)
                         Keys.onRightPressed: __step(1)
                         Keys.onUpPressed: __step(-1)
@@ -662,7 +662,7 @@ Css.CssRect {
                         contentItem: null
                         activeFocusOnTab: solidTabstop.enabled && (__input12.checked || (!__group_plan.checkedButton && __group_plan.buttons.length > 0 && __group_plan.buttons[0] === __input12))
                         T.ButtonGroup.group: __group_plan
-                        function __step(d) { var bs = __group_plan.buttons; var j = (bs.indexOf(__input12) + d + bs.length) % bs.length; var b = bs[j]; b.forceActiveFocus(Qt.TabFocusReason); b.checked = true; b.toggled() }
+                        function __step(d) { var bs = __group_plan.order; var j = (bs.indexOf(__input12) + d + bs.length) % bs.length; bs[j].forceActiveFocus(Qt.TabFocusReason) }
                         Keys.onDownPressed: __step(1)
                         Keys.onRightPressed: __step(1)
                         Keys.onUpPressed: __step(-1)

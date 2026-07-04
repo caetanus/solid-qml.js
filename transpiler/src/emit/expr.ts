@@ -62,7 +62,7 @@ export interface Scope {
   usedWidgets?: { flag: boolean; calendar: boolean; popupWindow: boolean };
   /** Button group names collected by emitRadioButton; emitComponentType reads this after
    *  the render pass to emit one T.ButtonGroup { id: __group_<name> } per unique name. */
-  buttonGroups?: Set<string>;
+  buttonGroups?: Map<string, string[]>; // group name -> radio ctlIds in DECLARATION order
 }
 
 /** A reactive cell / prop / mutable-local name as a QML reference: always BARE — it's a property on

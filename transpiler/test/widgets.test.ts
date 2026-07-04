@@ -500,7 +500,7 @@ test("widgets: two radios with name='a' share ONE T.ButtonGroup declaration", as
     }
   `);
   // Only one ButtonGroup for name "a"
-  const groupDeclCount = (out.match(/T\.ButtonGroup \{ id: __group_a \}/g) ?? []).length;
+  const groupDeclCount = (out.match(/T\.ButtonGroup \{ id: __group_a;/g) ?? []).length;
   assert.equal(groupDeclCount, 1, "exactly one T.ButtonGroup declaration for name='a'");
   // Both radios reference the same group
   const groupRefCount = (out.match(/T\.ButtonGroup\.group: __group_a/g) ?? []).length;
@@ -516,8 +516,8 @@ test("widgets: two radios with different names get separate T.ButtonGroup declar
       </div>;
     }
   `);
-  assert.match(out, /T\.ButtonGroup \{ id: __group_a \}/);
-  assert.match(out, /T\.ButtonGroup \{ id: __group_b \}/);
+  assert.match(out, /T\.ButtonGroup \{ id: __group_a;/);
+  assert.match(out, /T\.ButtonGroup \{ id: __group_b;/);
   const totalGroups = (out.match(/T\.ButtonGroup \{/g) ?? []).length;
   assert.equal(totalGroups, 2, "two distinct ButtonGroup declarations for two names");
 });
@@ -1396,13 +1396,27 @@ test("date: popup background and contentItem re-anchor the CSS chain at the wrap
 // semantics); checkbox/switch arrows move focus along the tab chain (dialog semantics),
 // gated by the tabstop opt-out. Slider gains the same focused-wheel stepping as SpinBox. ---
 
-test("arrows: radio steps its ButtonGroup (focus + check + toggled) on all four arrows", async () => {
+test("arrows: radio moves FOCUS through the group's declaration order; Space checks (native)", async () => {
   const out = await qml(`export function F(){ return <input type="radio" name="g" />; }`);
-  assert.match(out, /function __step\(d\) \{ var bs = __group_g\.buttons;[\s\S]*?forceActiveFocus\(Qt\.TabFocusReason\)[\s\S]*?checked = true;[\s\S]*?toggled\(\)/);
+  assert.match(out, /function __step\(d\) \{ var bs = __group_g\.order;[\s\S]*?forceActiveFocus\(Qt\.TabFocusReason\) \}/);
+  assert.doesNotMatch(out, /checked = true/);
   assert.match(out, /Keys\.onDownPressed: __step\(1\)/);
   assert.match(out, /Keys\.onRightPressed: __step\(1\)/);
   assert.match(out, /Keys\.onUpPressed: __step\(-1\)/);
   assert.match(out, /Keys\.onLeftPressed: __step\(-1\)/);
+});
+
+test("arrows: the ButtonGroup carries the radios in declaration order", async () => {
+  const out = await qmlType(`
+    export function F() {
+      return <div>
+        <input type="radio" name="g" />
+        <input type="radio" name="g" />
+        <input type="radio" name="g" />
+      </div>;
+    }
+  `);
+  assert.match(out, /T\.ButtonGroup \{ id: __group_g; readonly property var order: \[__input0, __input1, __input2\] \}/);
 });
 
 test("arrows: radio without a name emits no arrow handlers", async () => {
