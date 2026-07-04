@@ -29,6 +29,12 @@
   background: rgba(255, 255, 255, 0.24);
 }
 
+/* Button labels are CssText children: color must be scoped to the label (a CssText matches
+   `text`/`.class text` rules, it does NOT inherit the button's own `color`). */
+.containers .ct-tool text {
+  color: #ffffff;
+}
+
 /* ─── TabBar ──────────────────────────────────────────────────────────────────────────── */
 .containers .ct-tabs {
   height: 40px;
@@ -130,6 +136,11 @@
 .containers .ct-open:hover,
 .containers .ct-nav:hover {
   background: #1d86a8;
+}
+
+.containers .ct-open text,
+.containers .ct-nav text {
+  color: #ffffff;
 }
 
 .containers .ct-state {

@@ -41,17 +41,20 @@ Css.CssRect {
                     cssPrimitive: ""
                     cssClass: ["track"]
                     anchors.fill: parent
-                    Css.CssRect {
-                        cssPrimitive: ""
-                        cssClass: ["bar"]
-                        width: __input0.indeterminate ? parent.width * 0.3 : __input0.visualPosition * parent.width
-                        height: parent.height
-                        NumberAnimation on x {
-                            running: __input0.indeterminate
-                            from: 0
-                            to: __input0.width * 0.7
-                            duration: 1200
-                            loops: Animation.Infinite
+                    Item {
+                        anchors.fill: parent
+                        Rectangle {
+                            width: __input0.indeterminate ? parent.width * 0.3 : __input0.visualPosition * parent.width
+                            height: parent.height
+                            color: "#176b87"
+                            Css.CssItem { cssPrimitive: "rect"; cssClass: ["bar"] }
+                            NumberAnimation on x {
+                                running: __input0.indeterminate
+                                from: 0
+                                to: __input0.width * 0.7
+                                duration: 1200
+                                loops: Animation.Infinite
+                            }
                         }
                     }
                 }
@@ -100,17 +103,20 @@ Css.CssRect {
                     cssPrimitive: ""
                     cssClass: ["track"]
                     anchors.fill: parent
-                    Css.CssRect {
-                        cssPrimitive: ""
-                        cssClass: ["bar"]
-                        width: __input1.indeterminate ? parent.width * 0.3 : __input1.visualPosition * parent.width
-                        height: parent.height
-                        NumberAnimation on x {
-                            running: __input1.indeterminate
-                            from: 0
-                            to: __input1.width * 0.7
-                            duration: 1200
-                            loops: Animation.Infinite
+                    Item {
+                        anchors.fill: parent
+                        Rectangle {
+                            width: __input1.indeterminate ? parent.width * 0.3 : __input1.visualPosition * parent.width
+                            height: parent.height
+                            color: "#176b87"
+                            Css.CssItem { cssPrimitive: "rect"; cssClass: ["bar"] }
+                            NumberAnimation on x {
+                                running: __input1.indeterminate
+                                from: 0
+                                to: __input1.width * 0.7
+                                duration: 1200
+                                loops: Animation.Infinite
+                            }
                         }
                     }
                 }

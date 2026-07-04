@@ -166,19 +166,25 @@ function emitProgress(propsArg: t.Node | undefined, children: t.Node[], scope: S
     `${i(3)}cssPrimitive: ""`,
     `${i(3)}cssClass: ["track"]`,
     `${i(3)}anchors.fill: parent`,
-    // Bar: the covered portion — width follows visualPosition (same pattern as the slider's
-    // track-fill). Indeterminate: a 30% segment whose x slides across the track in a loop.
-    `${i(3)}Css.CssRect {`,
-    `${i(4)}cssPrimitive: ""`,
-    `${i(4)}cssClass: ["bar"]`,
-    `${i(4)}width: ${ctlId}.indeterminate ? parent.width * 0.3 : ${ctlId}.visualPosition * parent.width`,
-    `${i(4)}height: parent.height`,
-    `${i(4)}NumberAnimation on x {`,
-    `${i(5)}running: ${ctlId}.indeterminate`,
-    `${i(5)}from: 0`,
-    `${i(5)}to: ${ctlId}.width * 0.7`,
-    `${i(5)}duration: 1200`,
-    `${i(5)}loops: Animation.Infinite`,
+    // Bar: the covered portion. A PLAIN Rectangle inside an anchored Item host — a Css child's
+    // width binding is CLOBBERED by the layout engine (block child stretches to 100%, the
+    // "always full" bug); a plain item is not a layout child, so the visualPosition binding
+    // holds. The nested CssItem paints .bar (background-color/radius). Indeterminate: a 30%
+    // segment whose x slides across the track in a loop.
+    `${i(3)}Item {`,
+    `${i(4)}anchors.fill: parent`,
+    `${i(4)}Rectangle {`,
+    `${i(5)}width: ${ctlId}.indeterminate ? parent.width * 0.3 : ${ctlId}.visualPosition * parent.width`,
+    `${i(5)}height: parent.height`,
+    `${i(5)}color: "#176b87"`,
+    `${i(5)}Css.CssItem { cssPrimitive: "rect"; cssClass: ["bar"] }`,
+    `${i(5)}NumberAnimation on x {`,
+    `${i(6)}running: ${ctlId}.indeterminate`,
+    `${i(6)}from: 0`,
+    `${i(6)}to: ${ctlId}.width * 0.7`,
+    `${i(6)}duration: 1200`,
+    `${i(6)}loops: Animation.Infinite`,
+    `${i(5)}}`,
     `${i(4)}}`,
     `${i(3)}}`,
     `${i(2)}}`,

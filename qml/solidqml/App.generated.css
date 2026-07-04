@@ -1714,13 +1714,13 @@ button:hover {
 }
 
 .native .hw-progress .bar {
-  background: #176b87;
+  background-color: #176b87;
   border-radius: 4px;
 }
 
 /* The sliding busy segment reads slightly lighter than a committed value. */
-.native .hw-progress:indeterminate .bar {
-  background: #4da3bd;
+.bar:indeterminate {
+  background-color: #4da3bd;
 }
 
 /* ─── <fieldset> / <legend> ───────────────────────────────────────────────────────────── */
@@ -1846,6 +1846,12 @@ button:hover {
   background: rgba(255, 255, 255, 0.24);
 }
 
+/* Button labels are CssText children: color must be scoped to the label (a CssText matches
+   `text`/`.class text` rules, it does NOT inherit the button's own `color`). */
+.containers .ct-tool text {
+  color: #ffffff;
+}
+
 /* ─── TabBar ──────────────────────────────────────────────────────────────────────────── */
 .containers .ct-tabs {
   height: 40px;
@@ -1947,6 +1953,11 @@ button:hover {
 .containers .ct-open:hover,
 .containers .ct-nav:hover {
   background: #1d86a8;
+}
+
+.containers .ct-open text,
+.containers .ct-nav text {
+  color: #ffffff;
 }
 
 .containers .ct-state {

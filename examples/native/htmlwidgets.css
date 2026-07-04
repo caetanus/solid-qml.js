@@ -33,13 +33,13 @@
 }
 
 .native .hw-progress .bar {
-  background: #176b87;
+  background-color: #176b87;
   border-radius: 4px;
 }
 
 /* The sliding busy segment reads slightly lighter than a committed value. */
-.native .hw-progress:indeterminate .bar {
-  background: #4da3bd;
+.bar:indeterminate {
+  background-color: #4da3bd;
 }
 
 /* ─── <fieldset> / <legend> ───────────────────────────────────────────────────────────── */
