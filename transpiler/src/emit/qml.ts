@@ -201,16 +201,28 @@ function emitInstance(name: string, propsArg: t.Node | undefined, children: t.No
   // child's implicit size and places it, so it participates in the parent's flex/grid.
   if (scope.foreignQml?.has(typeName)) {
     const i = (n: number) => INDENT.repeat(level + n);
-    const inner = [`${i(1)}${typeName} {`];
+    // Sizing contract (owner note 2026-07-04): a QML item has NO size unless given one. So the CSS
+    // box acquires its size the normal way — from the parent's flex/flow, a `class` on the tag, or
+    // width/height props — and imposes it DOWN onto the foreign via `anchors.fill: parent`. All three
+    // sources feed the SAME box; measuring the foreign's own implicit is only the fallback for a
+    // component that sets implicitWidth/Height itself (e.g. a natural-size badge).
+    const props = readProps(propsArg);
+    const classLine = buildCssClassLine(props, scope, i(1));
+    const inner = [`${i(1)}${typeName} {`, `${i(2)}anchors.fill: parent`];
     if (propsArg && t.isObjectExpression(propsArg)) {
       for (const p of propsArg.properties) {
-        if (t.isObjectProperty(p) && t.isIdentifier(p.key) && p.key.name !== "children" && t.isExpression(p.value))
-          inner.push(`${i(2)}${safeName(p.key.name)}: ${emitExpr(p.value, { ...scope, mode: "binding" })}`);
+        if (!t.isObjectProperty(p) || !t.isIdentifier(p.key) || !t.isExpression(p.value)) continue;
+        const k = p.key.name;
+        if (k === "children" || k === "class" || k === "classList") continue;
+        // width/height size the WRAPPER, not the item: route them to the foreign's implicit, which the
+        // layout engine reads to size the box (the box then fills the item back via anchors.fill).
+        const key = k === "width" ? "implicitWidth" : k === "height" ? "implicitHeight" : safeName(k);
+        inner.push(`${i(2)}${key}: ${emitExpr(p.value, { ...scope, mode: "binding" })}`);
       }
     }
     inner.push(...emitChildren(children, scope, level + 2));
     inner.push(`${i(1)}}`);
-    return [`${pad}Css.CssRect {`, `${i(1)}cssPrimitive: "div"`, ...guardLine(guard, level), ...inner, `${pad}}`];
+    return [`${pad}Css.CssRect {`, `${i(1)}cssPrimitive: "div"`, ...classLine, ...guardLine(guard, level), ...inner, `${pad}}`];
   }
   const meta = scope.componentMeta?.get(name);
   const lines = [`${pad}${typeName} {`, ...guardLine(guard, level)];

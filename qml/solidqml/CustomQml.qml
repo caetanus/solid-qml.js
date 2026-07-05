@@ -19,6 +19,7 @@ Css.CssRect {
         Css.CssRect {
             cssPrimitive: "div"
             Badge {
+                anchors.fill: parent
                 label: "clicks"
                 count: clicks
                 onBumped: function() { return clicks = clicks + 1 }
@@ -27,6 +28,7 @@ Css.CssRect {
         Css.CssRect {
             cssPrimitive: "div"
             Badge {
+                anchors.fill: parent
                 label: "stars"
                 count: stars
                 onBumped: function() { return stars = stars + 1 }
