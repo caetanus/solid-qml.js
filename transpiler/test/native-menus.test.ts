@@ -100,9 +100,9 @@ test("menus: popup implicit sizes are set (Templates popups open 0x0 without the
   assert.match(out, /implicitHeight: Math\.max\(implicitBackgroundHeight \+ topInset \+ bottomInset, implicitContentHeight \+ topPadding \+ bottomPadding\)/);
 });
 
-test("menus: popupType is a native window (T.Popup.Window)", async () => {
+test("menus: popupType is an in-scene item popup (Wayland-correct positioning)", async () => {
   const out = await qml(MENU_SRC);
-  assert.match(out, /popupType: T\.Popup\.Window/);
+  assert.match(out, /popupType: T\.Popup\.Item/);
 });
 
 test("menus: cssAncestor re-anchor on BOTH background and contentItem", async () => {

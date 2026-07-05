@@ -54,7 +54,7 @@ Css.CssRect {
                 id: __menu0
                 x: 64
                 y: 40
-                popupType: T.Popup.Window
+                popupType: T.Popup.Item
                 implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
                 implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
                 padding: 1
@@ -189,7 +189,7 @@ Css.CssRect {
                     menu: T.Menu {
                         id: __menu6
                         title: "File"
-                        popupType: T.Popup.Window
+                        popupType: T.Popup.Item
                         implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
                         implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
                         padding: 1
@@ -300,7 +300,7 @@ Css.CssRect {
                     menu: T.Menu {
                         id: __menu11
                         title: "Edit"
-                        popupType: T.Popup.Window
+                        popupType: T.Popup.Item
                         implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
                         implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
                         padding: 1

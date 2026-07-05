@@ -150,8 +150,10 @@ function menuObjectLines(opts: {
     ...(opts.title ? [`${i(1)}title: ${opts.title}`] : []),
     ...(opts.xExpr ? [`${i(1)}x: ${opts.xExpr}`] : []),
     ...(opts.yExpr ? [`${i(1)}y: ${opts.yExpr}`] : []),
-    // Desktop menu: a REAL native popup window (Qt 6.8+), like the <select> dropdown.
-    `${i(1)}popupType: T.Popup.Window`,
+    // In-scene overlay popup (NOT Popup.Window): Wayland compositors don't honor client toplevel
+    // positioning, so a window-type menu opens at the top of the screen once the app floats. An
+    // Item popup opens relative to its host in the scene (same fix as <select>/<input type=date>).
+    `${i(1)}popupType: T.Popup.Item`,
     // Templates popups have NO implicit-size policy — this is the style's sizing formula:
     // without it the menu opens 0x0. The width floor lives HERE, not on the background:
     // a background CssFill's implicitWidth is overwritten by the CSS engine's content pass
