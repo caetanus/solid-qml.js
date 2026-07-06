@@ -33,11 +33,9 @@ Css.CssFill {
         contentItem: null
         activeFocusOnTab: solidTabstop.enabled
         onToggled: root.toggled()
-        // Arrows move focus along the chain (desktop dialog semantics), same opt-out as Tab.
-        Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = box.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-        Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = box.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-        Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = box.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-        Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = box.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+        // Desktop model (tab-focus study §6): a checkbox is a SINGLE tab stop — Tab moves between
+        // controls, Space toggles. Arrows do NOT move focus (that was the "arrows leak focus out"
+        // bug); only a radio GROUP navigates with arrows. So no arrow handlers here.
 
         // indicator: a fixed-size Css item (not in a Css layout container — geometry is hardcoded).
         indicator: Css.CssFill {

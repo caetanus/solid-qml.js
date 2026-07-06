@@ -1392,10 +1392,12 @@ test("arrows: radio without a name emits no arrow handlers", async () => {
   assert.doesNotMatch(out, /Keys\.onDownPressed/);
 });
 
-test("arrows: Checkbox.qml and Toggle.qml move focus along the chain, honoring the tabstop opt-out", async () => {
-  for (const [qmlSrc, inner] of [[CHECKBOX_QML, "box"], [TOGGLE_QML, "sw"]] as const) {
-    assert.match(qmlSrc, new RegExp(`Keys\\.onDownPressed: \\{ if \\(solidTabstop\\.enabled\\) \\{ var __n = ${inner}\\.nextItemInFocusChain\\(true\\); if \\(__n\\) __n\\.forceActiveFocus\\(Qt\\.TabFocusReason\\) \\} \\}`));
-    assert.match(qmlSrc, new RegExp(`Keys\\.onUpPressed: \\{ if \\(solidTabstop\\.enabled\\) \\{ var __n = ${inner}\\.nextItemInFocusChain\\(false\\)`));
+test("focus: Checkbox.qml and Toggle.qml are single tab stops — arrows do NOT move focus (study §6)", async () => {
+  // Desktop model: a checkbox/switch is one tab stop (Tab between, Space toggles). Arrows moving
+  // focus was the "arrows leak focus out of the group" bug — only a radio GROUP arrow-navigates.
+  for (const qmlSrc of [CHECKBOX_QML, TOGGLE_QML]) {
+    assert.match(qmlSrc, /activeFocusOnTab: solidTabstop\.enabled/);
+    assert.doesNotMatch(qmlSrc, /nextItemInFocusChain/);
   }
 });
 

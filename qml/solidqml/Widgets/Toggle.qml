@@ -34,10 +34,8 @@ Css.CssFill {
         contentItem: null
         activeFocusOnTab: solidTabstop.enabled
         onToggled: root.toggled()
-        Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = sw.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-        Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = sw.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-        Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = sw.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-        Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = sw.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
+        // Desktop model (tab-focus study §6): a switch is a SINGLE tab stop — Tab between controls,
+        // Space toggles. Arrows do NOT move focus (removed the focus-chain leak).
 
         indicator: Css.CssFill {
             cssPrimitive: "span"
