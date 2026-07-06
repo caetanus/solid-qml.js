@@ -254,44 +254,48 @@ const MENUBAR_SRC = `
   }
 `;
 
-test("menubar: CssFill wrapper mirrors T.MenuBar implicit sizes and carries the class", async () => {
+test("menubar: instantiates W.MenuBar carrying the author class (chrome lives in MenuBar.qml)", async () => {
   const out = await qml(MENUBAR_SRC);
-  assert.match(out, /Css\.CssFill \{/);
+  assert.match(out, /W\.MenuBar \{/);
   assert.match(out, /cssClass: \["bar"\]/);
-  assert.match(out, /T\.MenuBar \{/);
-  assert.match(out, /implicitWidth: __mbar0\.implicitWidth/);
-  assert.match(out, /implicitHeight: __mbar0\.implicitHeight/);
+  assert.doesNotMatch(out, /T\.MenuBar/);
+  assert.doesNotMatch(out, /contentItem: Row/);
 });
 
-test("menubar: contentItem is a Row Repeater over contentModel (Basic-style)", async () => {
-  const out = await qml(MENUBAR_SRC);
-  assert.match(out, /contentItem: Row \{/);
-  assert.match(out, /Repeater \{ model: __mbar0\.contentModel \}/);
+test("menubar: MenuBar.qml hosts the T.MenuBar Basic-style structure", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/MenuBar.qml", import.meta.url)), "utf8");
+  assert.match(src, /T\.MenuBar \{/);
+  assert.match(src, /contentItem: Row \{/);
+  assert.match(src, /Repeater \{ model: bar\.contentModel \}/);
+  assert.match(src, /cssClass: \["menubar"\]/);
+  assert.match(src, /default property alias barItems: bar\.contentData/);
 });
 
-test("menubar: each <Menu title> becomes a T.MenuBarItem with a W.Menu submenu", async () => {
+test("menubar: each <Menu title> becomes a W.MenuBarItem with a W.Menu submenu", async () => {
   const out = await qml(MENUBAR_SRC);
-  const items = out.match(/T\.MenuBarItem \{/g) ?? [];
+  const items = out.match(/W\.MenuBarItem \{/g) ?? [];
   assert.equal(items.length, 2);
   assert.match(out, /menu: W\.Menu \{/);
   assert.match(out, /title: "File"/);
   assert.match(out, /title: "Edit"/);
 });
 
-test("menubar: item slots — .menubar-item background with hover/open, .menubar-label title text", async () => {
-  const out = await qml(MENUBAR_SRC);
-  assert.match(out, /cssClass: \["menubar-item"\]/);
-  assert.match(out, /cssState: \(__mbi1\.hovered \? \["hover"\] : \[\]\)\.concat\(__mbi1\.highlighted \? \["open"\] : \[\]\)/);
-  assert.match(out, /cssClass: \["menubar-label"\]/);
-  assert.match(out, /text: __mbi1\.menu \? __mbi1\.menu\.title : ""/);
+test("menubar: MenuBarItem.qml hosts the .menubar-item/.menubar-label slots + deactivation close", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/MenuBarItem.qml", import.meta.url)), "utf8");
+  assert.match(src, /T\.MenuBarItem \{/);
+  assert.match(src, /cssClass: \["menubar-item"\]/);
+  assert.match(src, /cssState: \(ctl\.hovered \? \["hover"\] : \[\]\)\.concat\(ctl\.highlighted \? \["open"\] : \[\]\)/);
+  assert.match(src, /cssClass: \["menubar-label"\]/);
+  assert.match(src, /text: ctl\.menu \? ctl\.menu\.title : ""/);
+  assert.match(src, /Window\.onActiveChanged: if \(!Window\.active && ctl\.menu\) ctl\.menu\.close\(\)/);
 });
 
 test("menubar: submenu popups re-anchor CSS at their MenuBarItem", async () => {
   const out = await qml(MENUBAR_SRC);
-  // Counter walk (items no longer consume the counter): bar=0, File item=1, File menu=2,
-  // Edit item=3, Edit menu=4. Each submenu's W.Menu re-anchors at its MenuBarItem.
-  assert.match(out, /cssAncestor: __mbi1/);
-  assert.match(out, /cssAncestor: __mbi3/);
+  // Counter walk (no barId, items no longer consume the counter): File item=0, File menu=1,
+  // Edit item=2, Edit menu=3. Each submenu's W.Menu re-anchors at its MenuBarItem.
+  assert.match(out, /cssAncestor: __mbi0/);
+  assert.match(out, /cssAncestor: __mbi2/);
 });
 
 test("menubar: submenu items wire onTriggered", async () => {

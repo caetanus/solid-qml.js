@@ -1,25 +1,22 @@
 // Native menus group: <Menu>/<MenuItem>/<MenuSeparator>, <MenuBar>, <TreeView>, <Tray>.
 //
-// <Menu>/<MenuBar> are QtQuick TEMPLATES (T.Menu is a QQuickPopup; T.MenuBar a QQuickContainer —
-// see ~/src/qtdeclarative/src/quicktemplates/qquickmenu_p.h / qquickmenubar_p.h). Their visual
-// slots are filled with Css* items following the emitSelect popup canon in ../qml.ts:
-//   - Templates popups have NO implicit-size policy of their own (that is the style's job, and
-//     we ARE the style) — without explicit implicitWidth/Height a menu opens 0x0.
-//   - popup contents reparent to the window Overlay, severing the visual chain CSS scoping walks;
-//     `property Item cssAncestor: <owner>` on BOTH background and contentItem re-anchors the walk
-//     (they are sibling slots — every popup descendant passes through one of them).
-//   - popupType: T.Popup.Window (Qt 6.8) for real native dropdown windows, with the owner's
-//     Qt::Popup semantics: close when the app window deactivates.
+// Owner directive 2026-07-05: every widget is a .qml in solidqml.Widgets; this emitter INSTANTIATES
+// them and keeps only the orchestration. Each widget's SHELL lives in qml/solidqml/Widgets/:
+//   - W.Menu (Menu.qml): the T.Menu popup — popupType Popup.Item (Wayland-correct in-scene
+//     positioning; a Popup.Window opens at the screen top once the app floats), the style's implicit
+//     size (Templates popups have no size policy — we ARE the style → 0x0 otherwise), the .popup
+//     background + contentItem ListView with the cssAncestor re-anchor on BOTH sibling slots (popup
+//     contents reparent to the Overlay, severing the CSS walk), and the __closedAt debounce store.
+//   - W.MenuItem / W.MenuSeparator: the .option/.option-label rows (cursor + `&`-mnemonic strip) and
+//     the 1px .sep. W.MenuBar / W.MenuBarItem: the T.MenuBar Basic-style chrome + the entry slots.
+//   - W.Tray (Tray.qml): the zero-size Item host + SystemTrayIcon shell (a QObject, NOT an Item).
+//   - W.TreeView (TreeView.qml): OUR OWN recursive tree over plain {label, children?} objects (Qt's
+//     TreeView needs a QAbstractItemModel + recycling — Phase 4 virtualization).
 //
-// <TreeView> is OUR OWN recursive tree over plain {label, children?} objects. Qt's TreeView
-// requires a QAbstractItemModel and brings delegate recycling; virtualization is a LATER phase
-// (plan: 2026-07-03-native-only-widgets, Phase 4) — this emitter targets config-panel-sized
-// trees. Recursion mechanism: a `Component { id }` whose delegate references itself BY ID
-// (runtime reference). QML inline components (`component X: …`) were probed and REJECTED here:
-// a self-reference makes the compiler fail with "Inline components form a cycle!".
-//
-// <Tray> maps to Qt.labs.platform SystemTrayIcon — a QObject, NOT an Item — so it is wrapped
-// in a zero-size Item to sit in the tree wherever declared.
+// The emit KEEPS: which Menu form (standalone controlled `open` Binding vs self-managed `trigger`
+// toggle + __closedAt debounce), the trigger injection, the Window-deactivation close, item/separator
+// parsing, the MenuBar submenu wiring, and — for Tray — the Platform.Menu construction (author item
+// handlers), assigned through the component's `menu` alias so registration stays identical.
 import * as t from "@babel/types";
 import { registerNativeTags, requireImport } from "./index.ts";
 import { emitExpr, type Scope } from "../expr.ts";
@@ -283,44 +280,24 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
 
 // ─── <MenuBar> with <Menu title="…"> children ───────────────────────────────────────────────────
 
-/** T.MenuBar is a QQuickContainer. Canonical Basic-style structure: contentItem Row over
- *  `menuBar.contentModel`. Each child <Menu title> becomes an EXPLICIT T.MenuBarItem declared in
- *  contentData — qquickmenubar.cpp appends MenuBarItems directly ("you can add MenuBarItems
- *  directly to the menu bar"), wiring hover-open/click-open — with the submenu attached via its
- *  `menu` property (an object binding, so contentData_append never sees a bare Menu and never
- *  creates a duplicate delegate item). */
+/** One .qml per component (owner directive 2026-07-05): the CssFill "div" wrapper, the T.MenuBar
+ *  (Row+Repeater contentItem over contentModel, `.menubar` background) live in MenuBar.qml, and each
+ *  top-level entry's chrome (`.menubar-item`/`.menubar-label` slots, Window-deactivation close) in
+ *  MenuBarItem.qml. The emit is thin: it wires the author classes and, per <Menu title> child, a
+ *  W.MenuBarItem whose `menu` is the W.Menu submenu (an object binding; the submenu re-anchors its
+ *  CSS walk at the MenuBarItem's id). The children route into the bar's contentData via the default
+ *  `barItems` alias. */
 function emitMenuBar(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const counter = scope.inputCounter ?? { n: 0 };
-  const n = counter.n++;
-  const barId = `__mbar${n}`;
   const classLine = buildCssClassLine(cssPropsShim(propsArg), scope, i(1));
-  if (scope.usedWidgets) scope.usedWidgets.flag = true;
+  markWidgetLib(scope);
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.MenuBar {`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "div"`,
-    // Best-effort defaults: once the author's CSS gives the wrapper box rules, the engine's
-    // content pass measures the plain T.MenuBar as 0 and OVERWRITES these — size the box in
-    // CSS then (canon: .wg-cal/.wg-date in examples/widgets.css do exactly this).
-    `${i(1)}implicitWidth: ${barId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${barId}.implicitHeight`,
-    `${i(1)}T.MenuBar {`,
-    `${i(2)}id: ${barId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)`,
-    `${i(2)}implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)`,
-    `${i(2)}contentItem: Row {`,
-    `${i(3)}spacing: ${barId}.spacing`,
-    `${i(3)}Repeater { model: ${barId}.contentModel }`,
-    `${i(2)}}`,
-    `${i(2)}background: Css.CssFill {`,
-    `${i(3)}cssPrimitive: "div"`,
-    `${i(3)}cssClass: ["menubar"]`,
-    `${i(2)}}`,
   ];
 
   for (const child of children) {
@@ -336,38 +313,18 @@ function emitMenuBar(propsArg: t.Node | undefined, children: t.Node[], scope: Sc
     const itemId = `__mbi${counter.n++}`;
     const menuId = `__menu${counter.n++}`;
     const items = parseMenuChildren(menuKids as t.Node[], scope, "Menu");
-    const menuLines = menuObjectLines({ menuId, anchorId: itemId, items, classes: classesOf(p), title }, scope, level + 3);
+    const menuLines = menuObjectLines({ menuId, anchorId: itemId, items, classes: classesOf(p), title }, scope, level + 2);
     // Re-shape the submenu as the `menu:` object binding of the MenuBarItem.
-    menuLines[0] = `${i(3)}menu: ${menuLines[0].trimStart()}`;
+    menuLines[0] = `${i(2)}menu: ${menuLines[0].trimStart()}`;
     lines.push(
-      `${i(2)}T.MenuBarItem {`,
-      `${i(3)}id: ${itemId}`,
-      `${i(3)}hoverEnabled: true`,
-      `${i(3)}implicitWidth: implicitContentWidth + leftPadding + rightPadding`,
-      `${i(3)}implicitHeight: implicitContentHeight + topPadding + bottomPadding`,
-      `${i(3)}leftPadding: 12`,
-      `${i(3)}rightPadding: 12`,
-      `${i(3)}topPadding: 6`,
-      `${i(3)}bottomPadding: 6`,
-      // Qt::Popup semantics for the drop-down (see emitMenu).
-      `${i(3)}Window.onActiveChanged: if (!Window.active && ${itemId}.menu) ${itemId}.menu.close()`,
+      `${i(1)}W.MenuBarItem {`,
+      `${i(2)}id: ${itemId}`,
       ...menuLines,
-      `${i(3)}background: Css.CssFill {`,
-      `${i(4)}cssPrimitive: "div"`,
-      `${i(4)}cssClass: ["menubar-item"]`,
-      // `highlighted` = this item's menu is the open one (set by the menu bar).
-      `${i(4)}cssState: (${itemId}.hovered ? ["hover"] : []).concat(${itemId}.highlighted ? ["open"] : [])`,
-      `${i(3)}}`,
-      `${i(3)}contentItem: Css.CssText {`,
-      `${i(4)}cssPrimitive: ""`,
-      `${i(4)}cssClass: ["menubar-label"]`,
-      `${i(4)}text: ${itemId}.menu ? ${itemId}.menu.title : ""`,
-      `${i(3)}}`,
-      `${i(2)}}`,
+      `${i(1)}}`,
     );
   }
 
-  lines.push(`${i(1)}}`, `${pad}}`);
+  lines.push(`${pad}}`);
   return lines;
 }
 

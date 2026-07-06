@@ -4,8 +4,6 @@ import qmlcss 1.0 as Css
 
 
 import solidqml.Widgets 1.0 as W
-
-import QtQuick.Templates 6.0 as T
 W.Div {
     id: __self
     property var lastAction: "none yet"
@@ -62,95 +60,42 @@ W.Div {
             cssClass: ["nv-label"]
             text: "menubar"
         }
-        Css.CssFill {
+        W.MenuBar {
             cssClass: ["nv-menubar"]
-            cssPrimitive: "div"
-            implicitWidth: __mbar1.implicitWidth
-            implicitHeight: __mbar1.implicitHeight
-            T.MenuBar {
-                id: __mbar1
-                anchors.fill: parent
-                implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
-                implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-                contentItem: Row {
-                    spacing: __mbar1.spacing
-                    Repeater { model: __mbar1.contentModel }
-                }
-                background: Css.CssFill {
-                    cssPrimitive: "div"
-                    cssClass: ["menubar"]
-                }
-                T.MenuBarItem {
-                    id: __mbi2
-                    hoverEnabled: true
-                    implicitWidth: implicitContentWidth + leftPadding + rightPadding
-                    implicitHeight: implicitContentHeight + topPadding + bottomPadding
-                    leftPadding: 12
-                    rightPadding: 12
-                    topPadding: 6
-                    bottomPadding: 6
-                    Window.onActiveChanged: if (!Window.active && __mbi2.menu) __mbi2.menu.close()
-                    menu: W.Menu {
-                        id: __menu3
-                        cssAncestor: __mbi2
-                        title: "File"
-                        W.MenuItem {
-                            text: "Open…"
-                            onTriggered: { lastAction = "open…" }
-                        }
-                        W.MenuItem {
-                            text: "Save"
-                            onTriggered: { lastAction = "save" }
-                        }
-                        W.MenuSeparator { }
-                        W.MenuItem {
-                            text: "Quit"
-                            onTriggered: { lastAction = "quit" }
-                        }
+            W.MenuBarItem {
+                id: __mbi1
+                menu: W.Menu {
+                    id: __menu2
+                    cssAncestor: __mbi1
+                    title: "File"
+                    W.MenuItem {
+                        text: "Open…"
+                        onTriggered: { lastAction = "open…" }
                     }
-                    background: Css.CssFill {
-                        cssPrimitive: "div"
-                        cssClass: ["menubar-item"]
-                        cssState: (__mbi2.hovered ? ["hover"] : []).concat(__mbi2.highlighted ? ["open"] : [])
+                    W.MenuItem {
+                        text: "Save"
+                        onTriggered: { lastAction = "save" }
                     }
-                    contentItem: Css.CssText {
-                        cssPrimitive: ""
-                        cssClass: ["menubar-label"]
-                        text: __mbi2.menu ? __mbi2.menu.title : ""
+                    W.MenuSeparator { }
+                    W.MenuItem {
+                        text: "Quit"
+                        onTriggered: { lastAction = "quit" }
                     }
                 }
-                T.MenuBarItem {
-                    id: __mbi4
-                    hoverEnabled: true
-                    implicitWidth: implicitContentWidth + leftPadding + rightPadding
-                    implicitHeight: implicitContentHeight + topPadding + bottomPadding
-                    leftPadding: 12
-                    rightPadding: 12
-                    topPadding: 6
-                    bottomPadding: 6
-                    Window.onActiveChanged: if (!Window.active && __mbi4.menu) __mbi4.menu.close()
-                    menu: W.Menu {
-                        id: __menu5
-                        cssAncestor: __mbi4
-                        title: "Edit"
-                        W.MenuItem {
-                            text: "Copy"
-                            onTriggered: { lastAction = "copy" }
-                        }
-                        W.MenuItem {
-                            text: "Paste"
-                            onTriggered: { lastAction = "paste" }
-                        }
+            }
+            W.MenuBarItem {
+                id: __mbi3
+                menu: W.Menu {
+                    id: __menu4
+                    cssAncestor: __mbi3
+                    title: "Edit"
+                    W.MenuItem {
+                        text: "Copy"
+                        onTriggered: { lastAction = "copy" }
                     }
-                    background: Css.CssFill {
-                        cssPrimitive: "div"
-                        cssClass: ["menubar-item"]
-                        cssState: (__mbi4.hovered ? ["hover"] : []).concat(__mbi4.highlighted ? ["open"] : [])
-                    }
-                    contentItem: Css.CssText {
-                        cssPrimitive: ""
-                        cssClass: ["menubar-label"]
-                        text: __mbi4.menu ? __mbi4.menu.title : ""
+                    W.MenuItem {
+                        text: "Paste"
+                        onTriggered: { lastAction = "paste" }
                     }
                 }
             }
