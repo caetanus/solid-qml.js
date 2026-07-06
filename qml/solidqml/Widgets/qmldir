@@ -11,6 +11,7 @@ Drawer 1.0 Drawer.qml
 Details 1.0 Details.qml
 Div 1.0 Div.qml
 Fieldset 1.0 Fieldset.qml
+Tabstop 1.0 Tabstop.qml
 Image 1.0 Image.qml
 Menu 1.0 Menu.qml
 MenuBar 1.0 MenuBar.qml

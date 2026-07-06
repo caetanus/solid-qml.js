@@ -10,6 +10,15 @@
   font-size: 16px;
 }
 
+/* Keyboard tab-focus ring (study §6). Styled via the `::tab-stop` pseudo-element — the W.Tabstop
+   marker is a decorative overlay (`cssPart: "tab-stop"`), and a pseudo-element is valid CSS that
+   doesn't break editors/linters. A bright, luminous ring; override this rule to restyle. */
+::tab-stop {
+  background: transparent;
+  border: 2px solid #38bdf8;
+  border-radius: 6px;
+}
+
 .gallery {
   position: relative;
   display: flex;

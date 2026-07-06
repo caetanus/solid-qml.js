@@ -2,6 +2,8 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
+
+import solidqml.Widgets 1.0 as W
 Window {
     id: __self
     visible: true
@@ -25,18 +27,6 @@ Window {
         Gallery {
         }
     }
-    Rectangle {
-        id: __focusRing
-        z: 100000
-        visible: solidTabstop.enabled && !!__self.activeFocusItem && __self.activeFocusItem !== __self.contentItem
-        color: "transparent"
-        border.width: 2
-        border.color: "#2d8fb3"
-        radius: 4
-        antialiasing: true
-        Timer {
-            interval: 16; repeat: true; running: __focusRing.visible; triggeredOnStart: true
-            onTriggered: { var t = __self.activeFocusItem; if (!t) return; var p = t.mapToItem(__focusRing.parent, 0, 0); __focusRing.x = p.x - 2; __focusRing.y = p.y - 2; __focusRing.width = t.width + 4; __focusRing.height = t.height + 4 }
-        }
-    }
+    W.Tabstop { window: __self }
+    Component.onCompleted: if (solidTabstop.enabled) Qt.callLater(function() { var f = __self.contentItem.nextItemInFocusChain(true); if (f) f.forceActiveFocus(Qt.TabFocusReason) })
 }
