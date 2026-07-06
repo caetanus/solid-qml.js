@@ -339,16 +339,14 @@ const SWIPE = `
   }
 `;
 
-test("containers: <SwipeView> emits T.SwipeView with a Basic-style ListView contentItem", async () => {
+test("containers: <SwipeView> instantiates W.SwipeView keeping the __swipe0 id", async () => {
   const out = await qml(SWIPE);
-  assert.match(out, /cssPrimitive: "swipeview"/);
-  assert.match(out, /T\.SwipeView \{/);
+  assert.match(out, /W\.SwipeView \{/);
   assert.match(out, /id: __swipe0/);
-  assert.match(out, /contentItem: ListView \{/);
-  assert.match(out, /model: __swipe0\.contentModel/);
-  assert.match(out, /snapMode: ListView\.SnapOneItem/);
-  assert.match(out, /highlightRangeMode: ListView\.StrictlyEnforceRange/);
-  assert.match(out, /clip: true/);
+  assert.match(out, /cssClass: \["sw"\]/);
+  // The T.SwipeView + ListView contentItem now live in SwipeView.qml.
+  assert.doesNotMatch(out, /T\.SwipeView/);
+  assert.doesNotMatch(out, /contentItem: ListView/);
 });
 
 test("containers: <SwipeView current> binds currentIndex via RestoreNone Binding", async () => {
@@ -370,21 +368,30 @@ test("containers: <SwipeView> pages emit as direct children", async () => {
   assert.match(out, /cssClass: \["pg-b"\]/);
 });
 
-test("containers: <PageIndicator> wires count/currentIndex and emits the dot delegate", async () => {
+test("containers: <PageIndicator> instantiates W.PageIndicator wiring count/currentIndex", async () => {
   const out = await qml(SWIPE);
-  assert.match(out, /cssPrimitive: "pageindicator"/);
-  assert.match(out, /T\.PageIndicator \{/);
+  assert.match(out, /W\.PageIndicator \{/);
+  assert.match(out, /cssClass: \["dots"\]/);
   assert.match(out, /count: 2/);
   assert.match(out, /currentIndex: page/);
-  assert.match(out, /delegate: Css\.CssRect \{/);
-  assert.match(out, /cssClass: \["dot"\]/);
-  assert.match(out, /cssState: index === __dots1\.currentIndex \? \["selected"\] : \[\]/);
-  assert.match(out, /implicitWidth: 8/);
-  assert.match(out, /implicitHeight: 8/);
-  // Templates create NO contentItem: the Row + Repeater must be emitted.
-  assert.match(out, /contentItem: Row \{/);
-  assert.match(out, /Repeater \{/);
-  assert.match(out, /model: __dots1\.count/);
+  // The T.PageIndicator + dot delegate + Row/Repeater now live in PageIndicator.qml.
+  assert.doesNotMatch(out, /T\.PageIndicator/);
+  assert.doesNotMatch(out, /delegate: Css\.CssRect/);
+});
+
+test("containers: SwipeView.qml + PageIndicator.qml host the control internals", async () => {
+  const sw = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/SwipeView.qml", import.meta.url)), "utf8");
+  assert.match(sw, /T\.SwipeView \{/);
+  assert.match(sw, /contentItem: ListView \{/);
+  assert.match(sw, /snapMode: ListView\.SnapOneItem/);
+  assert.match(sw, /property alias currentIndex: sw\.currentIndex/);
+  assert.match(sw, /default property alias pages: sw\.contentData/);
+  const pi = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/PageIndicator.qml", import.meta.url)), "utf8");
+  assert.match(pi, /T\.PageIndicator \{/);
+  assert.match(pi, /cssClass: \["dot"\]/);
+  assert.match(pi, /cssState: index === dots\.currentIndex \? \["selected"\] : \[\]/);
+  assert.match(pi, /contentItem: Row \{/);
+  assert.match(pi, /Repeater \{/);
 });
 
 // ---------------------------------------------------------------------------

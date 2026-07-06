@@ -197,52 +197,29 @@ W.Div {
         cssClass: ["nv-label"]
         text: "SwipeView"
     }
-    Css.CssFill {
+    W.SwipeView {
+        id: __swipe3
         cssClass: ["ct-swipe"]
-        cssPrimitive: "swipeview"
-        implicitWidth: __swipe3.implicitWidth
-        implicitHeight: __swipe3.implicitHeight
-        T.SwipeView {
-            id: __swipe3
-            anchors.fill: parent
-            implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
-            implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-            background: null
-            contentItem: ListView {
-                model: __swipe3.contentModel
-                interactive: __swipe3.interactive
-                currentIndex: __swipe3.currentIndex
-                spacing: __swipe3.spacing
-                orientation: __swipe3.orientation
-                snapMode: ListView.SnapOneItem
-                boundsBehavior: Flickable.StopAtBounds
-                highlightRangeMode: ListView.StrictlyEnforceRange
-                preferredHighlightBegin: 0
-                preferredHighlightEnd: 0
-                highlightMoveDuration: 250
-                clip: true
+        onCurrentIndexChanged: { page = __swipe3.currentIndex }
+        W.Div {
+            cssClass: ["ct-slide", "ct-slide-a"]
+            W.Text {
+                cssClass: ["ct-slide-t"]
+                text: "Page one — swipe or use the buttons."
             }
-            onCurrentIndexChanged: { page = __swipe3.currentIndex }
-            W.Div {
-                cssClass: ["ct-slide", "ct-slide-a"]
-                W.Text {
-                    cssClass: ["ct-slide-t"]
-                    text: "Page one — swipe or use the buttons."
-                }
+        }
+        W.Div {
+            cssClass: ["ct-slide", "ct-slide-b"]
+            W.Text {
+                cssClass: ["ct-slide-t"]
+                text: "Page two."
             }
-            W.Div {
-                cssClass: ["ct-slide", "ct-slide-b"]
-                W.Text {
-                    cssClass: ["ct-slide-t"]
-                    text: "Page two."
-                }
-            }
-            W.Div {
-                cssClass: ["ct-slide", "ct-slide-c"]
-                W.Text {
-                    cssClass: ["ct-slide-t"]
-                    text: "Page three."
-                }
+        }
+        W.Div {
+            cssClass: ["ct-slide", "ct-slide-c"]
+            W.Text {
+                cssClass: ["ct-slide-t"]
+                text: "Page three."
             }
         }
         Binding {
@@ -259,36 +236,10 @@ W.Div {
             text: "‹ Prev"
             onClicked: page = (page + 2) % 3
         }
-        Css.CssFill {
+        W.PageIndicator {
             cssClass: ["ct-dots"]
-            cssPrimitive: "pageindicator"
-            implicitWidth: __dots4.implicitWidth
-            implicitHeight: __dots4.implicitHeight
-            T.PageIndicator {
-                id: __dots4
-                anchors.fill: parent
-                implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
-                implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-                background: null
-                count: 3
-                currentIndex: page
-                spacing: 6
-                delegate: Css.CssRect {
-                    required property int index
-                    cssPrimitive: "div"
-                    cssClass: ["dot"]
-                    cssState: index === __dots4.currentIndex ? ["selected"] : []
-                    implicitWidth: 8
-                    implicitHeight: 8
-                }
-                contentItem: Row {
-                    spacing: __dots4.spacing
-                    Repeater {
-                        model: __dots4.count
-                        delegate: __dots4.delegate
-                    }
-                }
-            }
+            count: 3
+            currentIndex: page
         }
         W.Button {
             cssClass: ["ct-nav"]

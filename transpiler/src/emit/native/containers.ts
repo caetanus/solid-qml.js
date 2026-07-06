@@ -391,17 +391,18 @@ const emitStackView: NativeEmit = (propsArg, children, scope, level, guard) => {
 // <SwipeView current={i()} onChange={(i)=>…}> + <PageIndicator count current>
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** → wrapper Css.CssFill (cssPrimitive "swipeview") + T.SwipeView.
- *  contentItem: Basic-style ListView over the contentModel (templates create no contentItem);
- *  clip keeps the neighbouring pages inside the box while swiping. Children are direct children
- *  of the SwipeView — the Container adopts them as pages and resizes each to the view.
- *  Controlled index via Binding (RestoreNone); onCurrentIndexChanged → onChange(currentIndex). */
+/** <SwipeView current={i()} onChange={(i)=>…}> → W.SwipeView.
+ *  One .qml per component: the CssFill "swipeview" wrapper, the T.SwipeView and its Basic-style
+ *  ListView contentItem live in SwipeView.qml. The emit keeps the id `__swipeN` so the onChange
+ *  handler's value-read and the controlled RestoreNone Binding resolve against the component's
+ *  two-way `currentIndex` alias; the author's pages route into the control's contentData via the
+ *  default `pages` alias. */
 const emitSwipeView: NativeEmit = (propsArg, children, scope, level, guard) => {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const props = propMap(propsArg);
   const classLine = buildCssClassLine(cssProps(props), scope, i(1));
-  markWidgets(scope);
+  markWidgetLib(scope);
 
   const counter = scope.inputCounter ?? { n: 0 };
   const swipeId = `__swipe${counter.n++}`;
@@ -411,35 +412,13 @@ const emitSwipeView: NativeEmit = (propsArg, children, scope, level, guard) => {
   const changeBody = onChangeFn ? handlerBody(onChangeFn, scope, `${swipeId}.currentIndex`) : "";
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.SwipeView {`,
+    `${i(1)}id: ${swipeId}`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "swipeview"`,
-    `${i(1)}implicitWidth: ${swipeId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${swipeId}.implicitHeight`,
-    `${i(1)}T.SwipeView {`,
-    `${i(2)}id: ${swipeId}`,
-    `${i(2)}anchors.fill: parent`,
-    ...implicitLines(i),
-    `${i(2)}background: null`,
-    `${i(2)}contentItem: ListView {`,
-    `${i(3)}model: ${swipeId}.contentModel`,
-    `${i(3)}interactive: ${swipeId}.interactive`,
-    `${i(3)}currentIndex: ${swipeId}.currentIndex`,
-    `${i(3)}spacing: ${swipeId}.spacing`,
-    `${i(3)}orientation: ${swipeId}.orientation`,
-    `${i(3)}snapMode: ListView.SnapOneItem`,
-    `${i(3)}boundsBehavior: Flickable.StopAtBounds`,
-    `${i(3)}highlightRangeMode: ListView.StrictlyEnforceRange`,
-    `${i(3)}preferredHighlightBegin: 0`,
-    `${i(3)}preferredHighlightEnd: 0`,
-    `${i(3)}highlightMoveDuration: 250`,
-    `${i(3)}clip: true`,
-    `${i(2)}}`,
   ];
-  if (changeBody) lines.push(`${i(2)}onCurrentIndexChanged: { ${changeBody} }`);
-  lines.push(...emitChildren(children, scope, level + 2));
-  lines.push(`${i(1)}}`);
+  if (changeBody) lines.push(`${i(1)}onCurrentIndexChanged: { ${changeBody} }`);
+  lines.push(...emitChildren(children, scope, level + 1));
 
   if (currentExpr !== null) {
     lines.push(
@@ -456,53 +435,26 @@ const emitSwipeView: NativeEmit = (propsArg, children, scope, level, guard) => {
   return lines;
 };
 
-/** <PageIndicator count={n} current={i()} /> → wrapper CssFill + T.PageIndicator.
- *  delegate: Css.CssRect ["dot"] 8×8 with cssState "selected" on the current page; contentItem
- *  is the Basic-style Row + Repeater (templates create no contentItem). */
+/** <PageIndicator count={n} current={i()} /> → W.PageIndicator.
+ *  One .qml per component: the CssFill "pageindicator" wrapper, the T.PageIndicator, the ["dot"]
+ *  delegate and the Basic-style Row+Repeater contentItem live in PageIndicator.qml; `count`/
+ *  `currentIndex` are aliases to the control. The emit only wires those two props. */
 const emitPageIndicator: NativeEmit = (propsArg, _children, scope, level, guard) => {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const props = propMap(propsArg);
   const classLine = buildCssClassLine(cssProps(props), scope, i(1));
-  markWidgets(scope);
-
-  const counter = scope.inputCounter ?? { n: 0 };
-  const dotsId = `__dots${counter.n++}`;
+  markWidgetLib(scope);
 
   const countExpr = bindExpr(props.get("count"), scope) ?? "0";
   const currentExpr = bindExpr(props.get("current"), scope) ?? "0";
 
   return [
-    `${pad}Css.CssFill {`,
+    `${pad}W.PageIndicator {`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "pageindicator"`,
-    `${i(1)}implicitWidth: ${dotsId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${dotsId}.implicitHeight`,
-    `${i(1)}T.PageIndicator {`,
-    `${i(2)}id: ${dotsId}`,
-    `${i(2)}anchors.fill: parent`,
-    ...implicitLines(i),
-    `${i(2)}background: null`,
-    `${i(2)}count: ${countExpr}`,
-    `${i(2)}currentIndex: ${currentExpr}`,
-    `${i(2)}spacing: 6`,
-    `${i(2)}delegate: Css.CssRect {`,
-    `${i(3)}required property int index`,
-    `${i(3)}cssPrimitive: "div"`,
-    `${i(3)}cssClass: ["dot"]`,
-    `${i(3)}cssState: index === ${dotsId}.currentIndex ? ["selected"] : []`,
-    `${i(3)}implicitWidth: 8`,
-    `${i(3)}implicitHeight: 8`,
-    `${i(2)}}`,
-    `${i(2)}contentItem: Row {`,
-    `${i(3)}spacing: ${dotsId}.spacing`,
-    `${i(3)}Repeater {`,
-    `${i(4)}model: ${dotsId}.count`,
-    `${i(4)}delegate: ${dotsId}.delegate`,
-    `${i(3)}}`,
-    `${i(2)}}`,
-    `${i(1)}}`,
+    `${i(1)}count: ${countExpr}`,
+    `${i(1)}currentIndex: ${currentExpr}`,
     `${pad}}`,
   ];
 };
