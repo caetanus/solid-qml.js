@@ -42,82 +42,18 @@ W.Div {
         cssClass: ["nv-label"]
         text: "TabBar + StackView"
     }
-    Css.CssFill {
+    W.TabBar {
+        id: __tabbar0
         cssClass: ["ct-tabs"]
-        cssPrimitive: "tabbar"
-        implicitWidth: __tabbar0.implicitWidth
-        implicitHeight: __tabbar0.implicitHeight
-        T.TabBar {
-            id: __tabbar0
-            anchors.fill: parent
-            implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
-            implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-            background: null
-            contentItem: ListView {
-                model: __tabbar0.contentModel
-                currentIndex: __tabbar0.currentIndex
-                spacing: __tabbar0.spacing
-                orientation: ListView.Horizontal
-                boundsBehavior: Flickable.StopAtBounds
-                flickableDirection: Flickable.AutoFlickIfNeeded
-                snapMode: ListView.SnapToItem
-                highlightMoveDuration: 0
-            }
-            onCurrentIndexChanged: { tab = __tabbar0.currentIndex }
-            T.TabButton {
-                id: __tab0_0
-                implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
-                implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-                padding: 8
-                activeFocusOnTab: solidTabstop.enabled
-                background: Css.CssFill {
-                    cssPrimitive: "div"
-                    cssClass: ["tab"]
-                    cssState: (__tab0_0.checked ? ["selected"] : []).concat(__tab0_0.hovered ? ["hover"] : [])
-                }
-                contentItem: Css.CssText {
-                    cssPrimitive: ""
-                    cssClass: ["tab-label"]
-                    cssState: (__tab0_0.checked ? ["selected"] : []).concat(__tab0_0.hovered ? ["hover"] : [])
-                    text: "Overview"
-                }
-            }
-            T.TabButton {
-                id: __tab0_1
-                implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
-                implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-                padding: 8
-                activeFocusOnTab: solidTabstop.enabled
-                background: Css.CssFill {
-                    cssPrimitive: "div"
-                    cssClass: ["tab"]
-                    cssState: (__tab0_1.checked ? ["selected"] : []).concat(__tab0_1.hovered ? ["hover"] : [])
-                }
-                contentItem: Css.CssText {
-                    cssPrimitive: ""
-                    cssClass: ["tab-label"]
-                    cssState: (__tab0_1.checked ? ["selected"] : []).concat(__tab0_1.hovered ? ["hover"] : [])
-                    text: "Details"
-                }
-            }
-            T.TabButton {
-                id: __tab0_2
-                implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
-                implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-                padding: 8
-                activeFocusOnTab: solidTabstop.enabled
-                background: Css.CssFill {
-                    cssPrimitive: "div"
-                    cssClass: ["tab"]
-                    cssState: (__tab0_2.checked ? ["selected"] : []).concat(__tab0_2.hovered ? ["hover"] : [])
-                }
-                contentItem: Css.CssText {
-                    cssPrimitive: ""
-                    cssClass: ["tab-label"]
-                    cssState: (__tab0_2.checked ? ["selected"] : []).concat(__tab0_2.hovered ? ["hover"] : [])
-                    text: "Settings"
-                }
-            }
+        onCurrentIndexChanged: { tab = __tabbar0.currentIndex }
+        W.TabButton {
+            text: "Overview"
+        }
+        W.TabButton {
+            text: "Details"
+        }
+        W.TabButton {
+            text: "Settings"
         }
         Binding {
             target: __tabbar0

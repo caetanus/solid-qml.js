@@ -136,88 +136,47 @@ const emitToolBar: NativeEmit = (propsArg, children, scope, level, guard) => {
 // <TabBar current={i()} onChange={(i)=>…}> with <TabButton>label</TabButton> children
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** → wrapper Css.CssFill (cssPrimitive "tabbar") + T.TabBar.
- *  contentItem MUST be provided (templates create no contentItem — verified project-wide
- *  pitfall): a ListView over tabBar.contentModel, horizontal, like the Basic style.
- *  Controlled index: a Binding element (restoreMode RestoreNone — emitInput's idiom) re-asserts
- *  the `current` value; onCurrentIndexChanged fires the author's onChange with currentIndex.
- *  Each <TabButton> → T.TabButton with Css slots:
- *    background: CssFill ["tab"], cssState checked→"selected" / hovered→"hover"
- *    contentItem: CssText ["tab-label"] (same cssState — background and contentItem are SIBLING
- *    slots, so ancestor-state scoping cannot reach the label through the background). */
+/** <TabBar current={i()} onChange={(i)=>…}> → W.TabBar.
+ *  One .qml per component: the CssFill "tabbar" wrapper, the T.TabBar and its Basic-style ListView
+ *  contentItem live in TabBar.qml; each <TabButton> becomes a W.TabButton (its own component, with
+ *  the ["tab"]/["tab-label"] Css slots). The emit keeps the id `__tabbarN` so the onChange handler's
+ *  value-read (`__tabbarN.currentIndex`) and the controlled RestoreNone Binding resolve against the
+ *  component's two-way `currentIndex` alias. onCurrentIndexChanged re-emits via that alias, so the
+ *  author's onChange fires; the <TabButton> children route into the control's contentData. */
 const emitTabBar: NativeEmit = (propsArg, children, scope, level, guard) => {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const props = propMap(propsArg);
   const classLine = buildCssClassLine(cssProps(props), scope, i(1));
-  markWidgets(scope);
+  markWidgetLib(scope);
 
   const counter = scope.inputCounter ?? { n: 0 };
-  const n = counter.n++;
-  const barId = `__tabbar${n}`;
+  const barId = `__tabbar${counter.n++}`;
 
   const currentExpr = bindExpr(props.get("current"), scope);
   const onChangeFn = asFn(props.get("onChange"));
   const changeBody = onChangeFn ? handlerBody(onChangeFn, scope, `${barId}.currentIndex`) : "";
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.TabBar {`,
+    `${i(1)}id: ${barId}`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "tabbar"`,
-    `${i(1)}implicitWidth: ${barId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${barId}.implicitHeight`,
-    `${i(1)}T.TabBar {`,
-    `${i(2)}id: ${barId}`,
-    `${i(2)}anchors.fill: parent`,
-    ...implicitLines(i),
-    `${i(2)}background: null`,
-    // Basic-style contentItem: the ListView hosts the buttons from the contentModel.
-    `${i(2)}contentItem: ListView {`,
-    `${i(3)}model: ${barId}.contentModel`,
-    `${i(3)}currentIndex: ${barId}.currentIndex`,
-    `${i(3)}spacing: ${barId}.spacing`,
-    `${i(3)}orientation: ListView.Horizontal`,
-    `${i(3)}boundsBehavior: Flickable.StopAtBounds`,
-    `${i(3)}flickableDirection: Flickable.AutoFlickIfNeeded`,
-    `${i(3)}snapMode: ListView.SnapToItem`,
-    `${i(3)}highlightMoveDuration: 0`,
-    `${i(2)}}`,
   ];
-  if (changeBody) lines.push(`${i(2)}onCurrentIndexChanged: { ${changeBody} }`);
+  if (changeBody) lines.push(`${i(1)}onCurrentIndexChanged: { ${changeBody} }`);
 
-  // <TabButton> children → T.TabButton entries in the container's contentModel.
-  let k = 0;
+  // <TabButton> children → W.TabButton entries (their root lands in the control's contentData).
   for (const child of children) {
     if (!isHCall(child)) continue; // whitespace / comments
     const { tag, children: kids } = hParts(child);
     if (!t.isIdentifier(tag) || tag.name !== "TabButton")
       throw new Error(`<TabBar> children must be <TabButton> elements`);
-    const tabId = `__tab${n}_${k++}`;
-    const tabState = `(${tabId}.checked ? ["selected"] : []).concat(${tabId}.hovered ? ["hover"] : [])`;
     lines.push(
-      `${i(2)}T.TabButton {`,
-      `${i(3)}id: ${tabId}`,
-      `${i(3)}implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)`,
-      `${i(3)}implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)`,
-      `${i(3)}padding: 8`,
-      `${i(3)}activeFocusOnTab: solidTabstop.enabled`,
-      `${i(3)}background: Css.CssFill {`,
-      `${i(4)}cssPrimitive: "div"`,
-      `${i(4)}cssClass: ["tab"]`,
-      `${i(4)}cssState: ${tabState}`,
-      `${i(3)}}`,
-      `${i(3)}contentItem: Css.CssText {`,
-      `${i(4)}cssPrimitive: ""`,
-      `${i(4)}cssClass: ["tab-label"]`,
-      `${i(4)}cssState: ${tabState}`,
-      `${i(4)}text: ${labelBinding(kids, scope)}`,
-      `${i(3)}}`,
-      `${i(2)}}`,
+      `${i(1)}W.TabButton {`,
+      `${i(2)}text: ${labelBinding(kids, scope)}`,
+      `${i(1)}}`,
     );
   }
-
-  lines.push(`${i(1)}}`);
 
   if (currentExpr !== null) {
     lines.push(

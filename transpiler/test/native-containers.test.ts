@@ -99,17 +99,14 @@ const TABBAR = `
   }
 `;
 
-test("containers: <TabBar> emits wrapper + T.TabBar with a ListView contentItem", async () => {
+test("containers: <TabBar> instantiates W.TabBar keeping the __tabbar0 id", async () => {
   const out = await qml(TABBAR);
-  assert.match(out, /cssPrimitive: "tabbar"/);
-  assert.match(out, /T\.TabBar \{/);
+  assert.match(out, /W\.TabBar \{/);
   assert.match(out, /id: __tabbar0/);
-  assert.match(out, /background: null/);
-  // Templates create NO contentItem — the Basic-style ListView must be emitted.
-  assert.match(out, /contentItem: ListView \{/);
-  assert.match(out, /model: __tabbar0\.contentModel/);
-  assert.match(out, /orientation: ListView\.Horizontal/);
-  assert.match(out, /currentIndex: __tabbar0\.currentIndex/);
+  assert.match(out, /cssClass: \["tabs"\]/);
+  // The T.TabBar + ListView contentItem now live in TabBar.qml.
+  assert.doesNotMatch(out, /T\.TabBar/);
+  assert.doesNotMatch(out, /contentItem: ListView/);
 });
 
 test("containers: <TabBar current> emits a RestoreNone Binding on currentIndex", async () => {
@@ -126,17 +123,26 @@ test("containers: <TabBar onChange> fires with the control's currentIndex", asyn
   assert.match(out, /onCurrentIndexChanged: \{ tab = __tabbar0\.currentIndex \}/);
 });
 
-test("containers: <TabButton> children become T.TabButton with Css tab slots", async () => {
+test("containers: <TabButton> children become W.TabButton with their label text", async () => {
   const out = await qml(TABBAR);
-  assert.match(out, /T\.TabButton \{/);
-  assert.match(out, /id: __tab0_0/);
-  assert.match(out, /id: __tab0_1/);
-  assert.match(out, /cssClass: \["tab"\]/);
-  assert.match(out, /cssClass: \["tab-label"\]/);
-  assert.match(out, /cssState: \(__tab0_0\.checked \? \["selected"\] : \[\]\)\.concat\(__tab0_0\.hovered \? \["hover"\] : \[\]\)/);
+  assert.match(out, /W\.TabButton \{/);
   assert.match(out, /text: "One"/);
   assert.match(out, /text: "Two"/);
-  assert.match(out, /activeFocusOnTab: solidTabstop\.enabled/);
+  // The T.TabButton + Css tab slots now live in TabButton.qml.
+  assert.doesNotMatch(out, /T\.TabButton/);
+});
+
+test("containers: TabBar.qml + TabButton.qml host the control internals", async () => {
+  const bar = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TabBar.qml", import.meta.url)), "utf8");
+  assert.match(bar, /T\.TabBar \{/);
+  assert.match(bar, /contentItem: ListView \{/);
+  assert.match(bar, /property alias currentIndex: bar\.currentIndex/);
+  assert.match(bar, /default property alias tabs: bar\.contentData/);
+  const btn = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TabButton.qml", import.meta.url)), "utf8");
+  assert.match(btn, /T\.TabButton \{/);
+  assert.match(btn, /cssClass: \["tab"\]/);
+  assert.match(btn, /cssClass: \["tab-label"\]/);
+  assert.match(btn, /cssState: \(ctl\.checked \? \["selected"\] : \[\]\)\.concat\(ctl\.hovered \? \["hover"\] : \[\]\)/);
 });
 
 test("containers: <TabBar> rejects non-TabButton element children", async () => {
