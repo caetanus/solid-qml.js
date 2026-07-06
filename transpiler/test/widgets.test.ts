@@ -846,19 +846,21 @@ test("widgets: range Widgets import is prepended", async () => {
 // Phase 4: <input type="number"> → T.SpinBox
 // ---------------------------------------------------------------------------
 
-test("widgets: <input type='number'> emits wrapper CssFill with cssPrimitive 'input'", async () => {
+const SPINBOX_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/SpinBox.qml", import.meta.url)), "utf8");
+
+test("widgets: <input type='number'> instantiates the W.SpinBox component", async () => {
   const out = await qml(`export function F(){ return <input type="number" />; }`);
-  assert.match(out, /Css\.CssFill \{/);
-  assert.match(out, /cssPrimitive: "input"/);
+  assert.match(out, /W\.SpinBox \{/);
+  assert.match(out, /id: __input0/);
+  assert.doesNotMatch(out, /T\.SpinBox/);
 });
 
-test("widgets: <input type='number'> emits T.SpinBox with editable:true and background:null", async () => {
-  const out = await qml(`export function F(){ return <input type="number" />; }`);
-  assert.match(out, /T\.SpinBox \{/);
-  assert.match(out, /id: __input0/);
-  assert.match(out, /anchors\.fill: parent/);
-  assert.match(out, /background: null/);
-  assert.match(out, /editable: true/);
+test("widgets: SpinBox.qml has a T.SpinBox with editable:true and background:null", async () => {
+  assert.match(SPINBOX_QML, /cssPrimitive: "input"/);
+  assert.match(SPINBOX_QML, /T\.SpinBox \{/);
+  assert.match(SPINBOX_QML, /anchors\.fill: parent/);
+  assert.match(SPINBOX_QML, /background: null/);
+  assert.match(SPINBOX_QML, /editable: true/);
 });
 
 test("widgets: <input type='number'> defaults from=0 to=100 stepSize=1", async () => {
@@ -875,51 +877,43 @@ test("widgets: <input type='number' min=1 max=10 step=2> overrides the range", a
   assert.match(out, /stepSize: 2/);
 });
 
-test("widgets: <input type='number'> contentItem is TextInput with displayText and validator", async () => {
-  const out = await qml(`export function F(){ return <input type="number" />; }`);
-  assert.match(out, /contentItem: TextInput \{/);
-  assert.match(out, /text: __input0\.displayText/);
-  assert.match(out, /validator: __input0\.validator/);
-  assert.match(out, /readOnly: !__input0\.editable/);
+test("widgets: SpinBox.qml contentItem is TextInput with displayText and validator", async () => {
+  assert.match(SPINBOX_QML, /contentItem: TextInput \{/);
+  assert.match(SPINBOX_QML, /text: ctl\.displayText/);
+  assert.match(SPINBOX_QML, /validator: ctl\.validator/);
+  assert.match(SPINBOX_QML, /readOnly: !ctl\.editable/);
 });
 
-test("widgets: <input type='number'> contentItem bridges color/font via ctlId.parent (CssFill wrapper)", async () => {
-  const out = await qml(`export function F(){ return <input type="number" />; }`);
-  // color and font come from the CssFill wrapper via __inputN.parent.inheritedX
-  assert.match(out, /color: cssTheme\.parseColor\(__input0\.parent\.inheritedColor \|\| "#2b2b2b"\)/);
-  assert.match(out, /font\.family: cssTheme\.resolveFontFamily\(__input0\.parent\.inheritedFontFamily/);
-  assert.match(out, /font\.pixelSize: cssTheme\.parseFontSize\(__input0\.parent\.inheritedFontSize/);
+test("widgets: SpinBox.qml contentItem bridges color/font from the CssFill wrapper (root)", async () => {
+  assert.match(SPINBOX_QML, /color: cssTheme\.parseColor\(root\.inheritedColor \|\| "#2b2b2b"\)/);
+  assert.match(SPINBOX_QML, /font\.family: cssTheme\.resolveFontFamily\(root\.inheritedFontFamily/);
+  assert.match(SPINBOX_QML, /font\.pixelSize: cssTheme\.parseFontSize\(root\.inheritedFontSize/);
 });
 
-test("widgets: <input type='number'> up.indicator is CssFill cssClass ['spin-up'] at top-right", async () => {
-  const out = await qml(`export function F(){ return <input type="number" />; }`);
-  assert.match(out, /up\.indicator: Css\.CssFill \{/);
-  assert.match(out, /cssClass: \["spin-up"\]/);
-  // 2px inset keeps the buttons inside the wrapper's rounded border.
-  assert.match(out, /x: parent\.width - width - 2/);
-  assert.match(out, /y: 2/);
-  assert.match(out, /width: 24/);
+test("widgets: SpinBox.qml up.indicator is CssFill cssClass ['spin-up'] at top-right", async () => {
+  assert.match(SPINBOX_QML, /up\.indicator: Css\.CssFill \{/);
+  assert.match(SPINBOX_QML, /cssClass: \["spin-up"\]/);
+  assert.match(SPINBOX_QML, /x: parent\.width - width - 2/);
+  assert.match(SPINBOX_QML, /y: 2/);
+  assert.match(SPINBOX_QML, /width: 24/);
 });
 
-test("widgets: <input type='number'> down.indicator is CssFill cssClass ['spin-down'] at bottom-right", async () => {
-  const out = await qml(`export function F(){ return <input type="number" />; }`);
-  assert.match(out, /down\.indicator: Css\.CssFill \{/);
-  assert.match(out, /cssClass: \["spin-down"\]/);
-  assert.match(out, /y: parent\.height \/ 2/);
+test("widgets: SpinBox.qml down.indicator is CssFill cssClass ['spin-down'] at bottom-right", async () => {
+  assert.match(SPINBOX_QML, /down\.indicator: Css\.CssFill \{/);
+  assert.match(SPINBOX_QML, /cssClass: \["spin-down"\]/);
+  assert.match(SPINBOX_QML, /y: parent\.height \/ 2/);
 });
 
-test("widgets: <input type='number'> indicators contain CssText '+' and '−' glyphs centred", async () => {
-  const out = await qml(`export function F(){ return <input type="number" />; }`);
-  assert.match(out, /cssClass: \["spin-glyph"\]/);
-  assert.match(out, /text: "\+"/);
-  assert.match(out, /text: "−"/);
-  assert.match(out, /anchors\.centerIn: parent/);
+test("widgets: SpinBox.qml indicators contain plain '+' and '−' glyphs (CssItem) centred", async () => {
+  assert.match(SPINBOX_QML, /cssClass: \["spin-glyph"\]/);
+  assert.match(SPINBOX_QML, /text: "\+"/);
+  assert.match(SPINBOX_QML, /text: "−"/);
+  assert.match(SPINBOX_QML, /anchors\.centerIn: parent/);
 });
 
-test("widgets: <input type='number'> up/down indicators cssState carries 'active' when pressed", async () => {
-  const out = await qml(`export function F(){ return <input type="number" />; }`);
-  assert.match(out, /__input0\.up\.pressed \? \["active"\] : \[\]/);
-  assert.match(out, /__input0\.down\.pressed \? \["active"\] : \[\]/);
+test("widgets: SpinBox.qml up/down indicators cssState carries 'active' when pressed", async () => {
+  assert.match(SPINBOX_QML, /ctl\.up\.pressed \? \["active"\] : \[\]/);
+  assert.match(SPINBOX_QML, /ctl\.down\.pressed \? \["active"\] : \[\]/);
 });
 
 test("widgets: number value={sig()} emits Binding on property 'value'", async () => {
@@ -956,14 +950,14 @@ test("widgets: number disabled sets enabled: false on T.SpinBox", async () => {
   assert.match(out, /enabled: false/);
 });
 
-test("widgets: number cssState carries focus and disabled", async () => {
-  const out = await qml(`export function F(){ return <input type="number" />; }`);
-  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!__input0\.enabled \? \["disabled"\] : \[\]\)/);
+test("widgets: SpinBox.qml cssState carries focus and disabled", async () => {
+  assert.match(SPINBOX_QML, /cssState: \(ctl\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!ctl\.enabled \? \["disabled"\] : \[\]\)/);
 });
 
-test("widgets: number Templates import is prepended", async () => {
+test("widgets: number Widgets import is prepended", async () => {
   const out = await qmlType(`export function F(){ return <input type="number" />; }`);
-  assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
+  assert.doesNotMatch(out, /import QtQuick\.Templates/);
 });
 
 // ---------------------------------------------------------------------------
@@ -1255,13 +1249,12 @@ test("emitQml 6.5: select popup carries the implicit-height formula", async () =
   assert.match(out, /popup: T\.Popup \{[\s\S]*?implicitHeight: contentHeight \+ topPadding \+ bottomPadding/);
 });
 
-test("emitQml 6.5: spinbox pads for the buttons and steps on wheel only when focused", async () => {
-  const out = await qml(`export function F(){ return <input type="number" />; }`);
-  assert.match(out, /rightPadding: 32/);
+test("emitQml 6.5: SpinBox.qml pads for the buttons and steps on wheel only when focused", async () => {
+  assert.match(SPINBOX_QML, /rightPadding: 32/);
   // Steps by writing `value` directly: Qt 6.11 dropped the Q_INVOKABLE from
   // increase()/decrease() (QQuickAbstractSpinBox refactor) — calling them is a TypeError.
-  assert.match(out, /WheelHandler \{[\s\S]*?acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*?valueModified\(\)/);
-  assert.doesNotMatch(out, /increase\(\)/);
+  assert.match(SPINBOX_QML, /WheelHandler \{[\s\S]*?acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*?valueModified\(\)/);
+  assert.doesNotMatch(SPINBOX_QML, /increase\(\)/);
 });
 
 // --- Tab navigation (desktop): every interactive widget is a tab stop, bound to the
@@ -1299,15 +1292,14 @@ test("tabstop: Slider.qml binds activeFocusOnTab to solidTabstop.enabled", async
   assert.match(SLIDER_QML, TAB_STOP);
 });
 
-test("tabstop: <input type='number'> binds activeFocusOnTab to solidTabstop.enabled", async () => {
-  assert.match(await qml(`export function F(){ return <input type="number" />; }`), TAB_STOP);
+test("tabstop: SpinBox.qml binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  assert.match(SPINBOX_QML, TAB_STOP);
 });
 
-test("tabstop: <input type='number'> forwards scope focus into the editable text", async () => {
+test("tabstop: SpinBox.qml forwards scope focus into the editable text", async () => {
   // T.SpinBox is a focus scope; without focus: true on the contentItem, tabbing into the
   // control leaves the TextInput unfocused and typing goes nowhere.
-  const out = await qml(`export function F(){ return <input type="number" />; }`);
-  assert.match(out, /contentItem: TextInput \{[\s\S]*?focus: true/);
+  assert.match(SPINBOX_QML, /contentItem: TextInput \{[\s\S]*?focus: true/);
 });
 
 test("tabstop: <input type='date'> field is a tab stop and opens the popup from the keyboard", async () => {

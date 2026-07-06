@@ -507,81 +507,13 @@ W.Div {
                     cssClass: ["wg-label"]
                     text: "Quantity"
                 }
-                Css.CssFill {
+                W.SpinBox {
+                    id: __input15
                     cssClass: ["wg-number"]
-                    cssPrimitive: "input"
-                    cssState: (__input15.activeFocus ? ["focus"] : []).concat(!__input15.enabled ? ["disabled"] : [])
-                    implicitWidth: __input15.implicitWidth
-                    implicitHeight: __input15.implicitHeight
-                    T.SpinBox {
-                        id: __input15
-                        anchors.fill: parent
-                        background: null
-                        from: 1
-                        to: 10
-                        stepSize: 1
-                        editable: true
-                        activeFocusOnTab: solidTabstop.enabled
-                        leftPadding: 12
-                        rightPadding: 32
-                        WheelHandler {
-                            property real __acc: 0
-                            enabled: __input15.activeFocus
-                            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                            onWheel: (ev) => { __acc += ev.angleDelta.y !== 0 ? ev.angleDelta.y : ev.pixelDelta.y * 8; var s = 0; while (__acc >= 120) { __acc -= 120; s++ } while (__acc <= -120) { __acc += 120; s-- } if (s !== 0) { __input15.value = Math.max(__input15.from, Math.min(__input15.to, __input15.value + s * __input15.stepSize)); __input15.valueModified() } }
-                        }
-                        contentItem: TextInput {
-                            focus: true
-                            text: __input15.displayText
-                            validator: __input15.validator
-                            readOnly: !__input15.editable
-                            color: cssTheme.parseColor(__input15.parent.inheritedColor || "#2b2b2b")
-                            font.family: cssTheme.resolveFontFamily(__input15.parent.inheritedFontFamily || "Sans Serif")
-                            font.pixelSize: cssTheme.parseFontSize(__input15.parent.inheritedFontSize || "13px", 13)
-                            horizontalAlignment: Qt.AlignHCenter
-                            verticalAlignment: Qt.AlignVCenter
-                            selectByMouse: true
-                        }
-                        up.indicator: Css.CssFill {
-                            cssPrimitive: ""
-                            cssClass: ["spin-up"]
-                            cssState: __input15.up.pressed ? ["active"] : []
-                            x: parent.width - width - 2
-                            y: 2
-                            width: 24
-                            height: (parent.height - 4) / 2
-                            implicitWidth: 24
-                            implicitHeight: (parent.height - 4) / 2
-                            Item {
-                                anchors.fill: parent
-                                Text {
-                                    text: "+"
-                                    anchors.centerIn: parent
-                                    Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }
-                                }
-                            }
-                        }
-                        down.indicator: Css.CssFill {
-                            cssPrimitive: ""
-                            cssClass: ["spin-down"]
-                            cssState: __input15.down.pressed ? ["active"] : []
-                            x: parent.width - width - 2
-                            y: parent.height / 2
-                            width: 24
-                            height: (parent.height - 4) / 2
-                            implicitWidth: 24
-                            implicitHeight: (parent.height - 4) / 2
-                            Item {
-                                anchors.fill: parent
-                                Text {
-                                    text: "−"
-                                    anchors.centerIn: parent
-                                    Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }
-                                }
-                            }
-                        }
-                        onValueModified: { qty = __input15.value }
-                    }
+                    from: 1
+                    to: 10
+                    stepSize: 1
+                    onValueModified: { qty = __input15.value }
                     Binding {
                         target: __input15
                         property: "value"

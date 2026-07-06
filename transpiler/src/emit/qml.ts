@@ -956,117 +956,27 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
   const i = (n: number) => INDENT.repeat(level + n);
   const classLine = buildCssClassLine(props, scope, i(1));
   const { valueExpr, onChangeFn, disabled, min, max, step } = wp;
-  if (scope.usedWidgets) scope.usedWidgets.flag = true;
+  // One .qml per component: instantiate W.SpinBox (the T.SpinBox + TextInput + +/- indicators live in
+  // SpinBox.qml). Keep the id so the controlled Binding resolves.
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
-  const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+  // `${ctlId}.value` resolves via the component's two-way `value` alias on the instance.
   const onValueModifiedBody = onChangeFn
     ? translateValueHandler(onChangeFn, `${ctlId}.value`, scope)
     : "";
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.SpinBox {`,
+    `${i(1)}id: ${ctlId}`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "input"`,
-    `${i(1)}cssState: ${cssState}`,
-    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
-    `${i(1)}T.SpinBox {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}background: null`,
-    `${i(2)}from: ${min}`,
-    `${i(2)}to: ${max}`,
-    `${i(2)}stepSize: ${step}`,
-    `${i(2)}editable: true`,
-    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
-    // Controls resize contentItem to the control minus paddings — without a rightPadding
-    // the TextInput covers the +/- buttons and eats their clicks.
-    `${i(2)}leftPadding: 12`,
-    `${i(2)}rightPadding: 32`,
-    // HTML semantics: the wheel steps the value, but ONLY while the field has focus;
-    // unfocused, the event must fall through to the page scroll. valueModified() reuses
-    // the onChange wiring. Stepping writes `value` directly: Qt 6.11's SpinBox refactor
-    // (QQuickAbstractSpinBox) dropped the Q_INVOKABLE from increase()/decrease() — they
-    // no longer exist from QML and the call was a silent TypeError.
-    // acceptedDevices: the default is Mouse ONLY — touchpad scrolling (system-synthesized
-    // wheel) is filtered in wantsPointerEvent, so laptops never stepped. Touchpads also
-    // send small continuous deltas (or pixelDelta with angleDelta 0): accumulate to the
-    // 120-unit notch before stepping.
-    `${i(2)}WheelHandler {`,
-    `${i(3)}property real __acc: 0`,
-    `${i(3)}enabled: ${ctlId}.activeFocus`,
-    `${i(3)}acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad`,
-    `${i(3)}onWheel: (ev) => { __acc += ev.angleDelta.y !== 0 ? ev.angleDelta.y : ev.pixelDelta.y * 8; var s = 0; while (__acc >= 120) { __acc -= 120; s++ } while (__acc <= -120) { __acc += 120; s-- } if (s !== 0) { ${ctlId}.value = Math.max(${ctlId}.from, Math.min(${ctlId}.to, ${ctlId}.value + s * ${ctlId}.stepSize)); ${ctlId}.valueModified() } }`,
-    `${i(2)}}`,
-    // contentItem: a plain TextInput (not Css) — it lives inside the control's item tree, not our
-    // CSS layout engine. Color/font are bridged from the CssFill wrapper via ctlId.parent.inheritedX.
-    `${i(2)}contentItem: TextInput {`,
-    // T.SpinBox is a focus scope: focus: true forwards the control's active focus into the
-    // TextInput so tabbing in lets the user type immediately.
-    `${i(3)}focus: true`,
-    `${i(3)}text: ${ctlId}.displayText`,
-    `${i(3)}validator: ${ctlId}.validator`,
-    `${i(3)}readOnly: !${ctlId}.editable`,
-    `${i(3)}color: cssTheme.parseColor(${ctlId}.parent.inheritedColor || "#2b2b2b")`,
-    `${i(3)}font.family: cssTheme.resolveFontFamily(${ctlId}.parent.inheritedFontFamily || "Sans Serif")`,
-    `${i(3)}font.pixelSize: cssTheme.parseFontSize(${ctlId}.parent.inheritedFontSize || "13px", 13)`,
-    `${i(3)}horizontalAlignment: Qt.AlignHCenter`,
-    `${i(3)}verticalAlignment: Qt.AlignVCenter`,
-    `${i(3)}selectByMouse: true`,
-    `${i(2)}}`,
-    // up indicator: Css.CssFill at the top-right of the SpinBox; cssState "active" when
-    // pressed. Inset 2px from the wrapper's edge so the buttons sit INSIDE the rounded
-    // border instead of overlapping it (they looked clipped at the corner).
-    `${i(2)}up.indicator: Css.CssFill {`,
-    `${i(3)}cssPrimitive: ""`,
-    `${i(3)}cssClass: ["spin-up"]`,
-    `${i(3)}cssState: ${ctlId}.up.pressed ? ["active"] : []`,
-    `${i(3)}x: parent.width - width - 2`,
-    `${i(3)}y: 2`,
-    `${i(3)}width: 24`,
-    `${i(3)}height: (parent.height - 4) / 2`,
-    `${i(3)}implicitWidth: 24`,
-    `${i(3)}implicitHeight: (parent.height - 4) / 2`,
-    // Plain Text, NOT CssText: a Css child inside this CssFill is re-laid-out by the CSS
-    // engine (isLayoutChild is true for every Css type), which stomps the centerIn anchor.
-    // A plain primitive is invisible to the layout; the nested CssItem injects the CSS
-    // (color/font from the .spin-glyph rule) without joining the layout.
-    `${i(3)}Item {`,
-    `${i(4)}anchors.fill: parent`,
-    `${i(4)}Text {`,
-    `${i(5)}text: "+"`,
-    `${i(5)}anchors.centerIn: parent`,
-    `${i(5)}Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }`,
-    `${i(4)}}`,
-    `${i(3)}}`,
-    `${i(2)}}`,
-    // down indicator: mirrors up, at the bottom-right (same 2px inset).
-    `${i(2)}down.indicator: Css.CssFill {`,
-    `${i(3)}cssPrimitive: ""`,
-    `${i(3)}cssClass: ["spin-down"]`,
-    `${i(3)}cssState: ${ctlId}.down.pressed ? ["active"] : []`,
-    `${i(3)}x: parent.width - width - 2`,
-    `${i(3)}y: parent.height / 2`,
-    `${i(3)}width: 24`,
-    `${i(3)}height: (parent.height - 4) / 2`,
-    `${i(3)}implicitWidth: 24`,
-    `${i(3)}implicitHeight: (parent.height - 4) / 2`,
-    `${i(3)}Item {`,
-    `${i(4)}anchors.fill: parent`,
-    `${i(4)}Text {`,
-    `${i(5)}text: "−"`,
-    `${i(5)}anchors.centerIn: parent`,
-    `${i(5)}Css.CssItem { cssPrimitive: "text"; cssClass: ["spin-glyph"] }`,
-    `${i(4)}}`,
-    `${i(3)}}`,
-    `${i(2)}}`,
+    `${i(1)}from: ${min}`,
+    `${i(1)}to: ${max}`,
+    `${i(1)}stepSize: ${step}`,
   ];
 
-  if (disabled) lines.push(`${i(2)}enabled: false`);
-  if (onValueModifiedBody) lines.push(`${i(2)}onValueModified: { ${onValueModifiedBody} }`);
-
-  lines.push(`${i(1)}}`);
+  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (onValueModifiedBody) lines.push(`${i(1)}onValueModified: { ${onValueModifiedBody} }`);
 
   if (valueExpr !== null) {
     lines.push(
