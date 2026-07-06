@@ -503,18 +503,6 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
   return { type, valueExpr, signalName, placeholder, onInputFn, onChangeFn, onKeyDownFn, disabled, readOnly, maxLength, role, name, checkedExpr, min, max, step };
 }
 
-/** Emit the color + font bindings that bridge the CssFill parent's CSS-inherited properties into a
- *  native text control (T.TextField or T.TextArea). The CssFill exposes `inheritedColor`,
- *  `inheritedFontFamily`, and `inheritedFontSize` as resolved CSS string values; cssTheme helpers
- *  parse them into the QML types the native control expects. Fallbacks match existing gallery defaults. */
-export function widgetColorFont(i: (n: number) => string, extraIndent = 0, source = "parent"): string[] {
-  return [
-    `${i(2 + extraIndent)}color: cssTheme.parseColor(${source}.inheritedColor || "#2b2b2b")`,
-    `${i(2 + extraIndent)}font.family: cssTheme.resolveFontFamily(${source}.inheritedFontFamily || "Sans Serif")`,
-    `${i(2 + extraIndent)}font.pixelSize: cssTheme.parseFontSize(${source}.inheritedFontSize || "13px", 13)`,
-  ];
-}
-
 /** <input type="text|password|email|search" .../>
  *  → wrapper Css.CssFill (cssPrimitive "input") carrying CSS identity + `:focus`/`:disabled` state,
  *    + inner T.TextField (background null, anchors.fill) with CSS-bridged colour/font.
