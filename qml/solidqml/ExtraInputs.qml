@@ -107,42 +107,13 @@ W.Div {
             cssClass: ["nv-label"]
             text: "dial " + (angle)
         }
-        Css.CssFill {
+        W.Dial {
+            id: __input1
             cssClass: ["ni-dial"]
-            cssPrimitive: ""
-            cssState: (__input1.activeFocus ? ["focus"] : []).concat(__input1.pressed ? ["active"] : []).concat(!__input1.enabled ? ["disabled"] : [])
-            implicitWidth: __input1.implicitWidth
-            implicitHeight: __input1.implicitHeight
-            T.Dial {
-                id: __input1
-                anchors.fill: parent
-                activeFocusOnTab: solidTabstop.enabled
-                from: 0
-                to: 100
-                stepSize: 5
-                implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
-                implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-                background: Css.CssFill {
-                    cssPrimitive: ""
-                    cssClass: ["dial"]
-                    x: __input1.width / 2 - width / 2
-                    y: __input1.height / 2 - height / 2
-                    width: Math.max(32, Math.min(__input1.width, __input1.height))
-                    height: width
-                    implicitWidth: 96
-                    implicitHeight: 96
-                }
-                handle: Css.CssRect {
-                    cssClass: ["handle"]
-                    width: 12
-                    height: 12
-                    implicitWidth: 12
-                    implicitHeight: 12
-                    x: __input1.background.x + __input1.background.width / 2 - width / 2 + Math.sin(__input1.angle * Math.PI / 180) * (__input1.background.width / 2 - 12)
-                    y: __input1.background.y + __input1.background.height / 2 - height / 2 - Math.cos(__input1.angle * Math.PI / 180) * (__input1.background.width / 2 - 12)
-                }
-                onMoved: { __self.angle = __input1.value }
-            }
+            from: 0
+            to: 100
+            stepSize: 5
+            onMoved: { __self.angle = __input1.value }
             Binding {
                 target: __input1
                 property: "value"

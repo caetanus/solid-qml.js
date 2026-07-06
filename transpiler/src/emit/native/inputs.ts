@@ -123,12 +123,23 @@ function emitEventHandler(node: t.Node | undefined, scope: Scope, argExprs: stri
 
 // ── shared emission bits ─────────────────────────────────────────────────────────────────
 
-/** Allocate the control id and mark the Templates import (same idiom as emitInput). */
+/** Allocate the control id and mark the Templates import (same idiom as emitInput).
+ *  Used by the still-inline emitters (RangeSlider/Tumbler); migrated widgets use allocInstance. */
 function allocCtl(scope: Scope): string {
   const counter = scope.inputCounter ?? { n: 0 };
   const ctlId = `__input${counter.n++}`;
   if (scope.usedWidgets) scope.usedWidgets.flag = true;
   return ctlId;
+}
+
+/** Allocate the W.<Name> instance id and mark the solidqml.Widgets import. The instance keeps the
+ *  `__inputN` name so author handlers that read the control value (`__inputN.value`) and controlled
+ *  Bindings resolve against the component's exposed properties/aliases. */
+function allocInstance(scope: Scope): string {
+  const counter = scope.inputCounter ?? { n: 0 };
+  const id = `__input${counter.n++}`;
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
+  return id;
 }
 
 /** String-valued binding from text/interpolation children (local clone of qml.ts textBinding). */
@@ -294,16 +305,16 @@ const emitRangeSlider: NativeEmit = (propsArg, _children, scope, level, guard) =
 
 // ── <Dial value min max step onChange={(v)=>…}> ───────────────────────────────────────────
 //
-// T.Dial positions NOTHING (qquickdial_p.h): the STYLE places the handle from `angle`
-// (0° = 12 o'clock, positive clockwise — the Basic style rotates its handle image by the
-// same angle). We compute the point directly: cx + sin(angle)·r, cy − cos(angle)·r with
-// r = background.width/2 − 12. The dial circle is the background slot (border-radius via CSS).
+// One .qml per component: the T.Dial + dial face + trig-placed handle live in Dial.qml. The emit
+// instantiates W.Dial (id kept as __inputN so the onMoved value-read `__inputN.value` and the
+// controlled Binding resolve against the component's two-way `value` alias) and wires
+// from/to/stepSize + the onChange handler + the controlled value.
 const emitDial: NativeEmit = (propsArg, _children, scope, level, guard) => {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const ui = uiProps(propsArg);
   const classLine = buildCssClassLine(ui, scope, i(1));
-  const ctlId = allocCtl(scope);
+  const ctlId = allocInstance(scope);
 
   const min = numericAttr(propsArg, "min", "0", scope);
   const max = numericAttr(propsArg, "max", "100", scope);
@@ -312,54 +323,21 @@ const emitDial: NativeEmit = (propsArg, _children, scope, level, guard) => {
   const onChangeFn = fnProp(propsArg, "onChange");
   const disabled = boolAttr(propsArg, "disabled");
 
-  const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(${ctlId}.pressed ? ["active"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+  // onChange(v) — direct value, fired from the component's moved() signal (control drag / wheel).
   const movedBody = onChangeFn ? translateArgsHandler(onChangeFn, [`${ctlId}.value`], scope) : "";
-  const radius = `(${ctlId}.background.width / 2 - 12)`;
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.Dial {`,
+    `${i(1)}id: ${ctlId}`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: ""`,
-    `${i(1)}cssState: ${cssState}`,
-    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
-    `${i(1)}T.Dial {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
-    `${i(2)}from: ${min}`,
-    `${i(2)}to: ${max}`,
-    `${i(2)}stepSize: ${step}`,
-    ...implicitFormula(i),
-    // The dial face: a centred square CssFill — `.dial { border-radius: … }` makes it a circle.
-    `${i(2)}background: Css.CssFill {`,
-    `${i(3)}cssPrimitive: ""`,
-    `${i(3)}cssClass: ["dial"]`,
-    `${i(3)}x: ${ctlId}.width / 2 - width / 2`,
-    `${i(3)}y: ${ctlId}.height / 2 - height / 2`,
-    `${i(3)}width: Math.max(32, Math.min(${ctlId}.width, ${ctlId}.height))`,
-    `${i(3)}height: width`,
-    `${i(3)}implicitWidth: 96`,
-    `${i(3)}implicitHeight: 96`,
-    `${i(2)}}`,
-    `${i(2)}handle: Css.CssRect {`,
-    `${i(3)}cssClass: ["handle"]`,
-    `${i(3)}width: 12`,
-    `${i(3)}height: 12`,
-    `${i(3)}implicitWidth: 12`,
-    `${i(3)}implicitHeight: 12`,
-    `${i(3)}x: ${ctlId}.background.x + ${ctlId}.background.width / 2 - width / 2 + Math.sin(${ctlId}.angle * Math.PI / 180) * ${radius}`,
-    `${i(3)}y: ${ctlId}.background.y + ${ctlId}.background.height / 2 - height / 2 - Math.cos(${ctlId}.angle * Math.PI / 180) * ${radius}`,
-    `${i(2)}}`,
+    `${i(1)}from: ${min}`,
+    `${i(1)}to: ${max}`,
+    `${i(1)}stepSize: ${step}`,
   ];
-
-  if (disabled) lines.push(`${i(2)}enabled: false`);
-  if (movedBody) lines.push(`${i(2)}onMoved: { ${movedBody} }`);
-  lines.push(`${i(1)}}`);
-
+  if (disabled) lines.push(`${i(1)}disabled: true`);
+  if (movedBody) lines.push(`${i(1)}onMoved: { ${movedBody} }`);
   if (valueExpr !== undefined) lines.push(...bindingElement(i, ctlId, "value", valueExpr));
-
   lines.push(`${pad}}`);
   return lines;
 };

@@ -144,27 +144,30 @@ test("native-inputs: <RangeSlider> emits the Templates import in the component t
 // <Dial>
 // ---------------------------------------------------------------------------
 
-test("native-inputs: <Dial> emits T.Dial with from/to/stepSize and dial background", async () => {
+test("native-inputs: <Dial> instantiates W.Dial with from/to/stepSize on the instance", async () => {
   const out = await qml(`export function F(){ return <Dial min={0} max={360} step={10} />; }`);
-  assert.match(out, /T\.Dial \{/);
+  assert.match(out, /W\.Dial \{/);
+  assert.match(out, /id: __input0/);
   assert.match(out, /from: 0/);
   assert.match(out, /to: 360/);
   assert.match(out, /stepSize: 10/);
-  assert.match(out, /background: Css\.CssFill \{/);
-  assert.match(out, /cssClass: \["dial"\]/);
+  // The T.Dial + face + handle now live in Dial.qml, not the emit.
+  assert.doesNotMatch(out, /T\.Dial/);
 });
 
-test("native-inputs: <Dial> handle is a 12×12 CssRect positioned from dial.angle trig", async () => {
-  const out = await qml(`export function F(){ return <Dial />; }`);
-  assert.match(out, /handle: Css\.CssRect \{/);
-  assert.match(out, /cssClass: \["handle"\]/);
-  assert.match(out, /width: 12/);
-  assert.match(out, /height: 12/);
-  assert.match(out, /Math\.sin\(__input0\.angle \* Math\.PI \/ 180\) \* \(__input0\.background\.width \/ 2 - 12\)/);
-  assert.match(out, /Math\.cos\(__input0\.angle \* Math\.PI \/ 180\) \* \(__input0\.background\.width \/ 2 - 12\)/);
+test("native-inputs: Dial.qml holds the T.Dial, dial face and trig-placed handle", async () => {
+  const src = await readWidget("Dial");
+  assert.match(src, /T\.Dial \{/);
+  assert.match(src, /background: Css\.CssFill \{/);
+  assert.match(src, /cssClass: \["dial"\]/);
+  assert.match(src, /handle: Css\.CssRect \{/);
+  assert.match(src, /cssClass: \["handle"\]/);
+  assert.match(src, /Math\.sin\(__ctl\.angle \* Math\.PI \/ 180\) \* \(__ctl\.background\.width \/ 2 - 12\)/);
+  assert.match(src, /Math\.cos\(__ctl\.angle \* Math\.PI \/ 180\) \* \(__ctl\.background\.width \/ 2 - 12\)/);
+  assert.match(src, /property alias value: __ctl\.value/);
 });
 
-test("native-inputs: <Dial value> emits a Binding on value; onChange={(v)=>…} maps v to dial.value via onMoved", async () => {
+test("native-inputs: <Dial value> emits a Binding on value; onChange={(v)=>…} maps v to __input0.value via onMoved", async () => {
   const out = await qmlType(`
     export function F() {
       const [a, setA] = createSignal(30);
@@ -177,6 +180,7 @@ test("native-inputs: <Dial value> emits a Binding on value; onChange={(v)=>…} 
   assert.match(out, /value: a/);
   assert.match(out, /restoreMode: Binding\.RestoreNone/);
   assert.match(out, /onMoved: \{ __self\.a = __input0\.value \}/);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
 });
 
 // ---------------------------------------------------------------------------
