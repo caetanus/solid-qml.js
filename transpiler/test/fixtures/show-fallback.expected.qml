@@ -2,19 +2,18 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssRect {
+
+import solidqml.Widgets 1.0 as W
+W.Div {
     id: __self
     property var ok: true
     cssClass: ["wrap"]
-    cssPrimitive: "div"
-    Css.CssText {
+    W.Text {
         visible: !!(ok)
-        cssPrimitive: "text"
         text: "yes"
     }
-    Css.CssText {
+    W.Text {
         visible: !(ok)
-        cssPrimitive: "text"
         text: "none"
     }
 }

@@ -4,19 +4,17 @@ import qmlcss 1.0 as Css
 
 
 import solidqml.Widgets 1.0 as W
-Css.CssRect {
+W.Div {
     id: __self
     property var items: ["alpha", "beta", "gamma"]
     cssClass: ["app"]
-    cssPrimitive: "div"
     W.Button {
         text: "add"
         onClicked: items = [...items, "more"]
     }
     Repeater {
         model: items
-        Css.CssText {
-            cssPrimitive: "text"
+        W.Text {
             text: "" + (index) + ": " + (modelData)
         }
     }

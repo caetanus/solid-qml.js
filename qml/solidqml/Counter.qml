@@ -4,12 +4,11 @@ import qmlcss 1.0 as Css
 
 
 import solidqml.Widgets 1.0 as W
-Css.CssRect {
+W.Div {
     id: __self
     property var label
     property var count: 0
     cssClass: ["counter"]
-    cssPrimitive: "div"
     W.Button {
         text: "" + (label) + ": " + (count)
         onClicked: count = count + 1

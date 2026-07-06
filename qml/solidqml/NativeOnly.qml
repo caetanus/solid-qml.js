@@ -2,11 +2,12 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssRect {
+
+import solidqml.Widgets 1.0 as W
+W.Div {
     id: __self
     readonly property var isNative: typeof process !== "undefined" && !!process.versions && process.versions.solidQml
     cssClass: ["native"]
-    cssPrimitive: "div"
     HtmlWidgets {
         visible: !!(isNative)
     }
@@ -22,13 +23,11 @@ Css.CssRect {
     CustomQml {
         visible: !!(isNative)
     }
-    Css.CssRect {
+    W.Div {
         visible: !(isNative)
         cssClass: ["native-fallback"]
-        cssPrimitive: "div"
-        Css.CssText {
+        W.Text {
             cssClass: ["native-fallback-t"]
-            cssPrimitive: "text"
             text: "native-only widgets — run this view in the QML loader"
         }
     }

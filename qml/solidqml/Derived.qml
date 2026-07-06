@@ -4,17 +4,15 @@ import qmlcss 1.0 as Css
 
 
 import solidqml.Widgets 1.0 as W
-Css.CssRect {
+W.Div {
     id: __self
     property var count: 0
     cssClass: ["app"]
-    cssPrimitive: "div"
     W.Button {
         text: "increment"
         onClicked: count = count + 1
     }
-    Css.CssText {
-        cssPrimitive: "text"
+    W.Text {
         text: "" + (count) + " doubled is " + ((count * 2))
     }
 }

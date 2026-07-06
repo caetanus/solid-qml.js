@@ -2,17 +2,17 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssRect {
+
+import solidqml.Widgets 1.0 as W
+W.Div {
     id: __self
     property var items: ["a", "b", "c"]
     cssClass: ["app"]
-    cssPrimitive: "div"
     Css.CssRepeater {
         model: items
         delegate: Component {
-            Css.CssText {
+            W.Text {
                 cssClass: ["row"]
-                cssPrimitive: "text"
                 text: "" + (modelData)
             }
         }

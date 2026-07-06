@@ -2,18 +2,17 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssRect {
+
+import solidqml.Widgets 1.0 as W
+W.Div {
     id: __self
     property var count: 2
     readonly property var double: count * 2
     cssClass: ["app"]
-    cssPrimitive: "div"
-    Css.CssText {
-        cssPrimitive: "text"
+    W.Text {
         text: "count: " + (count)
     }
-    Css.CssText {
-        cssPrimitive: "text"
+    W.Text {
         text: "double: " + (double)
     }
 }

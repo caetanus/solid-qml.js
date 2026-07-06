@@ -2,20 +2,19 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssRect {
+
+import solidqml.Widgets 1.0 as W
+W.Div {
     id: __self
     property var clicks: 0
     property var stars: 0
     cssClass: ["nv-section"]
-    cssPrimitive: "div"
-    Css.CssText {
+    W.Text {
         cssClass: ["nv-title"]
-        cssPrimitive: "text"
         text: "Custom QML (escape hatch)"
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
         Css.CssRect {
             cssPrimitive: "div"
             Badge {
@@ -34,9 +33,8 @@ Css.CssRect {
                 onBumped: function() { return stars = stars + 1 }
             }
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-echo"]
-            cssPrimitive: "text"
             text: "imported straight from Badge.qml"
         }
     }

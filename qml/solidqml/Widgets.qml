@@ -6,7 +6,7 @@ import qmlcss 1.0 as Css
 import solidqml.Widgets 1.0 as W
 
 import QtQuick.Templates 6.8 as T
-Css.CssRect {
+W.Div {
     id: __self
     property var inputName: ""
     property var inputPass: ""
@@ -25,24 +25,18 @@ Css.CssRect {
     function reset() { inputName = ""; inputPass = ""; inputSearch = ""; inputNotes = ""; chk1 = false; chk2 = true; sw = false; plan = "free"; fruit = "apple"; volume = 50; qty = 1; inputDate = null; calDate = null; }
     T.ButtonGroup { id: __group_plan; readonly property var order: [__input10, __input11, __input12] }
     cssClass: ["widgets"]
-    cssPrimitive: "div"
-    Css.CssRect {
+    W.Div {
         cssClass: ["wg-cols"]
-        cssPrimitive: "div"
-        Css.CssRect {
+        W.Div {
             cssClass: ["wg-section"]
-            cssPrimitive: "div"
-            Css.CssText {
+            W.Text {
                 cssClass: ["wg-title"]
-                cssPrimitive: "text"
                 text: "Text"
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-field"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-label"]
-                    cssPrimitive: "text"
                     text: "Name"
                 }
                 Css.CssFill {
@@ -82,12 +76,10 @@ Css.CssRect {
                     }
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-field"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-label"]
-                    cssPrimitive: "text"
                     text: "Password"
                 }
                 Css.CssFill {
@@ -128,12 +120,10 @@ Css.CssRect {
                     }
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-field"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-label"]
-                    cssPrimitive: "text"
                     text: "Search (max 20)"
                 }
                 Css.CssFill {
@@ -174,12 +164,10 @@ Css.CssRect {
                     }
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-field"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-label"]
-                    cssPrimitive: "text"
                     text: "Disabled"
                 }
                 Css.CssFill {
@@ -213,12 +201,10 @@ Css.CssRect {
                     }
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-field"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-label"]
-                    cssPrimitive: "text"
                     text: "Notes"
                 }
                 Css.CssFill {
@@ -259,17 +245,14 @@ Css.CssRect {
                 }
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["wg-section"]
-            cssPrimitive: "div"
-            Css.CssText {
+            W.Text {
                 cssClass: ["wg-title"]
-                cssPrimitive: "text"
                 text: "Toggles"
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-check-row"]
-                cssPrimitive: "div"
                 Css.CssFill {
                     cssClass: ["wg-checkbox"]
                     cssPrimitive: "input"
@@ -313,15 +296,13 @@ Css.CssRect {
                         restoreMode: Binding.RestoreNone
                     }
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-check-label"]
-                    cssPrimitive: "text"
                     text: "Accept terms"
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-check-row"]
-                cssPrimitive: "div"
                 Css.CssFill {
                     cssClass: ["wg-checkbox"]
                     cssPrimitive: "input"
@@ -365,15 +346,13 @@ Css.CssRect {
                         restoreMode: Binding.RestoreNone
                     }
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-check-label"]
-                    cssPrimitive: "text"
                     text: "Send updates (pre-checked)"
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-check-row"]
-                cssPrimitive: "div"
                 Css.CssFill {
                     cssClass: ["wg-switch"]
                     cssPrimitive: "input"
@@ -421,15 +400,13 @@ Css.CssRect {
                         restoreMode: Binding.RestoreNone
                     }
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-check-label"]
-                    cssPrimitive: "text"
                     text: "Dark mode"
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-check-row"]
-                cssPrimitive: "div"
                 Css.CssFill {
                     cssClass: ["wg-checkbox"]
                     cssPrimitive: "input"
@@ -467,15 +444,13 @@ Css.CssRect {
                         enabled: false
                     }
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-check-label"]
-                    cssPrimitive: "text"
                     text: "Disabled checkbox"
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-check-row"]
-                cssPrimitive: "div"
                 Css.CssFill {
                     cssClass: ["wg-switch"]
                     cssPrimitive: "input"
@@ -523,20 +498,17 @@ Css.CssRect {
                         restoreMode: Binding.RestoreNone
                     }
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-check-label"]
-                    cssPrimitive: "text"
                     text: "Tab navigation (native only)"
                 }
             }
-            Css.CssText {
+            W.Text {
                 cssClass: ["wg-sublabel"]
-                cssPrimitive: "text"
                 text: "Plan"
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-check-row"]
-                cssPrimitive: "div"
                 Css.CssFill {
                     cssClass: ["wg-radio"]
                     cssPrimitive: "input"
@@ -585,15 +557,13 @@ Css.CssRect {
                         restoreMode: Binding.RestoreNone
                     }
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-check-label"]
-                    cssPrimitive: "text"
                     text: "Free"
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-check-row"]
-                cssPrimitive: "div"
                 Css.CssFill {
                     cssClass: ["wg-radio"]
                     cssPrimitive: "input"
@@ -642,15 +612,13 @@ Css.CssRect {
                         restoreMode: Binding.RestoreNone
                     }
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-check-label"]
-                    cssPrimitive: "text"
                     text: "Pro"
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-check-row"]
-                cssPrimitive: "div"
                 Css.CssFill {
                     cssClass: ["wg-radio"]
                     cssPrimitive: "input"
@@ -699,31 +667,25 @@ Css.CssRect {
                         restoreMode: Binding.RestoreNone
                     }
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-check-label"]
-                    cssPrimitive: "text"
                     text: "Team"
                 }
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["wg-cols"]
-        cssPrimitive: "div"
-        Css.CssRect {
+        W.Div {
             cssClass: ["wg-section"]
-            cssPrimitive: "div"
-            Css.CssText {
+            W.Text {
                 cssClass: ["wg-title"]
-                cssPrimitive: "text"
                 text: "Pickers"
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-field"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-label"]
-                    cssPrimitive: "text"
                     text: "Fruit"
                 }
                 Css.CssFill {
@@ -799,20 +761,16 @@ Css.CssRect {
                     }
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-field"]
-                cssPrimitive: "div"
-                Css.CssRect {
+                W.Div {
                     cssClass: ["wg-range-header"]
-                    cssPrimitive: "div"
-                    Css.CssText {
+                    W.Text {
                         cssClass: ["wg-label"]
-                        cssPrimitive: "text"
                         text: "Volume"
                     }
-                    Css.CssText {
+                    W.Text {
                         cssClass: ["wg-range-val"]
-                        cssPrimitive: "text"
                         text: "" + (volume)
                     }
                 }
@@ -868,12 +826,10 @@ Css.CssRect {
                     }
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-field"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-label"]
-                    cssPrimitive: "text"
                     text: "Quantity"
                 }
                 Css.CssFill {
@@ -959,12 +915,10 @@ Css.CssRect {
                     }
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-field"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-label"]
-                    cssPrimitive: "text"
                     text: "Date"
                 }
                 Css.CssFill {
@@ -1150,12 +1104,10 @@ Css.CssRect {
                 }
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["wg-section", "wg-cal-section"]
-            cssPrimitive: "div"
-            Css.CssText {
+            W.Text {
                 cssClass: ["wg-title"]
-                cssPrimitive: "text"
                 text: "Calendar"
             }
             Css.CssFill {
@@ -1278,196 +1230,154 @@ Css.CssRect {
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["wg-summary"]
-        cssPrimitive: "div"
-        Css.CssText {
+        W.Text {
             cssClass: ["wg-title"]
-            cssPrimitive: "text"
             text: "Form state"
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["wg-kv-grid"]
-            cssPrimitive: "div"
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-kv-row"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv"]
-                    cssPrimitive: "text"
                     text: "name"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv-v"]
-                    cssPrimitive: "text"
                     text: "" + (inputName)
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-kv-row"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv"]
-                    cssPrimitive: "text"
                     text: "pass"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv-v"]
-                    cssPrimitive: "text"
                     text: "" + (inputPass ? "set" : "—")
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-kv-row"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv"]
-                    cssPrimitive: "text"
                     text: "search"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv-v"]
-                    cssPrimitive: "text"
                     text: "" + (inputSearch)
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-kv-row"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv"]
-                    cssPrimitive: "text"
                     text: "notes"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv-v"]
-                    cssPrimitive: "text"
                     text: "" + (inputNotes ? "set" : "—")
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-kv-row"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv"]
-                    cssPrimitive: "text"
                     text: "check1"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv-v"]
-                    cssPrimitive: "text"
                     text: "" + (chk1 ? "on" : "off")
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-kv-row"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv"]
-                    cssPrimitive: "text"
                     text: "check2"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv-v"]
-                    cssPrimitive: "text"
                     text: "" + (chk2 ? "on" : "off")
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-kv-row"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv"]
-                    cssPrimitive: "text"
                     text: "switch"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv-v"]
-                    cssPrimitive: "text"
                     text: "" + (sw ? "on" : "off")
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-kv-row"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv"]
-                    cssPrimitive: "text"
                     text: "plan"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv-v"]
-                    cssPrimitive: "text"
                     text: "" + (plan)
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-kv-row"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv"]
-                    cssPrimitive: "text"
                     text: "fruit"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv-v"]
-                    cssPrimitive: "text"
                     text: "" + (fruit)
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-kv-row"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv"]
-                    cssPrimitive: "text"
                     text: "volume"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv-v"]
-                    cssPrimitive: "text"
                     text: "" + (volume)
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-kv-row"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv"]
-                    cssPrimitive: "text"
                     text: "qty"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv-v"]
-                    cssPrimitive: "text"
                     text: "" + (qty)
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-kv-row"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv"]
-                    cssPrimitive: "text"
                     text: "date"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv-v"]
-                    cssPrimitive: "text"
                     text: "" + (inputDate ? "selected" : "—")
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["wg-kv-row"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv"]
-                    cssPrimitive: "text"
                     text: "cal"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["wg-kv-v"]
-                    cssPrimitive: "text"
                     text: "" + (calDate ? "selected" : "—")
                 }
             }

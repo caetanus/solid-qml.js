@@ -4,20 +4,18 @@ import qmlcss 1.0 as Css
 
 
 import solidqml.Widgets 1.0 as W
-Css.CssRect {
+W.Div {
     id: __self
     property var label: "(none)"
     property var nextId: 1
     cssClass: ["app"]
-    cssPrimitive: "div"
     W.Button {
         cssClass: ["btn"]
         text: "next"
         onClicked: label = "id:" + nextId++
     }
-    Css.CssText {
+    W.Text {
         cssClass: ["out"]
-        cssPrimitive: "text"
         text: "" + (label)
     }
 }

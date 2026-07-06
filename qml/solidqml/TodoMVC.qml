@@ -6,7 +6,7 @@ import qmlcss 1.0 as Css
 import solidqml.Widgets 1.0 as W
 
 import QtQuick.Templates 6.0 as T
-Css.CssRect {
+W.Div {
     id: __self
     property var todos: []
     property var draft: ""
@@ -22,15 +22,12 @@ Css.CssRect {
     Component.onCompleted: { var saved = localStorage.getItem("todos"); if (saved) { var restored = JSON.parse(saved); todos = restored; nextId = restored.reduce(function(max, todo) { return Math.max(max, todo.id) }, 0) + 1; } localStorage.setItem("todos", JSON.stringify(todos)); }
     Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
     cssClass: ["todo-app"]
-    cssPrimitive: "div"
-    Css.CssText {
+    W.Text {
         cssClass: ["todo-h1"]
-        cssPrimitive: "text"
         text: "todos"
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["todo-newline"]
-        cssPrimitive: "div"
         Css.CssFill {
             cssClass: ["todo-new"]
             cssPrimitive: "input"
@@ -74,10 +71,9 @@ Css.CssRect {
             onClicked: add()
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["todo-list"]
         visible: !!(todos.length > 0)
-        cssPrimitive: "div"
         Css.CssRepeater {
             model: visible_
             delegate: Component {
@@ -89,18 +85,15 @@ Css.CssRect {
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["todo-footer"]
         visible: !!(todos.length > 0)
-        cssPrimitive: "div"
-        Css.CssText {
+        W.Text {
             cssClass: ["todo-count"]
-            cssPrimitive: "text"
             text: "" + (remaining) + " left"
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["todo-filters"]
-            cssPrimitive: "div"
             Css.CssIncubator {
                 active: (remaining > 0 && remaining < todos.length) ? true : false
                 sourceComponent: Component {
@@ -120,10 +113,9 @@ Css.CssRect {
             }
         }
     }
-    Css.CssText {
+    W.Text {
         visible: !(todos.length > 0)
         cssClass: ["todo-empty"]
-        cssPrimitive: "text"
         text: "no todos yet"
     }
 }

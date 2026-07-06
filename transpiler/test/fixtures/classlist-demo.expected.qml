@@ -2,14 +2,14 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssRect {
+
+import solidqml.Widgets 1.0 as W
+W.Div {
     id: __self
     property var done: false
     cssClass: ["todo-row"].concat(done ? ["completed"] : [])
-    cssPrimitive: "div"
-    Css.CssText {
+    W.Text {
         cssClass: ["label"]
-        cssPrimitive: "text"
         text: "item"
     }
 }

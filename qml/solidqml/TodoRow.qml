@@ -4,21 +4,19 @@ import qmlcss 1.0 as Css
 
 
 import solidqml.Widgets 1.0 as W
-Css.CssRect {
+W.Div {
     id: __self
     property var todo
     property var onToggle
     property var onRemove
     cssClass: ["todo-row"].concat(todo.done ? ["completed"] : [])
-    cssPrimitive: "div"
     W.Button {
         cssClass: ["todo-toggle"]
         text: "" + (todo.done ? "✓" : "○")
         onClicked: onToggle(todo.id)
     }
-    Css.CssText {
+    W.Text {
         cssClass: ["todo-title"]
-        cssPrimitive: "text"
         text: "" + (todo.title)
     }
     W.Button {

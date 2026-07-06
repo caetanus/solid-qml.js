@@ -6,23 +6,19 @@ import qmlcss 1.0 as Css
 import QtQuick.Window
 
 import solidqml.Widgets 1.0 as W
-Css.CssRect {
+W.Div {
     id: __self
     property var pct: 0.25
     property var dlgOpen: false
     cssClass: ["nv-section"]
-    cssPrimitive: "div"
-    Css.CssText {
+    W.Text {
         cssClass: ["nv-title"]
-        cssPrimitive: "text"
         text: "HTML widgets"
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-label"]
-            cssPrimitive: "text"
             text: "Progress"
         }
         W.Progress {
@@ -36,12 +32,10 @@ Css.CssRect {
             onClicked: pct = pct >= 1 ? 0 : pct + 0.25
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-label"]
-            cssPrimitive: "text"
             text: "Busy"
         }
         W.Progress {
@@ -55,23 +49,19 @@ Css.CssRect {
             cssPrimitive: "legend"
             text: "Shipping"
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["hw-line"]
-            cssPrimitive: "text"
             text: "Standard delivery takes 3 to 5 business days."
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["hw-line"]
-            cssPrimitive: "text"
             text: "Orders over $199 ship free anywhere."
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-label"]
-            cssPrimitive: "text"
             text: "Dialog"
         }
         W.Button {
@@ -100,17 +90,14 @@ Css.CssRect {
                 property Item cssAncestor: __dialog0W
             cssClass: ["hw-dialog"]
                 cssPrimitive: "dialog"
-                Css.CssRect {
+                W.Div {
                     cssClass: ["hw-dialog-body"]
-                    cssPrimitive: "div"
-                    Css.CssText {
+                    W.Text {
                         cssClass: ["hw-dialog-title"]
-                        cssPrimitive: "text"
                         text: "Native dialog"
                     }
-                    Css.CssText {
+                    W.Text {
                         cssClass: ["hw-line"]
-                        cssPrimitive: "text"
                         text: "A modal T.Dialog centered on the window overlay."
                     }
                     W.Button {
@@ -136,14 +123,12 @@ Css.CssRect {
                 text: "More details"
             }
         ]
-        Css.CssText {
+        W.Text {
             cssClass: ["hw-line"]
-            cssPrimitive: "text"
             text: "The disclosure content only occupies space while open."
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["hw-line"]
-            cssPrimitive: "text"
             text: "Click the summary row to toggle."
         }
     }

@@ -2,24 +2,21 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssRect {
+
+import solidqml.Widgets 1.0 as W
+W.Div {
     id: __self
     cssClass: ["panel"]
-    cssPrimitive: "div"
-    Css.CssText {
+    W.Text {
         cssClass: ["title"]
-        cssPrimitive: "text"
         text: "solid qml"
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["row"]
-        cssPrimitive: "div"
-        Css.CssText {
-            cssPrimitive: "text"
+        W.Text {
             text: "left"
         }
-        Css.CssText {
-            cssPrimitive: "text"
+        W.Text {
             text: "right"
         }
     }

@@ -21,19 +21,19 @@ async function qml(src: string): Promise<string> {
 
 test("Show: a child element gets a visible guard from when", async () => {
   const out = await qml(`import { Show } from "solid-js"; export function C(){ const [ok,setOk]=createSignal(true); return <Show when={ok()}><text>hi</text></Show>; }`);
-  assert.match(out, /Css\.CssText \{[\s\S]*visible: !!\(ok\)[\s\S]*text: "hi"/);
+  assert.match(out, /W\.Text \{[\s\S]*visible: !!\(ok\)[\s\S]*text: "hi"/);
 });
 
 test("Show: with a wrapper element, only the wrapper carries the guard", async () => {
   const out = await qml(`import { Show } from "solid-js"; export function C(){ const [ok,setOk]=createSignal(true); return <Show when={ok()}><div class="box"><text>hi</text></div></Show>; }`);
-  assert.match(out, /Css\.CssRect \{[\s\S]*visible: !!\(ok\)/);
+  assert.match(out, /W\.Div \{[\s\S]*visible: !!\(ok\)/);
 });
 
 test("For: becomes a Repeater whose delegate binds item to modelData", async () => {
   const out = await qml(`import { For } from "solid-js"; export function C(){ const [items,setItems]=createSignal([]); return <For each={items()}>{(item)=><text>{item}</text>}</For>; }`);
   assert.match(out, /Repeater \{/);
   assert.match(out, /model: items/);
-  assert.match(out, /Css\.CssText \{[\s\S]*text: "" \+ \(modelData\)/);
+  assert.match(out, /W\.Text \{[\s\S]*text: "" \+ \(modelData\)/);
 });
 
 test("Switch: each Match branch is LAZY and ASYNC (a CssIncubator gated by its when minus the priors)", async () => {
@@ -48,14 +48,10 @@ test("Switch: each Match branch is LAZY and ASYNC (a CssIncubator gated by its w
 
 test("Show: fallback element is gated with the inverted guard", async () => {
   const out = await qml(`import { Show } from "solid-js"; export function C(){ const [c,setC]=createSignal(true); return <Show when={c()} fallback={<text>none</text>}><text>yes</text></Show>; }`);
-  // child must carry the positive guard
-  assert.match(out, /text: "yes"[\s\S]*visible: !!\(c\)|visible: !!\(c\)[\s\S]*text: "yes"/);
-  // fallback must carry the inverted guard
-  assert.match(out, /text: "none"[\s\S]*visible: !\(c\)|visible: !\(c\)[\s\S]*text: "none"/);
-  // child guard must be positive (not inverted)
-  assert.doesNotMatch(out, /visible: !\(c\)[\s\S]{0,100}text: "yes"/);
-  // fallback guard must NOT be the positive form
-  assert.doesNotMatch(out, /visible: !!\(c\)[\s\S]{0,100}text: "none"/);
+  // child carries the positive guard immediately before its text
+  assert.match(out, /visible: !!\(c\)\s*\n\s*text: "yes"/);
+  // fallback carries the inverted guard immediately before its text
+  assert.match(out, /visible: !\(c\)\s*\n\s*text: "none"/);
 });
 
 test("Dynamic over a text tag emits a CssText with a reactive cssPrimitive", async () => {
@@ -79,7 +75,7 @@ test("Dynamic label text with angle brackets stays text, not a component tag", a
 
 test("lowercase <h> is an intrinsic tag from Babel output, not a component", async () => {
   const out = await qml(`export function C(){ return <h class="headline">hi</h>; }`);
-  assert.match(out, /Css\.CssRect \{/);
+  assert.match(out, /W\.Div \{/);
   assert.match(out, /cssPrimitive: "h"/);
   assert.match(out, /cssClass: \["headline"\]/);
 });

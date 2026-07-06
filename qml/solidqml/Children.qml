@@ -2,18 +2,17 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssRect {
+
+import solidqml.Widgets 1.0 as W
+W.Div {
     id: __self
     cssClass: ["app"]
-    cssPrimitive: "div"
     Card {
-        Css.CssText {
+        W.Text {
             cssClass: ["title"]
-            cssPrimitive: "text"
             text: "Inside the card"
         }
-        Css.CssText {
-            cssPrimitive: "text"
+        W.Text {
             text: "slotted via props.children"
         }
     }

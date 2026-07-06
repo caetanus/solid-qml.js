@@ -6,24 +6,20 @@ import qmlcss 1.0 as Css
 import solidqml.Widgets 1.0 as W
 
 import QtQuick.Templates 6.8 as T
-Css.CssRect {
+W.Div {
     id: __self
     property var lastAction: "none yet"
     property var selNode: "nothing"
     readonly property var treeData: [({ label: "src", children: [({ label: "emit", children: [({ label: "qml.ts" }), ({ label: "expr.ts" })] }), ({ label: "resolve", children: [({ label: "node.ts" })] }), ({ label: "index.ts" })] }), ({ label: "docs", children: [({ label: "roadmap.md" })] }), ({ label: "package.json" })]
     cssClass: ["nv-section", "nv-menus"]
-    cssPrimitive: "div"
-    Css.CssText {
+    W.Text {
         cssClass: ["nv-title"]
-        cssPrimitive: "text"
         text: "Menus & views"
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-label"]
-            cssPrimitive: "text"
             text: "menu"
         }
         Item {
@@ -132,18 +128,15 @@ Css.CssRect {
                 }
             }
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-echo"]
-            cssPrimitive: "text"
             text: "last action: " + (lastAction)
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-label"]
-            cssPrimitive: "text"
             text: "menubar"
         }
         Css.CssFill {
@@ -364,12 +357,10 @@ Css.CssRect {
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row", "nv-tree-row-host"]
-        cssPrimitive: "div"
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-label"]
-            cssPrimitive: "text"
             text: "treeview"
         }
         Css.CssFill {
@@ -436,23 +427,19 @@ Css.CssRect {
                 }
             }
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-echo"]
-            cssPrimitive: "text"
             text: "selected: " + (selNode)
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-label"]
-            cssPrimitive: "text"
             text: "Tray"
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-echo"]
-            cssPrimitive: "text"
             text: "<Tray> — native SystemTrayIcon (not shown here; see tests)"
         }
     }

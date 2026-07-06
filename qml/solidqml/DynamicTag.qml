@@ -4,11 +4,10 @@ import qmlcss 1.0 as Css
 
 
 import solidqml.Widgets 1.0 as W
-Css.CssRect {
+W.Div {
     id: __self
     property var tag: "h1"
     cssClass: ["app"]
-    cssPrimitive: "div"
     W.Button {
         text: "render as: <" + (tag) + ">"
         onClicked: tag = tag === "h1" ? "bio" : "h1"

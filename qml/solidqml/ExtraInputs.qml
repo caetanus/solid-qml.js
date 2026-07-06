@@ -6,7 +6,7 @@ import qmlcss 1.0 as Css
 import solidqml.Widgets 1.0 as W
 
 import QtQuick.Templates 6.0 as T
-Css.CssRect {
+W.Div {
     id: __self
     property var lo: 20
     property var hi: 80
@@ -16,18 +16,14 @@ Css.CssRect {
     property var busy: true
     property var clicks: 0
     cssClass: ["nv-section"]
-    cssPrimitive: "div"
-    Css.CssText {
+    W.Text {
         cssClass: ["nv-title"]
-        cssPrimitive: "text"
         text: "Extra inputs"
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-label"]
-            cssPrimitive: "text"
             text: "range " + (lo) + "–" + (hi)
         }
         Css.CssFill {
@@ -105,12 +101,10 @@ Css.CssRect {
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-label"]
-            cssPrimitive: "text"
             text: "dial " + (angle)
         }
         Css.CssFill {
@@ -157,12 +151,10 @@ Css.CssRect {
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-label"]
-            cssPrimitive: "text"
             text: "size " + (size)
         }
         Css.CssFill {
@@ -212,9 +204,8 @@ Css.CssRect {
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
         Css.CssFill {
             cssClass: ["ni-delay"]
             cssPrimitive: ""
@@ -254,15 +245,13 @@ Css.CssRect {
                 onActivated: { __self.armed = true }
             }
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-label"]
-            cssPrimitive: "text"
             text: "" + (armed ? "armed!" : "idle")
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
         W.Button {
             cssClass: ["ni-btn"]
             text: "" + (busy ? "stop" : "start")
@@ -375,9 +364,8 @@ Css.CssRect {
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
         Css.CssFill {
             cssClass: ["ni-round", "round"]
             cssPrimitive: "button"
@@ -438,9 +426,8 @@ Css.CssRect {
                 onClicked: { __self.clicks = 0 }
             }
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["nv-label"]
-            cssPrimitive: "text"
             text: "clicks " + (clicks)
         }
     }

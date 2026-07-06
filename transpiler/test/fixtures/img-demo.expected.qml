@@ -4,11 +4,10 @@ import qmlcss 1.0 as Css
 
 
 import solidqml.Widgets 1.0 as W
-Css.CssRect {
+W.Div {
     id: __self
     property var url: "qrc:/images/logo.png"
     cssClass: ["container"]
-    cssPrimitive: "div"
     W.Image {
         cssClass: ["hero"]
         src: url || ""

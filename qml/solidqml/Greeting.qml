@@ -2,11 +2,12 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssText {
+
+import solidqml.Widgets 1.0 as W
+W.Text {
     id: __self
     property var greeting: "Hello"
     property var name: "stranger"
     cssClass: ["h1"]
-    cssPrimitive: "text"
     text: "" + (greeting) + ", " + (name) + "!"
 }

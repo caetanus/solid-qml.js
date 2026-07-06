@@ -2,16 +2,16 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssRect {
+
+import solidqml.Widgets 1.0 as W
+W.Div {
     id: __self
     property var count: 0
     property var __cleanups: []
     Component.onCompleted: { var timer = setInterval(function() { return count = count + 1 }, 1000); __cleanups.push(function() { return clearInterval(timer) }); }
     Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
     cssClass: ["app"]
-    cssPrimitive: "div"
-    Css.CssText {
-        cssPrimitive: "text"
+    W.Text {
         text: "Count value is " + (count)
     }
 }

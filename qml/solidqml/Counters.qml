@@ -2,10 +2,11 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssRect {
+
+import solidqml.Widgets 1.0 as W
+W.Div {
     id: __self
     cssClass: ["app"]
-    cssPrimitive: "div"
     Counter {
         label: "A"
     }

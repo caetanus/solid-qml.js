@@ -2,7 +2,9 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssRect {
+
+import solidqml.Widgets 1.0 as W
+W.Div {
     id: __self
     property var a: 1
     property var b: 0
@@ -14,9 +16,7 @@ Css.CssRect {
         function onAChanged() { b = a * 2; }
     }
     cssClass: ["app"]
-    cssPrimitive: "div"
-    Css.CssText {
-        cssPrimitive: "text"
+    W.Text {
         text: "a=" + (a) + " b=" + (b)
     }
 }

@@ -2,15 +2,15 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssRect {
+
+import solidqml.Widgets 1.0 as W
+W.Div {
     id: __self
     property var filter: "all"
     property var todos: ["a", "b"]
     readonly property var visible_: (function() { var f = filter; return todos.filter(function(t) { return f === "all" || t === f; }); })()
     cssClass: ["app"]
-    cssPrimitive: "div"
-    Css.CssText {
-        cssPrimitive: "text"
+    W.Text {
         text: "" + (visible_.length)
     }
 }

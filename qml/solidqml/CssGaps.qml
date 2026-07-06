@@ -2,99 +2,87 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssRect {
+
+import solidqml.Widgets 1.0 as W
+W.Div {
     id: __self
     cssClass: ["gaps"]
-    cssPrimitive: "div"
-    Css.CssRect {
+    W.Div {
         cssClass: ["stack"]
-        cssPrimitive: "div"
-        Css.CssRect {
+        W.Div {
             cssClass: ["z", "z1"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "1"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["z", "z2"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "2"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["z", "z3"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "3"
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["row"]
-        cssPrimitive: "div"
-        Css.CssRect {
+        W.Div {
             cssClass: ["cell", "op"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "op .4"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["cell", "rot"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "rot"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["cell", "scl"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "scale"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["cell", "vis"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "vis"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["cell", "hid"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "hidden"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["cell", "none"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "none"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["cell", "clip"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "overflow"
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["spill"]
-                cssPrimitive: "div"
                 Css.CssText {
                     cssPrimitive: ""
                     text: "spill"
@@ -102,146 +90,123 @@ Css.CssRect {
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["flex"]
-        cssPrimitive: "div"
-        Css.CssRect {
+        W.Div {
             cssClass: ["fi", "a"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "A·1"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["fi", "b"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "B·2"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["fi", "c"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "C·0"
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["shrink"]
-        cssPrimitive: "div"
-        Css.CssRect {
+        W.Div {
             cssClass: ["si"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "shrink 220"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["si"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "shrink 220"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["si"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "shrink 220"
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["row"]
-        cssPrimitive: "div"
-        Css.CssRect {
+        W.Div {
             cssClass: ["bs", "border"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "border-box 120"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["bs", "content"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "content-box →160"
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["grid"]
-        cssPrimitive: "div"
-        Css.CssRect {
+        W.Div {
             cssClass: ["g", "head"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "header"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["g", "side"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "side"
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["g", "main"]
-            cssPrimitive: "div"
             Css.CssText {
                 cssPrimitive: ""
                 text: "main"
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["textbox"]
-        cssPrimitive: "div"
-        Css.CssText {
+        W.Text {
             cssClass: ["t", "wrap"]
-            cssPrimitive: "text"
             text: "max-width 260: this sentence must wrap onto a second line instead of overflowing"
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["t", "underline"]
-            cssPrimitive: "text"
             text: "underline"
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["t", "strike"]
-            cssPrimitive: "text"
             text: "line-through"
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["t", "nowrap"]
-            cssPrimitive: "text"
             text: "white-space:nowrap keeps this on one clipped line no matter what"
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["t", "ellipsis"]
-            cssPrimitive: "text"
             text: "text-overflow ellipsis truncates this long line with a trailing…"
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["t", "upper"]
-            cssPrimitive: "text"
             text: "text-transform uppercase"
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["t", "spaced"]
-            cssPrimitive: "text"
             text: "letter + word spacing"
         }
     }

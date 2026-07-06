@@ -2,11 +2,12 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
+
+import solidqml.Widgets 1.0 as W
 Card {
     id: __self
-    Css.CssText {
+    W.Text {
         cssClass: ["title"]
-        cssPrimitive: "text"
         text: "hello"
     }
 }

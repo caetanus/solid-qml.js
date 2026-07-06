@@ -3,12 +3,13 @@ import QtQuick
 import qmlcss 1.0 as Css
 
 
+import solidqml.Widgets 1.0 as W
+
 import QtQuick.Templates 6.0 as T
-Css.CssRect {
+W.Div {
     id: __self
     property var s: ""
     cssClass: ["wrap"]
-    cssPrimitive: "div"
     Css.CssFill {
         cssClass: ["search"]
         cssPrimitive: "input"

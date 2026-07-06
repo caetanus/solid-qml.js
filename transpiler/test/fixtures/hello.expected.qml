@@ -4,71 +4,58 @@ import qmlcss 1.0 as Css
 
 
 import solidqml.Widgets 1.0 as W
-Css.CssRect {
+W.Div {
     id: __self
     property var events: 0
     cssClass: ["hello-stage"]
-    cssPrimitive: "div"
-    Css.CssRect {
+    W.Div {
         cssClass: ["hello-panel"]
-        cssPrimitive: "div"
-        Css.CssRect {
+        W.Div {
             cssClass: ["hello-mark"]
-            cssPrimitive: "div"
-            Css.CssRect {
+            W.Div {
                 cssClass: ["hello-orbit"]
-                cssPrimitive: "div"
-                Css.CssRect {
+                W.Div {
                     cssClass: ["hello-spark", "hello-spark-a"]
-                    cssPrimitive: "div"
                 }
-                Css.CssRect {
+                W.Div {
                     cssClass: ["hello-spark", "hello-spark-b"]
-                    cssPrimitive: "div"
                 }
-                Css.CssRect {
+                W.Div {
                     cssClass: ["hello-spark", "hello-spark-c"]
-                    cssPrimitive: "div"
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["hello-core"]
-                cssPrimitive: "div"
                 Css.CssText {
                     cssPrimitive: ""
                     text: "Q"
                 }
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["hello-content"]
-            cssPrimitive: "div"
-            Css.CssText {
+            W.Text {
                 cssClass: ["hello-eyebrow"]
-                cssPrimitive: "text"
                 text: "solid qml native"
             }
-            Css.CssText {
+            W.Text {
                 cssClass: ["hello-headline"]
-                cssPrimitive: "text"
                 text: "welcome to solid qml"
             }
-            Css.CssText {
+            W.Text {
                 cssClass: ["hello-copy"]
-                cssPrimitive: "text"
                 text: "A hello world in Solid.js — and the very same code already renders natively through QML."
             }
             W.Button {
                 cssClass: ["hello-cta"]
                 text: ""
-                Css.CssText {
+                W.Text {
                     cssClass: ["hello-cta-label"]
                     cssPrimitive: "span"
                     text: "count events"
                 }
-                Css.CssRect {
+                W.Div {
                     cssClass: ["hello-badge"]
-                    cssPrimitive: "div"
                     Css.CssText {
                         cssPrimitive: ""
                         text: "" + (events)

@@ -6,7 +6,7 @@ import qmlcss 1.0 as Css
 import solidqml.Widgets 1.0 as W
 
 import QtQuick.Templates 6.0 as T
-Css.CssRect {
+W.Div {
     id: __self
     property var login: "solidjs"
     property var user
@@ -21,10 +21,8 @@ Css.CssRect {
         function onLoginChanged() { __load_user(); }
     }
     cssClass: ["fetch-app"]
-    cssPrimitive: "div"
-    Css.CssText {
+    W.Text {
         cssClass: ["fetch-h1"]
-        cssPrimitive: "text"
         text: "github"
     }
     Css.CssFill {
@@ -63,40 +61,34 @@ Css.CssRect {
             restoreMode: Binding.RestoreNone
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["fetch-card"]
         visible: !!((!(user_loading)) && (user))
-        cssPrimitive: "div"
         W.Image {
             cssClass: ["fetch-avatar"]
             src: (user || ({})).avatar_url || ""
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["fetch-name"]
-            cssPrimitive: "text"
             text: "" + ((user || ({})).name)
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["fetch-bio"]
-            cssPrimitive: "text"
             text: "" + ((user || ({})).bio)
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["fetch-repos"]
-            cssPrimitive: "text"
             text: "" + ((user || ({})).public_repos) + " public repos"
         }
     }
-    Css.CssText {
+    W.Text {
         visible: (!(user_loading)) && !(user)
         cssClass: ["fetch-empty"]
-        cssPrimitive: "text"
         text: "no such user"
     }
-    Css.CssText {
+    W.Text {
         visible: !(!(user_loading))
         cssClass: ["fetch-loading"]
-        cssPrimitive: "text"
         text: "loading…"
     }
 }

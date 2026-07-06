@@ -4,19 +4,16 @@ import qmlcss 1.0 as Css
 
 
 import solidqml.Widgets 1.0 as W
-Css.CssRect {
+W.Div {
     id: __self
     property var view: "hello"
     cssClass: ["gallery"]
-    cssPrimitive: "div"
-    Css.CssRect {
+    W.Div {
         cssClass: ["hero-bg"]
         visible: !!(view === "hello")
-        cssPrimitive: "div"
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nav"]
-        cssPrimitive: "div"
         W.Button {
             cssClass: [].concat(view === "hello" ? ["active"] : [])
             text: "Hello"

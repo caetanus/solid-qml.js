@@ -2,12 +2,13 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
+
+import solidqml.Widgets 1.0 as W
 CounterProvider {
     id: __ctxprov0
     count: 5
-    Css.CssRect {
+    W.Div {
         cssClass: ["app"]
-        cssPrimitive: "div"
         Display {
             __ctx_CounterContext: __ctxprov0
         }

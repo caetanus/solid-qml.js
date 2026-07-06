@@ -6,7 +6,7 @@ import qmlcss 1.0 as Css
 import solidqml.Widgets 1.0 as W
 
 import QtQuick.Templates 6.0 as T
-Css.CssRect {
+W.Div {
     id: __self
     property var page: "overview"
     property var slide: 0
@@ -32,52 +32,41 @@ Css.CssRect {
     Component.onCompleted: { __cleanups.push(function() { return cssTheme.loadLayeredString("") }); var timer = setInterval(function() { return slide = (slide + 1) % 3 }, 4000); __cleanups.push(function() { return clearInterval(timer) }); }
     Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
     cssClass: ["dash"]
-    cssPrimitive: "div"
-    Css.CssRect {
+    W.Div {
         cssClass: ["dash-side"].concat(collapsed ? ["collapsed"] : [])
-        cssPrimitive: "div"
-        Css.CssRect {
+        W.Div {
             cssClass: ["dash-brand"]
-            cssPrimitive: "div"
-            Css.CssRect {
+            W.Div {
                 cssClass: ["dash-logo"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["dash-logo-q"]
-                    cssPrimitive: "text"
                     text: "Q"
                 }
             }
-            Css.CssText {
+            W.Text {
                 cssClass: ["dash-name"]
-                cssPrimitive: "text"
                 text: "solid-qml"
             }
         }
         Css.CssRepeater {
             model: __const_MENU
             delegate: Component {
-                Css.CssRect {
+                W.Div {
                     cssClass: ["dash-item"].concat(page === modelData.id ? ["active"] : [])
                     cssState: __hover0.containsMouse ? ["hover"] : []
-                    cssPrimitive: "div"
-                    Css.CssText {
+                    W.Text {
                         cssClass: ["dash-icon"]
-                        cssPrimitive: "text"
                         text: "" + (modelData.icon)
                     }
-                    Css.CssText {
+                    W.Text {
                         cssClass: ["dash-label"]
-                        cssPrimitive: "text"
                         text: "" + (modelData.label)
                     }
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["dash-badge"]
                         visible: !!(modelData.badge !== "")
-                        cssPrimitive: "div"
-                        Css.CssText {
+                        W.Text {
                             cssClass: ["dash-badge-n"]
-                            cssPrimitive: "text"
                             text: "" + (modelData.badge)
                         }
                     }
@@ -91,17 +80,14 @@ Css.CssRect {
                 }
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["dash-spring"]
-            cssPrimitive: "div"
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["side-toggle"]
             cssState: __hover1.containsMouse ? ["hover"] : []
-            cssPrimitive: "div"
-            Css.CssText {
+            W.Text {
                 cssClass: ["side-toggle-t"]
-                cssPrimitive: "text"
                 text: "" + (collapsed ? "»" : "«")
             }
             MouseArea {
@@ -112,42 +98,33 @@ Css.CssRect {
                 onClicked: collapsed = !collapsed
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["dash-foot"]
-            cssPrimitive: "div"
-            Css.CssText {
+            W.Text {
                 cssClass: ["dash-foot-t"]
-                cssPrimitive: "text"
                 text: "engine stress test"
             }
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["dash-main"]
-        cssPrimitive: "div"
-        Css.CssRect {
+        W.Div {
             cssClass: ["dash-top"]
-            cssPrimitive: "div"
-            Css.CssRect {
+            W.Div {
                 cssClass: ["dash-title-wrap"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["dash-title"]
-                    cssPrimitive: "text"
                     text: "" + (page)
                 }
-                Css.CssRect {
+                W.Div {
                     cssClass: ["dash-title-accent"]
-                    cssPrimitive: "div"
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["theme-toggle"].concat(darkTheme ? ["on"] : [])
                 cssState: __hover2.containsMouse ? ["hover"] : []
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["theme-toggle-t"]
-                    cssPrimitive: "text"
                     text: "" + (darkTheme ? "☀" : "☾")
                 }
                 MouseArea {
@@ -158,13 +135,11 @@ Css.CssRect {
                     onClicked: toggleTheme()
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["theme-toggle", "fancy"].concat(fancy ? ["on"] : [])
                 cssState: __hover3.containsMouse ? ["hover"] : []
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["theme-toggle-t"]
-                    cssPrimitive: "text"
                     text: "✨"
                 }
                 MouseArea {
@@ -175,117 +150,92 @@ Css.CssRect {
                     onClicked: toggleFancy()
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["dash-user"].concat(userOpen ? ["open"] : [])
                 cssState: __hover4.containsMouse ? ["hover"] : []
-                cssPrimitive: "div"
-                Css.CssRect {
+                W.Div {
                     cssClass: ["dash-avatar-ring"]
-                    cssPrimitive: "div"
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["dash-avatar"]
-                        cssPrimitive: "div"
-                        Css.CssText {
+                        W.Text {
                             cssClass: ["dash-avatar-t"]
-                            cssPrimitive: "text"
                             text: "AL"
                         }
                     }
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["dash-user-n"]
-                    cssPrimitive: "text"
                     text: "ada"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["dash-user-chev"]
-                    cssPrimitive: "text"
                     text: "▾"
                 }
-                Css.CssRect {
+                W.Div {
                     cssClass: ["user-card"]
                     visible: !!(userOpen)
-                    cssPrimitive: "div"
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["user-card-head"]
-                        cssPrimitive: "div"
-                        Css.CssRect {
+                        W.Div {
                             cssClass: ["user-card-avatar"]
-                            cssPrimitive: "div"
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["user-card-avatar-t"]
-                                cssPrimitive: "text"
                                 text: "AL"
                             }
                         }
-                        Css.CssRect {
+                        W.Div {
                             cssClass: ["user-card-id"]
-                            cssPrimitive: "div"
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["user-card-name"]
-                                cssPrimitive: "text"
                                 text: "Ada Lovelace"
                             }
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["user-card-mail"]
-                                cssPrimitive: "text"
                                 text: "ada@example.com"
                             }
                         }
                     }
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["user-card-tags"]
-                        cssPrimitive: "div"
-                        Css.CssRect {
+                        W.Div {
                             cssClass: ["user-tag"]
-                            cssPrimitive: "div"
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["user-tag-t"]
-                                cssPrimitive: "text"
                                 text: "owner"
                             }
                         }
-                        Css.CssRect {
+                        W.Div {
                             cssClass: ["user-tag", "alt"]
-                            cssPrimitive: "div"
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["user-tag-t"]
-                                cssPrimitive: "text"
                                 text: "engine dev"
                             }
                         }
                     }
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["user-card-row"]
-                        cssPrimitive: "div"
-                        Css.CssText {
+                        W.Text {
                             cssClass: ["user-kv"]
-                            cssPrimitive: "text"
                             text: "Plan"
                         }
-                        Css.CssText {
+                        W.Text {
                             cssClass: ["user-kv-v"]
-                            cssPrimitive: "text"
                             text: "Max 20×"
                         }
                     }
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["user-card-row"]
-                        cssPrimitive: "div"
-                        Css.CssText {
+                        W.Text {
                             cssClass: ["user-kv"]
-                            cssPrimitive: "text"
                             text: "Session"
                         }
-                        Css.CssText {
+                        W.Text {
                             cssClass: ["user-kv-v"]
-                            cssPrimitive: "text"
                             text: "native · GPU"
                         }
                     }
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["user-card-actions"]
-                        cssPrimitive: "div"
                         W.Button {
                             cssClass: ["user-btn"]
                             text: "Profile"
@@ -308,34 +258,27 @@ Css.CssRect {
         Css.CssIncubator {
             active: (page === "overview") ? true : false
             sourceComponent: Component {
-                Css.CssRect {
+                W.Div {
                     cssClass: ["dash-page"]
-                    cssPrimitive: "div"
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["stat-row"]
-                        cssPrimitive: "div"
                         Css.CssRepeater {
                             model: __const_STATS
                             delegate: Component {
-                                Css.CssRect {
+                                W.Div {
                                     cssClass: ["stat"]
-                                    cssPrimitive: "div"
-                                    Css.CssText {
+                                    W.Text {
                                         cssClass: ["stat-label"]
-                                        cssPrimitive: "text"
                                         text: "" + (modelData.label)
                                     }
-                                    Css.CssText {
+                                    W.Text {
                                         cssClass: ["stat-value"]
-                                        cssPrimitive: "text"
                                         text: "" + (modelData.value)
                                     }
-                                    Css.CssRect {
+                                    W.Div {
                                         cssClass: ["stat-delta"].concat(!modelData.up ? ["down"] : [])
-                                        cssPrimitive: "div"
-                                        Css.CssText {
+                                        W.Text {
                                             cssClass: ["stat-delta-t"]
-                                            cssPrimitive: "text"
                                             text: "" + (modelData.delta)
                                         }
                                     }
@@ -343,24 +286,20 @@ Css.CssRect {
                             }
                         }
                     }
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["carousel"]
-                        cssPrimitive: "div"
                         Repeater {
                             model: __const_SLIDES
-                            Css.CssRect {
+                            W.Div {
                                 cssClass: ["slide"].concat(slide === index ? ["current"] : [])
-                                cssPrimitive: "div"
                                 W.Image {
                                     cssClass: ["slide-img"]
                                     src: modelData.src || ""
                                 }
-                                Css.CssRect {
+                                W.Div {
                                     cssClass: ["slide-cap"]
-                                    cssPrimitive: "div"
-                                    Css.CssText {
+                                    W.Text {
                                         cssClass: ["slide-cap-t"]
-                                        cssPrimitive: "text"
                                         text: "" + (modelData.caption)
                                     }
                                 }
@@ -376,15 +315,13 @@ Css.CssRect {
                             text: "›"
                             onClicked: slide = (slide + 1) % 3
                         }
-                        Css.CssRect {
+                        W.Div {
                             cssClass: ["dots"]
-                            cssPrimitive: "div"
                             Repeater {
                                 model: __const_SLIDES
-                                Css.CssRect {
+                                W.Div {
                                     cssClass: ["dot"].concat(slide === index ? ["on"] : [])
                                     cssState: __hover5.containsMouse ? ["hover"] : []
-                                    cssPrimitive: "div"
                                     MouseArea {
                                         id: __hover5
                                         anchors.fill: parent
@@ -396,65 +333,52 @@ Css.CssRect {
                             }
                         }
                     }
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["feed"]
-                        cssPrimitive: "div"
-                        Css.CssText {
+                        W.Text {
                             cssClass: ["feed-h"]
-                            cssPrimitive: "text"
                             text: "Recent activity"
                         }
                         Css.CssRepeater {
                             model: __const_FEED
                             delegate: Component {
-                                Css.CssRect {
+                                W.Div {
                                     cssClass: ["feed-row"]
-                                    cssPrimitive: "div"
-                                    Css.CssRect {
+                                    W.Div {
                                         cssClass: ["feed-avatar"]
-                                        cssPrimitive: "div"
-                                        Css.CssText {
+                                        W.Text {
                                             cssClass: ["feed-avatar-t"]
-                                            cssPrimitive: "text"
                                             text: "" + (modelData.who)
                                         }
                                     }
-                                    Css.CssRect {
+                                    W.Div {
                                         cssClass: ["feed-body"]
-                                        cssPrimitive: "div"
-                                        Css.CssText {
+                                        W.Text {
                                             cssClass: ["feed-name"]
-                                            cssPrimitive: "text"
                                             text: "" + (modelData.name)
                                         }
-                                        Css.CssText {
+                                        W.Text {
                                             cssClass: ["feed-what"]
-                                            cssPrimitive: "text"
                                             text: "" + (modelData.what)
                                         }
                                     }
-                                    Css.CssRect {
+                                    W.Div {
                                         cssClass: ["feed-tag"]
-                                        cssPrimitive: "div"
-                                        Css.CssText {
+                                        W.Text {
                                             cssClass: ["feed-tag-t"]
-                                            cssPrimitive: "text"
                                             text: "" + (modelData.tag)
                                         }
                                     }
-                                    Css.CssRect {
+                                    W.Div {
                                         cssClass: ["feed-alert"]
                                         visible: !!(!modelData.ok)
-                                        cssPrimitive: "div"
-                                        Css.CssText {
+                                        W.Text {
                                             cssClass: ["feed-alert-t"]
-                                            cssPrimitive: "text"
                                             text: "!"
                                         }
                                     }
-                                    Css.CssText {
+                                    W.Text {
                                         cssClass: ["feed-when"]
-                                        cssPrimitive: "text"
                                         text: "" + (modelData.when)
                                     }
                                 }
@@ -467,114 +391,89 @@ Css.CssRect {
         Css.CssIncubator {
             active: ((page === "analytics") && !((page === "overview"))) ? true : false
             sourceComponent: Component {
-                Css.CssRect {
+                W.Div {
                     cssClass: ["dash-page"]
-                    cssPrimitive: "div"
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["panel"]
-                        cssPrimitive: "div"
-                        Css.CssText {
+                        W.Text {
                             cssClass: ["panel-h"]
-                            cssPrimitive: "text"
                             text: "Weekly renders"
                         }
-                        Css.CssRect {
+                        W.Div {
                             cssClass: ["chart"]
-                            cssPrimitive: "div"
-                            Css.CssRect {
+                            W.Div {
                                 cssClass: ["bar", "b0"]
-                                cssPrimitive: "div"
                             }
-                            Css.CssRect {
+                            W.Div {
                                 cssClass: ["bar", "b1"]
-                                cssPrimitive: "div"
                             }
-                            Css.CssRect {
+                            W.Div {
                                 cssClass: ["bar", "b2"]
-                                cssPrimitive: "div"
                             }
-                            Css.CssRect {
+                            W.Div {
                                 cssClass: ["bar", "b3"]
-                                cssPrimitive: "div"
                             }
-                            Css.CssRect {
+                            W.Div {
                                 cssClass: ["bar", "b4"]
-                                cssPrimitive: "div"
                             }
-                            Css.CssRect {
+                            W.Div {
                                 cssClass: ["bar", "b5"]
-                                cssPrimitive: "div"
                             }
-                            Css.CssRect {
+                            W.Div {
                                 cssClass: ["bar", "b6"]
-                                cssPrimitive: "div"
                             }
                         }
-                        Css.CssRect {
+                        W.Div {
                             cssClass: ["chart-x"]
-                            cssPrimitive: "div"
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["axis"]
-                                cssPrimitive: "text"
                                 text: "mon"
                             }
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["axis"]
-                                cssPrimitive: "text"
                                 text: "tue"
                             }
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["axis"]
-                                cssPrimitive: "text"
                                 text: "wed"
                             }
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["axis"]
-                                cssPrimitive: "text"
                                 text: "thu"
                             }
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["axis"]
-                                cssPrimitive: "text"
                                 text: "fri"
                             }
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["axis"]
-                                cssPrimitive: "text"
                                 text: "sat"
                             }
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["axis"]
-                                cssPrimitive: "text"
                                 text: "sun"
                             }
                         }
                     }
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["panel"]
-                        cssPrimitive: "div"
-                        Css.CssText {
+                        W.Text {
                             cssClass: ["panel-h"]
-                            cssPrimitive: "text"
                             text: "Pipeline health"
                         }
                         Css.CssRepeater {
                             model: __const_PROJECTS
                             delegate: Component {
-                                Css.CssRect {
+                                W.Div {
                                     cssClass: ["prog-row"]
-                                    cssPrimitive: "div"
-                                    Css.CssText {
+                                    W.Text {
                                         cssClass: ["prog-name"]
-                                        cssPrimitive: "text"
                                         text: "" + (modelData.name)
                                     }
-                                    Css.CssRect {
+                                    W.Div {
                                         cssClass: ["prog-track"]
-                                        cssPrimitive: "div"
-                                        Css.CssRect {
+                                        W.Div {
                                             cssClass: ["prog-fill"].concat(modelData.pct === "p80" ? ["p80"] : []).concat(modelData.pct === "p65" ? ["p65"] : []).concat(modelData.pct === "p45" ? ["p45"] : []).concat(modelData.pct === "p10" ? ["p10"] : [])
-                                            cssPrimitive: "div"
                                         }
                                     }
                                 }
@@ -587,21 +486,18 @@ Css.CssRect {
         Css.CssIncubator {
             active: ((page === "projects") && !((page === "overview") || (page === "analytics"))) ? true : false
             sourceComponent: Component {
-                Css.CssRect {
+                W.Div {
                     cssClass: ["dash-page"]
-                    cssPrimitive: "div"
-                    Css.CssText {
+                    W.Text {
                         cssClass: ["proj-hint"]
-                        cssPrimitive: "text"
                         text: "Drag a card onto another to reorder"
                     }
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["proj-grid"]
-                        cssPrimitive: "div"
                         Css.CssRepeater {
                             model: order
                             delegate: Component {
-                                Css.CssRect {
+                                W.Div {
                                     cssClass: ["proj-card"]
                                     property var __dragData: modelData
                                     Drag.active: __drag6.drag.active
@@ -609,36 +505,28 @@ Css.CssRect {
                                     Drag.hotSpot.y: height / 2
                                     z: __drag6.drag.active ? 1000 : 0
                                     id: __drag6_root
-                                    cssPrimitive: "div"
-                                    Css.CssRect {
+                                    W.Div {
                                         cssClass: ["proj-head"]
-                                        cssPrimitive: "div"
-                                        Css.CssText {
+                                        W.Text {
                                             cssClass: ["proj-name"]
-                                            cssPrimitive: "text"
                                             text: "" + (proj(modelData).name)
                                         }
-                                        Css.CssRect {
+                                        W.Div {
                                             cssClass: ["proj-pill"].concat(proj(modelData).status === "beta" ? ["beta"] : []).concat(proj(modelData).status === "design" ? ["design"] : [])
-                                            cssPrimitive: "div"
-                                            Css.CssText {
+                                            W.Text {
                                                 cssClass: ["proj-pill-t"]
-                                                cssPrimitive: "text"
                                                 text: "" + (proj(modelData).status)
                                             }
                                         }
                                     }
-                                    Css.CssText {
+                                    W.Text {
                                         cssClass: ["proj-desc"]
-                                        cssPrimitive: "text"
                                         text: "" + (proj(modelData).desc)
                                     }
-                                    Css.CssRect {
+                                    W.Div {
                                         cssClass: ["prog-track"]
-                                        cssPrimitive: "div"
-                                        Css.CssRect {
+                                        W.Div {
                                             cssClass: ["prog-fill"].concat(proj(modelData).pct === "p80" ? ["p80"] : []).concat(proj(modelData).pct === "p65" ? ["p65"] : []).concat(proj(modelData).pct === "p45" ? ["p45"] : []).concat(proj(modelData).pct === "p10" ? ["p10"] : [])
-                                            cssPrimitive: "div"
                                         }
                                     }
                                     MouseArea {
@@ -663,57 +551,45 @@ Css.CssRect {
         Css.CssIncubator {
             active: ((page === "activity") && !((page === "overview") || (page === "analytics") || (page === "projects"))) ? true : false
             sourceComponent: Component {
-                Css.CssRect {
+                W.Div {
                     cssClass: ["dash-page"]
-                    cssPrimitive: "div"
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["feed", "tall"]
-                        cssPrimitive: "div"
-                        Css.CssText {
+                        W.Text {
                             cssClass: ["feed-h"]
-                            cssPrimitive: "text"
                             text: "Full activity log — scrolls natively"
                         }
                         Css.CssRepeater {
                             model: __const_LOG
                             delegate: Component {
-                                Css.CssRect {
+                                W.Div {
                                     cssClass: ["feed-row"]
-                                    cssPrimitive: "div"
-                                    Css.CssRect {
+                                    W.Div {
                                         cssClass: ["feed-avatar"]
-                                        cssPrimitive: "div"
-                                        Css.CssText {
+                                        W.Text {
                                             cssClass: ["feed-avatar-t"]
-                                            cssPrimitive: "text"
                                             text: "" + (modelData.who)
                                         }
                                     }
-                                    Css.CssRect {
+                                    W.Div {
                                         cssClass: ["feed-body"]
-                                        cssPrimitive: "div"
-                                        Css.CssText {
+                                        W.Text {
                                             cssClass: ["feed-what"]
-                                            cssPrimitive: "text"
                                             text: "" + (modelData.what)
                                         }
                                     }
-                                    Css.CssRect {
+                                    W.Div {
                                         cssClass: ["feed-tag"]
-                                        cssPrimitive: "div"
-                                        Css.CssText {
+                                        W.Text {
                                             cssClass: ["feed-tag-t"]
-                                            cssPrimitive: "text"
                                             text: "" + (modelData.tag)
                                         }
                                     }
-                                    Css.CssRect {
+                                    W.Div {
                                         cssClass: ["feed-alert"]
                                         visible: !!(!modelData.ok)
-                                        cssPrimitive: "div"
-                                        Css.CssText {
+                                        W.Text {
                                             cssClass: ["feed-alert-t"]
-                                            cssPrimitive: "text"
                                             text: "!"
                                         }
                                     }
@@ -727,23 +603,18 @@ Css.CssRect {
         Css.CssIncubator {
             active: ((page === "settings") && !((page === "overview") || (page === "analytics") || (page === "projects") || (page === "activity"))) ? true : false
             sourceComponent: Component {
-                Css.CssRect {
+                W.Div {
                     cssClass: ["dash-page"]
-                    cssPrimitive: "div"
-                    Css.CssRect {
+                    W.Div {
                         cssClass: ["panel"]
-                        cssPrimitive: "div"
-                        Css.CssText {
+                        W.Text {
                             cssClass: ["panel-h"]
-                            cssPrimitive: "text"
                             text: "Workspace"
                         }
-                        Css.CssRect {
+                        W.Div {
                             cssClass: ["set-row"]
-                            cssPrimitive: "div"
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["set-label"]
-                                cssPrimitive: "text"
                                 text: "Display name"
                             }
                             Css.CssFill {
@@ -776,17 +647,14 @@ Css.CssRect {
                                 }
                             }
                         }
-                        Css.CssRect {
+                        W.Div {
                             cssClass: ["set-row"]
-                            cssPrimitive: "div"
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["set-label"]
-                                cssPrimitive: "text"
                                 text: "Theme"
                             }
-                            Css.CssRect {
+                            W.Div {
                                 cssClass: ["set-opts"]
-                                cssPrimitive: "div"
                                 W.Button {
                                     cssClass: ["set-opt", "active"]
                                     text: "dark"
@@ -801,12 +669,10 @@ Css.CssRect {
                                 }
                             }
                         }
-                        Css.CssRect {
+                        W.Div {
                             cssClass: ["set-row"]
-                            cssPrimitive: "div"
-                            Css.CssText {
+                            W.Text {
                                 cssClass: ["set-label"]
-                                cssPrimitive: "text"
                                 text: "GPU vsync"
                             }
                             W.Button {

@@ -2,9 +2,10 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssText {
+
+import solidqml.Widgets 1.0 as W
+W.Text {
     id: __self
     property var __ctx_CounterContext
-    cssPrimitive: "text"
     text: "Count: " + (__ctx_CounterContext.count)
 }

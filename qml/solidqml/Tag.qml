@@ -2,10 +2,11 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssText {
+
+import solidqml.Widgets 1.0 as W
+W.Text {
     id: __self
     property var label
     cssClass: ["bio"]
-    cssPrimitive: "text"
     text: "#" + (label)
 }

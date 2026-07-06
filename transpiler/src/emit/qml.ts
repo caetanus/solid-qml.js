@@ -94,11 +94,14 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
   if (tag === "select") return emitSelect(propsArg, props, children as t.Node[], scope, level, guard);
 
   if (TEXT_TAGS.has(tag)) {
+    // Text primitive → the cached W.Text component (compile once, reuse/AOT — see Div.qml). Omit
+    // cssPrimitive for <text> (the component default); set it for span/h1-6/p/cite/bio.
+    if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
     return [
-      `${pad}Css.CssText {`,
+      `${pad}W.Text {`,
       ...classLine,
       ...guardLine(guard, level),
-      `${pad}${INDENT}cssPrimitive: ${JSON.stringify(tag)}`,
+      ...(tag !== "text" ? [`${pad}${INDENT}cssPrimitive: ${JSON.stringify(tag)}`] : []),
       `${pad}${INDENT}text: ${textBinding(children as t.Node[], scope)}`,
       `${pad}}`,
     ];
@@ -178,13 +181,17 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
       `${pad}${INDENT}}`,
     );
   }
+  // Block primitive → the cached W.Div component (compile once, reuse/AOT — see Div.qml). Omit
+  // cssPrimitive for <div> (the component default); set it for section/article/etc. Interactive
+  // variants keep their MouseArea/Drag/DropArea as children of the instance (stateLine/clickLines).
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
   return [
-    `${pad}Css.CssRect {`,
+    `${pad}W.Div {`,
     ...classLine,
     ...stateLine,
     ...refLine,
     ...guardLine(guard, level),
-    `${pad}${INDENT}cssPrimitive: ${JSON.stringify(tag)}`,
+    ...(tag !== "div" ? [`${pad}${INDENT}cssPrimitive: ${JSON.stringify(tag)}`] : []),
     ...emitChildren(children as t.Node[], scope, level + 1),
     ...clickLines,
     `${pad}}`,

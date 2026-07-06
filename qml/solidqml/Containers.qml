@@ -6,21 +6,18 @@ import qmlcss 1.0 as Css
 import solidqml.Widgets 1.0 as W
 
 import QtQuick.Templates 6.0 as T
-Css.CssRect {
+W.Div {
     id: __self
     property var tab: 0
     property var drawerOpen: false
     property var page: 0
     cssClass: ["nv-section", "containers"]
-    cssPrimitive: "div"
-    Css.CssText {
+    W.Text {
         cssClass: ["nv-title"]
-        cssPrimitive: "text"
         text: "Containers"
     }
-    Css.CssText {
+    W.Text {
         cssClass: ["nv-label"]
-        cssPrimitive: "text"
         text: "ToolBar"
     }
     Css.CssFill {
@@ -47,9 +44,8 @@ Css.CssRect {
             onClicked: page = 0
         }
     }
-    Css.CssText {
+    W.Text {
         cssClass: ["nv-label"]
-        cssPrimitive: "text"
         text: "TabBar + StackView"
     }
     Css.CssFill {
@@ -139,40 +135,33 @@ Css.CssRect {
     Css.CssRect {
         cssClass: ["ct-stack"]
         cssPrimitive: "stack"
-        Css.CssRect {
+        W.Div {
             cssClass: ["ct-page"]
             visible: !!((tab) === 0)
-            cssPrimitive: "div"
-            Css.CssText {
+            W.Text {
                 cssClass: ["ct-page-t"]
-                cssPrimitive: "text"
                 text: "Overview — the first tab's page."
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["ct-page"]
             visible: !!((tab) === 1)
-            cssPrimitive: "div"
-            Css.CssText {
+            W.Text {
                 cssClass: ["ct-page-t"]
-                cssPrimitive: "text"
                 text: "Details — swap tabs above to switch this content."
             }
         }
-        Css.CssRect {
+        W.Div {
             cssClass: ["ct-page"]
             visible: !!((tab) === 2)
-            cssPrimitive: "div"
-            Css.CssText {
+            W.Text {
                 cssClass: ["ct-page-t"]
-                cssPrimitive: "text"
                 text: "Settings — page three of the stack."
             }
         }
     }
-    Css.CssText {
+    W.Text {
         cssClass: ["nv-label"]
-        cssPrimitive: "text"
         text: "SplitView"
     }
     Css.CssFill {
@@ -187,44 +176,37 @@ Css.CssRect {
                 cssAncestor: __split1W
                 horizontal: __split1.orientation === Qt.Horizontal
             }
-            Css.CssRect {
+            W.Div {
                 T.SplitView.fillWidth: true
                 cssClass: ["ct-pane"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["ct-pane-t"]
-                    cssPrimitive: "text"
                     text: "Left pane — drag the handle."
                 }
             }
-            Css.CssRect {
+            W.Div {
                 T.SplitView.fillWidth: true
                 cssClass: ["ct-pane", "ct-pane-alt"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["ct-pane-t"]
-                    cssPrimitive: "text"
                     text: "Right pane."
                 }
             }
         }
     }
-    Css.CssText {
+    W.Text {
         cssClass: ["nv-label"]
-        cssPrimitive: "text"
         text: "Drawer"
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
         W.Button {
             cssClass: ["ct-open"]
             text: "Open drawer"
             onClicked: drawerOpen = true
         }
-        Css.CssText {
+        W.Text {
             cssClass: ["ct-state"]
-            cssPrimitive: "text"
             text: "" + (drawerOpen ? "open" : "closed")
         }
     }
@@ -251,24 +233,20 @@ Css.CssRect {
                 property Item cssAncestor: __drawer2W
                 cssPrimitive: "div"
                 cssClass: ["content"]
-                Css.CssText {
+                W.Text {
                     cssClass: ["ct-drawer-title"]
-                    cssPrimitive: "text"
                     text: "Navigation"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["ct-drawer-item"]
-                    cssPrimitive: "text"
                     text: "Home"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["ct-drawer-item"]
-                    cssPrimitive: "text"
                     text: "Profile"
                 }
-                Css.CssText {
+                W.Text {
                     cssClass: ["ct-drawer-item"]
-                    cssPrimitive: "text"
                     text: "Preferences"
                 }
                 W.Button {
@@ -286,9 +264,8 @@ Css.CssRect {
             restoreMode: Binding.RestoreNone
         }
     }
-    Css.CssText {
+    W.Text {
         cssClass: ["nv-label"]
-        cssPrimitive: "text"
         text: "SwipeView"
     }
     Css.CssFill {
@@ -317,30 +294,24 @@ Css.CssRect {
                 clip: true
             }
             onCurrentIndexChanged: { page = __swipe3.currentIndex }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["ct-slide", "ct-slide-a"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["ct-slide-t"]
-                    cssPrimitive: "text"
                     text: "Page one — swipe or use the buttons."
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["ct-slide", "ct-slide-b"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["ct-slide-t"]
-                    cssPrimitive: "text"
                     text: "Page two."
                 }
             }
-            Css.CssRect {
+            W.Div {
                 cssClass: ["ct-slide", "ct-slide-c"]
-                cssPrimitive: "div"
-                Css.CssText {
+                W.Text {
                     cssClass: ["ct-slide-t"]
-                    cssPrimitive: "text"
                     text: "Page three."
                 }
             }
@@ -352,9 +323,8 @@ Css.CssRect {
             restoreMode: Binding.RestoreNone
         }
     }
-    Css.CssRect {
+    W.Div {
         cssClass: ["nv-row"]
-        cssPrimitive: "div"
         W.Button {
             cssClass: ["ct-nav"]
             text: "‹ Prev"

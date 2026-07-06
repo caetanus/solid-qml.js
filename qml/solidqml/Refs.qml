@@ -2,15 +2,15 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssRect {
+
+import solidqml.Widgets 1.0 as W
+W.Div {
     property var __cleanups: []
     Component.onCompleted: { console.log("ref resolved:", _ref_myDiv); }
     Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
     cssClass: ["app"]
     id: _ref_myDiv
-    cssPrimitive: "div"
-    Css.CssText {
-        cssPrimitive: "text"
+    W.Text {
         text: "the box above this text is captured by ref"
     }
 }

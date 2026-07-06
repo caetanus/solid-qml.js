@@ -21,16 +21,22 @@ async function qml(src: string): Promise<string> {
   return emitQml(render, scope).join("\n");
 }
 
-test("emitQml: div -> CssRect with cssClass and cssPrimitive", async () => {
+test("emitQml: div -> W.Div component with cssClass (cssPrimitive default omitted)", async () => {
   const out = await qml(`export function F(){ return <div class="box"></div>; }`);
-  assert.match(out, /Css\.CssRect \{/);
-  assert.match(out, /cssPrimitive: "div"/);
+  assert.match(out, /W\.Div \{/);
   assert.match(out, /cssClass: \["box"\]/);
+  assert.doesNotMatch(out, /cssPrimitive: "div"/); // the component defaults it — smaller output
 });
 
-test("emitQml: literal text child -> CssText", async () => {
+test("emitQml: non-div block tag sets cssPrimitive on W.Div", async () => {
+  const out = await qml(`export function F(){ return <section class="s"></section>; }`);
+  assert.match(out, /W\.Div \{/);
+  assert.match(out, /cssPrimitive: "section"/);
+});
+
+test("emitQml: literal text child -> W.Text", async () => {
   const out = await qml(`export function F(){ return <div><text>hello</text></div>; }`);
-  assert.match(out, /Css\.CssText \{/);
+  assert.match(out, /W\.Text \{/);
   assert.match(out, /text: "hello"/);
 });
 
@@ -67,7 +73,7 @@ test("emitQml: an instance emits its children into the default slot", async () =
   const scope: Scope = { table: new Map(), mode: "binding", components: new Map([["Card", "Card"]]) };
   const out = emitQml(render, scope).join("\n");
   assert.match(out, /Card \{/);
-  assert.match(out, /Css\.CssText \{[\s\S]*text: "hi"/); // child mounts inside the instance
+  assert.match(out, /W\.Text \{[\s\S]*text: "hi"/); // child mounts inside the instance
 });
 
 test("emitComponentType: {props.children} at the root is dropped (mounted via default property)", async () => {
@@ -115,7 +121,7 @@ test("emitQml: a button with an element child emits the label + the nested eleme
   const out = emitQml(render, scope).join("\n");
   assert.match(out, /W\.Button \{/);
   assert.match(out, /text: "go"/);                 // text child → label
-  assert.match(out, /cssClass: \["badge"\][\s\S]*cssPrimitive: "div"/); // element child → nested
+  assert.match(out, /W\.Div \{[\s\S]*cssClass: \["badge"\]/); // element child → nested W.Div
 });
 
 // --- Option 1: same-name prop+signal collapse ---
@@ -309,9 +315,9 @@ test("emitQml: <></> fragment children emit inline into the parent (no node of i
       return <div class="host"><><text>a</text><text>b</text></></div>;
     }
   `);
-  // Both texts, directly under the host — exactly one CssRect (the host), no wrapper box
+  // Both texts, directly under the host — exactly one W.Div (the host), no wrapper box
   assert.match(out, /text: "a"[\s\S]*text: "b"/);
-  assert.equal(out.match(/Css\.CssRect \{/g)?.length, 1);
+  assert.equal(out.match(/W\.Div \{/g)?.length, 1);
 });
 
 test("emitQml: fragment under Show inherits the guard on each child", async () => {
@@ -330,7 +336,7 @@ test("emitComponentType: root <></> fragment wraps in a primitive-less box hosti
   const fn = (ast as any).program.body.find((n: any) => n.type === "ExportNamedDeclaration").declaration;
   const render = findRender(ast)!;
   const lines = emitComponentType(fn, render, new Map()).join("\n");
-  assert.match(lines, /Css\.CssRect \{/);          // the wrapper host
+  assert.match(lines, /W\.Div \{/);                // the wrapper host (root fragment → W.Div)
   assert.match(lines, /text: "a"[\s\S]*text: "b"/);
   assert.doesNotMatch(lines, /cssClass:/);          // wrapper carries no class
 });
