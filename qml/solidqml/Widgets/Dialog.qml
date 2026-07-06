@@ -44,6 +44,14 @@ Item {
         height: Math.max(1, root.implicitHeight)
         onClosing: wrap.dialogClosed()
 
+        // Tab-stop is born by default in the dialog too (study §6, owner call): a modal opens with
+        // keyboard focus already on its first focusable, so Tab works and the ring shows without a
+        // click. A separate window has its own focus chain, so this is independent of the app root.
+        onVisibleChanged: if (visible && solidTabstop.enabled) Qt.callLater(function() {
+            var f = dlg.contentItem.nextItemInFocusChain(true);
+            if (f) f.forceActiveFocus(Qt.TabFocusReason);
+        })
+
         // Esc cancels the dialog (desktop-essential for keyboard-only use, study §6). A QtQuick
         // Window does not close on Escape by default, so drive it explicitly: fire dialogClosed →
         // the author's onClose sets `open` false → the Binding hides the window.
@@ -61,6 +69,11 @@ Item {
             property Item cssAncestor: wrap
             cssPrimitive: "dialog"
         }
+
+        // The keyboard tab-focus ring, scoped to THIS window's focus chain (the dialog is a
+        // separate Window, so the app-root Tabstop can't see items in here). Same `::tab-stop`
+        // styling; a sibling of root so it overlays on top.
+        Tabstop { window: dlg }
     }
     // Controlled open state: survives the imperative visible=false a window self-close performs.
     Binding {
