@@ -15,6 +15,10 @@ import qmlcss 1.0 as Css
 T.MenuBarItem {
     id: ctl
     hoverEnabled: true
+    // A `&F` mnemonic in the menu title: setting AbstractButton.text auto-registers the Alt+letter
+    // shortcut (setText → QKeySequence::mnemonic), so QQuickMenuBar's built-in Alt-nav opens this menu
+    // (study §6). The `&` is stripped for DISPLAY in the contentItem below (Qt strips it only for a11y).
+    text: ctl.menu ? ctl.menu.title : ""
     implicitWidth: implicitContentWidth + leftPadding + rightPadding
     implicitHeight: implicitContentHeight + topPadding + bottomPadding
     leftPadding: 12
@@ -32,6 +36,7 @@ T.MenuBarItem {
     contentItem: Css.CssText {
         cssPrimitive: ""
         cssClass: ["menubar-label"]
-        text: ctl.menu ? ctl.menu.title : ""
+        // Strip the `&N` mnemonic marker for display (a literal `&` is written `&&`), same as MenuItem.
+        text: (ctl.menu ? ctl.menu.title : "").replace(/&(.)/g, "$1")
     }
 }

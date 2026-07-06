@@ -67,18 +67,18 @@ W.Div {
                 menu: W.Menu {
                     id: __menu2
                     cssAncestor: __mbi1
-                    title: "File"
+                    title: "&File"
                     W.MenuItem {
-                        text: "Open…"
+                        text: "&Open…"
                         onTriggered: { lastAction = "open…" }
                     }
                     W.MenuItem {
-                        text: "Save"
+                        text: "&Save"
                         onTriggered: { lastAction = "save" }
                     }
                     W.MenuSeparator { }
                     W.MenuItem {
-                        text: "Quit"
+                        text: "&Quit"
                         onTriggered: { lastAction = "quit" }
                     }
                 }
@@ -88,13 +88,13 @@ W.Div {
                 menu: W.Menu {
                     id: __menu4
                     cssAncestor: __mbi3
-                    title: "Edit"
+                    title: "&Edit"
                     W.MenuItem {
-                        text: "Copy"
+                        text: "&Copy"
                         onTriggered: { lastAction = "copy" }
                     }
                     W.MenuItem {
-                        text: "Paste"
+                        text: "&Paste"
                         onTriggered: { lastAction = "paste" }
                     }
                 }

@@ -286,7 +286,10 @@ test("menubar: MenuBarItem.qml hosts the .menubar-item/.menubar-label slots + de
   assert.match(src, /cssClass: \["menubar-item"\]/);
   assert.match(src, /cssState: \(ctl\.hovered \? \["hover"\] : \[\]\)\.concat\(ctl\.highlighted \? \["open"\] : \[\]\)/);
   assert.match(src, /cssClass: \["menubar-label"\]/);
+  // The AbstractButton.text carries the `&F` mnemonic (auto-registers Alt+F via QKeySequence::mnemonic
+  // so QQuickMenuBar's built-in Alt-nav opens the menu); the label strips `&` for display.
   assert.match(src, /text: ctl\.menu \? ctl\.menu\.title : ""/);
+  assert.match(src, /text: \(ctl\.menu \? ctl\.menu\.title : ""\)\.replace\(\/&\(\.\)\/g, "\$1"\)/);
   assert.match(src, /Window\.onActiveChanged: if \(!Window\.active && ctl\.menu\) ctl\.menu\.close\(\)/);
 });
 

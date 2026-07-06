@@ -45,15 +45,15 @@ export function MenusAndViews() {
       <div class="nv-row">
         <text class="nv-label">menubar</text>
         <MenuBar class="nv-menubar">
-          <Menu title="File">
-            <MenuItem onClick={() => setLastAction("open…")}>Open…</MenuItem>
-            <MenuItem onClick={() => setLastAction("save")}>Save</MenuItem>
+          <Menu title="&File">
+            <MenuItem onClick={() => setLastAction("open…")}>&Open…</MenuItem>
+            <MenuItem onClick={() => setLastAction("save")}>&Save</MenuItem>
             <MenuSeparator />
-            <MenuItem onClick={() => setLastAction("quit")}>Quit</MenuItem>
+            <MenuItem onClick={() => setLastAction("quit")}>&Quit</MenuItem>
           </Menu>
-          <Menu title="Edit">
-            <MenuItem onClick={() => setLastAction("copy")}>Copy</MenuItem>
-            <MenuItem onClick={() => setLastAction("paste")}>Paste</MenuItem>
+          <Menu title="&Edit">
+            <MenuItem onClick={() => setLastAction("copy")}>&Copy</MenuItem>
+            <MenuItem onClick={() => setLastAction("paste")}>&Paste</MenuItem>
           </Menu>
         </MenuBar>
       </div>
