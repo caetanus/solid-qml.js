@@ -455,71 +455,30 @@ const emitTumbler: NativeEmit = (propsArg, _children, scope, level, guard) => {
 
 // ── <DelayButton delay={ms} onActivated={…}>label</DelayButton> ───────────────────────────
 //
-// The wrapper stays paint-less (cssPrimitive ""): the `.delay` background slot owns the pill
-// so a generic `button {}` rule can't double-paint it. The progress overlay lives in an
-// anchored Item host inside the background (its width binding must survive the flex pass,
-// same as the RangeSlider fill). Both wrapper and background carry the full button state
-// list so `.delay:active` / `:checked` restyle the pill directly.
+// One .qml per component: the paint-less wrapper, the T.DelayButton, the `.delay` pill background
+// with its progress overlay and the label CssText all live in DelayButton.qml. The emit only
+// instantiates the component and wires delay / text / onActivated / disabled.
 const emitDelayButton: NativeEmit = (propsArg, children, scope, level, guard) => {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const ui = uiProps(propsArg);
   const classLine = buildCssClassLine(ui, scope, i(1));
-  const ctlId = allocCtl(scope);
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
   const delay = numericAttr(propsArg, "delay", "300", scope);
   const activatedBody = emitEventHandler(propValue(propsArg, "onActivated"), scope);
   const disabled = boolAttr(propsArg, "disabled");
 
-  const cssState = `(${ctlId}.hovered ? ["hover"] : []).concat(${ctlId}.pressed ? ["active"] : []).concat(${ctlId}.checked ? ["checked"] : []).concat(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
-
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.DelayButton {`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: ""`,
-    `${i(1)}cssState: ${cssState}`,
-    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
-    `${i(1)}T.DelayButton {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
-    `${i(2)}hoverEnabled: true`,
-    `${i(2)}delay: ${delay}`,
-    // T.DelayButton has no built-in progress animation: without a `transition`, pressing sets
-    // `progress` straight to 1.0 → the button arms on a single click. This is the Basic style's
-    // transition (hold ramps 0→1 over `delay`; release eases back). Same class of bug as <Drawer>.
-    `${i(2)}transition: Transition { NumberAnimation { duration: ${ctlId}.delay * (${ctlId}.pressed ? 1.0 - ${ctlId}.progress : 0.3 * ${ctlId}.progress) } }`,
-    `${i(2)}horizontalPadding: 16`,
-    `${i(2)}verticalPadding: 8`,
-    ...implicitFormula(i),
-    `${i(2)}background: Css.CssFill {`,
-    `${i(3)}cssPrimitive: ""`,
-    `${i(3)}cssClass: ["delay"]`,
-    `${i(3)}cssState: ${cssState}`,
-    `${i(3)}implicitWidth: 120`,
-    `${i(3)}implicitHeight: 36`,
-    // Progress overlay: grows with the hold (progress 0→1 over `delay` ms).
-    `${i(3)}Item {`,
-    `${i(4)}anchors.fill: parent`,
-    `${i(4)}Css.CssRect {`,
-    `${i(5)}cssClass: ["delay-fill"]`,
-    `${i(5)}width: ${ctlId}.progress * parent.width`,
-    `${i(5)}height: parent.height`,
-    `${i(4)}}`,
-    `${i(3)}}`,
-    `${i(2)}}`,
-    // Label: the control sizes/positions its contentItem; colour/font inherit from the wrapper.
-    `${i(2)}contentItem: Css.CssText {`,
-    `${i(3)}cssPrimitive: "text"`,
-    `${i(3)}text: ${textLabel(children, scope)}`,
-    `${i(2)}}`,
+    `${i(1)}delay: ${delay}`,
+    `${i(1)}text: ${textLabel(children, scope)}`,
   ];
-
-  if (disabled) lines.push(`${i(2)}enabled: false`);
-  if (activatedBody) lines.push(`${i(2)}onActivated: { ${activatedBody} }`);
-  lines.push(`${i(1)}}`, `${pad}}`);
+  if (disabled) lines.push(`${i(1)}disabled: true`);
+  if (activatedBody) lines.push(`${i(1)}onActivated: { ${activatedBody} }`);
+  lines.push(`${pad}}`);
   return lines;
 };
 

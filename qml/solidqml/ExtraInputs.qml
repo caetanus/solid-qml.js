@@ -206,44 +206,11 @@ W.Div {
     }
     W.Div {
         cssClass: ["nv-row"]
-        Css.CssFill {
+        W.DelayButton {
             cssClass: ["ni-delay"]
-            cssPrimitive: ""
-            cssState: (__input3.hovered ? ["hover"] : []).concat(__input3.pressed ? ["active"] : []).concat(__input3.checked ? ["checked"] : []).concat(__input3.activeFocus ? ["focus"] : []).concat(!__input3.enabled ? ["disabled"] : [])
-            implicitWidth: __input3.implicitWidth
-            implicitHeight: __input3.implicitHeight
-            T.DelayButton {
-                id: __input3
-                anchors.fill: parent
-                activeFocusOnTab: solidTabstop.enabled
-                hoverEnabled: true
-                delay: 1200
-                transition: Transition { NumberAnimation { duration: __input3.delay * (__input3.pressed ? 1.0 - __input3.progress : 0.3 * __input3.progress) } }
-                horizontalPadding: 16
-                verticalPadding: 8
-                implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
-                implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-                background: Css.CssFill {
-                    cssPrimitive: ""
-                    cssClass: ["delay"]
-                    cssState: (__input3.hovered ? ["hover"] : []).concat(__input3.pressed ? ["active"] : []).concat(__input3.checked ? ["checked"] : []).concat(__input3.activeFocus ? ["focus"] : []).concat(!__input3.enabled ? ["disabled"] : [])
-                    implicitWidth: 120
-                    implicitHeight: 36
-                    Item {
-                        anchors.fill: parent
-                        Css.CssRect {
-                            cssClass: ["delay-fill"]
-                            width: __input3.progress * parent.width
-                            height: parent.height
-                        }
-                    }
-                }
-                contentItem: Css.CssText {
-                    cssPrimitive: "text"
-                    text: "Hold to arm"
-                }
-                onActivated: { __self.armed = true }
-            }
+            delay: 1200
+            text: "Hold to arm"
+            onActivated: { __self.armed = true }
         }
         W.Text {
             cssClass: ["nv-label"]

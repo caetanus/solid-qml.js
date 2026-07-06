@@ -236,22 +236,17 @@ test("native-inputs: <Tumbler onChange> fires from onCurrentIndexChanged with th
 // <DelayButton>
 // ---------------------------------------------------------------------------
 
-test("native-inputs: <DelayButton delay> emits T.DelayButton with the delay and the .delay background", async () => {
+test("native-inputs: <DelayButton delay> instantiates W.DelayButton with delay + label text", async () => {
   const out = await qml(`export function F(){ return <DelayButton delay={1200}>Hold</DelayButton>; }`);
-  assert.match(out, /T\.DelayButton \{/);
+  assert.match(out, /W\.DelayButton \{/);
   assert.match(out, /delay: 1200/);
-  assert.match(out, /cssClass: \["delay"\]/);
+  assert.match(out, /text: "Hold"/);
+  // The T.DelayButton + .delay pill now live in DelayButton.qml, not the emit.
+  assert.doesNotMatch(out, /T\.DelayButton/);
 });
 
-test("native-inputs: <DelayButton> progress overlay is a CssRect growing with progress", async () => {
-  const out = await qml(`export function F(){ return <DelayButton>Hold</DelayButton>; }`);
-  assert.match(out, /cssClass: \["delay-fill"\]/);
-  assert.match(out, /width: __input0\.progress \* parent\.width/);
-});
-
-test("native-inputs: <DelayButton> label comes from the text child via CssText", async () => {
+test("native-inputs: <DelayButton> label comes from the text child", async () => {
   const out = await qml(`export function F(){ return <DelayButton>Hold to arm</DelayButton>; }`);
-  assert.match(out, /contentItem: Css\.CssText \{/);
   assert.match(out, /text: "Hold to arm"/);
 });
 
@@ -263,11 +258,17 @@ test("native-inputs: <DelayButton onActivated> maps to onActivated", async () =>
     }
   `);
   assert.match(out, /onActivated: \{ __self\.armed = true \}/);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
 });
 
-test("native-inputs: <DelayButton> carries the full button state list", async () => {
-  const out = await qml(`export function F(){ return <DelayButton>Hold</DelayButton>; }`);
-  assert.match(out, /cssState: \(__input0\.hovered \? \["hover"\] : \[\]\)\.concat\(__input0\.pressed \? \["active"\] : \[\]\)\.concat\(__input0\.checked \? \["checked"\] : \[\]\)/);
+test("native-inputs: DelayButton.qml holds the pill background, progress overlay and state list", async () => {
+  const src = await readWidget("DelayButton");
+  assert.match(src, /T\.DelayButton \{/);
+  assert.match(src, /cssClass: \["delay"\]/);
+  assert.match(src, /cssClass: \["delay-fill"\]/);
+  assert.match(src, /width: __ctl\.progress \* parent\.width/);
+  assert.match(src, /contentItem: Css\.CssText \{/);
+  assert.match(src, /cssState: \(__ctl\.hovered \? \["hover"\] : \[\]\)\.concat\(__ctl\.pressed \? \["active"\] : \[\]\)\.concat\(__ctl\.checked \? \["checked"\] : \[\]\)/);
 });
 
 // ---------------------------------------------------------------------------
