@@ -3,6 +3,8 @@ import QtQuick
 import qmlcss 1.0 as Css
 
 
+import solidqml.Widgets 1.0 as W
+
 import QtQuick.Templates 6.0 as T
 Css.CssRect {
     id: __self
@@ -29,53 +31,20 @@ Css.CssRect {
             background: null
             contentItem: Item { }
         }
-        Css.CssFill {
+        W.Button {
             cssClass: ["ct-tool"]
-            cssState: __hover0.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "☰ Menu"
-            }
-            MouseArea {
-                id: __hover0
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: drawerOpen = true
-            }
+            text: "☰ Menu"
+            onClicked: drawerOpen = true
         }
-        Css.CssFill {
+        W.Button {
             cssClass: ["ct-tool"]
-            cssState: __hover1.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Home"
-            }
-            MouseArea {
-                id: __hover1
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: tab = 0
-            }
+            text: "Home"
+            onClicked: tab = 0
         }
-        Css.CssFill {
+        W.Button {
             cssClass: ["ct-tool"]
-            cssState: __hover2.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Reset pages"
-            }
-            MouseArea {
-                id: __hover2
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: page = 0
-            }
+            text: "Reset pages"
+            onClicked: page = 0
         }
     }
     Css.CssText {
@@ -248,21 +217,10 @@ Css.CssRect {
     Css.CssRect {
         cssClass: ["nv-row"]
         cssPrimitive: "div"
-        Css.CssFill {
+        W.Button {
             cssClass: ["ct-open"]
-            cssState: __hover3.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Open drawer"
-            }
-            MouseArea {
-                id: __hover3
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: drawerOpen = true
-            }
+            text: "Open drawer"
+            onClicked: drawerOpen = true
         }
         Css.CssText {
             cssClass: ["ct-state"]
@@ -313,21 +271,10 @@ Css.CssRect {
                     cssPrimitive: "text"
                     text: "Preferences"
                 }
-                Css.CssFill {
+                W.Button {
                     cssClass: ["ct-close"]
-                    cssState: __hover4.containsMouse ? ["hover"] : []
-                    cssPrimitive: "button"
-                    Css.CssText {
-                        cssPrimitive: "text"
-                        text: "Close"
-                    }
-                    MouseArea {
-                        id: __hover4
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: drawerOpen = false
-                    }
+                    text: "Close"
+                    onClicked: drawerOpen = false
                 }
             }
             onClosed: { drawerOpen = false }
@@ -408,21 +355,10 @@ Css.CssRect {
     Css.CssRect {
         cssClass: ["nv-row"]
         cssPrimitive: "div"
-        Css.CssFill {
+        W.Button {
             cssClass: ["ct-nav"]
-            cssState: __hover5.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "‹ Prev"
-            }
-            MouseArea {
-                id: __hover5
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: page = (page + 2) % 3
-            }
+            text: "‹ Prev"
+            onClicked: page = (page + 2) % 3
         }
         Css.CssFill {
             cssClass: ["ct-dots"]
@@ -455,21 +391,10 @@ Css.CssRect {
                 }
             }
         }
-        Css.CssFill {
+        W.Button {
             cssClass: ["ct-nav"]
-            cssState: __hover6.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Next ›"
-            }
-            MouseArea {
-                id: __hover6
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: page = (page + 1) % 3
-            }
+            text: "Next ›"
+            onClicked: page = (page + 1) % 3
         }
     }
 }

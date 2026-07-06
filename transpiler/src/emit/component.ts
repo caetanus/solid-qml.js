@@ -104,6 +104,9 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     const ver = usedWidgets.popupWindow ? "6.8" : usedWidgets.calendar ? "6.3" : "6.0";
     lines.unshift("", `import QtQuick.Templates ${ver} as T`);
   }
+  // Widget-library components (Button, …) live in the solidqml.Widgets module (the loader adds the
+  // app root to the import path). The transpiler instantiates them instead of hand-emitting internals.
+  if (usedWidgets.widgetLib) lines.unshift("", `import solidqml.Widgets 1.0 as W`);
   // Extra QML imports requested by native-tag emitters (Qt.labs.platform, QtQuick.Dialogs, …).
   if (usedWidgets.extraImports?.size) {
     lines.unshift("", ...[...usedWidgets.extraImports].sort());

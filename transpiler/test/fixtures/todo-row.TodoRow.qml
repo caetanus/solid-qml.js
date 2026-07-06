@@ -2,6 +2,8 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
+
+import solidqml.Widgets 1.0 as W
 Css.CssRect {
     id: __self
     property var onToggle
@@ -9,41 +11,19 @@ Css.CssRect {
     property var onRemove
     cssClass: ["todo-row"]
     cssPrimitive: "div"
-    Css.CssFill {
+    W.Button {
         cssClass: ["todo-toggle"]
-        cssState: __hover0.containsMouse ? ["hover"] : []
-        cssPrimitive: "button"
-        Css.CssText {
-            cssPrimitive: "text"
-            text: "" + (todo.done ? "✓" : "○")
-        }
-        MouseArea {
-            id: __hover0
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: onToggle(todo.id)
-        }
+        text: "" + (todo.done ? "✓" : "○")
+        onClicked: onToggle(todo.id)
     }
     Css.CssText {
         cssClass: ["todo-title"]
         cssPrimitive: "text"
         text: "" + (todo.title)
     }
-    Css.CssFill {
+    W.Button {
         cssClass: ["todo-remove"]
-        cssState: __hover1.containsMouse ? ["hover"] : []
-        cssPrimitive: "button"
-        Css.CssText {
-            cssPrimitive: "text"
-            text: "✕"
-        }
-        MouseArea {
-            id: __hover1
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: onRemove(todo.id)
-        }
+        text: "✕"
+        onClicked: onRemove(todo.id)
     }
 }

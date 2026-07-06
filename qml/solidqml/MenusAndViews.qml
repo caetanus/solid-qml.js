@@ -3,6 +3,8 @@ import QtQuick
 import qmlcss 1.0 as Css
 
 
+import solidqml.Widgets 1.0 as W
+
 import QtQuick.Templates 6.8 as T
 Css.CssRect {
     id: __self
@@ -29,21 +31,10 @@ Css.CssRect {
             implicitWidth: __mtrig0.implicitWidth
             implicitHeight: __mtrig0.implicitHeight
             Window.onActiveChanged: if (!Window.active) __menu0.close()
-            Css.CssFill {
+            W.Button {
                 id: __mtrig0
-                cssState: __hover0.containsMouse ? ["hover"] : []
-                cssPrimitive: "button"
-                Css.CssText {
-                    cssPrimitive: "text"
-                    text: "Actions ▾"
-                }
-                MouseArea {
-                    id: __hover0
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: { if (__menu0.visible) __menu0.close(); else if (Date.now() - __menu0.__closedAt > 250) __menu0.open() }
-                }
+                onClicked: { if (__menu0.visible) __menu0.close(); else if (Date.now() - __menu0.__closedAt > 250) __menu0.open() }
+                text: "Actions ▾"
             }
             T.Menu {
                 id: __menu0

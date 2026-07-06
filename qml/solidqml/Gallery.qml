@@ -2,6 +2,8 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
+
+import solidqml.Widgets 1.0 as W
 Css.CssRect {
     id: __self
     property var view: "hello"
@@ -15,277 +17,90 @@ Css.CssRect {
     Css.CssRect {
         cssClass: ["nav"]
         cssPrimitive: "div"
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "hello" ? ["active"] : [])
-            cssState: __hover0.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Hello"
-            }
-            MouseArea {
-                id: __hover0
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "hello"
-            }
+            text: "Hello"
+            onClicked: view = "hello"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "counters" ? ["active"] : [])
-            cssState: __hover1.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Counters"
-            }
-            MouseArea {
-                id: __hover1
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "counters"
-            }
+            text: "Counters"
+            onClicked: view = "counters"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "counter" ? ["active"] : [])
-            cssState: __hover2.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Counter (timer)"
-            }
-            MouseArea {
-                id: __hover2
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "counter"
-            }
+            text: "Counter (timer)"
+            onClicked: view = "counter"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "children" ? ["active"] : [])
-            cssState: __hover3.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "props.children"
-            }
-            MouseArea {
-                id: __hover3
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "children"
-            }
+            text: "props.children"
+            onClicked: view = "children"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "derived" ? ["active"] : [])
-            cssState: __hover4.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Derived"
-            }
-            MouseArea {
-                id: __hover4
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "derived"
-            }
+            text: "Derived"
+            onClicked: view = "derived"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "index" ? ["active"] : [])
-            cssState: __hover5.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Index"
-            }
-            MouseArea {
-                id: __hover5
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "index"
-            }
+            text: "Index"
+            onClicked: view = "index"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "dynamic" ? ["active"] : [])
-            cssState: __hover6.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Dynamic"
-            }
-            MouseArea {
-                id: __hover6
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "dynamic"
-            }
+            text: "Dynamic"
+            onClicked: view = "dynamic"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "props" ? ["active"] : [])
-            cssState: __hover7.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Prop helpers"
-            }
-            MouseArea {
-                id: __hover7
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "props"
-            }
+            text: "Prop helpers"
+            onClicked: view = "props"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "context" ? ["active"] : [])
-            cssState: __hover8.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Context"
-            }
-            MouseArea {
-                id: __hover8
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "context"
-            }
+            text: "Context"
+            onClicked: view = "context"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "refs" ? ["active"] : [])
-            cssState: __hover9.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Refs"
-            }
-            MouseArea {
-                id: __hover9
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "refs"
-            }
+            text: "Refs"
+            onClicked: view = "refs"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "fetch" ? ["active"] : [])
-            cssState: __hover10.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Fetch"
-            }
-            MouseArea {
-                id: __hover10
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "fetch"
-            }
+            text: "Fetch"
+            onClicked: view = "fetch"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "todomvc" ? ["active"] : [])
-            cssState: __hover11.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "TodoMVC"
-            }
-            MouseArea {
-                id: __hover11
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "todomvc"
-            }
+            text: "TodoMVC"
+            onClicked: view = "todomvc"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "nodeimports" ? ["active"] : [])
-            cssState: __hover12.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Node imports"
-            }
-            MouseArea {
-                id: __hover12
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "nodeimports"
-            }
+            text: "Node imports"
+            onClicked: view = "nodeimports"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "cssgaps" ? ["active"] : [])
-            cssState: __hover13.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "CSS gaps"
-            }
-            MouseArea {
-                id: __hover13
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "cssgaps"
-            }
+            text: "CSS gaps"
+            onClicked: view = "cssgaps"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "dashboard" ? ["active"] : [])
-            cssState: __hover14.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Dashboard"
-            }
-            MouseArea {
-                id: __hover14
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "dashboard"
-            }
+            text: "Dashboard"
+            onClicked: view = "dashboard"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "widgets" ? ["active"] : [])
-            cssState: __hover15.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Widgets"
-            }
-            MouseArea {
-                id: __hover15
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "widgets"
-            }
+            text: "Widgets"
+            onClicked: view = "widgets"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: [].concat(view === "native" ? ["active"] : [])
-            cssState: __hover16.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Native"
-            }
-            MouseArea {
-                id: __hover16
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view = "native"
-            }
+            text: "Native"
+            onClicked: view = "native"
         }
     }
     Css.CssIncubator {

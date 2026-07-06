@@ -276,18 +276,17 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
     if (!t.isExpression(triggerProp) || !isHCall(triggerProp))
       throw new Error("<Menu trigger={…}> expects a single element (e.g. a <button>)");
     const trigId = `__mtrig${n}`;
-    // Emit the trigger and (a) give its root a stable id for sizing/positioning, (b) drive the
-    // toggle from its button MouseArea's onClicked (the trigger must be a <button>).
+    // Emit the trigger (a <button> → W.CssButton) and wire the toggle to its `onClicked` signal.
+    // Give its root a stable id for sizing/positioning the menu below it.
     const trig = emitChildren([triggerProp], scope, level + 1);
     const openIdx = trig.findIndex((l) => /\{\s*$/.test(l));
     if (openIdx < 0) throw new Error("<Menu trigger> did not emit an element");
-    trig.splice(openIdx + 1, 0, `${i(2)}id: ${trigId}`);
-    const toggle = `if (${menuId}.visible) ${menuId}.close(); else if (Date.now() - ${menuId}.__closedAt > 250) ${menuId}.open()`;
-    const cursorIdx = trig.findIndex((l) => l.includes("cursorShape: Qt.PointingHandCursor"));
-    if (cursorIdx < 0) throw new Error("<Menu trigger> must be a <button> (no clickable found)");
+    if (!/\bW\.Button \{\s*$/.test(trig[openIdx]))
+      throw new Error("<Menu trigger> must be a <button>");
     if (trig.some((l) => /^\s*onClicked:/.test(l)))
       throw new Error("<Menu trigger> button must not declare its own onClick");
-    trig.splice(cursorIdx + 1, 0, `${i(3)}onClicked: { ${toggle} }`);
+    const toggle = `if (${menuId}.visible) ${menuId}.close(); else if (Date.now() - ${menuId}.__closedAt > 250) ${menuId}.open()`;
+    trig.splice(openIdx + 1, 0, `${i(2)}id: ${trigId}`, `${i(2)}onClicked: { ${toggle} }`);
 
     return [
       `${pad}Item {`,

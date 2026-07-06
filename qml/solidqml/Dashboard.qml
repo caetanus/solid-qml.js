@@ -3,6 +3,8 @@ import QtQuick
 import qmlcss 1.0 as Css
 
 
+import solidqml.Widgets 1.0 as W
+
 import QtQuick.Templates 6.0 as T
 Css.CssRect {
     id: __self
@@ -284,35 +286,13 @@ Css.CssRect {
                     Css.CssRect {
                         cssClass: ["user-card-actions"]
                         cssPrimitive: "div"
-                        Css.CssFill {
+                        W.Button {
                             cssClass: ["user-btn"]
-                            cssState: __hover5.containsMouse ? ["hover"] : []
-                            cssPrimitive: "button"
-                            Css.CssText {
-                                cssPrimitive: "text"
-                                text: "Profile"
-                            }
-                            MouseArea {
-                                id: __hover5
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                            }
+                            text: "Profile"
                         }
-                        Css.CssFill {
+                        W.Button {
                             cssClass: ["user-btn", "ghost"]
-                            cssState: __hover6.containsMouse ? ["hover"] : []
-                            cssPrimitive: "button"
-                            Css.CssText {
-                                cssPrimitive: "text"
-                                text: "Sign out"
-                            }
-                            MouseArea {
-                                id: __hover6
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                            }
+                            text: "Sign out"
                         }
                     }
                 }
@@ -386,37 +366,15 @@ Css.CssRect {
                                 }
                             }
                         }
-                        Css.CssFill {
+                        W.Button {
                             cssClass: ["c-nav", "c-prev"]
-                            cssState: __hover7.containsMouse ? ["hover"] : []
-                            cssPrimitive: "button"
-                            Css.CssText {
-                                cssPrimitive: "text"
-                                text: "‹"
-                            }
-                            MouseArea {
-                                id: __hover7
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: slide = (slide + 2) % 3
-                            }
+                            text: "‹"
+                            onClicked: slide = (slide + 2) % 3
                         }
-                        Css.CssFill {
+                        W.Button {
                             cssClass: ["c-nav", "c-next"]
-                            cssState: __hover8.containsMouse ? ["hover"] : []
-                            cssPrimitive: "button"
-                            Css.CssText {
-                                cssPrimitive: "text"
-                                text: "›"
-                            }
-                            MouseArea {
-                                id: __hover8
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: slide = (slide + 1) % 3
-                            }
+                            text: "›"
+                            onClicked: slide = (slide + 1) % 3
                         }
                         Css.CssRect {
                             cssClass: ["dots"]
@@ -425,10 +383,10 @@ Css.CssRect {
                                 model: __const_SLIDES
                                 Css.CssRect {
                                     cssClass: ["dot"].concat(slide === index ? ["on"] : [])
-                                    cssState: __hover9.containsMouse ? ["hover"] : []
+                                    cssState: __hover5.containsMouse ? ["hover"] : []
                                     cssPrimitive: "div"
                                     MouseArea {
-                                        id: __hover9
+                                        id: __hover5
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
@@ -646,11 +604,11 @@ Css.CssRect {
                                 Css.CssRect {
                                     cssClass: ["proj-card"]
                                     property var __dragData: modelData
-                                    Drag.active: __drag10.drag.active
+                                    Drag.active: __drag6.drag.active
                                     Drag.hotSpot.x: width / 2
                                     Drag.hotSpot.y: height / 2
-                                    z: __drag10.drag.active ? 1000 : 0
-                                    id: __drag10_root
+                                    z: __drag6.drag.active ? 1000 : 0
+                                    id: __drag6_root
                                     cssPrimitive: "div"
                                     Css.CssRect {
                                         cssClass: ["proj-head"]
@@ -684,15 +642,15 @@ Css.CssRect {
                                         }
                                     }
                                     MouseArea {
-                                        id: __drag10
+                                        id: __drag6
                                         anchors.fill: parent
-                                        drag.target: __drag10_root
+                                        drag.target: __drag6_root
                                         cursorShape: Qt.OpenHandCursor
-                                        onReleased: { __drag10_root.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(__drag10_root) }
+                                        onReleased: { __drag6_root.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(__drag6_root) }
                                     }
                                     DropArea {
                                         anchors.fill: parent
-                                        enabled: !__drag10.drag.active
+                                        enabled: !__drag6.drag.active
                                         onDropped: (drop) => { order = reorder(order, drop.source.__dragData, modelData) }
                                     }
                                 }
@@ -829,50 +787,17 @@ Css.CssRect {
                             Css.CssRect {
                                 cssClass: ["set-opts"]
                                 cssPrimitive: "div"
-                                Css.CssFill {
+                                W.Button {
                                     cssClass: ["set-opt", "active"]
-                                    cssState: __hover11.containsMouse ? ["hover"] : []
-                                    cssPrimitive: "button"
-                                    Css.CssText {
-                                        cssPrimitive: "text"
-                                        text: "dark"
-                                    }
-                                    MouseArea {
-                                        id: __hover11
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                    }
+                                    text: "dark"
                                 }
-                                Css.CssFill {
+                                W.Button {
                                     cssClass: ["set-opt"]
-                                    cssState: __hover12.containsMouse ? ["hover"] : []
-                                    cssPrimitive: "button"
-                                    Css.CssText {
-                                        cssPrimitive: "text"
-                                        text: "light"
-                                    }
-                                    MouseArea {
-                                        id: __hover12
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                    }
+                                    text: "light"
                                 }
-                                Css.CssFill {
+                                W.Button {
                                     cssClass: ["set-opt"]
-                                    cssState: __hover13.containsMouse ? ["hover"] : []
-                                    cssPrimitive: "button"
-                                    Css.CssText {
-                                        cssPrimitive: "text"
-                                        text: "system"
-                                    }
-                                    MouseArea {
-                                        id: __hover13
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                    }
+                                    text: "system"
                                 }
                             }
                         }
@@ -884,20 +809,9 @@ Css.CssRect {
                                 cssPrimitive: "text"
                                 text: "GPU vsync"
                             }
-                            Css.CssFill {
+                            W.Button {
                                 cssClass: ["set-opt", "active"]
-                                cssState: __hover14.containsMouse ? ["hover"] : []
-                                cssPrimitive: "button"
-                                Css.CssText {
-                                    cssPrimitive: "text"
-                                    text: "on"
-                                }
-                                MouseArea {
-                                    id: __hover14
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                }
+                                text: "on"
                             }
                         }
                     }

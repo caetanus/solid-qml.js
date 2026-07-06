@@ -2,25 +2,16 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
+
+import solidqml.Widgets 1.0 as W
 Css.CssRect {
     id: __self
     property var items: ["alpha", "beta", "gamma"]
     cssClass: ["app"]
     cssPrimitive: "div"
-    Css.CssFill {
-        cssState: __hover0.containsMouse ? ["hover"] : []
-        cssPrimitive: "button"
-        Css.CssText {
-            cssPrimitive: "text"
-            text: "add"
-        }
-        MouseArea {
-            id: __hover0
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: items = [...items, "more"]
-        }
+    W.Button {
+        text: "add"
+        onClicked: items = [...items, "more"]
     }
     Repeater {
         model: items

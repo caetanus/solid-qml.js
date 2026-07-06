@@ -2,27 +2,18 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
+
+import solidqml.Widgets 1.0 as W
 Css.CssRect {
     id: __self
     property var count: 0
     function inc() { count = count + 1; }
     cssClass: ["app"]
     cssPrimitive: "div"
-    Css.CssFill {
+    W.Button {
         cssClass: ["btn"]
-        cssState: __hover0.containsMouse ? ["hover"] : []
-        cssPrimitive: "button"
-        Css.CssText {
-            cssPrimitive: "text"
-            text: "click"
-        }
-        MouseArea {
-            id: __hover0
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: inc()
-        }
+        text: "click"
+        onClicked: inc()
     }
     Css.CssText {
         cssClass: ["out"]

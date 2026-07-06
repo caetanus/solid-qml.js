@@ -44,12 +44,12 @@ test("emitQml: interpolation child reads the signal as a bound expression", asyn
   assert.match(out, /text: "count: " \+ \(count\)/);
 });
 
-test("emitQml: button -> CssFill + label CssText + MouseArea with onClicked", async () => {
+test("emitQml: button -> W.Button (widget-library component) with text + onClicked", async () => {
   const out = await qml(`export function F(){ const [count,setCount]=createSignal(0); return <button onClick={() => setCount(count() + 1)}>go</button>; }`);
-  assert.match(out, /Css\.CssFill \{/);
-  assert.match(out, /cssPrimitive: "button"/);
-  assert.match(out, /Css\.CssText \{[\s\S]*text: "go"/);
-  assert.match(out, /MouseArea \{[\s\S]*onClicked: count = count \+ 1/);
+  // One .qml per component: <button> instantiates the library Button, wiring text + the click.
+  assert.match(out, /W\.Button \{/);
+  assert.match(out, /text: "go"/);
+  assert.match(out, /onClicked: count = count \+ 1/);
 });
 
 test("emitQml: a component instance is instantiated with prop bindings", async () => {
@@ -113,7 +113,7 @@ test("emitQml: a button with an element child emits the label + the nested eleme
   const render = findRender(ast)!;
   const scope: Scope = { table: new Map(), mode: "binding", components: new Map() };
   const out = emitQml(render, scope).join("\n");
-  assert.match(out, /cssPrimitive: "button"/);
+  assert.match(out, /W\.Button \{/);
   assert.match(out, /text: "go"/);                 // text child → label
   assert.match(out, /cssClass: \["badge"\][\s\S]*cssPrimitive: "div"/); // element child → nested
 });

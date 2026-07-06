@@ -14,6 +14,7 @@
 #include <QQmlComponent>
 #include <QQmlError>
 #include <QQmlContext>
+#include <QDir>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
 #include <QPointer>
@@ -201,6 +202,14 @@ int main(int argc, char **argv)
     SolidTabstop solidTabstop;
 
     QQmlApplicationEngine engine;
+    // The generated app does `import solidqml.Widgets 1.0 as W`; the module lives in a `Widgets/`
+    // dir beside the app (qml/solidqml/Widgets). Add the app root (parent of the app dir) so the
+    // dotted module `solidqml.Widgets` resolves to <root>/solidqml/Widgets.
+    {
+        QDir appRoot = QFileInfo(qmlPath).absoluteDir();
+        appRoot.cdUp();
+        engine.addImportPath(appRoot.absolutePath());
+    }
     engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &cssTheme);
     engine.rootContext()->setContextProperty(QStringLiteral("cssLayout"), &cssLayout);
     engine.rootContext()->setContextProperty(QStringLiteral("solidTabstop"), &solidTabstop);

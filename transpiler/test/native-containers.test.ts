@@ -68,9 +68,9 @@ test("containers: <ToolBar> hosts a T.ToolBar with null background and empty con
 
 test("containers: <ToolBar> children emit into the wrapper's Css layout (not the contentItem)", async () => {
   const out = await qml(`export function F(){ return <ToolBar><button>Run</button></ToolBar>; }`);
-  // The button emits AFTER the closed T.ToolBar block, as a wrapper child.
+  // The button (W.Button) emits AFTER the closed T.ToolBar block, as a wrapper child.
   const toolbarClose = out.indexOf("contentItem: Item { }");
-  const button = out.indexOf('cssPrimitive: "button"');
+  const button = out.indexOf("W.Button {");
   assert.ok(toolbarClose >= 0 && button > toolbarClose, "button must be a wrapper child after T.ToolBar");
   assert.match(out, /text: "Run"/);
 });

@@ -3,6 +3,8 @@ import QtQuick
 import qmlcss 1.0 as Css
 
 
+import solidqml.Widgets 1.0 as W
+
 import QtQuick.Templates 6.0 as T
 Css.CssRect {
     id: __self
@@ -261,21 +263,10 @@ Css.CssRect {
     Css.CssRect {
         cssClass: ["nv-row"]
         cssPrimitive: "div"
-        Css.CssFill {
+        W.Button {
             cssClass: ["ni-btn"]
-            cssState: __hover0.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "" + (busy ? "stop" : "start")
-            }
-            MouseArea {
-                id: __hover0
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: busy = !busy
-            }
+            text: "" + (busy ? "stop" : "start")
+            onClicked: busy = !busy
         }
         Css.CssFill {
             cssClass: ["ni-busy"]

@@ -2,20 +2,11 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssFill {
+
+import solidqml.Widgets 1.0 as W
+W.Button {
     id: __self
     property var __ctx_CounterContext
-    cssState: __hover0.containsMouse ? ["hover"] : []
-    cssPrimitive: "button"
-    Css.CssText {
-        cssPrimitive: "text"
-        text: "increment"
-    }
-    MouseArea {
-        id: __hover0
-        anchors.fill: parent
-        hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
-        onClicked: __ctx_CounterContext.increment()
-    }
+    text: "increment"
+    onClicked: __ctx_CounterContext.increment()
 }

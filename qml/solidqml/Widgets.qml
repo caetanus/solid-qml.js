@@ -3,6 +3,8 @@ import QtQuick
 import qmlcss 1.0 as Css
 
 
+import solidqml.Widgets 1.0 as W
+
 import QtQuick.Templates 6.8 as T
 Css.CssRect {
     id: __self
@@ -1470,21 +1472,10 @@ Css.CssRect {
                 }
             }
         }
-        Css.CssFill {
+        W.Button {
             cssClass: ["wg-reset"]
-            cssState: __hover0.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Reset"
-            }
-            MouseArea {
-                id: __hover0
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: reset()
-            }
+            text: "Reset"
+            onClicked: reset()
         }
     }
 }

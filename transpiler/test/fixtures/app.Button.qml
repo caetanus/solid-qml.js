@@ -2,20 +2,11 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
-Css.CssFill {
+
+import solidqml.Widgets 1.0 as W
+W.Button {
     id: __self
     property var label
     cssClass: ["btn"]
-    cssState: __hover0.containsMouse ? ["hover"] : []
-    cssPrimitive: "button"
-    Css.CssText {
-        cssPrimitive: "text"
-        text: "" + (label)
-    }
-    MouseArea {
-        id: __hover0
-        anchors.fill: parent
-        hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
-    }
+    text: "" + (label)
 }

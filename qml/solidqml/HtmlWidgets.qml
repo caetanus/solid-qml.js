@@ -5,6 +5,8 @@ import qmlcss 1.0 as Css
 
 import QtQuick.Window
 
+import solidqml.Widgets 1.0 as W
+
 import QtQuick.Templates 6.0 as T
 Css.CssRect {
     id: __self
@@ -62,21 +64,10 @@ Css.CssRect {
                 }
             }
         }
-        Css.CssFill {
+        W.Button {
             cssClass: ["hw-btn"]
-            cssState: __hover0.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "+25%"
-            }
-            MouseArea {
-                id: __hover0
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: pct = pct >= 1 ? 0 : pct + 0.25
-            }
+            text: "+25%"
+            onClicked: pct = pct >= 1 ? 0 : pct + 0.25
         }
     }
     Css.CssRect {
@@ -152,21 +143,10 @@ Css.CssRect {
             cssPrimitive: "text"
             text: "Dialog"
         }
-        Css.CssFill {
+        W.Button {
             cssClass: ["hw-btn"]
-            cssState: __hover1.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Open dialog"
-            }
-            MouseArea {
-                id: __hover1
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: dlgOpen = true
-            }
+            text: "Open dialog"
+            onClicked: dlgOpen = true
         }
     }
     Item {
@@ -202,21 +182,10 @@ Css.CssRect {
                         cssPrimitive: "text"
                         text: "A modal T.Dialog centered on the window overlay."
                     }
-                    Css.CssFill {
+                    W.Button {
                         cssClass: ["hw-btn"]
-                        cssState: __hover2.containsMouse ? ["hover"] : []
-                        cssPrimitive: "button"
-                        Css.CssText {
-                            cssPrimitive: "text"
-                            text: "Close"
-                        }
-                        MouseArea {
-                            id: __hover2
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: dlgOpen = false
-                        }
+                        text: "Close"
+                        onClicked: dlgOpen = false
                     }
                 }
             }
@@ -236,7 +205,7 @@ Css.CssRect {
         property bool __open: !!(false)
         Css.CssFill {
             cssPrimitive: "summary"
-            cssState: (__details3.__open ? ["open"] : []).concat(__hover3.containsMouse ? ["hover"] : [])
+            cssState: (__details3.__open ? ["open"] : []).concat(__hover0.containsMouse ? ["hover"] : [])
             Item {
                 anchors.fill: parent
                 Text {
@@ -253,7 +222,7 @@ Css.CssRect {
                 text: "More details"
             }
             MouseArea {
-                id: __hover3
+                id: __hover0
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor

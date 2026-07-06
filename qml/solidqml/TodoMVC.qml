@@ -3,6 +3,8 @@ import QtQuick
 import qmlcss 1.0 as Css
 
 
+import solidqml.Widgets 1.0 as W
+
 import QtQuick.Templates 6.0 as T
 Css.CssRect {
     id: __self
@@ -66,21 +68,10 @@ Css.CssRect {
                 restoreMode: Binding.RestoreNone
             }
         }
-        Css.CssFill {
+        W.Button {
             cssClass: ["todo-add"]
-            cssState: __hover0.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "add"
-            }
-            MouseArea {
-                id: __hover0
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: add()
-            }
+            text: "add"
+            onClicked: add()
         }
     }
     Css.CssRect {
@@ -113,52 +104,19 @@ Css.CssRect {
             Css.CssIncubator {
                 active: (remaining > 0 && remaining < todos.length) ? true : false
                 sourceComponent: Component {
-                    Css.CssFill {
-                        cssState: __hover1.containsMouse ? ["hover"] : []
-                        cssPrimitive: "button"
-                        Css.CssText {
-                            cssPrimitive: "text"
-                            text: "all"
-                        }
-                        MouseArea {
-                            id: __hover1
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: selectAll()
-                        }
+                    W.Button {
+                        text: "all"
+                        onClicked: selectAll()
                     }
                 }
             }
-            Css.CssFill {
-                cssState: __hover2.containsMouse ? ["hover"] : []
-                cssPrimitive: "button"
-                Css.CssText {
-                    cssPrimitive: "text"
-                    text: "active"
-                }
-                MouseArea {
-                    id: __hover2
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: filter = "active"
-                }
+            W.Button {
+                text: "active"
+                onClicked: filter = "active"
             }
-            Css.CssFill {
-                cssState: __hover3.containsMouse ? ["hover"] : []
-                cssPrimitive: "button"
-                Css.CssText {
-                    cssPrimitive: "text"
-                    text: "done"
-                }
-                MouseArea {
-                    id: __hover3
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: filter = "completed"
-                }
+            W.Button {
+                text: "done"
+                onClicked: filter = "completed"
             }
         }
     }

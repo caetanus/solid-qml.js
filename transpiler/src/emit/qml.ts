@@ -343,30 +343,20 @@ function emitButton(props: Props, children: t.Node[], scope: Scope, level: numbe
   const isElement = (c: t.Node) => isHCall(c);
   const textKids = children.filter((c) => !isElement(c));
   const elemKids = children.filter(isElement);
-  // The MouseArea doubles as the hover tracker: `cssState` mirrors containsMouse so
-  // `:hover` rules restyle the button (and, via ancestor scoping, its label) natively.
-  const counter = scope.hoverCounter ?? { n: 0 };
-  const maId = `__hover${counter.n++}`;
+  // One .qml per component (owner directive): instantiate the widget-library CssButton and wire
+  // props/children — the button's internals (hover state, label, MouseArea) live in the .qml, not
+  // here. The `import "widgets" as W` header is added by emitComponentType when widgetLib is set.
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
   const lines = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.Button {`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssState: ${maId}.containsMouse ? ["hover"] : []`,
-    `${i(1)}cssPrimitive: "button"`,
-    `${i(1)}Css.CssText {`,
-    `${i(2)}cssPrimitive: "text"`,
-    `${i(2)}text: ${textBinding(textKids, scope)}`,
-    `${i(1)}}`,
+    `${i(1)}text: ${textBinding(textKids, scope)}`,
     ...emitChildren(elemKids, scope, level + 1),
-    `${i(1)}MouseArea {`,
-    `${i(2)}id: ${maId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}hoverEnabled: true`,
-    `${i(2)}cursorShape: Qt.PointingHandCursor`,
   ];
   const handler = emitHandler(props.onClick, scope);
-  if (handler) lines.push(`${i(2)}onClicked: ${handler}`);
-  lines.push(`${i(1)}}`, `${pad}}`);
+  if (handler) lines.push(`${i(1)}onClicked: ${handler}`);
+  lines.push(`${pad}}`);
   return lines;
 }
 

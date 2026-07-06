@@ -2,6 +2,8 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
+
+import solidqml.Widgets 1.0 as W
 Css.CssRect {
     id: __self
     property var events: 0
@@ -56,14 +58,9 @@ Css.CssRect {
                 cssPrimitive: "text"
                 text: "A hello world in Solid.js — and the very same code already renders natively through QML."
             }
-            Css.CssFill {
+            W.Button {
                 cssClass: ["hello-cta"]
-                cssState: __hover0.containsMouse ? ["hover"] : []
-                cssPrimitive: "button"
-                Css.CssText {
-                    cssPrimitive: "text"
-                    text: ""
-                }
+                text: ""
                 Css.CssText {
                     cssClass: ["hello-cta-label"]
                     cssPrimitive: "span"
@@ -77,13 +74,7 @@ Css.CssRect {
                         text: "" + (events)
                     }
                 }
-                MouseArea {
-                    id: __hover0
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: events = events + 1
-                }
+                onClicked: events = events + 1
             }
         }
     }
