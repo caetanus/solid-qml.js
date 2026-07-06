@@ -727,17 +727,19 @@ test("widgets: dynamic <option> content throws a clear transpiler error", async 
 // Phase 4: <input type="range"> → T.Slider
 // ---------------------------------------------------------------------------
 
-test("widgets: <input type='range'> emits wrapper CssFill with cssPrimitive 'input'", async () => {
+const SLIDER_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Slider.qml", import.meta.url)), "utf8");
+
+test("widgets: <input type='range'> instantiates the W.Slider component", async () => {
   const out = await qml(`export function F(){ return <input type="range" />; }`);
-  assert.match(out, /Css\.CssFill \{/);
-  assert.match(out, /cssPrimitive: "input"/);
+  assert.match(out, /W\.Slider \{/);
+  assert.match(out, /id: __input0/);
+  assert.doesNotMatch(out, /T\.Slider/);
 });
 
-test("widgets: <input type='range'> emits T.Slider anchors.fill:parent inside the wrapper", async () => {
-  const out = await qml(`export function F(){ return <input type="range" />; }`);
-  assert.match(out, /T\.Slider \{/);
-  assert.match(out, /id: __input0/);
-  assert.match(out, /anchors\.fill: parent/);
+test("widgets: Slider.qml has a T.Slider (anchors.fill) with cssPrimitive 'input'", async () => {
+  assert.match(SLIDER_QML, /cssPrimitive: "input"/);
+  assert.match(SLIDER_QML, /T\.Slider \{/);
+  assert.match(SLIDER_QML, /anchors\.fill: parent/);
 });
 
 test("widgets: <input type='range'> defaults from=0 to=100 stepSize=1", async () => {
@@ -754,41 +756,36 @@ test("widgets: <input type='range' min=5 max=50 step=5> overrides range and step
   assert.match(out, /stepSize: 5/);
 });
 
-test("widgets: <input type='range'> background is CssFill cssClass ['track'] with height 6", async () => {
-  const out = await qml(`export function F(){ return <input type="range" />; }`);
-  assert.match(out, /background: Css\.CssFill \{/);
-  assert.match(out, /cssClass: \["track"\]/);
-  assert.match(out, /height: 6/);
-  assert.match(out, /implicitHeight: 6/);
+test("widgets: Slider.qml background is CssFill cssClass ['track'] with height 6", async () => {
+  assert.match(SLIDER_QML, /background: Css\.CssFill \{/);
+  assert.match(SLIDER_QML, /cssClass: \["track"\]/);
+  assert.match(SLIDER_QML, /height: 6/);
+  assert.match(SLIDER_QML, /implicitHeight: 6/);
 });
 
-test("widgets: <input type='range'> track background uses Qt-Basic-style x/y/width geometry", async () => {
-  const out = await qml(`export function F(){ return <input type="range" />; }`);
-  assert.match(out, /x: __input0\.leftPadding/);
-  assert.match(out, /y: __input0\.topPadding \+ \(__input0\.availableHeight - height\) \/ 2/);
-  assert.match(out, /width: __input0\.availableWidth/);
+test("widgets: Slider.qml track background uses Qt-Basic-style x/y/width geometry", async () => {
+  assert.match(SLIDER_QML, /x: ctl\.leftPadding/);
+  assert.match(SLIDER_QML, /y: ctl\.topPadding \+ \(ctl\.availableHeight - height\) \/ 2/);
+  assert.match(SLIDER_QML, /width: ctl\.availableWidth/);
 });
 
-test("widgets: <input type='range'> track contains CssRect cssClass ['track-fill'] width driven by visualPosition", async () => {
-  const out = await qml(`export function F(){ return <input type="range" />; }`);
-  assert.match(out, /cssClass: \["track-fill"\]/);
-  assert.match(out, /width: __input0\.visualPosition \* parent\.width/);
+test("widgets: Slider.qml track contains CssRect cssClass ['track-fill'] width driven by visualPosition", async () => {
+  assert.match(SLIDER_QML, /cssClass: \["track-fill"\]/);
+  assert.match(SLIDER_QML, /width: ctl\.visualPosition \* parent\.width/);
 });
 
-test("widgets: <input type='range'> handle is CssRect cssClass ['handle'] 18x18", async () => {
-  const out = await qml(`export function F(){ return <input type="range" />; }`);
-  assert.match(out, /handle: Css\.CssRect \{/);
-  assert.match(out, /cssClass: \["handle"\]/);
-  assert.match(out, /width: 18/);
-  assert.match(out, /height: 18/);
-  assert.match(out, /implicitWidth: 18/);
-  assert.match(out, /implicitHeight: 18/);
+test("widgets: Slider.qml handle is CssRect cssClass ['handle'] 18x18", async () => {
+  assert.match(SLIDER_QML, /handle: Css\.CssRect \{/);
+  assert.match(SLIDER_QML, /cssClass: \["handle"\]/);
+  assert.match(SLIDER_QML, /width: 18/);
+  assert.match(SLIDER_QML, /height: 18/);
+  assert.match(SLIDER_QML, /implicitWidth: 18/);
+  assert.match(SLIDER_QML, /implicitHeight: 18/);
 });
 
-test("widgets: <input type='range'> handle x/y use visualPosition and availableWidth/Height", async () => {
-  const out = await qml(`export function F(){ return <input type="range" />; }`);
-  assert.match(out, /x: __input0\.leftPadding \+ __input0\.visualPosition \* \(__input0\.availableWidth - width\)/);
-  assert.match(out, /y: __input0\.topPadding \+ __input0\.availableHeight \/ 2 - height \/ 2/);
+test("widgets: Slider.qml handle x/y use visualPosition and availableWidth/Height", async () => {
+  assert.match(SLIDER_QML, /x: ctl\.leftPadding \+ ctl\.visualPosition \* \(ctl\.availableWidth - width\)/);
+  assert.match(SLIDER_QML, /y: ctl\.topPadding \+ ctl\.availableHeight \/ 2 - height \/ 2/);
 });
 
 test("widgets: range value={sig()} emits Binding on property 'value'", async () => {
@@ -835,14 +832,14 @@ test("widgets: range disabled sets enabled: false on T.Slider", async () => {
   assert.match(out, /enabled: false/);
 });
 
-test("widgets: range cssState carries focus and disabled", async () => {
-  const out = await qml(`export function F(){ return <input type="range" />; }`);
-  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!__input0\.enabled \? \["disabled"\] : \[\]\)/);
+test("widgets: Slider.qml cssState carries focus and disabled", async () => {
+  assert.match(SLIDER_QML, /cssState: \(ctl\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!ctl\.enabled \? \["disabled"\] : \[\]\)/);
 });
 
-test("widgets: range Templates import is prepended", async () => {
+test("widgets: range Widgets import is prepended", async () => {
   const out = await qmlType(`export function F(){ return <input type="range" />; }`);
-  assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
+  assert.doesNotMatch(out, /import QtQuick\.Templates/);
 });
 
 // ---------------------------------------------------------------------------
@@ -1298,8 +1295,8 @@ test("tabstop: <select> binds activeFocusOnTab to solidTabstop.enabled", async (
   assert.match(await qml(`export function F(){ return <select><option>A</option></select>; }`), TAB_STOP);
 });
 
-test("tabstop: <input type='range'> binds activeFocusOnTab to solidTabstop.enabled", async () => {
-  assert.match(await qml(`export function F(){ return <input type="range" />; }`), TAB_STOP);
+test("tabstop: Slider.qml binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  assert.match(SLIDER_QML, TAB_STOP);
 });
 
 test("tabstop: <input type='number'> binds activeFocusOnTab to solidTabstop.enabled", async () => {
@@ -1437,9 +1434,8 @@ test("arrows: Checkbox.qml and Toggle.qml move focus along the chain, honoring t
   }
 });
 
-test("wheel: slider steps value when focused and re-emits moved()", async () => {
-  const out = await qml(`export function F(){ return <input type="range" />; }`);
-  assert.match(out, /WheelHandler \{[\s\S]*?acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*?__input0\.moved\(\)/);
+test("wheel: Slider.qml steps value when focused and re-emits moved()", async () => {
+  assert.match(SLIDER_QML, /WheelHandler \{[\s\S]*?acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*?ctl\.moved\(\)/);
 });
 
 test("date: chevron is the same CssText as the select's, anchored right inside the host Item", async () => {

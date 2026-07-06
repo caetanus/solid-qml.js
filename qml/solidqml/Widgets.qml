@@ -486,50 +486,13 @@ W.Div {
                         text: "" + (volume)
                     }
                 }
-                Css.CssFill {
+                W.Slider {
+                    id: __input14
                     cssClass: ["wg-range"]
-                    cssPrimitive: "input"
-                    cssState: (__input14.activeFocus ? ["focus"] : []).concat(!__input14.enabled ? ["disabled"] : [])
-                    implicitWidth: __input14.implicitWidth
-                    implicitHeight: __input14.implicitHeight
-                    T.Slider {
-                        id: __input14
-                        anchors.fill: parent
-                        activeFocusOnTab: solidTabstop.enabled
-                        background: Css.CssFill {
-                            cssPrimitive: ""
-                            cssClass: ["track"]
-                            x: __input14.leftPadding
-                            y: __input14.topPadding + (__input14.availableHeight - height) / 2
-                            width: __input14.availableWidth
-                            height: 6
-                            implicitHeight: 6
-                            Css.CssRect {
-                                cssClass: ["track-fill"]
-                                width: __input14.visualPosition * parent.width
-                                height: parent.height
-                            }
-                        }
-                        handle: Css.CssRect {
-                            cssClass: ["handle"]
-                            width: 18
-                            height: 18
-                            implicitWidth: 18
-                            implicitHeight: 18
-                            x: __input14.leftPadding + __input14.visualPosition * (__input14.availableWidth - width)
-                            y: __input14.topPadding + __input14.availableHeight / 2 - height / 2
-                        }
-                        from: 0
-                        to: 100
-                        stepSize: 1
-                        WheelHandler {
-                            property real __acc: 0
-                            enabled: __input14.activeFocus
-                            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                            onWheel: (ev) => { __acc += ev.angleDelta.y !== 0 ? ev.angleDelta.y : ev.pixelDelta.y * 8; var s = 0; while (__acc >= 120) { __acc -= 120; s++ } while (__acc <= -120) { __acc += 120; s-- } if (s !== 0) { __input14.value = Math.max(__input14.from, Math.min(__input14.to, __input14.value + s * __input14.stepSize)); __input14.moved() } }
-                        }
-                        onMoved: { volume = __input14.value }
-                    }
+                    from: 0
+                    to: 100
+                    stepSize: 1
+                    onMoved: { volume = __input14.value }
                     Binding {
                         target: __input14
                         property: "value"

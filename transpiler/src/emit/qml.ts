@@ -897,74 +897,29 @@ function emitSlider(props: Props, scope: Scope, level: number, guard: string | u
   const i = (n: number) => INDENT.repeat(level + n);
   const classLine = buildCssClassLine(props, scope, i(1));
   const { valueExpr, onInputFn, onChangeFn, disabled, min, max, step } = wp;
-  if (scope.usedWidgets) scope.usedWidgets.flag = true;
+  // One .qml per component: instantiate W.Slider (the T.Slider + track/handle/wheel live in
+  // Slider.qml). Keep the id so the controlled Binding resolves.
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
-  const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
-  // Both onInput and onChange map to onMoved (see jsdoc for the approximation note).
+  // Both onInput and onChange map to onMoved (see jsdoc for the approximation note). `${ctlId}.value`
+  // resolves via the component's two-way `value` alias on the instance.
   const activeFn = onInputFn ?? onChangeFn;
   const onMovedBody = activeFn
     ? translateValueHandler(activeFn, `${ctlId}.value`, scope)
     : "";
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.Slider {`,
+    `${i(1)}id: ${ctlId}`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "input"`,
-    `${i(1)}cssState: ${cssState}`,
-    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
-    `${i(1)}T.Slider {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
-    // Track: background slot (fills the control); centred vertically via explicit x/y bindings.
-    // Using Qt Basic-style geometry so the 6px-tall track sits in the middle of the taller handle.
-    `${i(2)}background: Css.CssFill {`,
-    `${i(3)}cssPrimitive: ""`,
-    `${i(3)}cssClass: ["track"]`,
-    `${i(3)}x: ${ctlId}.leftPadding`,
-    `${i(3)}y: ${ctlId}.topPadding + (${ctlId}.availableHeight - height) / 2`,
-    `${i(3)}width: ${ctlId}.availableWidth`,
-    `${i(3)}height: 6`,
-    `${i(3)}implicitHeight: 6`,
-    // Progress fill: a CssRect inside the track growing with visualPosition.
-    `${i(3)}Css.CssRect {`,
-    `${i(4)}cssClass: ["track-fill"]`,
-    `${i(4)}width: ${ctlId}.visualPosition * parent.width`,
-    `${i(4)}height: parent.height`,
-    `${i(3)}}`,
-    `${i(2)}}`,
-    // Handle: a CssRect (18×18) positioned by the slider's own geometry helpers. No Behavior —
-    // dragging must follow the pointer 1:1 (no snap animation like the Switch knob).
-    `${i(2)}handle: Css.CssRect {`,
-    `${i(3)}cssClass: ["handle"]`,
-    `${i(3)}width: 18`,
-    `${i(3)}height: 18`,
-    `${i(3)}implicitWidth: 18`,
-    `${i(3)}implicitHeight: 18`,
-    `${i(3)}x: ${ctlId}.leftPadding + ${ctlId}.visualPosition * (${ctlId}.availableWidth - width)`,
-    `${i(3)}y: ${ctlId}.topPadding + ${ctlId}.availableHeight / 2 - height / 2`,
-    `${i(2)}}`,
-    `${i(2)}from: ${min}`,
-    `${i(2)}to: ${max}`,
-    `${i(2)}stepSize: ${step}`,
-    // Focused wheel steps the value (same semantics as the SpinBox); moved() re-fires
-    // so the author's onInput/onChange wiring runs.
-    // Same touchpad handling as the SpinBox wheel (see there): Mouse-only default +
-    // 120-unit notch accumulation.
-    `${i(2)}WheelHandler {`,
-    `${i(3)}property real __acc: 0`,
-    `${i(3)}enabled: ${ctlId}.activeFocus`,
-    `${i(3)}acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad`,
-    `${i(3)}onWheel: (ev) => { __acc += ev.angleDelta.y !== 0 ? ev.angleDelta.y : ev.pixelDelta.y * 8; var s = 0; while (__acc >= 120) { __acc -= 120; s++ } while (__acc <= -120) { __acc += 120; s-- } if (s !== 0) { ${ctlId}.value = Math.max(${ctlId}.from, Math.min(${ctlId}.to, ${ctlId}.value + s * ${ctlId}.stepSize)); ${ctlId}.moved() } }`,
-    `${i(2)}}`,
+    `${i(1)}from: ${min}`,
+    `${i(1)}to: ${max}`,
+    `${i(1)}stepSize: ${step}`,
   ];
 
-  if (disabled) lines.push(`${i(2)}enabled: false`);
-  if (onMovedBody) lines.push(`${i(2)}onMoved: { ${onMovedBody} }`);
-
-  lines.push(`${i(1)}}`);
+  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (onMovedBody) lines.push(`${i(1)}onMoved: { ${onMovedBody} }`);
 
   if (valueExpr !== null) {
     lines.push(

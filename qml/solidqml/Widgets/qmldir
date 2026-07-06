@@ -18,6 +18,7 @@ PageIndicator 1.0 PageIndicator.qml
 Progress 1.0 Progress.qml
 RangeSlider 1.0 RangeSlider.qml
 RoundButton 1.0 RoundButton.qml
+Slider 1.0 Slider.qml
 SplitHandle 1.0 SplitHandle.qml
 SplitView 1.0 SplitView.qml
 StackView 1.0 StackView.qml
