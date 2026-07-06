@@ -44,6 +44,15 @@ Item {
         height: Math.max(1, root.implicitHeight)
         onClosing: wrap.dialogClosed()
 
+        // Esc cancels the dialog (desktop-essential for keyboard-only use, study §6). A QtQuick
+        // Window does not close on Escape by default, so drive it explicitly: fire dialogClosed →
+        // the author's onClose sets `open` false → the Binding hides the window.
+        Shortcut {
+            sequences: ["Escape"]
+            enabled: dlg.visible
+            onActivated: wrap.dialogClosed()
+        }
+
         Css.CssRect {
             id: root
             anchors.fill: parent
