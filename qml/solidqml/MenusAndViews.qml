@@ -5,7 +5,7 @@ import qmlcss 1.0 as Css
 
 import solidqml.Widgets 1.0 as W
 
-import QtQuick.Templates 6.8 as T
+import QtQuick.Templates 6.0 as T
 W.Div {
     id: __self
     property var lastAction: "none yet"
@@ -32,99 +32,22 @@ W.Div {
                 onClicked: { if (__menu0.visible) __menu0.close(); else if (Date.now() - __menu0.__closedAt > 250) __menu0.open() }
                 text: "Actions ▾"
             }
-            T.Menu {
+            W.Menu {
                 id: __menu0
-                property double __closedAt: 0
+                cssAncestor: __menuHost0
                 y: __menuHost0.height + 2
-                popupType: T.Popup.Item
-                implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
-                implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-                padding: 1
-                onClosed: { __closedAt = Date.now(); }
-                background: Css.CssFill {
-                    property Item cssAncestor: __menuHost0
-                    cssPrimitive: "div"
-                    cssClass: ["popup"]
-                }
-                contentItem: ListView {
-                    property Item cssAncestor: __menuHost0
-                    clip: true
-                    model: __menu0.contentModel
-                    currentIndex: __menu0.currentIndex
-                    implicitHeight: contentHeight
-                }
-                T.MenuItem {
-                    id: __mitem1
-                    hoverEnabled: true
-                    implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
-                    implicitHeight: 32
-                    leftPadding: 12
-                    rightPadding: 12
+                W.MenuItem {
                     text: "&New file"
                     onTriggered: { lastAction = "new file" }
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    background: Css.CssFill {
-                        cssPrimitive: "div"
-                        cssClass: ["option"]
-                        cssState: __mitem1.highlighted ? ["hover"] : []
-                    }
-                    contentItem: Css.CssText {
-                        cssPrimitive: ""
-                        cssClass: ["option-label"]
-                        text: __mitem1.text.replace(/&(.)/g, "$1")
-                    }
                 }
-                T.MenuItem {
-                    id: __mitem2
-                    hoverEnabled: true
-                    implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
-                    implicitHeight: 32
-                    leftPadding: 12
-                    rightPadding: 12
+                W.MenuItem {
                     text: "&Duplicate"
                     onTriggered: { lastAction = "duplicate" }
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    background: Css.CssFill {
-                        cssPrimitive: "div"
-                        cssClass: ["option"]
-                        cssState: __mitem2.highlighted ? ["hover"] : []
-                    }
-                    contentItem: Css.CssText {
-                        cssPrimitive: ""
-                        cssClass: ["option-label"]
-                        text: __mitem2.text.replace(/&(.)/g, "$1")
-                    }
                 }
-                T.MenuSeparator {
-                    implicitWidth: 180
-                    implicitHeight: 9
-                    padding: 4
-                    contentItem: Css.CssRect {
-                        cssPrimitive: "div"
-                        cssClass: ["sep"]
-                        implicitHeight: 1
-                    }
-                }
-                T.MenuItem {
-                    id: __mitem3
-                    hoverEnabled: true
-                    implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
-                    implicitHeight: 32
-                    leftPadding: 12
-                    rightPadding: 12
+                W.MenuSeparator { }
+                W.MenuItem {
                     text: "&Delete"
                     onTriggered: { lastAction = "delete" }
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    background: Css.CssFill {
-                        cssPrimitive: "div"
-                        cssClass: ["option"]
-                        cssState: __mitem3.highlighted ? ["hover"] : []
-                    }
-                    contentItem: Css.CssText {
-                        cssPrimitive: ""
-                        cssClass: ["option-label"]
-                        text: __mitem3.text.replace(/&(.)/g, "$1")
-                    }
                 }
             }
         }
@@ -142,23 +65,23 @@ W.Div {
         Css.CssFill {
             cssClass: ["nv-menubar"]
             cssPrimitive: "div"
-            implicitWidth: __mbar4.implicitWidth
-            implicitHeight: __mbar4.implicitHeight
+            implicitWidth: __mbar1.implicitWidth
+            implicitHeight: __mbar1.implicitHeight
             T.MenuBar {
-                id: __mbar4
+                id: __mbar1
                 anchors.fill: parent
                 implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
                 implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
                 contentItem: Row {
-                    spacing: __mbar4.spacing
-                    Repeater { model: __mbar4.contentModel }
+                    spacing: __mbar1.spacing
+                    Repeater { model: __mbar1.contentModel }
                 }
                 background: Css.CssFill {
                     cssPrimitive: "div"
                     cssClass: ["menubar"]
                 }
                 T.MenuBarItem {
-                    id: __mbi5
+                    id: __mbi2
                     hoverEnabled: true
                     implicitWidth: implicitContentWidth + leftPadding + rightPadding
                     implicitHeight: implicitContentHeight + topPadding + bottomPadding
@@ -166,113 +89,38 @@ W.Div {
                     rightPadding: 12
                     topPadding: 6
                     bottomPadding: 6
-                    Window.onActiveChanged: if (!Window.active && __mbi5.menu) __mbi5.menu.close()
-                    menu: T.Menu {
-                        id: __menu6
+                    Window.onActiveChanged: if (!Window.active && __mbi2.menu) __mbi2.menu.close()
+                    menu: W.Menu {
+                        id: __menu3
+                        cssAncestor: __mbi2
                         title: "File"
-                        popupType: T.Popup.Item
-                        implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
-                        implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-                        padding: 1
-                        background: Css.CssFill {
-                            property Item cssAncestor: __mbi5
-                            cssPrimitive: "div"
-                            cssClass: ["popup"]
-                        }
-                        contentItem: ListView {
-                            property Item cssAncestor: __mbi5
-                            clip: true
-                            model: __menu6.contentModel
-                            currentIndex: __menu6.currentIndex
-                            implicitHeight: contentHeight
-                        }
-                        T.MenuItem {
-                            id: __mitem7
-                            hoverEnabled: true
-                            implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
-                            implicitHeight: 32
-                            leftPadding: 12
-                            rightPadding: 12
+                        W.MenuItem {
                             text: "Open…"
                             onTriggered: { lastAction = "open…" }
-                            HoverHandler { cursorShape: Qt.PointingHandCursor }
-                            background: Css.CssFill {
-                                cssPrimitive: "div"
-                                cssClass: ["option"]
-                                cssState: __mitem7.highlighted ? ["hover"] : []
-                            }
-                            contentItem: Css.CssText {
-                                cssPrimitive: ""
-                                cssClass: ["option-label"]
-                                text: __mitem7.text.replace(/&(.)/g, "$1")
-                            }
                         }
-                        T.MenuItem {
-                            id: __mitem8
-                            hoverEnabled: true
-                            implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
-                            implicitHeight: 32
-                            leftPadding: 12
-                            rightPadding: 12
+                        W.MenuItem {
                             text: "Save"
                             onTriggered: { lastAction = "save" }
-                            HoverHandler { cursorShape: Qt.PointingHandCursor }
-                            background: Css.CssFill {
-                                cssPrimitive: "div"
-                                cssClass: ["option"]
-                                cssState: __mitem8.highlighted ? ["hover"] : []
-                            }
-                            contentItem: Css.CssText {
-                                cssPrimitive: ""
-                                cssClass: ["option-label"]
-                                text: __mitem8.text.replace(/&(.)/g, "$1")
-                            }
                         }
-                        T.MenuSeparator {
-                            implicitWidth: 180
-                            implicitHeight: 9
-                            padding: 4
-                            contentItem: Css.CssRect {
-                                cssPrimitive: "div"
-                                cssClass: ["sep"]
-                                implicitHeight: 1
-                            }
-                        }
-                        T.MenuItem {
-                            id: __mitem9
-                            hoverEnabled: true
-                            implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
-                            implicitHeight: 32
-                            leftPadding: 12
-                            rightPadding: 12
+                        W.MenuSeparator { }
+                        W.MenuItem {
                             text: "Quit"
                             onTriggered: { lastAction = "quit" }
-                            HoverHandler { cursorShape: Qt.PointingHandCursor }
-                            background: Css.CssFill {
-                                cssPrimitive: "div"
-                                cssClass: ["option"]
-                                cssState: __mitem9.highlighted ? ["hover"] : []
-                            }
-                            contentItem: Css.CssText {
-                                cssPrimitive: ""
-                                cssClass: ["option-label"]
-                                text: __mitem9.text.replace(/&(.)/g, "$1")
-                            }
                         }
                     }
                     background: Css.CssFill {
                         cssPrimitive: "div"
                         cssClass: ["menubar-item"]
-                        cssState: (__mbi5.hovered ? ["hover"] : []).concat(__mbi5.highlighted ? ["open"] : [])
+                        cssState: (__mbi2.hovered ? ["hover"] : []).concat(__mbi2.highlighted ? ["open"] : [])
                     }
                     contentItem: Css.CssText {
                         cssPrimitive: ""
                         cssClass: ["menubar-label"]
-                        text: __mbi5.menu ? __mbi5.menu.title : ""
+                        text: __mbi2.menu ? __mbi2.menu.title : ""
                     }
                 }
                 T.MenuBarItem {
-                    id: __mbi10
+                    id: __mbi4
                     hoverEnabled: true
                     implicitWidth: implicitContentWidth + leftPadding + rightPadding
                     implicitHeight: implicitContentHeight + topPadding + bottomPadding
@@ -280,78 +128,29 @@ W.Div {
                     rightPadding: 12
                     topPadding: 6
                     bottomPadding: 6
-                    Window.onActiveChanged: if (!Window.active && __mbi10.menu) __mbi10.menu.close()
-                    menu: T.Menu {
-                        id: __menu11
+                    Window.onActiveChanged: if (!Window.active && __mbi4.menu) __mbi4.menu.close()
+                    menu: W.Menu {
+                        id: __menu5
+                        cssAncestor: __mbi4
                         title: "Edit"
-                        popupType: T.Popup.Item
-                        implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
-                        implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-                        padding: 1
-                        background: Css.CssFill {
-                            property Item cssAncestor: __mbi10
-                            cssPrimitive: "div"
-                            cssClass: ["popup"]
-                        }
-                        contentItem: ListView {
-                            property Item cssAncestor: __mbi10
-                            clip: true
-                            model: __menu11.contentModel
-                            currentIndex: __menu11.currentIndex
-                            implicitHeight: contentHeight
-                        }
-                        T.MenuItem {
-                            id: __mitem12
-                            hoverEnabled: true
-                            implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
-                            implicitHeight: 32
-                            leftPadding: 12
-                            rightPadding: 12
+                        W.MenuItem {
                             text: "Copy"
                             onTriggered: { lastAction = "copy" }
-                            HoverHandler { cursorShape: Qt.PointingHandCursor }
-                            background: Css.CssFill {
-                                cssPrimitive: "div"
-                                cssClass: ["option"]
-                                cssState: __mitem12.highlighted ? ["hover"] : []
-                            }
-                            contentItem: Css.CssText {
-                                cssPrimitive: ""
-                                cssClass: ["option-label"]
-                                text: __mitem12.text.replace(/&(.)/g, "$1")
-                            }
                         }
-                        T.MenuItem {
-                            id: __mitem13
-                            hoverEnabled: true
-                            implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
-                            implicitHeight: 32
-                            leftPadding: 12
-                            rightPadding: 12
+                        W.MenuItem {
                             text: "Paste"
                             onTriggered: { lastAction = "paste" }
-                            HoverHandler { cursorShape: Qt.PointingHandCursor }
-                            background: Css.CssFill {
-                                cssPrimitive: "div"
-                                cssClass: ["option"]
-                                cssState: __mitem13.highlighted ? ["hover"] : []
-                            }
-                            contentItem: Css.CssText {
-                                cssPrimitive: ""
-                                cssClass: ["option-label"]
-                                text: __mitem13.text.replace(/&(.)/g, "$1")
-                            }
                         }
                     }
                     background: Css.CssFill {
                         cssPrimitive: "div"
                         cssClass: ["menubar-item"]
-                        cssState: (__mbi10.hovered ? ["hover"] : []).concat(__mbi10.highlighted ? ["open"] : [])
+                        cssState: (__mbi4.hovered ? ["hover"] : []).concat(__mbi4.highlighted ? ["open"] : [])
                     }
                     contentItem: Css.CssText {
                         cssPrimitive: ""
                         cssClass: ["menubar-label"]
-                        text: __mbi10.menu ? __mbi10.menu.title : ""
+                        text: __mbi4.menu ? __mbi4.menu.title : ""
                     }
                 }
             }

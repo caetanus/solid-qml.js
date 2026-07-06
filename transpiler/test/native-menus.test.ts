@@ -66,12 +66,15 @@ const MENU_SRC = `
 // <Menu> — structure, controlled open, popup canon
 // ---------------------------------------------------------------------------
 
-test("menus: <Menu> emits T.Menu inside a zero-size Item host", async () => {
+test("menus: <Menu> instantiates W.Menu inside a zero-size Item host", async () => {
   const out = await qml(MENU_SRC);
   assert.match(out, /Item \{/);
   assert.match(out, /id: __menuHost0/);
-  assert.match(out, /T\.Menu \{/);
+  assert.match(out, /W\.Menu \{/);
   assert.match(out, /id: __menu0/);
+  // The T.Menu shell now lives in Menu.qml, not the emit.
+  assert.doesNotMatch(out, /T\.Menu \{/);
+  assert.doesNotMatch(out, /popupType/);
 });
 
 test("menus: <Menu x/y> map to popup x/y", async () => {
@@ -89,42 +92,19 @@ test("menus: open={sig()} becomes a visible Binding with RestoreNone (emitInput 
   assert.match(out, /restoreMode: Binding\.RestoreNone/);
 });
 
-test("menus: onClose wires onClosed (setter lowered to signal assignment)", async () => {
+test("menus: onClose wires the component's menuClosed signal", async () => {
   const out = await qml(MENU_SRC);
-  assert.match(out, /onClosed: \{ open = false \}/);
+  assert.match(out, /onMenuClosed: \{ open = false \}/);
 });
 
-test("menus: popup implicit sizes are set (Templates popups open 0x0 without them)", async () => {
+test("menus: <Menu> re-anchors the CSS walk at the host via cssAncestor", async () => {
   const out = await qml(MENU_SRC);
-  // Width floor on the POPUP itself — a background CssFill's implicitWidth is clobbered by
-  // the CSS engine's content pass, so implicitBackgroundWidth reads 0 under our engine.
-  assert.match(out, /implicitWidth: Math\.max\(180, implicitContentWidth \+ leftPadding \+ rightPadding\)/);
-  assert.match(out, /implicitHeight: Math\.max\(implicitBackgroundHeight \+ topInset \+ bottomInset, implicitContentHeight \+ topPadding \+ bottomPadding\)/);
+  assert.match(out, /cssAncestor: __menuHost0/);
 });
 
-test("menus: popupType is an in-scene item popup (Wayland-correct positioning)", async () => {
-  const out = await qml(MENU_SRC);
-  assert.match(out, /popupType: T\.Popup\.Item/);
-});
-
-test("menus: cssAncestor re-anchor on BOTH background and contentItem", async () => {
-  const out = await qml(MENU_SRC);
-  const anchors = out.match(/property Item cssAncestor: __menuHost0/g) ?? [];
-  assert.equal(anchors.length, 2, "background AND contentItem must re-anchor the CSS walk");
-});
-
-test("menus: background is a .popup CssFill and contentItem a ListView over contentModel", async () => {
-  const out = await qml(MENU_SRC);
-  assert.match(out, /background: Css\.CssFill \{/);
-  assert.match(out, /cssClass: \["demo"\]/); // wrapper div class
-  assert.match(out, /cssClass: \["popup"\]/);
-  assert.match(out, /contentItem: ListView \{/);
-  assert.match(out, /model: __menu0\.contentModel/);
-});
-
-test("menus: author class on <Menu> merges into the popup background cssClass", async () => {
+test("menus: author class on <Menu> passes through as authorClass (component merges 'popup')", async () => {
   const out = await qml(`export function F(){ return <Menu class="ctx" open={false}><MenuItem>A</MenuItem></Menu>; }`);
-  assert.match(out, /cssClass: \["ctx", "popup"\]/);
+  assert.match(out, /authorClass: \["ctx"\]/);
 });
 
 test("menus: window deactivation closes the native popup (Qt::Popup semantics)", async () => {
@@ -132,31 +112,47 @@ test("menus: window deactivation closes the native popup (Qt::Popup semantics)",
   assert.match(out, /Window\.onActiveChanged: if \(!Window\.active\) __menu0\.close\(\)/);
 });
 
+test("menus: Menu.qml hosts the T.Menu popup shell (implicit size, Popup.Item, cssAncestor slots)", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Menu.qml", import.meta.url)), "utf8");
+  assert.match(src, /T\.Menu \{/);
+  assert.match(src, /popupType: T\.Popup\.Item/);
+  // Width floor on the POPUP itself — a background CssFill's implicitWidth is clobbered by the engine.
+  assert.match(src, /implicitWidth: Math\.max\(180, implicitContentWidth \+ leftPadding \+ rightPadding\)/);
+  assert.match(src, /implicitHeight: Math\.max\(implicitBackgroundHeight \+ topInset \+ bottomInset, implicitContentHeight \+ topPadding \+ bottomPadding\)/);
+  assert.match(src, /padding: 1/);
+  // background .popup CssFill (author class merged) + contentItem ListView over contentModel; BOTH
+  // re-anchor the CSS walk (sibling slots covering every descendant).
+  assert.match(src, /cssClass: ctl\.authorClass\.concat\(\["popup"\]\)/);
+  assert.match(src, /model: ctl\.contentModel/);
+  assert.equal((src.match(/property Item cssAncestor: ctl\.cssAncestor/g) ?? []).length, 2);
+});
+
 // ---------------------------------------------------------------------------
 // <MenuItem> / <MenuSeparator> inside <Menu>
 // ---------------------------------------------------------------------------
 
-test("menus: each <MenuItem> emits T.MenuItem with onTriggered from onClick", async () => {
+test("menus: each <MenuItem> emits W.MenuItem with onTriggered from onClick", async () => {
   const out = await qml(MENU_SRC);
-  const items = out.match(/T\.MenuItem \{/g) ?? [];
+  const items = out.match(/W\.MenuItem \{/g) ?? [];
   assert.equal(items.length, 3);
+  assert.match(out, /text: "New"/);
   assert.match(out, /onTriggered: \{ last = "new" \}/);
   assert.match(out, /onTriggered: \{ last = "quit" \}/);
+  // The .option/.option-label slots + cursor now live in MenuItem.qml, not the emit.
+  assert.doesNotMatch(out, /T\.MenuItem/);
+  assert.doesNotMatch(out, /option-label/);
 });
 
-test("menus: MenuItem slots — .option background with highlighted→hover, .option-label text", async () => {
-  const out = await qml(MENU_SRC);
-  assert.match(out, /cssClass: \["option"\]/);
-  assert.match(out, /cssState: __mitem1\.highlighted \? \["hover"\] : \[\]/);
-  assert.match(out, /cssClass: \["option-label"\]/);
-  assert.match(out, /text: "New"/);
+test("menus: MenuItem.qml hosts the .option slots, cursor and mnemonic strip", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/MenuItem.qml", import.meta.url)), "utf8");
+  assert.match(src, /T\.MenuItem \{/);
+  assert.match(src, /cssClass: \["option"\]/);
+  assert.match(src, /cssState: ctl\.highlighted \? \["hover"\] : \[\]/);
+  assert.match(src, /cssClass: \["option-label"\]/);
   // Label strips the mnemonic marker (`&N` → N) for display.
-  assert.match(out, /text: __mitem1\.text\.replace\(\/&\(\.\)\/g, "\$1"\)/);
-});
-
-test("menus: MenuItem shows a pointing-hand cursor (desktop affordance)", async () => {
-  const out = await qml(MENU_SRC);
-  assert.match(out, /HoverHandler \{ cursorShape: Qt\.PointingHandCursor \}/);
+  assert.match(src, /text: ctl\.text\.replace\(\/&\(\.\)\/g, "\$1"\)/);
+  // Pointing-hand cursor (desktop affordance).
+  assert.match(src, /HoverHandler \{ cursorShape: Qt\.PointingHandCursor \}/);
 });
 
 // ---------------------------------------------------------------------------
@@ -177,11 +173,17 @@ const TRIGGER_SRC = `
 
 test("menus: <Menu trigger> toggles itself with a __closedAt debounce, no external Binding", async () => {
   const out = await qml(TRIGGER_SRC);
-  assert.match(out, /property double __closedAt: 0/);
+  // The toggle (reading the component's __closedAt) stays in the emit's trigger button.
   assert.match(out, /onClicked: \{ if \(__menu0\.visible\) __menu0\.close\(\); else if \(Date\.now\(\) - __menu0\.__closedAt > 250\) __menu0\.open\(\) \}/);
-  assert.match(out, /onClosed: \{ __closedAt = Date\.now\(\);/);
-  // Self-managed: no controlled-open Binding element.
+  // Self-managed: no controlled-open Binding element, and no author onClose signal.
   assert.doesNotMatch(out, /property: "visible"/);
+  assert.doesNotMatch(out, /onMenuClosed/);
+});
+
+test("menus: Menu.qml records __closedAt on close (debounce store) alongside menuClosed", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Menu.qml", import.meta.url)), "utf8");
+  assert.match(src, /property double __closedAt: 0/);
+  assert.match(src, /onClosed: \{ __closedAt = Date\.now\(\); menuClosed\(\) \}/);
 });
 
 test("menus: <Menu trigger> emits the trigger and sizes the host to it", async () => {
@@ -198,12 +200,15 @@ test("menus: <Menu trigger> that isn't a button throws a clear error", async () 
   );
 });
 
-test("menus: <MenuSeparator> emits T.MenuSeparator with a 1px .sep CssRect", async () => {
+test("menus: <MenuSeparator> emits a bare W.MenuSeparator (internals in MenuSeparator.qml)", async () => {
   const out = await qml(MENU_SRC);
-  assert.match(out, /T\.MenuSeparator \{/);
-  assert.match(out, /contentItem: Css\.CssRect \{/);
-  assert.match(out, /cssClass: \["sep"\]/);
-  assert.match(out, /implicitHeight: 1/);
+  assert.match(out, /W\.MenuSeparator \{ \}/);
+  assert.doesNotMatch(out, /T\.MenuSeparator/);
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/MenuSeparator.qml", import.meta.url)), "utf8");
+  assert.match(src, /T\.MenuSeparator \{/);
+  assert.match(src, /contentItem: Css\.CssRect \{/);
+  assert.match(src, /cssClass: \["sep"\]/);
+  assert.match(src, /implicitHeight: 1/);
 });
 
 test("menus: a non-item child of <Menu> throws a clear error", async () => {
@@ -220,9 +225,11 @@ test("menus: a stray top-level <MenuItem> throws", async () => {
   );
 });
 
-test("menus: qmlType pins QtQuick.Templates 6.8 (native-window popup)", async () => {
+test("menus: qmlType imports solidqml.Widgets (the T.Menu shell now lives in Menu.qml)", async () => {
   const out = await qmlType(MENU_SRC);
-  assert.match(out, /import QtQuick\.Templates 6\.8 as T/);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
+  // The generated component no longer emits T.* directly, so no Templates import is needed.
+  assert.doesNotMatch(out, /import QtQuick\.Templates/);
 });
 
 // ---------------------------------------------------------------------------
@@ -262,11 +269,11 @@ test("menubar: contentItem is a Row Repeater over contentModel (Basic-style)", a
   assert.match(out, /Repeater \{ model: __mbar0\.contentModel \}/);
 });
 
-test("menubar: each <Menu title> becomes a T.MenuBarItem with an attached submenu", async () => {
+test("menubar: each <Menu title> becomes a T.MenuBarItem with a W.Menu submenu", async () => {
   const out = await qml(MENUBAR_SRC);
   const items = out.match(/T\.MenuBarItem \{/g) ?? [];
   assert.equal(items.length, 2);
-  assert.match(out, /menu: T\.Menu \{/);
+  assert.match(out, /menu: W\.Menu \{/);
   assert.match(out, /title: "File"/);
   assert.match(out, /title: "Edit"/);
 });
@@ -281,9 +288,10 @@ test("menubar: item slots — .menubar-item background with hover/open, .menubar
 
 test("menubar: submenu popups re-anchor CSS at their MenuBarItem", async () => {
   const out = await qml(MENUBAR_SRC);
-  // Counter walk: bar=0, File item=1, File menu=2, its 2 items=3/4, Edit item=5, Edit menu=6.
-  assert.match(out, /property Item cssAncestor: __mbi1/);
-  assert.match(out, /property Item cssAncestor: __mbi5/);
+  // Counter walk (items no longer consume the counter): bar=0, File item=1, File menu=2,
+  // Edit item=3, Edit menu=4. Each submenu's W.Menu re-anchors at its MenuBarItem.
+  assert.match(out, /cssAncestor: __mbi1/);
+  assert.match(out, /cssAncestor: __mbi3/);
 });
 
 test("menubar: submenu items wire onTriggered", async () => {

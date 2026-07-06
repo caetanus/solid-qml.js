@@ -8,6 +8,9 @@ Details 1.0 Details.qml
 Div 1.0 Div.qml
 Fieldset 1.0 Fieldset.qml
 Image 1.0 Image.qml
+Menu 1.0 Menu.qml
+MenuItem 1.0 MenuItem.qml
+MenuSeparator 1.0 MenuSeparator.qml
 PageIndicator 1.0 PageIndicator.qml
 Progress 1.0 Progress.qml
 RangeSlider 1.0 RangeSlider.qml

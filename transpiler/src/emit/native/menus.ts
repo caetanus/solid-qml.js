@@ -129,9 +129,15 @@ function parseMenuChildren(children: t.Node[], scope: Scope, owner: string): Men
   return out;
 }
 
-/** Emit the T.Menu object lines (opening at `level`). `anchorId` is the Item the CSS ancestor
- *  walk re-anchors at (and whose classes scope `.popup`/`.option` rules); extra classes from the
- *  author's `class` prop are merged into the popup background's cssClass. */
+/** Emit the W.Menu instance lines (opening at `level`). One .qml per component (owner directive
+ *  2026-07-05): the T.Menu shell (popupType/implicit-size/padding/cssAncestor slots/background/
+ *  contentItem/__closedAt) lives in Menu.qml; each item is a W.MenuItem / W.MenuSeparator (their own
+ *  components). This emit only wires the instance: the CSS anchor (`cssAncestor`), the author's
+ *  merge-classes (`authorClass`, concatenated with "popup" inside the component), an optional
+ *  MenuBar-submenu `title`, positioning `x`/`y`, the author's onClose (via the component's
+ *  `menuClosed` signal — the internal onClosed is taken by the __closedAt debounce record), and the
+ *  item children. `anchorId` is the host Item the CSS walk re-anchors at (popup contents reparent to
+ *  the Overlay, severing the visual chain). */
 function menuObjectLines(opts: {
   menuId: string;
   anchorId: string;
@@ -141,104 +147,31 @@ function menuObjectLines(opts: {
   xExpr?: string;
   yExpr?: string;
   onCloseBody?: string;
-  debounce?: boolean;   // record __closedAt on close so a trigger can swallow the dismissing click
 }, scope: Scope, level: number): string[] {
   const i = (n: number) => INDENT.repeat(level + n);
   const { menuId, anchorId, items, classes } = opts;
-  // A close-then-open race (clicking the trigger while open: press-outside closes, click reopens)
-  // is suppressed by recording when the menu last closed; the trigger ignores an open() within the
-  // debounce window (QToolButton+QMenu idiom). Fold any author onClose in alongside the timestamp.
-  const closedBody = opts.debounce
-    ? `__closedAt = Date.now();${opts.onCloseBody ? ` ${opts.onCloseBody}` : ""}`
-    : opts.onCloseBody;
-  const counter = scope.inputCounter ?? { n: 0 };
-  if (scope.usedWidgets) { scope.usedWidgets.flag = true; scope.usedWidgets.popupWindow = true; }
+  markWidgetLib(scope);
 
-  const popupClass = [...classes, "popup"].map((c) => JSON.stringify(c)).join(", ");
+  const authorClass = classes.map((c) => JSON.stringify(c)).join(", ");
 
   const lines: string[] = [
-    `${i(0)}T.Menu {`,
+    `${i(0)}W.Menu {`,
     `${i(1)}id: ${menuId}`,
-    ...(opts.debounce ? [`${i(1)}property double __closedAt: 0`] : []),
+    `${i(1)}cssAncestor: ${anchorId}`,
+    ...(classes.length ? [`${i(1)}authorClass: [${authorClass}]`] : []),
     ...(opts.title ? [`${i(1)}title: ${opts.title}`] : []),
     ...(opts.xExpr ? [`${i(1)}x: ${opts.xExpr}`] : []),
     ...(opts.yExpr ? [`${i(1)}y: ${opts.yExpr}`] : []),
-    // In-scene overlay popup (NOT Popup.Window): Wayland compositors don't honor client toplevel
-    // positioning, so a window-type menu opens at the top of the screen once the app floats. An
-    // Item popup opens relative to its host in the scene (same fix as <select>/<input type=date>).
-    `${i(1)}popupType: T.Popup.Item`,
-    // Templates popups have NO implicit-size policy — this is the style's sizing formula:
-    // without it the menu opens 0x0. The width floor lives HERE, not on the background:
-    // a background CssFill's implicitWidth is overwritten by the CSS engine's content pass
-    // (it hosts no Css layout children → measures 0), so Basic's implicitBackgroundWidth
-    // trick reads 0 under our engine (probed: the menu opened 2px wide).
-    `${i(1)}implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)`,
-    `${i(1)}implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)`,
-    // padding ≥ border-width prevents the popup CssFill border from clipping rows (G3).
-    `${i(1)}padding: 1`,
-    ...(closedBody ? [`${i(1)}onClosed: { ${closedBody} }`] : []),
-    // cssAncestor: popup contents reparent to the window Overlay — re-anchor the CSS walk.
-    // background and contentItem are SIBLING slots; every menu descendant passes through one.
-    `${i(1)}background: Css.CssFill {`,
-    `${i(2)}property Item cssAncestor: ${anchorId}`,
-    `${i(2)}cssPrimitive: "div"`,
-    `${i(2)}cssClass: [${popupClass}]`,
-    `${i(1)}}`,
-    `${i(1)}contentItem: ListView {`,
-    `${i(2)}property Item cssAncestor: ${anchorId}`,
-    `${i(2)}clip: true`,
-    `${i(2)}model: ${menuId}.contentModel`,
-    `${i(2)}currentIndex: ${menuId}.currentIndex`,
-    `${i(2)}implicitHeight: contentHeight`,
-    `${i(1)}}`,
+    ...(opts.onCloseBody ? [`${i(1)}onMenuClosed: { ${opts.onCloseBody} }`] : []),
   ];
 
   for (const child of items) {
-    if (child.kind === "separator") {
-      lines.push(
-        `${i(1)}T.MenuSeparator {`,
-        `${i(2)}implicitWidth: 180`,
-        `${i(2)}implicitHeight: 9`,
-        `${i(2)}padding: 4`,
-        `${i(2)}contentItem: Css.CssRect {`,
-        `${i(3)}cssPrimitive: "div"`,
-        `${i(3)}cssClass: ["sep"]`,
-        `${i(3)}implicitHeight: 1`,
-        `${i(2)}}`,
-        `${i(1)}}`,
-      );
-      continue;
-    }
-    const itemId = `__mitem${counter.n++}`;
+    if (child.kind === "separator") { lines.push(`${i(1)}W.MenuSeparator { }`); continue; }
     const clickBody = child.onClick ? handlerBody(child.onClick, scope) : "";
     lines.push(
-      `${i(1)}T.MenuItem {`,
-      `${i(2)}id: ${itemId}`,
-      // The menu highlights the hovered/keyboard-current row via `highlighted`; hoverEnabled
-      // makes mouse rows current (Controls styles rely on the same).
-      `${i(2)}hoverEnabled: true`,
-      `${i(2)}implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)`,
-      `${i(2)}implicitHeight: 32`,
-      `${i(2)}leftPadding: 12`,
-      `${i(2)}rightPadding: 12`,
+      `${i(1)}W.MenuItem {`,
       `${i(2)}text: ${child.labelBinding ?? '""'}`,
       ...(clickBody ? [`${i(2)}onTriggered: { ${clickBody} }`] : []),
-      // Desktop affordance: a pointing-hand cursor over the row (HoverHandler doesn't steal the
-      // press, so highlight/activation still work through it).
-      `${i(2)}HoverHandler { cursorShape: Qt.PointingHandCursor }`,
-      `${i(2)}background: Css.CssFill {`,
-      `${i(3)}cssPrimitive: "div"`,
-      `${i(3)}cssClass: ["option"]`,
-      `${i(3)}cssState: ${itemId}.highlighted ? ["hover"] : []`,
-      `${i(2)}}`,
-      `${i(2)}contentItem: Css.CssText {`,
-      `${i(3)}cssPrimitive: ""`,
-      `${i(3)}cssClass: ["option-label"]`,
-      // Mnemonic marker: `&N` underlines/accelerates N on desktop — strip the `&` for display
-      // (a literal ampersand is written `&&`). Functional Alt+letter activation is the keyboard
-      // model pass (see the tab-focus study).
-      `${i(3)}text: ${itemId}.text.replace(/&(.)/g, "$1")`,
-      `${i(2)}}`,
       `${i(1)}}`,
     );
   }
@@ -263,6 +196,7 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
   const hostId = `__menuHost${n}`;
   const menuId = `__menu${n}`;
 
+  markWidgetLib(scope);
   const props = propsOf(propsArg);
   const binding = (e: t.Expression) => emitExpr(e, { ...scope, mode: "binding" });
   const openProp = props.get("open");
@@ -307,7 +241,6 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
         menuId, anchorId: hostId, items, classes: classesOf(props),
         yExpr: `${hostId}.height + 2`,
         onCloseBody: onClose ? handlerBody(onClose, scope) : undefined,
-        debounce: true,
       }, scope, level + 1),
       `${pad}}`,
     ];
