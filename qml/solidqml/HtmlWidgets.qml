@@ -48,9 +48,8 @@ Css.CssRect {
             cssClass: ["hw-progress"]
         }
     }
-    Css.CssFill {
+    W.Fieldset {
         cssClass: ["hw-fieldset"]
-        cssPrimitive: "fieldset"
         Css.CssText {
             cssClass: ["legend"]
             cssPrimitive: "legend"

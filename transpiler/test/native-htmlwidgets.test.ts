@@ -104,11 +104,21 @@ test("progress: Progress.qml component exists with the T.ProgressBar + bar inter
 // <fieldset> / <legend>
 // ---------------------------------------------------------------------------
 
-test("fieldset: wrapper CssFill with cssPrimitive 'fieldset' renders children", async () => {
+test("fieldset: <fieldset> instantiates the W.Fieldset component and renders children", async () => {
   const out = await qml(`export function F(){ return <fieldset class="fs"><text class="a">hi</text></fieldset>; }`);
-  assert.match(out, /cssPrimitive: "fieldset"/);
+  assert.match(out, /W\.Fieldset \{/);
+  // The cssPrimitive "fieldset" wrapper now lives in Fieldset.qml, not the emit.
+  assert.doesNotMatch(out, /cssPrimitive: "fieldset"/);
   assert.match(out, /cssClass: \["fs"\]/);
   assert.match(out, /cssClass: \["a"\]/);
+});
+
+test("fieldset: Fieldset.qml component exists as a CssFill fieldset box", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { fileURLToPath } = await import("node:url");
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Fieldset.qml", import.meta.url)), "utf8");
+  assert.match(src, /Css\.CssFill \{/);
+  assert.match(src, /cssPrimitive: "fieldset"/);
 });
 
 test("fieldset: <legend> becomes a CssText (cssPrimitive 'legend', cssClass ['legend'])", async () => {
@@ -137,6 +147,11 @@ test("legend: element children throw a clear transpiler error", async () => {
     qml(`export function F(){ return <fieldset><legend><span>no</span></legend></fieldset>; }`),
     /legend.*text content only/,
   );
+});
+
+test("fieldset: emitting the widget imports the solidqml.Widgets module", async () => {
+  const out = await qmlType(`export function F(){ return <fieldset><legend>L</legend></fieldset>; }`);
+  assert.match(out, /import solidqml\.Widgets .* as W/);
 });
 
 // ---------------------------------------------------------------------------

@@ -172,15 +172,17 @@ function emitLegend(propsArg: t.Node | undefined, children: t.Node[], scope: Sco
   ];
 }
 
-/** <fieldset><legend>…</legend>children</fieldset> → wrapper Css.CssFill (cssPrimitive "fieldset").
- *  No Templates control (T.GroupBox is chrome we would null anyway) — the wrapper renders the
- *  children normally, except the FIRST <legend> child is spliced to the front so it paints first
- *  (as the registered legend CssText). The border/box look is entirely author CSS. */
+/** <fieldset><legend>…</legend>children</fieldset> → W.Fieldset (a CssFill box, cssPrimitive
+ *  "fieldset"). One .qml per component: the wrapper lives in Fieldset.qml; the emit only reorders
+ *  children (the FIRST <legend> is spliced to the front so it paints first, as the registered
+ *  legend CssText) and passes them into the component's default `data`. The border/box look is
+ *  entirely author CSS. */
 function emitFieldset(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard: string | undefined): string[] {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const props = readBaseProps(propsArg);
   const classLine = buildCssClassLine(props, scope, i(1));
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
   // Splice the first <legend> child to the front; everything else keeps document order.
   const legendIdx = children.findIndex((c) => hTag(c) === "legend");
@@ -189,10 +191,9 @@ function emitFieldset(propsArg: t.Node | undefined, children: t.Node[], scope: S
     : children;
 
   return [
-    `${pad}Css.CssFill {`,
+    `${pad}W.Fieldset {`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "fieldset"`,
     ...emitChildren(ordered, scope, level + 1),
     `${pad}}`,
   ];
