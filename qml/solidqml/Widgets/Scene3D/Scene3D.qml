@@ -1,29 +1,32 @@
 // Scene3D — a Qt Quick 3D viewport in its own opt-in module solidqml.Widgets.Scene3D (owner
-// directive 2026-07-06: "use CssFill for QtQuick3D"). A CssFill "div" wrapper (CSS layout/paint +
-// author classes) hosts a View3D as a foreign fill. The showcase model is the Blender monkey
-// (Suzanne, bundled suzanne.mesh from balsam), lit with a three-point rig and slowly spun.
+// directives 2026-07-06: "use CssFill for QtQuick3D"; the monkey must respond to the mouse, have
+// better lighting, and a background). A CssFill "div" wrapper hosts a gradient backdrop with a
+// TRANSPARENT View3D on top, so the scene floats over the gradient. The showcase model is the Blender
+// monkey (Suzanne, bundled suzanne.mesh from balsam).
 //
-// The imported mesh is neither centred on the origin nor unit-sized, which made it fill the frame
-// off-centre. So we AUTO-FIT at runtime from Model.bounds: a pivot Node at the origin carries the
-// spin, and the Model is scaled to a fixed size and translated so its centre sits on the pivot — it
-// then spins in place, fully framed, whatever the raw mesh coordinates.
+//  - Mouse: an OrbitCameraController (drag to orbit, wheel to zoom) — View3D has no built-in controls.
+//  - Framing: the imported mesh is neither centred nor unit-sized, so we AUTO-FIT from Model.bounds —
+//    a pivot Node at the origin carries the idle spin and the Model is scaled + centred onto it, so it
+//    turns in place, fully framed, whatever the raw coordinates.
+//  - Lighting: a bright key, a cool fill and a warm rim, plus a soft ambient, for shape and mood.
 //
 // The transpiler emits:  WScene3D.Scene3D { cssClass: […]; [modelColor]; [spinning] }
 import QtQuick
 import QtQuick3D
+import QtQuick3D.Helpers
 import qmlcss 1.0 as Css
 
 Css.CssFill {
     id: root
     property color modelColor: "#41cd52"
     property bool spinning: true
-    property real fitSize: 3.2   // target width/height/depth after fitting
+    property real fitSize: 3.2
+    property real orbitRadius: 0.6   // small offset from the pivot → a gentle orbit, not a big swing
 
     cssPrimitive: "div"
     implicitWidth: 320
     implicitHeight: 260
 
-    // Centre + scale the mesh from its bounds so it sits on the pivot origin at a known size.
     function fit() {
         var b = monkey.bounds;
         if (!b)
@@ -34,39 +37,61 @@ Css.CssFill {
             return;
         var s = root.fitSize / dim;
         monkey.scale = Qt.vector3d(s, s, s);
-        monkey.position = Qt.vector3d(-(mn.x + mx.x) / 2 * s, -(mn.y + mx.y) / 2 * s, -(mn.z + mx.z) / 2 * s);
+        // Centre the mesh on the pivot, then nudge it by orbitRadius so the pivot's spin orbits it
+        // in a small circle (keeps the orbit the owner likes without swinging into the camera).
+        monkey.position = Qt.vector3d(-(mn.x + mx.x) / 2 * s + root.orbitRadius, -(mn.y + mx.y) / 2 * s, -(mn.z + mx.z) / 2 * s);
+    }
+
+    // Gradient backdrop (shows through the transparent View3D).
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "#241a4a" }
+            GradientStop { position: 0.55; color: "#181022" }
+            GradientStop { position: 1.0; color: "#0c1420" }
+        }
     }
 
     View3D {
+        id: view
         anchors.fill: parent
 
         environment: SceneEnvironment {
-            clearColor: "#181022"
-            backgroundMode: SceneEnvironment.Color
+            backgroundMode: SceneEnvironment.Transparent
             antialiasingMode: SceneEnvironment.MSAA
             antialiasingQuality: SceneEnvironment.High
         }
 
-        // Straight-on, pulled back so the fitSize-sized model sits comfortably inside the 60° FOV.
-        PerspectiveCamera {
-            position: Qt.vector3d(0, 0, 6)
-            clipNear: 0.1
-            clipFar: 1000
+        // Camera on an origin node so the OrbitCameraController can orbit it with the mouse.
+        Node {
+            id: camOrigin
+            PerspectiveCamera {
+                id: cam
+                position: Qt.vector3d(0, 0, 6)
+                clipNear: 0.1
+                clipFar: 1000
+            }
+        }
+        OrbitCameraController {
+            origin: camOrigin
+            camera: cam
         }
 
-        // Three-point lighting: a bright key, a cool fill, and a warm rim for shape and mood.
-        DirectionalLight { eulerRotation.x: -35; eulerRotation.y: -30; brightness: 1.3 }
-        PointLight { position: Qt.vector3d(-260, 160, 240); color: "#6fb7ff"; brightness: 4 }
-        PointLight { position: Qt.vector3d(240, -60, 140); color: "#ffb36b"; brightness: 3 }
+        // Three-point rig + a soft ambient fill.
+        DirectionalLight { eulerRotation.x: -30; eulerRotation.y: -35; brightness: 1.5 }
+        DirectionalLight { eulerRotation.x: 10; eulerRotation.y: 150; color: "#8fbcff"; brightness: 0.6 }
+        PointLight { position: Qt.vector3d(-280, 180, 260); color: "#7cc0ff"; brightness: 6 }
+        PointLight { position: Qt.vector3d(260, -80, 160); color: "#ffb36b"; brightness: 5 }
+        PointLight { position: Qt.vector3d(0, 40, -320); color: "#ff80c0"; brightness: 4 }
 
-        // Pivot at the origin carries the spin; the centred Model turns in place.
+        // Pivot at the origin carries the idle spin; the centred Model turns in place.
         Node {
             id: pivot
             eulerRotation.x: 12
             NumberAnimation on eulerRotation.y {
                 running: root.spinning
                 from: 0; to: 360
-                duration: 9000
+                duration: 12000
                 loops: Animation.Infinite
             }
             Model {
@@ -76,8 +101,8 @@ Css.CssFill {
                 Component.onCompleted: root.fit()
                 materials: PrincipledMaterial {
                     baseColor: root.modelColor
-                    metalness: 0.25
-                    roughness: 0.35
+                    metalness: 0.3
+                    roughness: 0.3
                 }
             }
         }
