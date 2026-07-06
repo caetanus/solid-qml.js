@@ -10,6 +10,7 @@ Image 1.0 Image.qml
 Progress 1.0 Progress.qml
 RangeSlider 1.0 RangeSlider.qml
 RoundButton 1.0 RoundButton.qml
+ToolBar 1.0 ToolBar.qml
 ToolButton 1.0 ToolButton.qml
 Text 1.0 Text.qml
 ToolSeparator 1.0 ToolSeparator.qml

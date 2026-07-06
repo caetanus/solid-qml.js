@@ -20,14 +20,8 @@ W.Div {
         cssClass: ["nv-label"]
         text: "ToolBar"
     }
-    Css.CssFill {
+    W.ToolBar {
         cssClass: ["ct-toolbar"]
-        cssPrimitive: "toolbar"
-        T.ToolBar {
-            anchors.fill: parent
-            background: null
-            contentItem: Item { }
-        }
         W.Button {
             cssClass: ["ct-tool"]
             text: "☰ Menu"

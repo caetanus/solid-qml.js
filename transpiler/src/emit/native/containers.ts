@@ -93,6 +93,13 @@ function markWidgets(scope: Scope): void {
   if (scope.usedWidgets) scope.usedWidgets.flag = true;
 }
 
+/** Mark that a solidqml.Widgets component was instantiated → prepend `import solidqml.Widgets`.
+ *  Migrated widgets host their T.* control in the .qml, so the emitted output needs the W module,
+ *  not the raw Templates import. */
+function markWidgetLib(scope: Scope): void {
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
+}
+
 // Basic-style implicit size policy — Templates set NO implicit sizes themselves (that is the
 // style's job, and we ARE the style); without these a container opens 0x0.
 function implicitLines(i: (n: number) => string): string[] {
@@ -106,32 +113,20 @@ function implicitLines(i: (n: number) => string): string[] {
 // <ToolBar> — semantic native chrome; the CSS engine owns paint AND layout.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** <ToolBar class="…">children</ToolBar>
- *  → wrapper Css.CssFill (cssPrimitive "toolbar") + T.ToolBar { anchors.fill; background: null }.
- *
- *  Children are emitted into the WRAPPER's default slot (its contentHolder), NOT into the
- *  control's contentItem: the layout engine only flows a Css container's direct contentHolder
- *  children (csslayout.cpp layout() iterates content->childItems()), so hosting them inside the
- *  control's contentItem Item would orphan them from the author's flex/grid rules. The T.ToolBar
- *  is a plain (non-Css) sibling in the same holder — anchored full, skipped by the flex pass
- *  (same coexistence as emitInput's T.TextField). Its contentItem is an empty Item so the
- *  template never instantiates style-less chrome of its own. */
+/** <ToolBar class="…">children</ToolBar> → W.ToolBar.
+ *  One .qml per component: the CssFill "toolbar" wrapper + T.ToolBar (semantic chrome, nulled
+ *  background, empty contentItem) live in ToolBar.qml. The emit only wires the author classes and
+ *  passes the children into the component's default content slot. */
 const emitToolBar: NativeEmit = (propsArg, children, scope, level, guard) => {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const props = propMap(propsArg);
   const classLine = buildCssClassLine(cssProps(props), scope, i(1));
-  markWidgets(scope);
+  markWidgetLib(scope);
   return [
-    `${pad}Css.CssFill {`,
+    `${pad}W.ToolBar {`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "toolbar"`,
-    `${i(1)}T.ToolBar {`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}background: null`,
-    `${i(2)}contentItem: Item { }`,
-    `${i(1)}}`,
     ...emitChildren(children, scope, level + 1),
     `${pad}}`,
   ];

@@ -6,6 +6,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { normalize } from "../src/babel/transform.ts";
 import { findRender } from "../src/ast/find.ts";
 import { analyzeSignals } from "../src/model/symbols.ts";
@@ -51,28 +53,29 @@ async function qmlType(src: string): Promise<string> {
 // <ToolBar>
 // ---------------------------------------------------------------------------
 
-test("containers: <ToolBar> emits wrapper CssFill with cssPrimitive 'toolbar'", async () => {
+test("containers: <ToolBar> instantiates the W.ToolBar component with its class", async () => {
   const out = await qml(`export function F(){ return <ToolBar class="tb"><button>A</button></ToolBar>; }`);
-  assert.match(out, /Css\.CssFill \{/);
+  assert.match(out, /W\.ToolBar \{/);
   assert.match(out, /cssClass: \["tb"\]/);
-  assert.match(out, /cssPrimitive: "toolbar"/);
+  // The T.ToolBar chrome now lives in ToolBar.qml, not the emit.
+  assert.doesNotMatch(out, /T\.ToolBar/);
 });
 
-test("containers: <ToolBar> hosts a T.ToolBar with null background and empty contentItem", async () => {
-  const out = await qml(`export function F(){ return <ToolBar><button>A</button></ToolBar>; }`);
-  assert.match(out, /T\.ToolBar \{/);
-  assert.match(out, /anchors\.fill: parent/);
-  assert.match(out, /background: null/);
-  assert.match(out, /contentItem: Item \{ \}/);
-});
-
-test("containers: <ToolBar> children emit into the wrapper's Css layout (not the contentItem)", async () => {
+test("containers: <ToolBar> children emit into the component's default content slot", async () => {
   const out = await qml(`export function F(){ return <ToolBar><button>Run</button></ToolBar>; }`);
-  // The button (W.Button) emits AFTER the closed T.ToolBar block, as a wrapper child.
-  const toolbarClose = out.indexOf("contentItem: Item { }");
+  // The button (W.Button) emits as a child of the W.ToolBar instance.
+  const toolbar = out.indexOf("W.ToolBar {");
   const button = out.indexOf("W.Button {");
-  assert.ok(toolbarClose >= 0 && button > toolbarClose, "button must be a wrapper child after T.ToolBar");
+  assert.ok(toolbar >= 0 && button > toolbar, "button must be a child of W.ToolBar");
   assert.match(out, /text: "Run"/);
+});
+
+test("containers: ToolBar.qml component hosts the T.ToolBar chrome internals", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/ToolBar.qml", import.meta.url)), "utf8");
+  assert.match(src, /T\.ToolBar \{/);
+  assert.match(src, /cssPrimitive: "toolbar"/);
+  assert.match(src, /background: null/);
+  assert.match(src, /contentItem: Item \{ \}/);
 });
 
 test("containers: <ToolBar> under <Show> carries the visible guard", async () => {
@@ -374,9 +377,11 @@ test("containers: <PageIndicator> wires count/currentIndex and emits the dot del
 // Templates import
 // ---------------------------------------------------------------------------
 
-test("containers: using a container widget prepends the Templates import", async () => {
+test("containers: using a migrated container widget prepends the solidqml.Widgets import", async () => {
   const out = await qmlType(`export function F(){ return <ToolBar><button>A</button></ToolBar>; }`);
-  assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
+  assert.match(out, /import solidqml\.Widgets .* as W/);
+  // The T.ToolBar internals live in ToolBar.qml, so the emit no longer needs the Templates import.
+  assert.doesNotMatch(out, /import QtQuick\.Templates/);
 });
 
 test("containers: <StackView> alone does NOT pull the Templates import (pure Css host)", async () => {
