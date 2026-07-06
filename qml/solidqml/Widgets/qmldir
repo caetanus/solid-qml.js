@@ -1,6 +1,7 @@
 module solidqml.Widgets
 BusyIndicator 1.0 BusyIndicator.qml
 Button 1.0 Button.qml
+Checkbox 1.0 Checkbox.qml
 DelayButton 1.0 DelayButton.qml
 Dial 1.0 Dial.qml
 Drawer 1.0 Drawer.qml
@@ -26,6 +27,7 @@ ToolBar 1.0 ToolBar.qml
 ToolButton 1.0 ToolButton.qml
 Text 1.0 Text.qml
 TextArea 1.0 TextArea.qml
+Toggle 1.0 Toggle.qml
 TextField 1.0 TextField.qml
 ToolSeparator 1.0 ToolSeparator.qml
 Tray 1.0 Tray.qml

@@ -340,41 +340,41 @@ test("widgets: Templates import is NOT emitted for a button (no widget)", async 
 // Phase 3: <input type="checkbox"> — checkbox toggle
 // ---------------------------------------------------------------------------
 
-test("widgets: <input type='checkbox'> emits wrapper CssFill + T.CheckBox inside", async () => {
+const CHECKBOX_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Checkbox.qml", import.meta.url)), "utf8");
+const TOGGLE_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Toggle.qml", import.meta.url)), "utf8");
+
+test("widgets: <input type='checkbox'> instantiates the W.Checkbox component", async () => {
   const out = await qml(`export function F(){ return <input type="checkbox" />; }`);
-  assert.match(out, /Css\.CssFill \{/);
-  assert.match(out, /cssPrimitive: "input"/);
-  assert.match(out, /T\.CheckBox \{/);
+  assert.match(out, /W\.Checkbox \{/);
   assert.match(out, /id: __input0/);
-  assert.match(out, /anchors\.fill: parent/);
-  assert.match(out, /background: null/);
-  assert.match(out, /contentItem: null/);
+  assert.doesNotMatch(out, /T\.CheckBox/);
 });
 
-test("widgets: checkbox wrapper cssState carries 'checked' and 'disabled' pseudo-classes", async () => {
-  const out = await qml(`export function F(){ return <input type="checkbox" />; }`);
-  // Both wrapper and indicator carry the same checked/disabled expression.
-  assert.match(out, /__input0\.checked \? \["checked"\] : \[\]/);
-  assert.match(out, /!__input0\.enabled \? \["disabled"\] : \[\]/);
+test("widgets: Checkbox.qml has T.CheckBox with background/contentItem null and cssPrimitive 'input'", async () => {
+  assert.match(CHECKBOX_QML, /cssPrimitive: "input"/);
+  assert.match(CHECKBOX_QML, /T\.CheckBox \{/);
+  assert.match(CHECKBOX_QML, /background: null/);
+  assert.match(CHECKBOX_QML, /contentItem: null/);
 });
 
-test("widgets: checkbox indicator CssFill has explicit width/height 20 + implicitWidth/Height 20", async () => {
-  const out = await qml(`export function F(){ return <input type="checkbox" />; }`);
-  assert.match(out, /cssClass: \["indicator"\]/);
-  // All four size props hardcoded — CSS geometry won't apply (indicator is inside T.CheckBox,
-  // not a Css container), but author can still override via CSS colour/background rules.
-  assert.match(out, /width: 20/);
-  assert.match(out, /height: 20/);
-  assert.match(out, /implicitWidth: 20/);
-  assert.match(out, /implicitHeight: 20/);
+test("widgets: Checkbox.qml cssState carries 'checked' and 'disabled' pseudo-classes", async () => {
+  assert.match(CHECKBOX_QML, /box\.checked \? \["checked"\] : \[\]/);
+  assert.match(CHECKBOX_QML, /!box\.enabled \? \["disabled"\] : \[\]/);
 });
 
-test("widgets: checkbox indicator contains a CssText glyph visible when checked", async () => {
-  const out = await qml(`export function F(){ return <input type="checkbox" />; }`);
-  assert.match(out, /cssClass: \["indicator-glyph"\]/);
-  assert.match(out, /text: "✓"/);
-  assert.match(out, /visible: __input0\.checked/);
-  assert.match(out, /anchors\.centerIn: parent/);
+test("widgets: Checkbox.qml indicator CssFill has explicit width/height 20 + implicitWidth/Height 20", async () => {
+  assert.match(CHECKBOX_QML, /cssClass: \["indicator"\]/);
+  assert.match(CHECKBOX_QML, /width: 20/);
+  assert.match(CHECKBOX_QML, /height: 20/);
+  assert.match(CHECKBOX_QML, /implicitWidth: 20/);
+  assert.match(CHECKBOX_QML, /implicitHeight: 20/);
+});
+
+test("widgets: Checkbox.qml indicator contains a plain Text glyph (CssItem) visible when checked", async () => {
+  assert.match(CHECKBOX_QML, /cssClass: \["indicator-glyph"\]/);
+  assert.match(CHECKBOX_QML, /text: "✓"/);
+  assert.match(CHECKBOX_QML, /visible: box\.checked/);
+  assert.match(CHECKBOX_QML, /anchors\.centerIn: parent/);
 });
 
 test("widgets: checkbox checked={sig()} emits Binding on property 'checked'", async () => {
@@ -411,40 +411,44 @@ test("widgets: checkbox without checked does NOT emit a Binding", async () => {
   assert.doesNotMatch(out, /Binding \{/);
 });
 
-test("widgets: checkbox Templates import is prepended", async () => {
+test("widgets: checkbox Widgets import is prepended", async () => {
   const out = await qmlType(`export function F(){ return <input type="checkbox" />; }`);
-  assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
+  assert.doesNotMatch(out, /import QtQuick\.Templates/);
 });
 
 // ---------------------------------------------------------------------------
 // Phase 3: <input type="checkbox" role="switch"> — switch toggle
 // ---------------------------------------------------------------------------
 
-test("widgets: switch emits T.Switch + track CssFill (cssClass 'track') + knob CssRect", async () => {
+test("widgets: <input role='switch'> instantiates the W.Toggle component", async () => {
   const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
-  assert.match(out, /T\.Switch \{/);
-  assert.match(out, /cssClass: \["track"\]/);
-  assert.match(out, /cssClass: \["knob"\]/);
+  assert.match(out, /W\.Toggle \{/);
+  assert.match(out, /id: __input0/);
+  assert.doesNotMatch(out, /T\.Switch/);
 });
 
-test("widgets: switch track is 36x20 and knob is 16x16 (hardcoded — not in Css container)", async () => {
-  const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
-  assert.match(out, /width: 36/);
-  assert.match(out, /height: 20/);
-  assert.match(out, /implicitWidth: 36/);
-  assert.match(out, /implicitHeight: 20/);
-  assert.match(out, /width: 16/);
-  assert.match(out, /height: 16/);
+test("widgets: Toggle.qml has T.Switch + track CssFill (cssClass 'track') + knob CssItem", async () => {
+  assert.match(TOGGLE_QML, /T\.Switch \{/);
+  assert.match(TOGGLE_QML, /cssClass: \["track"\]/);
+  assert.match(TOGGLE_QML, /cssClass: \["knob"\]/);
 });
 
-test("widgets: switch knob x uses visualPosition binding for animated slide", async () => {
-  const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
-  assert.match(out, /x: __input0\.visualPosition \* \(parent\.width - width\)/);
+test("widgets: Toggle.qml track is 36x20 and knob is 16x16 (hardcoded — not in Css container)", async () => {
+  assert.match(TOGGLE_QML, /width: 36/);
+  assert.match(TOGGLE_QML, /height: 20/);
+  assert.match(TOGGLE_QML, /implicitWidth: 36/);
+  assert.match(TOGGLE_QML, /implicitHeight: 20/);
+  assert.match(TOGGLE_QML, /width: 16/);
+  assert.match(TOGGLE_QML, /height: 16/);
 });
 
-test("widgets: switch knob has Behavior on x with NumberAnimation 120ms", async () => {
-  const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
-  assert.match(out, /Behavior on x \{ NumberAnimation \{ duration: 120 \} \}/);
+test("widgets: Toggle.qml knob x uses visualPosition binding for animated slide", async () => {
+  assert.match(TOGGLE_QML, /x: sw\.visualPosition \* \(parent\.width - width\)/);
+});
+
+test("widgets: Toggle.qml knob has Behavior on x with NumberAnimation 120ms", async () => {
+  assert.match(TOGGLE_QML, /Behavior on x \{ NumberAnimation \{ duration: 120 \} \}/);
 });
 
 test("widgets: switch checked={sig()} emits Binding on property 'checked'", async () => {
@@ -469,9 +473,8 @@ test("widgets: switch onChange wires onToggled with translated handler", async (
   assert.match(out, /onToggled: \{ sw = __input0\.checked \}/);
 });
 
-test("widgets: switch wrapper cssState carries focus/checked/disabled", async () => {
-  const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
-  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)\.concat\(__input0\.checked \? \["checked"\] : \[\]\)\.concat\(!__input0\.enabled \? \["disabled"\] : \[\]\)/);
+test("widgets: Toggle.qml cssState carries focus/checked/disabled", async () => {
+  assert.match(TOGGLE_QML, /\(sw\.activeFocus \? \["focus"\] : \[\]\)\.concat\(sw\.checked \? \["checked"\] : \[\]\)\.concat\(!sw\.enabled \? \["disabled"\] : \[\]\)/);
 });
 
 // ---------------------------------------------------------------------------
@@ -1233,16 +1236,14 @@ test("widgets: <input type='date'> max throws a clear not-supported error", asyn
 // primitives styled via an injected CssItem. Popups must carry the implicit-size formula
 // (Templates popups have none of their own). ---
 
-test("emitQml 6.5: checkbox glyph is a plain Text styled via CssItem (not CssText)", async () => {
-  const out = await qml(`export function F(){ return <input type="checkbox" />; }`);
-  assert.match(out, /Text \{[\s\S]*?text: "✓"[\s\S]*?Css\.CssItem \{ cssPrimitive: "text"; cssClass: \["indicator-glyph"\] \}/);
-  assert.doesNotMatch(out, /Css\.CssText \{[\s\S]*?indicator-glyph/);
+test("emitQml 6.5: Checkbox.qml glyph is a plain Text styled via CssItem (not CssText)", async () => {
+  assert.match(CHECKBOX_QML, /Text \{[\s\S]*?text: "✓"[\s\S]*?Css\.CssItem \{ cssPrimitive: "text"; cssClass: \["indicator-glyph"\] \}/);
+  assert.doesNotMatch(CHECKBOX_QML, /Css\.CssText \{[\s\S]*?indicator-glyph/);
 });
 
-test("emitQml 6.5: switch knob is a plain Rectangle styled via CssItem, x follows visualPosition", async () => {
-  const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
-  assert.match(out, /Rectangle \{[\s\S]*?x: __input\d+\.visualPosition[\s\S]*?Css\.CssItem \{ cssPrimitive: "rect"; cssClass: \["knob"\] \}/);
-  assert.doesNotMatch(out, /Css\.CssRect \{[\s\S]*?\["knob"\]/);
+test("emitQml 6.5: Toggle.qml knob is a plain Rectangle styled via CssItem, x follows visualPosition", async () => {
+  assert.match(TOGGLE_QML, /Rectangle \{[\s\S]*?x: sw\.visualPosition[\s\S]*?Css\.CssItem \{ cssPrimitive: "rect"; cssClass: \["knob"\] \}/);
+  assert.doesNotMatch(TOGGLE_QML, /Css\.CssRect \{[\s\S]*?\["knob"\]/);
 });
 
 test("emitQml 6.5: radio dot is a plain Rectangle styled via CssItem with state-on-class", async () => {
@@ -1281,12 +1282,12 @@ test("tabstop: TextArea.qml binds activeFocusOnTab to solidTabstop.enabled", asy
   assert.match(TEXTAREA_QML, TAB_STOP);
 });
 
-test("tabstop: <input type='checkbox'> binds activeFocusOnTab to solidTabstop.enabled", async () => {
-  assert.match(await qml(`export function F(){ return <input type="checkbox" />; }`), TAB_STOP);
+test("tabstop: Checkbox.qml binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  assert.match(CHECKBOX_QML, TAB_STOP);
 });
 
-test("tabstop: switch binds activeFocusOnTab to solidTabstop.enabled", async () => {
-  assert.match(await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`), TAB_STOP);
+test("tabstop: Toggle.qml binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  assert.match(TOGGLE_QML, TAB_STOP);
 });
 
 test("tabstop: radio binds activeFocusOnTab to solidTabstop.enabled", async () => {
@@ -1355,14 +1356,12 @@ test("calendar: cells size declaratively (incubated creation misses the C++ resi
 // (setActiveFocusOnTab(true) + StrongFocus in its constructor), but without "focus"
 // in cssState there is no visual feedback and the tab stop looks dead. ---
 
-test("tabstop: checkbox cssState carries focus alongside checked/disabled", async () => {
-  const out = await qml(`export function F(){ return <input type="checkbox" />; }`);
-  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)\.concat\(__input0\.checked \? \["checked"\] : \[\]\)\.concat\(!__input0\.enabled \? \["disabled"\] : \[\]\)/);
+test("tabstop: Checkbox.qml cssState carries focus alongside checked/disabled", async () => {
+  assert.match(CHECKBOX_QML, /\(box\.activeFocus \? \["focus"\] : \[\]\)\.concat\(box\.checked \? \["checked"\] : \[\]\)\.concat\(!box\.enabled \? \["disabled"\] : \[\]\)/);
 });
 
-test("tabstop: switch cssState carries focus", async () => {
-  const out = await qml(`export function F(){ return <input type="checkbox" role="switch" />; }`);
-  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)\.concat\(__input0\.checked/);
+test("tabstop: Toggle.qml cssState carries focus", async () => {
+  assert.match(TOGGLE_QML, /\(sw\.activeFocus \? \["focus"\] : \[\]\)\.concat\(sw\.checked/);
 });
 
 test("tabstop: radio cssState carries focus", async () => {
@@ -1431,11 +1430,10 @@ test("arrows: radio without a name emits no arrow handlers", async () => {
   assert.doesNotMatch(out, /Keys\.onDownPressed/);
 });
 
-test("arrows: checkbox and switch move focus along the chain, honoring the tabstop opt-out", async () => {
-  for (const src of [`<input type="checkbox" />`, `<input type="checkbox" role="switch" />`]) {
-    const out = await qml(`export function F(){ return ${src}; }`);
-    assert.match(out, /Keys\.onDownPressed: \{ if \(solidTabstop\.enabled\) \{ var __n = __input0\.nextItemInFocusChain\(true\); if \(__n\) __n\.forceActiveFocus\(Qt\.TabFocusReason\) \} \}/);
-    assert.match(out, /Keys\.onUpPressed: \{ if \(solidTabstop\.enabled\) \{ var __n = __input0\.nextItemInFocusChain\(false\)/);
+test("arrows: Checkbox.qml and Toggle.qml move focus along the chain, honoring the tabstop opt-out", async () => {
+  for (const [qmlSrc, inner] of [[CHECKBOX_QML, "box"], [TOGGLE_QML, "sw"]] as const) {
+    assert.match(qmlSrc, new RegExp(`Keys\\.onDownPressed: \\{ if \\(solidTabstop\\.enabled\\) \\{ var __n = ${inner}\\.nextItemInFocusChain\\(true\\); if \\(__n\\) __n\\.forceActiveFocus\\(Qt\\.TabFocusReason\\) \\} \\}`));
+    assert.match(qmlSrc, new RegExp(`Keys\\.onUpPressed: \\{ if \\(solidTabstop\\.enabled\\) \\{ var __n = ${inner}\\.nextItemInFocusChain\\(false\\)`));
   }
 });
 

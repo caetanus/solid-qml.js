@@ -133,42 +133,10 @@ W.Div {
             }
             W.Div {
                 cssClass: ["wg-check-row"]
-                Css.CssFill {
+                W.Checkbox {
+                    id: __input5
                     cssClass: ["wg-checkbox"]
-                    cssPrimitive: "input"
-                    cssState: (__input5.activeFocus ? ["focus"] : []).concat(__input5.checked ? ["checked"] : []).concat(!__input5.enabled ? ["disabled"] : [])
-                    implicitWidth: __input5.implicitWidth
-                    implicitHeight: __input5.implicitHeight
-                    T.CheckBox {
-                        id: __input5
-                        anchors.fill: parent
-                        background: null
-                        contentItem: null
-                        activeFocusOnTab: solidTabstop.enabled
-                        Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = __input5.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = __input5.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = __input5.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = __input5.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        indicator: Css.CssFill {
-                            cssPrimitive: "span"
-                            cssClass: ["indicator"]
-                            cssState: (__input5.activeFocus ? ["focus"] : []).concat(__input5.checked ? ["checked"] : []).concat(!__input5.enabled ? ["disabled"] : [])
-                            width: 20
-                            height: 20
-                            implicitWidth: 20
-                            implicitHeight: 20
-                            Item {
-                                anchors.fill: parent
-                                Text {
-                                    text: "✓"
-                                    visible: __input5.checked
-                                    anchors.centerIn: parent
-                                    Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }
-                                }
-                            }
-                        }
-                        onToggled: { chk1 = __input5.checked }
-                    }
+                    onToggled: { chk1 = __input5.checked }
                     Binding {
                         target: __input5
                         property: "checked"
@@ -183,42 +151,10 @@ W.Div {
             }
             W.Div {
                 cssClass: ["wg-check-row"]
-                Css.CssFill {
+                W.Checkbox {
+                    id: __input6
                     cssClass: ["wg-checkbox"]
-                    cssPrimitive: "input"
-                    cssState: (__input6.activeFocus ? ["focus"] : []).concat(__input6.checked ? ["checked"] : []).concat(!__input6.enabled ? ["disabled"] : [])
-                    implicitWidth: __input6.implicitWidth
-                    implicitHeight: __input6.implicitHeight
-                    T.CheckBox {
-                        id: __input6
-                        anchors.fill: parent
-                        background: null
-                        contentItem: null
-                        activeFocusOnTab: solidTabstop.enabled
-                        Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = __input6.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = __input6.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = __input6.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = __input6.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        indicator: Css.CssFill {
-                            cssPrimitive: "span"
-                            cssClass: ["indicator"]
-                            cssState: (__input6.activeFocus ? ["focus"] : []).concat(__input6.checked ? ["checked"] : []).concat(!__input6.enabled ? ["disabled"] : [])
-                            width: 20
-                            height: 20
-                            implicitWidth: 20
-                            implicitHeight: 20
-                            Item {
-                                anchors.fill: parent
-                                Text {
-                                    text: "✓"
-                                    visible: __input6.checked
-                                    anchors.centerIn: parent
-                                    Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }
-                                }
-                            }
-                        }
-                        onToggled: { chk2 = __input6.checked }
-                    }
+                    onToggled: { chk2 = __input6.checked }
                     Binding {
                         target: __input6
                         property: "checked"
@@ -233,46 +169,10 @@ W.Div {
             }
             W.Div {
                 cssClass: ["wg-check-row"]
-                Css.CssFill {
+                W.Toggle {
+                    id: __input7
                     cssClass: ["wg-switch"]
-                    cssPrimitive: "input"
-                    cssState: (__input7.activeFocus ? ["focus"] : []).concat(__input7.checked ? ["checked"] : []).concat(!__input7.enabled ? ["disabled"] : [])
-                    implicitWidth: __input7.implicitWidth
-                    implicitHeight: __input7.implicitHeight
-                    T.Switch {
-                        id: __input7
-                        anchors.fill: parent
-                        background: null
-                        contentItem: null
-                        activeFocusOnTab: solidTabstop.enabled
-                        Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = __input7.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = __input7.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = __input7.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = __input7.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        indicator: Css.CssFill {
-                            cssPrimitive: "span"
-                            cssClass: ["track"]
-                            cssState: (__input7.activeFocus ? ["focus"] : []).concat(__input7.checked ? ["checked"] : []).concat(!__input7.enabled ? ["disabled"] : [])
-                            width: 36
-                            height: 20
-                            implicitWidth: 36
-                            implicitHeight: 20
-                            Item {
-                                anchors.fill: parent
-                                Rectangle {
-                                    width: 16
-                                    height: 16
-                                    radius: 8
-                                    color: "#ffffff"
-                                    y: (parent.height - height) / 2
-                                    x: __input7.visualPosition * (parent.width - width)
-                                    Behavior on x { NumberAnimation { duration: 120 } }
-                                    Css.CssItem { cssPrimitive: "rect"; cssClass: ["knob"] }
-                                }
-                            }
-                        }
-                        onToggled: { sw = __input7.checked }
-                    }
+                    onToggled: { sw = __input7.checked }
                     Binding {
                         target: __input7
                         property: "checked"
@@ -287,42 +187,10 @@ W.Div {
             }
             W.Div {
                 cssClass: ["wg-check-row"]
-                Css.CssFill {
+                W.Checkbox {
+                    id: __input8
                     cssClass: ["wg-checkbox"]
-                    cssPrimitive: "input"
-                    cssState: (__input8.activeFocus ? ["focus"] : []).concat(__input8.checked ? ["checked"] : []).concat(!__input8.enabled ? ["disabled"] : [])
-                    implicitWidth: __input8.implicitWidth
-                    implicitHeight: __input8.implicitHeight
-                    T.CheckBox {
-                        id: __input8
-                        anchors.fill: parent
-                        background: null
-                        contentItem: null
-                        activeFocusOnTab: solidTabstop.enabled
-                        Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = __input8.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = __input8.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = __input8.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = __input8.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        indicator: Css.CssFill {
-                            cssPrimitive: "span"
-                            cssClass: ["indicator"]
-                            cssState: (__input8.activeFocus ? ["focus"] : []).concat(__input8.checked ? ["checked"] : []).concat(!__input8.enabled ? ["disabled"] : [])
-                            width: 20
-                            height: 20
-                            implicitWidth: 20
-                            implicitHeight: 20
-                            Item {
-                                anchors.fill: parent
-                                Text {
-                                    text: "✓"
-                                    visible: __input8.checked
-                                    anchors.centerIn: parent
-                                    Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }
-                                }
-                            }
-                        }
-                        enabled: false
-                    }
+                    enabled: false
                 }
                 W.Text {
                     cssClass: ["wg-check-label"]
@@ -331,46 +199,10 @@ W.Div {
             }
             W.Div {
                 cssClass: ["wg-check-row"]
-                Css.CssFill {
+                W.Toggle {
+                    id: __input9
                     cssClass: ["wg-switch"]
-                    cssPrimitive: "input"
-                    cssState: (__input9.activeFocus ? ["focus"] : []).concat(__input9.checked ? ["checked"] : []).concat(!__input9.enabled ? ["disabled"] : [])
-                    implicitWidth: __input9.implicitWidth
-                    implicitHeight: __input9.implicitHeight
-                    T.Switch {
-                        id: __input9
-                        anchors.fill: parent
-                        background: null
-                        contentItem: null
-                        activeFocusOnTab: solidTabstop.enabled
-                        Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = __input9.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = __input9.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = __input9.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = __input9.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }
-                        indicator: Css.CssFill {
-                            cssPrimitive: "span"
-                            cssClass: ["track"]
-                            cssState: (__input9.activeFocus ? ["focus"] : []).concat(__input9.checked ? ["checked"] : []).concat(!__input9.enabled ? ["disabled"] : [])
-                            width: 36
-                            height: 20
-                            implicitWidth: 36
-                            implicitHeight: 20
-                            Item {
-                                anchors.fill: parent
-                                Rectangle {
-                                    width: 16
-                                    height: 16
-                                    radius: 8
-                                    color: "#ffffff"
-                                    y: (parent.height - height) / 2
-                                    x: __input9.visualPosition * (parent.width - width)
-                                    Behavior on x { NumberAnimation { duration: 120 } }
-                                    Css.CssItem { cssPrimitive: "rect"; cssClass: ["knob"] }
-                                }
-                            }
-                        }
-                        onToggled: { tabs = __input9.checked; solidTabstop.enabled = __input9.checked; }
-                    }
+                    onToggled: { tabs = __input9.checked; solidTabstop.enabled = __input9.checked; }
                     Binding {
                         target: __input9
                         property: "checked"

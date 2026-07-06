@@ -684,57 +684,21 @@ function emitCheckboxToggle(props: Props, scope: Scope, level: number, guard: st
   const i = (n: number) => INDENT.repeat(level + n);
   const classLine = buildCssClassLine(props, scope, i(1));
   const { checkedExpr, onChangeFn, disabled } = wp;
-  if (scope.usedWidgets) scope.usedWidgets.flag = true;
-  const checkState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+  // One .qml per component: instantiate W.Checkbox (the T.CheckBox + indicator glyph host live in
+  // Checkbox.qml). Keep the id so the controlled Binding resolves.
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.Checkbox {`,
+    `${i(1)}id: ${ctlId}`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "input"`,
-    `${i(1)}cssState: ${checkState}`,
-    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
-    `${i(1)}T.CheckBox {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}background: null`,
-    `${i(2)}contentItem: null`,
-    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
-    // Arrows move focus along the chain (desktop dialog semantics), same opt-out as Tab.
-    `${i(2)}Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
-    `${i(2)}Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
-    `${i(2)}Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
-    `${i(2)}Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
-    // indicator: a fixed-size Css item (not in a Css layout container — geometry is hardcoded).
-    `${i(2)}indicator: Css.CssFill {`,
-    `${i(3)}cssPrimitive: "span"`,
-    `${i(3)}cssClass: ["indicator"]`,
-    `${i(3)}cssState: ${checkState}`,
-    `${i(3)}width: 20`,
-    `${i(3)}height: 20`,
-    `${i(3)}implicitWidth: 20`,
-    `${i(3)}implicitHeight: 20`,
-    // Anchored Item host: once the indicator's CSS carries box rules (border etc.) the
-    // layout engine runs a flex pass over contentHolder children and pins plain children
-    // top-left; an anchors.fill Item is skipped, and anchors hold inside it. The nested
-    // CssItem injects color/font from the .indicator-glyph rule without joining any layout.
-    `${i(3)}Item {`,
-    `${i(4)}anchors.fill: parent`,
-    `${i(4)}Text {`,
-    `${i(5)}text: "✓"`,
-    `${i(5)}visible: ${ctlId}.checked`,
-    `${i(5)}anchors.centerIn: parent`,
-    `${i(5)}Css.CssItem { cssPrimitive: "text"; cssClass: ["indicator-glyph"] }`,
-    `${i(4)}}`,
-    `${i(3)}}`,
-    `${i(2)}}`,
   ];
 
-  if (disabled) lines.push(`${i(2)}enabled: false`);
-  if (onChangeFn) lines.push(`${i(2)}onToggled: { ${translateToggleHandler(onChangeFn, ctlId, scope)} }`);
-
-  lines.push(`${i(1)}}`);
+  if (disabled) lines.push(`${i(1)}enabled: false`);
+  // translateToggleHandler maps e.target.checked → `${ctlId}.checked`, which resolves via the
+  // component's two-way `checked` alias on the instance.
+  if (onChangeFn) lines.push(`${i(1)}onToggled: { ${translateToggleHandler(onChangeFn, ctlId, scope)} }`);
 
   if (checkedExpr !== null) {
     lines.push(
@@ -760,60 +724,18 @@ function emitSwitchToggle(props: Props, scope: Scope, level: number, guard: stri
   const i = (n: number) => INDENT.repeat(level + n);
   const classLine = buildCssClassLine(props, scope, i(1));
   const { checkedExpr, onChangeFn, disabled } = wp;
-  if (scope.usedWidgets) scope.usedWidgets.flag = true;
-  const switchState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+  // One .qml per component: instantiate W.Toggle (the T.Switch + track/knob host live in Toggle.qml).
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.Toggle {`,
+    `${i(1)}id: ${ctlId}`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "input"`,
-    `${i(1)}cssState: ${switchState}`,
-    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
-    `${i(1)}T.Switch {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}background: null`,
-    `${i(2)}contentItem: null`,
-    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
-    // Arrows move focus along the chain (desktop dialog semantics), same opt-out as Tab.
-    `${i(2)}Keys.onDownPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
-    `${i(2)}Keys.onRightPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(true); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
-    `${i(2)}Keys.onUpPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
-    `${i(2)}Keys.onLeftPressed: { if (solidTabstop.enabled) { var __n = ${ctlId}.nextItemInFocusChain(false); if (__n) __n.forceActiveFocus(Qt.TabFocusReason) } }`,
-    `${i(2)}indicator: Css.CssFill {`,
-    `${i(3)}cssPrimitive: "span"`,
-    `${i(3)}cssClass: ["track"]`,
-    `${i(3)}cssState: ${switchState}`,
-    `${i(3)}width: 36`,
-    `${i(3)}height: 20`,
-    `${i(3)}implicitWidth: 36`,
-    `${i(3)}implicitHeight: 20`,
-    // Anchored Item host insulates the knob from the CSS flex pass (see the checkbox
-    // glyph note); the geometry bindings live on the plain Rectangle inside. The nested
-    // CssItem injects background-color/radius/border from the .knob rule.
-    `${i(3)}Item {`,
-    `${i(4)}anchors.fill: parent`,
-    `${i(4)}Rectangle {`,
-    `${i(5)}width: 16`,
-    `${i(5)}height: 16`,
-    `${i(5)}radius: 8`,
-    `${i(5)}color: "#ffffff"`,
-    `${i(5)}y: (parent.height - height) / 2`,
-    // visualPosition goes 0→1 as the switch toggles; multiply by the remaining track width.
-    `${i(5)}x: ${ctlId}.visualPosition * (parent.width - width)`,
-    `${i(5)}Behavior on x { NumberAnimation { duration: 120 } }`,
-    `${i(5)}Css.CssItem { cssPrimitive: "rect"; cssClass: ["knob"] }`,
-    `${i(4)}}`,
-    `${i(3)}}`,
-    `${i(2)}}`,
   ];
 
-  if (disabled) lines.push(`${i(2)}enabled: false`);
-  if (onChangeFn) lines.push(`${i(2)}onToggled: { ${translateToggleHandler(onChangeFn, ctlId, scope)} }`);
-
-  lines.push(`${i(1)}}`);
+  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (onChangeFn) lines.push(`${i(1)}onToggled: { ${translateToggleHandler(onChangeFn, ctlId, scope)} }`);
 
   if (checkedExpr !== null) {
     lines.push(
