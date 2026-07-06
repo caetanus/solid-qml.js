@@ -316,13 +316,13 @@ test("native-inputs: BusyIndicator.qml spins 8 staggered spokes gated on running
 // <RoundButton> / <ToolButton>
 // ---------------------------------------------------------------------------
 
-test("native-inputs: <RoundButton> is a button-primitive CssFill with the extra 'round' class", async () => {
+test("native-inputs: <RoundButton> instantiates W.RoundButton with the extra 'round' class + text", async () => {
   const out = await qml(`export function F(){ return <RoundButton class="fab">+1</RoundButton>; }`);
+  assert.match(out, /W\.RoundButton \{/);
   assert.match(out, /cssClass: \["fab", "round"\]/);
-  assert.match(out, /cssPrimitive: "button"/);
-  assert.match(out, /T\.RoundButton \{/);
-  assert.match(out, /background: null/);
   assert.match(out, /text: "\+1"/);
+  // The T.RoundButton + label internals now live in RoundButton.qml, not the emit.
+  assert.doesNotMatch(out, /T\.RoundButton/);
 });
 
 test("native-inputs: <RoundButton onClick> maps to onClicked", async () => {
@@ -333,19 +333,26 @@ test("native-inputs: <RoundButton onClick> maps to onClicked", async () => {
     }
   `);
   assert.match(out, /onClicked: \{ __self\.n = n \+ 1 \}/);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
 });
 
 test("native-inputs: <ToolButton> mirrors RoundButton with the 'tool' class", async () => {
   const out = await qml(`export function F(){ return <ToolButton>reset</ToolButton>; }`);
+  assert.match(out, /W\.ToolButton \{/);
   assert.match(out, /cssClass: \["tool"\]/);
-  assert.match(out, /T\.ToolButton \{/);
   assert.match(out, /text: "reset"/);
 });
 
-test("native-inputs: Round/Tool buttons carry hover/active/focus/disabled state and tab stop", async () => {
-  const out = await qml(`export function F(){ return <RoundButton>x</RoundButton>; }`);
-  assert.match(out, /cssState: \(__input0\.hovered \? \["hover"\] : \[\]\)\.concat\(__input0\.pressed \? \["active"\] : \[\]\)\.concat\(__input0\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!__input0\.enabled \? \["disabled"\] : \[\]\)/);
-  assert.match(out, /activeFocusOnTab: solidTabstop\.enabled/);
+test("native-inputs: RoundButton.qml / ToolButton.qml carry the button primitive + state list", async () => {
+  const round = await readWidget("RoundButton");
+  assert.match(round, /T\.RoundButton \{/);
+  assert.match(round, /cssPrimitive: "button"/);
+  assert.match(round, /background: null/);
+  assert.match(round, /cssState: \(__ctl\.hovered \? \["hover"\] : \[\]\)\.concat\(__ctl\.pressed \? \["active"\] : \[\]\)\.concat\(__ctl\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!__ctl\.enabled \? \["disabled"\] : \[\]\)/);
+  assert.match(round, /activeFocusOnTab: solidTabstop\.enabled/);
+  const tool = await readWidget("ToolButton");
+  assert.match(tool, /T\.ToolButton \{/);
+  assert.match(tool, /cssPrimitive: "button"/);
 });
 
 // ---------------------------------------------------------------------------

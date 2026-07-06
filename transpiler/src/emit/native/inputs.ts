@@ -545,47 +545,31 @@ const emitBusyIndicator: NativeEmit = (propsArg, _children, scope, level, guard)
 
 // ── <RoundButton> / <ToolButton> ──────────────────────────────────────────────────────────
 //
-// Same shape as emitButton (the wrapper CssFill IS the painted button surface + the CssText
-// label is a CSS layout child, so `.x button text` scoping keeps working) but the interaction
-// comes from a real T.RoundButton / T.ToolButton filling the wrapper. The control's own
-// background/contentItem are nulled: a slot background cannot participate in the author's
-// flex layout, so the wrapper doubles as it — carrying cssPrimitive "button" and the extra
-// class ("round"/"tool") the spec assigns to the background.
-function buttonLike(tType: string, extraClass: string): NativeEmit {
+// One .qml per component: the wrapper CssFill (cssPrimitive "button"), the CssText label and the
+// T.RoundButton / T.ToolButton filling it all live in RoundButton.qml / ToolButton.qml. The emit
+// only instantiates the component, appends the extra class the spec assigns ("round"/"tool") to
+// the author classes, and wires text / onClicked / disabled.
+function buttonLike(wType: string, extraClass: string): NativeEmit {
   return (propsArg, children, scope, level, guard) => {
     const pad = INDENT.repeat(level);
     const i = (n: number) => INDENT.repeat(level + n);
     const ui = uiProps(propsArg);
     ui.classes = [...ui.classes, extraClass];
     const classLine = buildCssClassLine(ui, scope, i(1));
-    const ctlId = allocCtl(scope);
+    if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
     const clickBody = emitEventHandler(ui.onClick, scope);
     const disabled = boolAttr(propsArg, "disabled");
 
-    const cssState = `(${ctlId}.hovered ? ["hover"] : []).concat(${ctlId}.pressed ? ["active"] : []).concat(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
-
     const lines: string[] = [
-      `${pad}Css.CssFill {`,
+      `${pad}${wType} {`,
       ...classLine,
       ...guardLine(guard, level),
-      `${i(1)}cssPrimitive: "button"`,
-      `${i(1)}cssState: ${cssState}`,
-      `${i(1)}Css.CssText {`,
-      `${i(2)}cssPrimitive: "text"`,
-      `${i(2)}text: ${textLabel(children, scope)}`,
-      `${i(1)}}`,
-      `${i(1)}${tType} {`,
-      `${i(2)}id: ${ctlId}`,
-      `${i(2)}anchors.fill: parent`,
-      `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
-      `${i(2)}hoverEnabled: true`,
-      `${i(2)}background: null`,
-      `${i(2)}contentItem: null`,
+      `${i(1)}text: ${textLabel(children, scope)}`,
     ];
-    if (disabled) lines.push(`${i(2)}enabled: false`);
-    if (clickBody) lines.push(`${i(2)}onClicked: { ${clickBody} }`);
-    lines.push(`${i(1)}}`, `${pad}}`);
+    if (disabled) lines.push(`${i(1)}disabled: true`);
+    if (clickBody) lines.push(`${i(1)}onClicked: { ${clickBody} }`);
+    lines.push(`${pad}}`);
     return lines;
   };
 }
@@ -615,7 +599,7 @@ registerNativeTags({
   Tumbler: emitTumbler,
   DelayButton: emitDelayButton,
   BusyIndicator: emitBusyIndicator,
-  RoundButton: buttonLike("T.RoundButton", "round"),
-  ToolButton: buttonLike("T.ToolButton", "tool"),
+  RoundButton: buttonLike("W.RoundButton", "round"),
+  ToolButton: buttonLike("W.ToolButton", "tool"),
   ToolSeparator: emitToolSeparator,
 });

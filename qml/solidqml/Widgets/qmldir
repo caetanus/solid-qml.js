@@ -6,5 +6,7 @@ Div 1.0 Div.qml
 Fieldset 1.0 Fieldset.qml
 Image 1.0 Image.qml
 Progress 1.0 Progress.qml
+RoundButton 1.0 RoundButton.qml
+ToolButton 1.0 ToolButton.qml
 Text 1.0 Text.qml
 ToolSeparator 1.0 ToolSeparator.qml

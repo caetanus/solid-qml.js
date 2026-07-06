@@ -264,44 +264,18 @@ W.Div {
     }
     W.Div {
         cssClass: ["nv-row"]
-        Css.CssFill {
+        W.RoundButton {
             cssClass: ["ni-round", "round"]
-            cssPrimitive: "button"
-            cssState: (__input4.hovered ? ["hover"] : []).concat(__input4.pressed ? ["active"] : []).concat(__input4.activeFocus ? ["focus"] : []).concat(!__input4.enabled ? ["disabled"] : [])
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "+1"
-            }
-            T.RoundButton {
-                id: __input4
-                anchors.fill: parent
-                activeFocusOnTab: solidTabstop.enabled
-                hoverEnabled: true
-                background: null
-                contentItem: null
-                onClicked: { __self.clicks = clicks + 1 }
-            }
+            text: "+1"
+            onClicked: { __self.clicks = clicks + 1 }
         }
         W.ToolSeparator {
             cssClass: ["ni-sep"]
         }
-        Css.CssFill {
+        W.ToolButton {
             cssClass: ["ni-tool", "tool"]
-            cssPrimitive: "button"
-            cssState: (__input5.hovered ? ["hover"] : []).concat(__input5.pressed ? ["active"] : []).concat(__input5.activeFocus ? ["focus"] : []).concat(!__input5.enabled ? ["disabled"] : [])
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "reset"
-            }
-            T.ToolButton {
-                id: __input5
-                anchors.fill: parent
-                activeFocusOnTab: solidTabstop.enabled
-                hoverEnabled: true
-                background: null
-                contentItem: null
-                onClicked: { __self.clicks = 0 }
-            }
+            text: "reset"
+            onClicked: { __self.clicks = 0 }
         }
         W.Text {
             cssClass: ["nv-label"]
