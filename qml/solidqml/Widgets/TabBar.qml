@@ -30,6 +30,22 @@ Css.CssFill {
         implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
         implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
         background: null
+
+        // Desktop keyboard nav (study §6): a tab BAR is one tab stop (the current tab); Left/Right (or
+        // Up/Down) switch the current tab WITH WRAP and move focus to the new tab. The custom ListView
+        // contentItem would otherwise eat the arrows (keyNavigationEnabled: false below), and the tab
+        // stop is the checked TabButton, so the arrow key propagates up to here.
+        function __step(d) {
+            if (bar.count < 1) return;
+            bar.currentIndex = (bar.currentIndex + d + bar.count) % bar.count;
+            var it = bar.itemAt(bar.currentIndex);
+            if (it) it.forceActiveFocus(Qt.TabFocusReason);
+        }
+        Keys.onLeftPressed: bar.__step(-1)
+        Keys.onUpPressed: bar.__step(-1)
+        Keys.onRightPressed: bar.__step(1)
+        Keys.onDownPressed: bar.__step(1)
+
         // Basic-style contentItem: the ListView hosts the buttons from the contentModel.
         contentItem: ListView {
             model: bar.contentModel
@@ -40,6 +56,7 @@ Css.CssFill {
             flickableDirection: Flickable.AutoFlickIfNeeded
             snapMode: ListView.SnapToItem
             highlightMoveDuration: 0
+            keyNavigationEnabled: false
         }
     }
 }
