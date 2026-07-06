@@ -530,11 +530,10 @@ function emitInput(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
   const classLine = buildCssClassLine(props, scope, i(1));
 
   // Unique id for this control; shared counter keeps ids monotonically unique across the component.
+  // The id is kept on the W.<Name> instance so the controlled Binding (target __inputN) and any
+  // handler value-reads resolve against the component's two-way aliases across the boundary.
   const counter = scope.inputCounter ?? { n: 0 };
   const ctlId = `__input${counter.n++}`;
-
-  // Mark that this component uses QtQuick.Templates so the header emits the import.
-  if (scope.usedWidgets) scope.usedWidgets.flag = true;
 
   const wp = readWidgetProps(propsArg, scope);
   const { type, role } = wp;
@@ -551,63 +550,33 @@ function emitInput(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
 
   const { valueExpr, signalName, placeholder, onInputFn, onChangeFn, onKeyDownFn, disabled, readOnly, maxLength } = wp;
 
-  // cssState: `:focus` when the control has keyboard focus; `:disabled` when not enabled.
-  const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
+  // One .qml per component: instantiate W.TextField (the T.TextField + placeholder + CSS-bridged
+  // colour/font live in TextField.qml). Keep the id so the controlled Binding resolves.
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
   // Handler bodies — translateInputHandler maps e.target.value → `text`, e.key → event.key, etc.
-  let textEditedBody = onInputFn
+  // `text` on the instance resolves via the component's two-way `text` alias.
+  const textEditedBody = onInputFn
     ? translateInputHandler(onInputFn, scope)
     : signalName ? `${safeName(signalName)} = text` : "";
   const editingFinishedBody = onChangeFn ? translateInputHandler(onChangeFn, scope) : "";
   const keyBody = onKeyDownFn ? translateInputHandler(onKeyDownFn, scope) : "";
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.TextField {`,
+    `${i(1)}id: ${ctlId}`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "input"`,
-    `${i(1)}cssState: ${cssState}`,
-    // Implicit size from the control so flex/grid overrides still work when no CSS size is set.
-    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
-    `${i(1)}T.TextField {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}anchors.fill: parent`,
-    // No visual chrome from Templates; our CssFill owns every painted pixel.
-    `${i(2)}background: null`,
-    ...widgetColorFont(i),
-    `${i(2)}leftPadding: 12`,
-    `${i(2)}rightPadding: 12`,
-    `${i(2)}verticalAlignment: TextInput.AlignVCenter`,
-    `${i(2)}selectByMouse: true`,
-    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
   ];
 
-  if (type === "password") lines.push(`${i(2)}echoMode: TextInput.Password`);
-  if (disabled) lines.push(`${i(2)}enabled: false`);
-  if (readOnly) lines.push(`${i(2)}readOnly: true`);
-  if (maxLength !== null) lines.push(`${i(2)}maximumLength: ${maxLength}`);
-  if (textEditedBody) lines.push(`${i(2)}onTextEdited: { ${textEditedBody} }`);
-  if (editingFinishedBody) lines.push(`${i(2)}onEditingFinished: { ${editingFinishedBody} }`);
-  if (keyBody) lines.push(`${i(2)}Keys.onPressed: (event) => { ${keyBody} }`);
-
-  // Placeholder: a plain Text overlay inside the control (positioned to match the text baseline).
-  // Hides when the field has text or is focused (web `<input>` placeholder semantics).
-  if (placeholder) {
-    lines.push(
-      `${i(2)}Text {`,
-      `${i(3)}anchors.verticalCenter: parent.verticalCenter`,
-      `${i(3)}anchors.left: parent.left`,
-      `${i(3)}anchors.leftMargin: parent.leftPadding`,
-      `${i(3)}visible: parent.text.length === 0 && !parent.activeFocus`,
-      `${i(3)}text: ${JSON.stringify(placeholder)}`,
-      `${i(3)}color: "#9aa0a6"`,
-      `${i(3)}font: parent.font`,
-      `${i(2)}}`,
-    );
-  }
-
-  lines.push(`${i(1)}}`);
+  if (type === "password") lines.push(`${i(1)}echoMode: TextInput.Password`);
+  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (readOnly) lines.push(`${i(1)}readOnly: true`);
+  if (maxLength !== null) lines.push(`${i(1)}maximumLength: ${maxLength}`);
+  if (placeholder) lines.push(`${i(1)}placeholder: ${JSON.stringify(placeholder)}`);
+  if (textEditedBody) lines.push(`${i(1)}onTextEdited: { ${textEditedBody} }`);
+  if (editingFinishedBody) lines.push(`${i(1)}onEditingFinished: { ${editingFinishedBody} }`);
+  if (keyBody) lines.push(`${i(1)}onKeyPressed: (event) => { ${keyBody} }`);
 
   // Binding element: persistently asserts the signal value into the control text. Unlike a plain
   // property binding (`text: sig`), a Binding object survives user edits — the signal value is
@@ -745,6 +714,7 @@ function emitCheckboxToggle(props: Props, scope: Scope, level: number, guard: st
   const i = (n: number) => INDENT.repeat(level + n);
   const classLine = buildCssClassLine(props, scope, i(1));
   const { checkedExpr, onChangeFn, disabled } = wp;
+  if (scope.usedWidgets) scope.usedWidgets.flag = true;
   const checkState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
 
   const lines: string[] = [
@@ -820,6 +790,7 @@ function emitSwitchToggle(props: Props, scope: Scope, level: number, guard: stri
   const i = (n: number) => INDENT.repeat(level + n);
   const classLine = buildCssClassLine(props, scope, i(1));
   const { checkedExpr, onChangeFn, disabled } = wp;
+  if (scope.usedWidgets) scope.usedWidgets.flag = true;
   const switchState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
 
   const lines: string[] = [
@@ -900,6 +871,7 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
   const i = (n: number) => INDENT.repeat(level + n);
   const classLine = buildCssClassLine(props, scope, i(1));
   const { checkedExpr, onChangeFn, disabled, name } = wp;
+  if (scope.usedWidgets) scope.usedWidgets.flag = true;
   const radioState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(${ctlId}.checked ? ["checked"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
 
   // Register this group name so emitComponentType can emit T.ButtonGroup { id: __group_<name> }.
@@ -1033,6 +1005,7 @@ function emitSlider(props: Props, scope: Scope, level: number, guard: string | u
   const i = (n: number) => INDENT.repeat(level + n);
   const classLine = buildCssClassLine(props, scope, i(1));
   const { valueExpr, onInputFn, onChangeFn, disabled, min, max, step } = wp;
+  if (scope.usedWidgets) scope.usedWidgets.flag = true;
 
   const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
   // Both onInput and onChange map to onMoved (see jsdoc for the approximation note).
@@ -1136,6 +1109,7 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
   const i = (n: number) => INDENT.repeat(level + n);
   const classLine = buildCssClassLine(props, scope, i(1));
   const { valueExpr, onChangeFn, disabled, min, max, step } = wp;
+  if (scope.usedWidgets) scope.usedWidgets.flag = true;
 
   const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
   const onValueModifiedBody = onChangeFn

@@ -5,6 +5,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { normalize } from "../src/babel/transform.ts";
 import { findRender } from "../src/ast/find.ts";
 import { analyzeSignals } from "../src/model/symbols.ts";
@@ -49,36 +51,36 @@ async function qmlType(src: string): Promise<string> {
 // <input> — wrapper shape and basic properties
 // ---------------------------------------------------------------------------
 
-test("widgets: <input> emits wrapper CssFill with cssPrimitive 'input'", async () => {
-  const out = await qml(`export function F(){ return <input />; }`);
-  assert.match(out, /Css\.CssFill \{/);
-  assert.match(out, /cssPrimitive: "input"/);
-});
+const TEXTFIELD_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TextField.qml", import.meta.url)), "utf8");
 
-test("widgets: <input> wrapper carries cssState for focus and disabled", async () => {
+test("widgets: <input> instantiates the W.TextField component", async () => {
   const out = await qml(`export function F(){ return <input />; }`);
-  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!__input0\.enabled \? \["disabled"\] : \[\]\)/);
-});
-
-test("widgets: <input> wrapper mirrors implicitWidth/Height from the control", async () => {
-  const out = await qml(`export function F(){ return <input />; }`);
-  assert.match(out, /implicitWidth: __input0\.implicitWidth/);
-  assert.match(out, /implicitHeight: __input0\.implicitHeight/);
-});
-
-test("widgets: <input> emits T.TextField inside the wrapper with background null", async () => {
-  const out = await qml(`export function F(){ return <input />; }`);
-  assert.match(out, /T\.TextField \{/);
+  assert.match(out, /W\.TextField \{/);
   assert.match(out, /id: __input0/);
-  assert.match(out, /anchors\.fill: parent/);
-  assert.match(out, /background: null/);
+  // The T.TextField internals now live in TextField.qml, not the emit.
+  assert.doesNotMatch(out, /T\.TextField/);
 });
 
-test("widgets: <input> bridges CSS colour and font from parent inherited properties", async () => {
-  const out = await qml(`export function F(){ return <input />; }`);
-  assert.match(out, /color: cssTheme\.parseColor\(parent\.inheritedColor \|\| "#2b2b2b"\)/);
-  assert.match(out, /font\.family: cssTheme\.resolveFontFamily\(parent\.inheritedFontFamily/);
-  assert.match(out, /font\.pixelSize: cssTheme\.parseFontSize\(parent\.inheritedFontSize/);
+test("widgets: TextField.qml wrapper carries cssPrimitive 'input' and focus/disabled cssState", async () => {
+  assert.match(TEXTFIELD_QML, /cssPrimitive: "input"/);
+  assert.match(TEXTFIELD_QML, /cssState: \(field\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!field\.enabled \? \["disabled"\] : \[\]\)/);
+});
+
+test("widgets: TextField.qml mirrors implicitWidth/Height from the control", async () => {
+  assert.match(TEXTFIELD_QML, /implicitWidth: field\.implicitWidth/);
+  assert.match(TEXTFIELD_QML, /implicitHeight: field\.implicitHeight/);
+});
+
+test("widgets: TextField.qml has a T.TextField with background null", async () => {
+  assert.match(TEXTFIELD_QML, /T\.TextField \{/);
+  assert.match(TEXTFIELD_QML, /anchors\.fill: parent/);
+  assert.match(TEXTFIELD_QML, /background: null/);
+});
+
+test("widgets: TextField.qml bridges CSS colour and font from the wrapper's inherited properties", async () => {
+  assert.match(TEXTFIELD_QML, /color: cssTheme\.parseColor\(root\.inheritedColor \|\| "#2b2b2b"\)/);
+  assert.match(TEXTFIELD_QML, /font\.family: cssTheme\.resolveFontFamily\(root\.inheritedFontFamily/);
+  assert.match(TEXTFIELD_QML, /font\.pixelSize: cssTheme\.parseFontSize\(root\.inheritedFontSize/);
 });
 
 test("widgets: <input class='x'> passes the class to the wrapper cssClass", async () => {
@@ -176,10 +178,8 @@ test("widgets: disabled prop sets enabled: false on the control", async () => {
   assert.match(out, /enabled: false/);
 });
 
-test("widgets: disabled input still has disabled in cssState expression", async () => {
-  const out = await qml(`export function F(){ return <input disabled />; }`);
-  // The cssState expression always carries the disabled concat (runtime-evaluated from enabled).
-  assert.match(out, /!__input0\.enabled \? \["disabled"\] : \[\]/);
+test("widgets: TextField.qml cssState carries the disabled concat (runtime-evaluated from enabled)", async () => {
+  assert.match(TEXTFIELD_QML, /!field\.enabled \? \["disabled"\] : \[\]/);
 });
 
 // ---------------------------------------------------------------------------
@@ -204,16 +204,17 @@ test("widgets: maxlength maps to maximumLength on T.TextField", async () => {
 // placeholder
 // ---------------------------------------------------------------------------
 
-test("widgets: placeholder emits an overlay Text inside T.TextField", async () => {
+test("widgets: placeholder sets the component's placeholder prop; overlay lives in TextField.qml", async () => {
   const out = await qml(`export function F(){ return <input placeholder="Type here" />; }`);
-  // The overlay lives inside T.TextField (level 2) and hides on focus or when text is present.
-  assert.match(out, /text: "Type here"/);
-  assert.match(out, /visible: parent\.text\.length === 0 && !parent\.activeFocus/);
+  assert.match(out, /placeholder: "Type here"/);
+  // The overlay Text (hides on focus / when text present) lives in TextField.qml.
+  assert.match(TEXTFIELD_QML, /visible: parent\.text\.length === 0 && !parent\.activeFocus/);
 });
 
-test("widgets: <input> without placeholder does NOT emit the overlay Text", async () => {
+test("widgets: <input> without placeholder does NOT set the placeholder prop", async () => {
   const out = await qml(`export function F(){ return <input />; }`);
-  // No placeholder attribute → no placeholder Text child emitted.
+  // No placeholder attribute → no placeholder line emitted.
+  assert.doesNotMatch(out, /placeholder:/);
   const textCount = (out.match(/Text \{/g) ?? []).length;
   assert.equal(textCount, 0);
 });
@@ -293,13 +294,15 @@ test("widgets: two <input>s in the same component get distinct ids (__input0, __
 // Templates import — appears only when a widget is emitted
 // ---------------------------------------------------------------------------
 
-test("widgets: Templates import is prepended when component contains an <input>", async () => {
+test("widgets: Widgets import is prepended when component contains an <input>", async () => {
   const out = await qmlType(`
     export function F() {
       return <input />;
     }
   `);
-  assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
+  // The T.TextField control lives in TextField.qml now — no Templates import in the component.
+  assert.doesNotMatch(out, /import QtQuick\.Templates/);
 });
 
 test("widgets: Templates import is prepended when component contains a <textarea>", async () => {
@@ -1266,8 +1269,9 @@ test("emitQml 6.5: spinbox pads for the buttons and steps on wheel only when foc
 
 const TAB_STOP = /activeFocusOnTab: solidTabstop\.enabled/;
 
-test("tabstop: <input> text field binds activeFocusOnTab to solidTabstop.enabled", async () => {
-  assert.match(await qml(`export function F(){ return <input />; }`), TAB_STOP);
+test("tabstop: TextField.qml binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  // The tab wiring moved into the component (to be reworked in the tabstop pass).
+  assert.match(TEXTFIELD_QML, TAB_STOP);
 });
 
 test("tabstop: <textarea> binds activeFocusOnTab to solidTabstop.enabled", async () => {

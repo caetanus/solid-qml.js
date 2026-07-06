@@ -39,35 +39,11 @@ W.Div {
                     cssClass: ["wg-label"]
                     text: "Name"
                 }
-                Css.CssFill {
+                W.TextField {
+                    id: __input0
                     cssClass: ["wg-input"]
-                    cssPrimitive: "input"
-                    cssState: (__input0.activeFocus ? ["focus"] : []).concat(!__input0.enabled ? ["disabled"] : [])
-                    implicitWidth: __input0.implicitWidth
-                    implicitHeight: __input0.implicitHeight
-                    T.TextField {
-                        id: __input0
-                        anchors.fill: parent
-                        background: null
-                        color: cssTheme.parseColor(parent.inheritedColor || "#2b2b2b")
-                        font.family: cssTheme.resolveFontFamily(parent.inheritedFontFamily || "Sans Serif")
-                        font.pixelSize: cssTheme.parseFontSize(parent.inheritedFontSize || "13px", 13)
-                        leftPadding: 12
-                        rightPadding: 12
-                        verticalAlignment: TextInput.AlignVCenter
-                        selectByMouse: true
-                        activeFocusOnTab: solidTabstop.enabled
-                        onTextEdited: { inputName = text }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.left: parent.left
-                            anchors.leftMargin: parent.leftPadding
-                            visible: parent.text.length === 0 && !parent.activeFocus
-                            text: "Your name"
-                            color: "#9aa0a6"
-                            font: parent.font
-                        }
-                    }
+                    placeholder: "Your name"
+                    onTextEdited: { inputName = text }
                     Binding {
                         target: __input0
                         property: "text"
@@ -82,36 +58,12 @@ W.Div {
                     cssClass: ["wg-label"]
                     text: "Password"
                 }
-                Css.CssFill {
+                W.TextField {
+                    id: __input1
                     cssClass: ["wg-input"]
-                    cssPrimitive: "input"
-                    cssState: (__input1.activeFocus ? ["focus"] : []).concat(!__input1.enabled ? ["disabled"] : [])
-                    implicitWidth: __input1.implicitWidth
-                    implicitHeight: __input1.implicitHeight
-                    T.TextField {
-                        id: __input1
-                        anchors.fill: parent
-                        background: null
-                        color: cssTheme.parseColor(parent.inheritedColor || "#2b2b2b")
-                        font.family: cssTheme.resolveFontFamily(parent.inheritedFontFamily || "Sans Serif")
-                        font.pixelSize: cssTheme.parseFontSize(parent.inheritedFontSize || "13px", 13)
-                        leftPadding: 12
-                        rightPadding: 12
-                        verticalAlignment: TextInput.AlignVCenter
-                        selectByMouse: true
-                        activeFocusOnTab: solidTabstop.enabled
-                        echoMode: TextInput.Password
-                        onTextEdited: { inputPass = text }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.left: parent.left
-                            anchors.leftMargin: parent.leftPadding
-                            visible: parent.text.length === 0 && !parent.activeFocus
-                            text: "Secret"
-                            color: "#9aa0a6"
-                            font: parent.font
-                        }
-                    }
+                    echoMode: TextInput.Password
+                    placeholder: "Secret"
+                    onTextEdited: { inputPass = text }
                     Binding {
                         target: __input1
                         property: "text"
@@ -126,36 +78,12 @@ W.Div {
                     cssClass: ["wg-label"]
                     text: "Search (max 20)"
                 }
-                Css.CssFill {
+                W.TextField {
+                    id: __input2
                     cssClass: ["wg-input"]
-                    cssPrimitive: "input"
-                    cssState: (__input2.activeFocus ? ["focus"] : []).concat(!__input2.enabled ? ["disabled"] : [])
-                    implicitWidth: __input2.implicitWidth
-                    implicitHeight: __input2.implicitHeight
-                    T.TextField {
-                        id: __input2
-                        anchors.fill: parent
-                        background: null
-                        color: cssTheme.parseColor(parent.inheritedColor || "#2b2b2b")
-                        font.family: cssTheme.resolveFontFamily(parent.inheritedFontFamily || "Sans Serif")
-                        font.pixelSize: cssTheme.parseFontSize(parent.inheritedFontSize || "13px", 13)
-                        leftPadding: 12
-                        rightPadding: 12
-                        verticalAlignment: TextInput.AlignVCenter
-                        selectByMouse: true
-                        activeFocusOnTab: solidTabstop.enabled
-                        maximumLength: 20
-                        onTextEdited: { inputSearch = text }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.left: parent.left
-                            anchors.leftMargin: parent.leftPadding
-                            visible: parent.text.length === 0 && !parent.activeFocus
-                            text: "Search…"
-                            color: "#9aa0a6"
-                            font: parent.font
-                        }
-                    }
+                    maximumLength: 20
+                    placeholder: "Search…"
+                    onTextEdited: { inputSearch = text }
                     Binding {
                         target: __input2
                         property: "text"
@@ -170,35 +98,11 @@ W.Div {
                     cssClass: ["wg-label"]
                     text: "Disabled"
                 }
-                Css.CssFill {
+                W.TextField {
+                    id: __input3
                     cssClass: ["wg-input"]
-                    cssPrimitive: "input"
-                    cssState: (__input3.activeFocus ? ["focus"] : []).concat(!__input3.enabled ? ["disabled"] : [])
-                    implicitWidth: __input3.implicitWidth
-                    implicitHeight: __input3.implicitHeight
-                    T.TextField {
-                        id: __input3
-                        anchors.fill: parent
-                        background: null
-                        color: cssTheme.parseColor(parent.inheritedColor || "#2b2b2b")
-                        font.family: cssTheme.resolveFontFamily(parent.inheritedFontFamily || "Sans Serif")
-                        font.pixelSize: cssTheme.parseFontSize(parent.inheritedFontSize || "13px", 13)
-                        leftPadding: 12
-                        rightPadding: 12
-                        verticalAlignment: TextInput.AlignVCenter
-                        selectByMouse: true
-                        activeFocusOnTab: solidTabstop.enabled
-                        enabled: false
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.left: parent.left
-                            anchors.leftMargin: parent.leftPadding
-                            visible: parent.text.length === 0 && !parent.activeFocus
-                            text: "Not editable"
-                            color: "#9aa0a6"
-                            font: parent.font
-                        }
-                    }
+                    enabled: false
+                    placeholder: "Not editable"
                 }
             }
             W.Div {

@@ -4,8 +4,6 @@ import qmlcss 1.0 as Css
 
 
 import solidqml.Widgets 1.0 as W
-
-import QtQuick.Templates 6.0 as T
 W.Div {
     id: __self
     property var login: "solidjs"
@@ -25,35 +23,11 @@ W.Div {
         cssClass: ["fetch-h1"]
         text: "github"
     }
-    Css.CssFill {
+    W.TextField {
+        id: __input0
         cssClass: ["fetch-search"]
-        cssPrimitive: "input"
-        cssState: (__input0.activeFocus ? ["focus"] : []).concat(!__input0.enabled ? ["disabled"] : [])
-        implicitWidth: __input0.implicitWidth
-        implicitHeight: __input0.implicitHeight
-        T.TextField {
-            id: __input0
-            anchors.fill: parent
-            background: null
-            color: cssTheme.parseColor(parent.inheritedColor || "#2b2b2b")
-            font.family: cssTheme.resolveFontFamily(parent.inheritedFontFamily || "Sans Serif")
-            font.pixelSize: cssTheme.parseFontSize(parent.inheritedFontSize || "13px", 13)
-            leftPadding: 12
-            rightPadding: 12
-            verticalAlignment: TextInput.AlignVCenter
-            selectByMouse: true
-            activeFocusOnTab: solidTabstop.enabled
-            onTextEdited: { login = text }
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.left: parent.left
-                anchors.leftMargin: parent.leftPadding
-                visible: parent.text.length === 0 && !parent.activeFocus
-                text: "GitHub login"
-                color: "#9aa0a6"
-                font: parent.font
-            }
-        }
+        placeholder: "GitHub login"
+        onTextEdited: { login = text }
         Binding {
             target: __input0
             property: "text"

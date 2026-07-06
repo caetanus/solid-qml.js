@@ -229,28 +229,19 @@ async function qmlType(src: string): Promise<string> {
   return emitComponentType(fn, render, new Map()).join("\n");
 }
 
-test("emitQml: <input class='x' value={s()} onInput={...} /> -> CssFill + T.TextField + Binding", async () => {
+test("emitQml: <input class='x' value={s()} onInput={...} /> -> W.TextField + Binding", async () => {
   const out = await qmlType(`
     export function F() {
       const [s, setS] = createSignal("");
       return <input class="x" value={s()} onInput={(e) => setS(e.currentTarget.value)} />;
     }
   `);
-  // Outer wrapper carries the CSS identity and pseudo-class state.
-  assert.match(out, /Css\.CssFill \{/);
+  // One .qml per component: the emit instantiates W.TextField and wires class/handlers/Binding.
+  assert.match(out, /W\.TextField \{/);
   assert.match(out, /cssClass: \["x"\]/);
-  assert.match(out, /cssPrimitive: "input"/);
-  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)/);
-  // Implicit size follows the control so CSS width/height still overrides.
-  assert.match(out, /implicitWidth: __input0\.implicitWidth/);
-  // Native control — chromeless (background null) so our CssFill owns the box visuals.
-  assert.match(out, /T\.TextField \{/);
   assert.match(out, /id: __input0/);
-  assert.match(out, /anchors\.fill: parent/);
-  assert.match(out, /background: null/);
-  // CSS colour/font bridged from the wrapper's inherited properties.
-  assert.match(out, /color: cssTheme\.parseColor\(parent\.inheritedColor/);
-  assert.match(out, /font\.pixelSize: cssTheme\.parseFontSize/);
+  // The T.TextField internals now live in TextField.qml, not the emit.
+  assert.doesNotMatch(out, /T\.TextField/);
   // onTextEdited handler: e.currentTarget.value → text (translated by translateInputHandler).
   assert.match(out, /onTextEdited: \{ s = text \}/);
   // Binding element persists the signal value into the control (survives user edits).
@@ -261,7 +252,7 @@ test("emitQml: <input class='x' value={s()} onInput={...} /> -> CssFill + T.Text
   assert.match(out, /restoreMode: Binding\.RestoreNone/);
   // No old-style Connections/onCompleted (replaced by Binding).
   assert.doesNotMatch(out, /Component\.onCompleted/);
-  assert.doesNotMatch(out, /TextInput \{/); // bare TextInput is gone; T.TextField is used
+  assert.doesNotMatch(out, /TextInput \{/); // bare TextInput is gone
 });
 
 // --- Task 3: classList={{ cls: expr }} ---
