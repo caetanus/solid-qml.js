@@ -562,19 +562,21 @@ test("widgets: radio Templates import is prepended", async () => {
 // Phase 4: <select> / <option> → T.ComboBox
 // ---------------------------------------------------------------------------
 
-test("widgets: <select> emits wrapper CssFill with cssPrimitive 'select'", async () => {
+const SELECT_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Select.qml", import.meta.url)), "utf8");
+
+test("widgets: <select> instantiates the W.Select component", async () => {
   const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /Css\.CssFill \{/);
-  assert.match(out, /cssPrimitive: "select"/);
+  assert.match(out, /W\.Select \{/);
+  assert.match(out, /id: __input0/);
+  assert.doesNotMatch(out, /T\.ComboBox/);
 });
 
-test("widgets: <select> emits T.ComboBox inside with background null and leftPadding 12", async () => {
-  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /T\.ComboBox \{/);
-  assert.match(out, /id: __input0/);
-  assert.match(out, /anchors\.fill: parent/);
-  assert.match(out, /background: null/);
-  assert.match(out, /leftPadding: 12/);
+test("widgets: Select.qml has a T.ComboBox with background null and leftPadding 12", async () => {
+  assert.match(SELECT_QML, /cssPrimitive: "select"/);
+  assert.match(SELECT_QML, /T\.ComboBox \{/);
+  assert.match(SELECT_QML, /anchors\.fill: parent/);
+  assert.match(SELECT_QML, /background: null/);
+  assert.match(SELECT_QML, /leftPadding: 12/);
 });
 
 test("widgets: <select> model array contains option labels in order", async () => {
@@ -584,83 +586,73 @@ test("widgets: <select> model array contains option labels in order", async () =
   assert.match(out, /model: \["Alpha", "Beta"\]/);
 });
 
-test("widgets: <select> readonly __values property holds option values", async () => {
+test("widgets: <select> values array holds option values", async () => {
   const out = await qml(`export function F(){ return (
     <select><option value="a">Alpha</option><option value="b">Beta</option></select>
   ); }`);
-  assert.match(out, /readonly property var __values: \["a", "b"\]/);
+  assert.match(out, /values: \["a", "b"\]/);
 });
 
 test("widgets: <option> without value attr uses the label as value", async () => {
   const out = await qml(`export function F(){ return (
     <select><option>Baz</option></select>
   ); }`);
-  // Both model label and __values entry should be "Baz"
+  // Both model label and values entry should be "Baz"
   assert.match(out, /model: \["Baz"\]/);
-  assert.match(out, /__values: \["Baz"\]/);
+  assert.match(out, /values: \["Baz"\]/);
 });
 
-test("widgets: <select> contentItem is CssText with cssClass ['value'] showing displayText", async () => {
-  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /contentItem: Css\.CssText \{/);
-  assert.match(out, /cssClass: \["value"\]/);
-  assert.match(out, /text: __input0\.displayText/);
+test("widgets: Select.qml contentItem is CssText with cssClass ['value'] showing displayText", async () => {
+  assert.match(SELECT_QML, /contentItem: Css\.CssText \{/);
+  assert.match(SELECT_QML, /cssClass: \["value"\]/);
+  assert.match(SELECT_QML, /text: ctl\.displayText/);
 });
 
-test("widgets: <select> emits a chevron CssText with cssClass ['chevron'] anchored right", async () => {
-  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /cssClass: \["chevron"\]/);
-  assert.match(out, /text: "▾"/);
-  assert.match(out, /anchors\.right: parent\.right/);
-  assert.match(out, /anchors\.verticalCenter: parent\.verticalCenter/);
+test("widgets: Select.qml emits a chevron CssText with cssClass ['chevron'] anchored right", async () => {
+  assert.match(SELECT_QML, /cssClass: \["chevron"\]/);
+  assert.match(SELECT_QML, /text: "▾"/);
+  assert.match(SELECT_QML, /anchors\.right: parent\.right/);
+  assert.match(SELECT_QML, /anchors\.verticalCenter: parent\.verticalCenter/);
 });
 
-test("widgets: <select> delegate is T.ItemDelegate with explicit width from popup.width", async () => {
-  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /delegate: T\.ItemDelegate \{/);
-  assert.match(out, /width: __input0\.popup\.width/);
-  assert.match(out, /implicitHeight: 36/);
+test("widgets: Select.qml delegate is T.ItemDelegate with explicit width from popup.width", async () => {
+  assert.match(SELECT_QML, /delegate: T\.ItemDelegate \{/);
+  assert.match(SELECT_QML, /width: ctl\.popup\.width/);
+  assert.match(SELECT_QML, /implicitHeight: 36/);
 });
 
-test("widgets: <select> delegate background CssFill has cssClass ['option'] and hover/selected cssState", async () => {
-  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /cssClass: \["option"\]/);
-  // hover: optDelegate.highlighted; selected: currentIndex === index
-  assert.match(out, /__optDel0\.highlighted \? \["hover"\] : \[\]/);
-  assert.match(out, /__input0\.currentIndex === index \? \["selected"\] : \[\]/);
+test("widgets: Select.qml delegate background CssFill has cssClass ['option'] and hover/selected cssState", async () => {
+  assert.match(SELECT_QML, /cssClass: \["option"\]/);
+  assert.match(SELECT_QML, /optDel\.highlighted \? \["hover"\] : \[\]/);
+  assert.match(SELECT_QML, /ctl\.currentIndex === index \? \["selected"\] : \[\]/);
 });
 
-test("widgets: <select> delegate contentItem is CssText with cssClass ['option-label']", async () => {
-  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /cssClass: \["option-label"\]/);
-  assert.match(out, /text: modelData/);
+test("widgets: Select.qml delegate contentItem is CssText with cssClass ['option-label']", async () => {
+  assert.match(SELECT_QML, /cssClass: \["option-label"\]/);
+  assert.match(SELECT_QML, /text: modelData/);
 });
 
-test("widgets: <select> popup is T.Popup with y below (flip expr), width = combo.width, padding 1", async () => {
-  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /popup: T\.Popup \{/);
-  assert.match(out, /: __input0\.height \+ 2/); // flip expression ends in the below-position
-  assert.match(out, /width: __input0\.width/);
-  assert.match(out, /padding: 1/);
+test("widgets: Select.qml popup is T.Popup with y below (flip expr), width = combo.width, padding 1", async () => {
+  assert.match(SELECT_QML, /popup: T\.Popup \{/);
+  assert.match(SELECT_QML, /: ctl\.height \+ 2/); // flip expression ends in the below-position
+  assert.match(SELECT_QML, /width: ctl\.width/);
+  assert.match(SELECT_QML, /padding: 1/);
 });
 
-test("widgets: <select> popup background is CssFill cssClass ['popup']", async () => {
-  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /cssClass: \["popup"\]/);
+test("widgets: Select.qml popup background is CssFill cssClass ['popup']", async () => {
+  assert.match(SELECT_QML, /cssClass: \["popup"\]/);
 });
 
-test("widgets: <select> popup contentItem is ListView with delegateModel and capped implicitHeight", async () => {
-  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /contentItem: ListView \{/);
-  assert.match(out, /model: __input0\.delegateModel/);
-  assert.match(out, /currentIndex: __input0\.highlightedIndex/);
-  assert.match(out, /implicitHeight: Math\.min\(contentHeight, 240\)/);
+test("widgets: Select.qml popup contentItem is ListView with delegateModel and capped implicitHeight", async () => {
+  assert.match(SELECT_QML, /contentItem: ListView \{/);
+  assert.match(SELECT_QML, /model: ctl\.delegateModel/);
+  assert.match(SELECT_QML, /currentIndex: ctl\.highlightedIndex/);
+  assert.match(SELECT_QML, /implicitHeight: Math\.min\(contentHeight, 240\)/);
 });
 
-test("widgets: <select> cssState carries focus and disabled on the wrapper", async () => {
-  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /__input0\.activeFocus \? \["focus"\] : \[\]/);
-  assert.match(out, /!__input0\.enabled \? \["disabled"\] : \[\]/);
+test("widgets: Select.qml cssState carries focus and disabled on the wrapper", async () => {
+  assert.match(SELECT_QML, /ctl\.activeFocus \? \["focus"\] : \[\]/);
+  assert.match(SELECT_QML, /!ctl\.enabled \? \["disabled"\] : \[\]/);
 });
 
 test("widgets: <select> value={sig()} emits Binding on currentIndex via indexOf", async () => {
@@ -678,7 +670,7 @@ test("widgets: <select> value={sig()} emits Binding on currentIndex via indexOf"
   assert.match(out, /Binding \{/);
   assert.match(out, /target: __input0/);
   assert.match(out, /property: "currentIndex"/);
-  assert.match(out, /value: __input0\.__values\.indexOf\(sel\)/);
+  assert.match(out, /value: __input0\.values\.indexOf\(sel\)/);
   assert.match(out, /restoreMode: Binding\.RestoreNone/);
 });
 
@@ -687,7 +679,7 @@ test("widgets: <select> without value does NOT emit a Binding", async () => {
   assert.doesNotMatch(out, /Binding \{/);
 });
 
-test("widgets: <select> onChange wires onActivated with e.target.value → __values[index]", async () => {
+test("widgets: <select> onChange wires onActivated with e.target.value → values[index]", async () => {
   const out = await qmlType(`
     export function F() {
       const [sel, setSel] = createSignal("a");
@@ -698,7 +690,7 @@ test("widgets: <select> onChange wires onActivated with e.target.value → __val
       );
     }
   `);
-  assert.match(out, /onActivated: \(index\) => \{ sel = __input0\.__values\[index\] \}/);
+  assert.match(out, /onActivated: \(index\) => \{ sel = __input0\.values\[index\] \}/);
 });
 
 test("widgets: <select> without onChange does NOT emit onActivated", async () => {
@@ -706,14 +698,15 @@ test("widgets: <select> without onChange does NOT emit onActivated", async () =>
   assert.doesNotMatch(out, /onActivated/);
 });
 
-test("widgets: <select> disabled prop sets enabled: false on T.ComboBox", async () => {
+test("widgets: <select> disabled prop sets enabled: false on the instance", async () => {
   const out = await qml(`export function F(){ return <select disabled><option>A</option></select>; }`);
   assert.match(out, /enabled: false/);
 });
 
-test("widgets: <select> Templates import is prepended", async () => {
+test("widgets: <select> Widgets import is prepended", async () => {
   const out = await qmlType(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /import QtQuick\.Templates 6\.8 as T/);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
+  assert.doesNotMatch(out, /import QtQuick\.Templates/);
 });
 
 test("widgets: dynamic <option> content throws a clear transpiler error", async () => {
@@ -1244,9 +1237,8 @@ test("emitQml 6.5: radio dot is a plain Rectangle styled via CssItem with state-
   assert.match(out, /Rectangle \{[\s\S]*?Css\.CssItem \{ cssPrimitive: "rect"; cssClass: __input0\.checked \? \["indicator-dot", "checked"\] : \["indicator-dot"\] \}/);
 });
 
-test("emitQml 6.5: select popup carries the implicit-height formula", async () => {
-  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /popup: T\.Popup \{[\s\S]*?implicitHeight: contentHeight \+ topPadding \+ bottomPadding/);
+test("emitQml 6.5: Select.qml popup carries the implicit-height formula", async () => {
+  assert.match(SELECT_QML, /popup: T\.Popup \{[\s\S]*?implicitHeight: contentHeight \+ topPadding \+ bottomPadding/);
 });
 
 test("emitQml 6.5: SpinBox.qml pads for the buttons and steps on wheel only when focused", async () => {
@@ -1284,8 +1276,8 @@ test("tabstop: radio binds activeFocusOnTab to solidTabstop.enabled", async () =
   assert.match(await qml(`export function F(){ return <input type="radio" name="g" />; }`), TAB_STOP);
 });
 
-test("tabstop: <select> binds activeFocusOnTab to solidTabstop.enabled", async () => {
-  assert.match(await qml(`export function F(){ return <select><option>A</option></select>; }`), TAB_STOP);
+test("tabstop: Select.qml binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  assert.match(SELECT_QML, TAB_STOP);
 });
 
 test("tabstop: Slider.qml binds activeFocusOnTab to solidTabstop.enabled", async () => {
@@ -1375,10 +1367,9 @@ test("tabstop: Window emits Ctrl+Tab / Ctrl+Shift+Tab shortcuts honoring solidTa
 // control; background and contentItem each carry it (they are SIBLING slots — every
 // popup descendant walks through one of them). ---
 
-test("select: popup background and contentItem re-anchor the CSS chain at the control", async () => {
-  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /popup: T\.Popup \{[\s\S]*?background: Css\.CssFill \{[\s\S]*?property Item cssAncestor: __input0/);
-  assert.match(out, /contentItem: ListView \{[\s\S]*?property Item cssAncestor: __input0/);
+test("select: Select.qml popup background and contentItem re-anchor the CSS chain at the control", async () => {
+  assert.match(SELECT_QML, /popup: T\.Popup \{[\s\S]*?background: Css\.CssFill \{[\s\S]*?property Item cssAncestor: ctl/);
+  assert.match(SELECT_QML, /contentItem: ListView \{[\s\S]*?property Item cssAncestor: ctl/);
 });
 
 test("date: popup background and contentItem re-anchor the CSS chain at the wrapper", async () => {
@@ -1444,10 +1435,9 @@ test("calendar: the day label carries the day states (sibling slots — no ances
 // Templates 6.8+) so they escape the app window, and they flip ABOVE the control when
 // opening below would overflow the screen. ---
 
-test("popups: select popup is an in-scene item popup and flips above on window overflow", async () => {
-  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /popup: T\.Popup \{[\s\S]*?popupType: T\.Popup\.Item/);
-  assert.match(out, /y: \(__input0\.mapToItem\(null, 0, __input0\.height \+ 2\)\.y \+ height > \(__input0\.Window\.height \|\| Screen\.height\)\) \? -\(height \+ 2\) : __input0\.height \+ 2/);
+test("popups: Select.qml popup is an in-scene item popup and flips above on window overflow", async () => {
+  assert.match(SELECT_QML, /popup: T\.Popup \{[\s\S]*?popupType: T\.Popup\.Item/);
+  assert.match(SELECT_QML, /y: \(ctl\.mapToItem\(null, 0, ctl\.height \+ 2\)\.y \+ height > \(ctl\.Window\.height \|\| Screen\.height\)\) \? -\(height \+ 2\) : ctl\.height \+ 2/);
 });
 
 test("popups: date popup is an in-scene item popup and flips above on window overflow", async () => {
@@ -1456,14 +1446,14 @@ test("popups: date popup is an in-scene item popup and flips above on window ove
   assert.match(out, /y: \(__input0W\.mapToItem\(null, 0, __input0W\.height \+ 2\)\.y \+ height > \(__input0W\.Window\.height \|\| Screen\.height\)\) \? -\(height \+ 2\) : __input0W\.height \+ 2/);
 });
 
-test("popups: widgets bump the Templates import to 6.8 (popupType)", async () => {
-  const out = await qmlType(`export function F(){ return <select><option>A</option></select>; }`);
+test("popups: date widget still bumps the Templates import to 6.8 (popupType)", async () => {
+  // Select is now a component (its .qml owns the Templates import); the date widget is still inline.
+  const out = await qmlType(`export function F(){ return <input type="date" />; }`);
   assert.match(out, /import QtQuick\.Templates 6\.8 as T/);
 });
 
-test("select: delegate binds highlighted to the combo's highlightedIndex (keyboard nav visible)", async () => {
-  const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(out, /T\.ItemDelegate \{[\s\S]*?highlighted: __input0\.highlightedIndex === index/);
+test("select: Select.qml delegate binds highlighted to the combo's highlightedIndex (keyboard nav visible)", async () => {
+  assert.match(SELECT_QML, /T\.ItemDelegate \{[\s\S]*?highlighted: ctl\.highlightedIndex === index/);
 });
 
 test("date: field click after a press-outside close does not reopen (toggle race)", async () => {
@@ -1508,8 +1498,7 @@ test("date keyboard: field click gives the field focus (keyboard works after mou
 });
 
 test("popups: dropdowns close when the app window deactivates (Qt::Popup semantics)", async () => {
-  const sel = await qml(`export function F(){ return <select><option>A</option></select>; }`);
-  assert.match(sel, /Window\.onActiveChanged: if \(!Window\.active\) __input0\.popup\.close\(\)/);
+  assert.match(SELECT_QML, /Window\.onActiveChanged: if \(!Window\.active\) ctl\.popup\.close\(\)/);
   const date = await qml(`export function F(){ return <input type="date" />; }`);
   assert.match(date, /Window\.onActiveChanged: if \(!Window\.active\) __input0P\.close\(\)/);
 });

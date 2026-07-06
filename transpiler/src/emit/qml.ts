@@ -1053,9 +1053,10 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
   const counter = scope.inputCounter ?? { n: 0 };
   const idx = counter.n++;
   const ctlId = `__input${idx}`;
-  const delId = `__optDel${idx}`;
 
-  if (scope.usedWidgets) { scope.usedWidgets.flag = true; scope.usedWidgets.popupWindow = true; }
+  // One .qml per component: instantiate W.Select (the T.ComboBox + delegate + Item-popup live in
+  // Select.qml). Keep the id so the controlled Binding and onActivated value-reads resolve.
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
   // Parse static <option> children.
   const options = parseOptions(children);
@@ -1079,105 +1080,23 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
     }
   }
 
-  const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
-  // onActivated(index): translate onChange so e.target.value → __values[index].
+  // onActivated(index): translate onChange so e.target.value → the picked value. `${ctlId}.values`
+  // resolves against the component's `values` array on the instance.
   const onActivatedBody = onChangeFn
-    ? translateValueHandler(onChangeFn, `${ctlId}.__values[index]`, scope)
+    ? translateValueHandler(onChangeFn, `${ctlId}.values[index]`, scope)
     : "";
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.Select {`,
+    `${i(1)}id: ${ctlId}`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "select"`,
-    `${i(1)}cssState: ${cssState}`,
-    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
-    `${i(1)}T.ComboBox {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
-    // Qt::Popup semantics (owner directive): the dropdown vanishes when the app window
-    // loses focus — a native popup window does not linger over other applications.
-    `${i(2)}Window.onActiveChanged: if (!Window.active) ${ctlId}.popup.close()`,
-    // No visual chrome from Templates; the CssFill wrapper owns the box painting.
-    `${i(2)}background: null`,
-    // leftPadding keeps the contentItem text clear of the border (G4 from Phase 1 probe).
-    `${i(2)}leftPadding: 12`,
-    // Parallel values array alongside the display-label model.
-    `${i(2)}readonly property var __values: ${valuesArr}`,
-    `${i(2)}model: ${modelArr}`,
-    // contentItem: CssText showing the selected item's display label.
-    `${i(2)}contentItem: Css.CssText {`,
-    `${i(3)}cssPrimitive: ""`,
-    `${i(3)}cssClass: ["value"]`,
-    `${i(3)}text: ${ctlId}.displayText`,
-    `${i(2)}}`,
-    // Chevron: absolutely positioned at the right-centre of the ComboBox.
-    `${i(2)}Css.CssText {`,
-    `${i(3)}cssPrimitive: ""`,
-    `${i(3)}cssClass: ["chevron"]`,
-    `${i(3)}text: "▾"`,
-    `${i(3)}anchors.right: parent.right`,
-    `${i(3)}anchors.rightMargin: 8`,
-    `${i(3)}anchors.verticalCenter: parent.verticalCenter`,
-    `${i(2)}}`,
-    // Delegate: one T.ItemDelegate per model row.
-    `${i(2)}delegate: T.ItemDelegate {`,
-    `${i(3)}id: ${delId}`,
-    // The style must bind highlighted itself (Basic does the same) — without it keyboard
-    // navigation moves highlightedIndex invisibly and the active row never changes.
-    `${i(3)}highlighted: ${ctlId}.highlightedIndex === index`,
-    // Width must be explicit (G4 from Phase 1): ComboBox does not size delegates automatically.
-    `${i(3)}width: ${ctlId}.popup.width`,
-    `${i(3)}implicitHeight: 36`,
-    `${i(3)}background: Css.CssFill {`,
-    `${i(4)}cssPrimitive: "div"`,
-    `${i(4)}cssClass: ["option"]`,
-    `${i(4)}cssState: (${delId}.highlighted ? ["hover"] : []).concat(${ctlId}.currentIndex === index ? ["selected"] : [])`,
-    `${i(3)}}`,
-    `${i(3)}contentItem: Css.CssText {`,
-    `${i(4)}cssPrimitive: ""`,
-    `${i(4)}cssClass: ["option-label"]`,
-    `${i(4)}text: modelData`,
-    `${i(3)}}`,
-    `${i(2)}}`,
-    // Popup: T.Popup below the control; padding ≥ border-width prevents clip (G3).
-    // Templates popups have NO implicit-size policy of their own (that's the style's job,
-    // and we ARE the style) — without this line the popup opens 0px tall.
-    `${i(2)}popup: T.Popup {`,
-    // In-scene overlay popup (NOT Popup.Window): Wayland compositors don't honor client
-    // toplevel positioning, so a window-type popup lands wherever the compositor drops it
-    // (top of screen) once the app window floats. Item popups position relative to the control
-    // reliably. Flip ABOVE when opening below would overflow the WINDOW (not the whole screen).
-    `${i(3)}popupType: T.Popup.Item`,
-    `${i(3)}y: (${ctlId}.mapToItem(null, 0, ${ctlId}.height + 2).y + height > (${ctlId}.Window.height || Screen.height)) ? -(height + 2) : ${ctlId}.height + 2`,
-    `${i(3)}width: ${ctlId}.width`,
-    `${i(3)}implicitHeight: contentHeight + topPadding + bottomPadding`,
-    `${i(3)}padding: 1`,
-    // cssAncestor: popup contents are reparented to the window Overlay, severing the
-    // visual chain `.wg-select .popup` matches against — re-anchor the engine's ancestor
-    // walk at the control. background and contentItem are SIBLING slots; every popup
-    // descendant's walk passes through one of them, so these two properties cover all rows.
-    `${i(3)}background: Css.CssFill {`,
-    `${i(4)}property Item cssAncestor: ${ctlId}`,
-    `${i(4)}cssPrimitive: "div"`,
-    `${i(4)}cssClass: ["popup"]`,
-    `${i(3)}}`,
-    `${i(3)}contentItem: ListView {`,
-    `${i(4)}property Item cssAncestor: ${ctlId}`,
-    `${i(4)}clip: true`,
-    `${i(4)}model: ${ctlId}.delegateModel`,
-    `${i(4)}currentIndex: ${ctlId}.highlightedIndex`,
-    `${i(4)}implicitHeight: Math.min(contentHeight, 240)`,
-    `${i(3)}}`,
-    `${i(2)}}`,
+    `${i(1)}model: ${modelArr}`,
+    `${i(1)}values: ${valuesArr}`,
   ];
 
-  if (disabled) lines.push(`${i(2)}enabled: false`);
-  if (onActivatedBody) lines.push(`${i(2)}onActivated: (index) => { ${onActivatedBody} }`);
-
-  lines.push(`${i(1)}}`);
+  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (onActivatedBody) lines.push(`${i(1)}onActivated: (index) => { ${onActivatedBody} }`);
 
   // Binding: keep currentIndex in sync with the controlled value expression.
   if (valueExpr !== null) {
@@ -1185,7 +1104,7 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
       `${i(1)}Binding {`,
       `${i(2)}target: ${ctlId}`,
       `${i(2)}property: "currentIndex"`,
-      `${i(2)}value: ${ctlId}.__values.indexOf(${valueExpr})`,
+      `${i(2)}value: ${ctlId}.values.indexOf(${valueExpr})`,
       `${i(2)}restoreMode: Binding.RestoreNone`,
       `${i(1)}}`,
     );

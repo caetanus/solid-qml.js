@@ -400,75 +400,16 @@ W.Div {
                     cssClass: ["wg-label"]
                     text: "Fruit"
                 }
-                Css.CssFill {
+                W.Select {
+                    id: __input13
                     cssClass: ["wg-select"]
-                    cssPrimitive: "select"
-                    cssState: (__input13.activeFocus ? ["focus"] : []).concat(!__input13.enabled ? ["disabled"] : [])
-                    implicitWidth: __input13.implicitWidth
-                    implicitHeight: __input13.implicitHeight
-                    T.ComboBox {
-                        id: __input13
-                        anchors.fill: parent
-                        activeFocusOnTab: solidTabstop.enabled
-                        Window.onActiveChanged: if (!Window.active) __input13.popup.close()
-                        background: null
-                        leftPadding: 12
-                        readonly property var __values: ["apple", "banana", "cherry", "mango"]
-                        model: ["Apple", "Banana", "Cherry", "Mango"]
-                        contentItem: Css.CssText {
-                            cssPrimitive: ""
-                            cssClass: ["value"]
-                            text: __input13.displayText
-                        }
-                        Css.CssText {
-                            cssPrimitive: ""
-                            cssClass: ["chevron"]
-                            text: "▾"
-                            anchors.right: parent.right
-                            anchors.rightMargin: 8
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                        delegate: T.ItemDelegate {
-                            id: __optDel13
-                            highlighted: __input13.highlightedIndex === index
-                            width: __input13.popup.width
-                            implicitHeight: 36
-                            background: Css.CssFill {
-                                cssPrimitive: "div"
-                                cssClass: ["option"]
-                                cssState: (__optDel13.highlighted ? ["hover"] : []).concat(__input13.currentIndex === index ? ["selected"] : [])
-                            }
-                            contentItem: Css.CssText {
-                                cssPrimitive: ""
-                                cssClass: ["option-label"]
-                                text: modelData
-                            }
-                        }
-                        popup: T.Popup {
-                            popupType: T.Popup.Item
-                            y: (__input13.mapToItem(null, 0, __input13.height + 2).y + height > (__input13.Window.height || Screen.height)) ? -(height + 2) : __input13.height + 2
-                            width: __input13.width
-                            implicitHeight: contentHeight + topPadding + bottomPadding
-                            padding: 1
-                            background: Css.CssFill {
-                                property Item cssAncestor: __input13
-                                cssPrimitive: "div"
-                                cssClass: ["popup"]
-                            }
-                            contentItem: ListView {
-                                property Item cssAncestor: __input13
-                                clip: true
-                                model: __input13.delegateModel
-                                currentIndex: __input13.highlightedIndex
-                                implicitHeight: Math.min(contentHeight, 240)
-                            }
-                        }
-                        onActivated: (index) => { fruit = __input13.__values[index] }
-                    }
+                    model: ["Apple", "Banana", "Cherry", "Mango"]
+                    values: ["apple", "banana", "cherry", "mango"]
+                    onActivated: (index) => { fruit = __input13.values[index] }
                     Binding {
                         target: __input13
                         property: "currentIndex"
-                        value: __input13.__values.indexOf(fruit)
+                        value: __input13.values.indexOf(fruit)
                         restoreMode: Binding.RestoreNone
                     }
                 }
