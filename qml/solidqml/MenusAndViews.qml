@@ -363,69 +363,10 @@ W.Div {
             cssClass: ["nv-label"]
             text: "treeview"
         }
-        Css.CssFill {
+        W.TreeView {
             cssClass: ["nv-tree"]
-            id: __tree14
-            cssPrimitive: "div"
-            implicitWidth: 240
-            implicitHeight: __treeCol14.height
-            function __treeSel14(__node) { selNode = __node.label }
-            Item {
-                anchors.fill: parent
-                Component {
-                    id: __treeComp14
-                    Column {
-                        id: __tnode14
-                        width: parent ? parent.width : 0
-                        property var node: modelData.__n
-                        property int depth: modelData.__d
-                        property bool expanded: true
-                        Css.CssFill {
-                            cssPrimitive: "div"
-                            cssClass: ["tree-row"]
-                            cssState: __trowMa14.containsMouse ? ["hover"] : []
-                            width: __tnode14.width
-                            height: 28
-                            implicitHeight: 28
-                            Item {
-                                anchors.fill: parent
-                                Text {
-                                    x: 8 + __tnode14.depth * 16
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    text: (__tnode14.node && __tnode14.node.children && __tnode14.node.children.length) ? (__tnode14.expanded ? "▾" : "▸") : ""
-                                    Css.CssItem { cssPrimitive: "text"; cssClass: ["tree-disclosure"] }
-                                }
-                                Css.CssText {
-                                    cssPrimitive: ""
-                                    cssClass: ["tree-label"]
-                                    x: 8 + __tnode14.depth * 16 + 18
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    text: __tnode14.node ? ("" + __tnode14.node.label) : ""
-                                }
-                                MouseArea {
-                                    id: __trowMa14
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: { __tnode14.expanded = !__tnode14.expanded; __tree14.__treeSel14(__tnode14.node) }
-                                }
-                            }
-                        }
-                        Repeater {
-                            model: (__tnode14.expanded && __tnode14.node && __tnode14.node.children) ? __tnode14.node.children.map(function(c) { return ({ __n: c, __d: __tnode14.depth + 1 }) }) : []
-                            delegate: __treeComp14
-                        }
-                    }
-                }
-                Column {
-                    id: __treeCol14
-                    width: parent.width
-                    Repeater {
-                        model: ((treeData) || []).map(function(c) { return ({ __n: c, __d: 0 }) })
-                        delegate: __treeComp14
-                    }
-                }
-            }
+            __treeData: treeData
+            onSelected: (node) => { selNode = node.label }
         }
         W.Text {
             cssClass: ["nv-echo"]

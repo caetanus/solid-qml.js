@@ -5,6 +5,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { normalize } from "../src/babel/transform.ts";
 import { findRender } from "../src/ast/find.ts";
 import { analyzeSignals } from "../src/model/symbols.ts";
@@ -309,51 +311,38 @@ const TREE_SRC = `
   }
 `;
 
-test("treeview: wrapper CssFill carries the class and sizes to the root column", async () => {
+test("treeview: instantiates W.TreeView with the class and passes the data as treeData", async () => {
   const out = await qml(TREE_SRC);
-  assert.match(out, /Css\.CssFill \{/);
+  assert.match(out, /W\.TreeView \{/);
   assert.match(out, /cssClass: \["files"\]/);
-  assert.match(out, /id: __tree0/);
-  assert.match(out, /implicitHeight: __treeCol0\.height/);
+  // `data` is a QML reserved name (Item's default property) — safeName escaped the local to `data_`.
+  assert.match(out, /__treeData: data_/);
+  // The recursive-node internals now live in TreeView.qml, not the emit.
+  assert.doesNotMatch(out, /Component \{/);
+  assert.doesNotMatch(out, /tree-row/);
 });
 
-test("treeview: recursion is a Component referenced BY ID (inline components cycle)", async () => {
+test("treeview: onSelect wires the component's selected(node) signal", async () => {
   const out = await qml(TREE_SRC);
-  assert.match(out, /Component \{/);
-  assert.match(out, /id: __treeComp0/);
-  const delegateRefs = out.match(/delegate: __treeComp0/g) ?? [];
-  assert.equal(delegateRefs.length, 2, "child Repeater AND root Repeater reference the node component");
+  assert.match(out, /onSelected: \(node\) => \{ sel = node\.label \}/);
 });
 
-test("treeview: rows are .tree-row CssFills with hover state and depth-indented label", async () => {
-  const out = await qml(TREE_SRC);
-  assert.match(out, /cssClass: \["tree-row"\]/);
-  assert.match(out, /cssState: __trowMa0\.containsMouse \? \["hover"\] : \[\]/);
-  assert.match(out, /cssClass: \["tree-label"\]/);
-  assert.match(out, /x: 8 \+ __tnode0\.depth \* 16 \+ 18/);
-});
-
-test("treeview: disclosure glyph flips with expanded and hides on leaves", async () => {
-  const out = await qml(TREE_SRC);
-  assert.match(out, /text: \(__tnode0\.node && __tnode0\.node\.children && __tnode0\.node\.children\.length\) \? \(__tnode0\.expanded \? "▾" : "▸"\) : ""/);
-  assert.match(out, /cssClass: \["tree-disclosure"\]/);
-});
-
-test("treeview: click toggles expanded and fires onSelect with the node", async () => {
-  const out = await qml(TREE_SRC);
-  assert.match(out, /function __treeSel0\(__node\) \{ sel = __node\.label \}/);
-  assert.match(out, /onClicked: \{ __tnode0\.expanded = !__tnode0\.expanded; __tree0\.__treeSel0\(__tnode0\.node\) \}/);
-});
-
-test("treeview: data expression feeds the root Repeater with depth-0 rows", async () => {
-  const out = await qml(TREE_SRC);
-  // `data` is a QML reserved name — safeName escapes the local to `data_`.
-  assert.match(out, /model: \(\(data_\) \|\| \[\]\)\.map\(function\(c\) \{ return \(\{ __n: c, __d: 0 \}\) \}\)/);
-});
-
-test("treeview: children recurse with depth+1 only while expanded", async () => {
-  const out = await qml(TREE_SRC);
-  assert.match(out, /model: \(__tnode0\.expanded && __tnode0\.node && __tnode0\.node\.children\) \? __tnode0\.node\.children\.map\(function\(c\) \{ return \(\{ __n: c, __d: __tnode0\.depth \+ 1 \}\) \}\) : \[\]/);
+test("treeview: TreeView.qml hosts the recursive-node structure", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TreeView.qml", import.meta.url)), "utf8");
+  // Recursion is a Component referenced BY ID (a self-referencing inline component is a compile error).
+  assert.match(src, /Component \{/);
+  assert.match(src, /id: nodeComp/);
+  assert.equal((src.match(/delegate: nodeComp/g) ?? []).length, 2, "child AND root Repeater reference the node component");
+  // Rows: .tree-row with hover state, depth-indented .tree-label, flipping disclosure glyph.
+  assert.match(src, /cssClass: \["tree-row"\]/);
+  assert.match(src, /cssState: rowMa\.containsMouse \? \["hover"\] : \[\]/);
+  assert.match(src, /x: 8 \+ nodeItem\.depth \* 16 \+ 18/);
+  assert.match(src, /\? \(nodeItem\.expanded \? "▾" : "▸"\) : ""/);
+  assert.match(src, /cssClass: \["tree-disclosure"\]/);
+  // Click toggles expanded and fires selected(node); children recurse with depth+1 while expanded.
+  assert.match(src, /onClicked: \{ nodeItem\.expanded = !nodeItem\.expanded; root\.selected\(nodeItem\.node\) \}/);
+  assert.match(src, /model: \(\(root\.__treeData\) \|\| \[\]\)\.map\(function\(c\) \{ return \(\{ __n: c, __d: 0 \}\) \}\)/);
+  assert.match(src, /model: \(nodeItem\.expanded && nodeItem\.node && nodeItem\.node\.children\) \? nodeItem\.node\.children\.map\(function\(c\) \{ return \(\{ __n: c, __d: nodeItem\.depth \+ 1 \}\) \}\) : \[\]/);
 });
 
 // ---------------------------------------------------------------------------

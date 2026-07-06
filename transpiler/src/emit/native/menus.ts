@@ -46,6 +46,11 @@ function classesOf(props: Map<string, t.Expression>): string[] {
   return c && t.isStringLiteral(c) ? c.value.split(/\s+/).filter(Boolean) : [];
 }
 
+/** Mark that a solidqml.Widgets component was instantiated → prepend `import solidqml.Widgets`. */
+function markWidgetLib(scope: Scope): void {
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
+}
+
 /** Props-shaped shim so wrapper emitters reuse buildCssClassLine (static class + classList). */
 function cssPropsShim(propsArg: t.Node | undefined) {
   const props = propsOf(propsArg);
@@ -435,113 +440,36 @@ function emitMenuBar(propsArg: t.Node | undefined, children: t.Node[], scope: Sc
 
 // ─── <TreeView data={expr} onSelect={(node) => …}> — our own recursive tree ────────────────────
 
-/** `data` contract: an array of plain { label, children? } objects. Every node renders a
- *  full-width `.tree-row` (indentation is depth*16 INSIDE the row, so hover/selection paint
- *  edge-to-edge like every desktop tree); children stack under it via a Repeater when expanded.
- *
- *  NOT virtualized: rows are real items. Qt's own TreeView needs a QAbstractItemModel and brings
- *  recycling — that is the Phase 4 virtualization plan; this covers sidebar/config-panel trees. */
+/** `data` contract: an array of plain { label, children? } objects. One .qml per component
+ *  (owner directive 2026-07-05): the recursive-node structure — full-width `.tree-row`s, the
+ *  self-referencing Component, the disclosure glyph and depth-indented label — all live in
+ *  TreeView.qml. The emit is thin: it passes the `data` array as `treeData` and wires the
+ *  author's onSelect to the component's `selected(node)` signal (Item's default property is
+ *  named `data`, so the node array is exposed as `treeData`). */
 function emitTreeView(propsArg: t.Node | undefined, _children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
-  const counter = scope.inputCounter ?? { n: 0 };
-  const n = counter.n++;
-  const treeId = `__tree${n}`;
-  const compId = `__treeComp${n}`;
-  const colId = `__treeCol${n}`;
-  const nodeId = `__tnode${n}`;
-  const maId = `__trowMa${n}`;
-  const selFn = `__treeSel${n}`;
+  markWidgetLib(scope);
 
   const props = propsOf(propsArg);
   const classLine = buildCssClassLine(cssPropsShim(propsArg), scope, i(1));
   const dataProp = props.get("data");
   const dataExpr = dataProp ? emitExpr(dataProp, { ...scope, mode: "binding" }) : "[]";
   const onSelect = props.get("onSelect");
-  const selBody = onSelect ? handlerBody(onSelect, scope, "__node") : "";
+  const selBody = onSelect ? handlerBody(onSelect, scope, "node") : "";
 
-  return [
-    `${pad}Css.CssFill {`,
+  const lines: string[] = [
+    `${pad}W.TreeView {`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}id: ${treeId}`,
-    `${i(1)}cssPrimitive: "div"`,
-    // Best-effort defaults for a bare (CSS-less) tree. With box rules on the wrapper, the
-    // engine's content pass measures the plain anchored host as 0 and OVERWRITES these —
-    // author CSS must size the pane (e.g. `.nv-tree { width; height }`), which is also the
-    // desktop-correct shape: trees live in fixed panes, they don't grow the page.
-    `${i(1)}implicitWidth: 240`,
-    `${i(1)}implicitHeight: ${colId}.height`,
-    ...(selBody ? [`${i(1)}function ${selFn}(__node) { ${selBody} }`] : []),
-    // Anchored plain-Item host: insulates the tree internals from the wrapper's CSS layout pass
-    // (same pattern as <Calendar> / the date input — anchored plain items are skipped).
-    `${i(1)}Item {`,
-    `${i(2)}anchors.fill: parent`,
-    // Recursive node component. The delegate references the Component BY ID — the only legal
-    // self-recursion in a single QML file (a self-referencing inline component is a compile
-    // error: "Inline components form a cycle!"). Depth travels through the model rows
-    // ({ __n: node, __d: depth }) because delegate contexts resolve at the Component's
-    // DECLARATION site, not its instantiation site.
-    `${i(2)}Component {`,
-    `${i(3)}id: ${compId}`,
-    `${i(3)}Column {`,
-    `${i(4)}id: ${nodeId}`,
-    `${i(4)}width: parent ? parent.width : 0`,
-    `${i(4)}property var node: modelData.__n`,
-    `${i(4)}property int depth: modelData.__d`,
-    `${i(4)}property bool expanded: true`,
-    `${i(4)}Css.CssFill {`,
-    `${i(5)}cssPrimitive: "div"`,
-    `${i(5)}cssClass: ["tree-row"]`,
-    `${i(5)}cssState: ${maId}.containsMouse ? ["hover"] : []`,
-    `${i(5)}width: ${nodeId}.width`,
-    `${i(5)}height: 28`,
-    `${i(5)}implicitHeight: 28`,
-    // Anchored host for the row internals — plain items inside a Css container MUST be hosted
-    // this way (see the checkbox indicator comment in qml.ts) or a CSS box rule on .tree-row
-    // triggers a flex pass that stretches them.
-    `${i(5)}Item {`,
-    `${i(6)}anchors.fill: parent`,
-    `${i(6)}Text {`,
-    `${i(7)}x: 8 + ${nodeId}.depth * 16`,
-    `${i(7)}anchors.verticalCenter: parent.verticalCenter`,
-    `${i(7)}text: (${nodeId}.node && ${nodeId}.node.children && ${nodeId}.node.children.length) ? (${nodeId}.expanded ? "▾" : "▸") : ""`,
-    // CssItem injection styles the plain disclosure glyph (colour/font) without joining a layout.
-    `${i(7)}Css.CssItem { cssPrimitive: "text"; cssClass: ["tree-disclosure"] }`,
-    `${i(6)}}`,
-    `${i(6)}Css.CssText {`,
-    `${i(7)}cssPrimitive: ""`,
-    `${i(7)}cssClass: ["tree-label"]`,
-    `${i(7)}x: 8 + ${nodeId}.depth * 16 + 18`,
-    `${i(7)}anchors.verticalCenter: parent.verticalCenter`,
-    `${i(7)}text: ${nodeId}.node ? ("" + ${nodeId}.node.label) : ""`,
-    `${i(6)}}`,
-    `${i(6)}MouseArea {`,
-    `${i(7)}id: ${maId}`,
-    `${i(7)}anchors.fill: parent`,
-    `${i(7)}hoverEnabled: true`,
-    `${i(7)}cursorShape: Qt.PointingHandCursor`,
-    `${i(7)}onClicked: { ${nodeId}.expanded = !${nodeId}.expanded${selBody ? `; ${treeId}.${selFn}(${nodeId}.node)` : ""} }`,
-    `${i(6)}}`,
-    `${i(5)}}`,
-    `${i(4)}}`,
-    `${i(4)}Repeater {`,
-    `${i(5)}model: (${nodeId}.expanded && ${nodeId}.node && ${nodeId}.node.children) ? ${nodeId}.node.children.map(function(c) { return ({ __n: c, __d: ${nodeId}.depth + 1 }) }) : []`,
-    `${i(5)}delegate: ${compId}`,
-    `${i(4)}}`,
-    `${i(3)}}`,
-    `${i(2)}}`,
-    `${i(2)}Column {`,
-    `${i(3)}id: ${colId}`,
-    `${i(3)}width: parent.width`,
-    `${i(3)}Repeater {`,
-    `${i(4)}model: ((${dataExpr}) || []).map(function(c) { return ({ __n: c, __d: 0 }) })`,
-    `${i(4)}delegate: ${compId}`,
-    `${i(3)}}`,
-    `${i(2)}}`,
-    `${i(1)}}`,
-    `${pad}}`,
+    // `__treeData` (not `treeData`): a self-named author binding — the example's own `treeData` —
+    // would resolve to the component's own property (`treeData: treeData` = self), so the wiring
+    // channel is `__`-prefixed to force the RHS to resolve to the outer identifier.
+    `${i(1)}__treeData: ${dataExpr}`,
   ];
+  if (selBody) lines.push(`${i(1)}onSelected: (node) => { ${selBody} }`);
+  lines.push(`${pad}}`);
+  return lines;
 }
 
 // ─── <Tray tooltip onActivate icon> with optional <MenuItem> children ───────────────────────────
