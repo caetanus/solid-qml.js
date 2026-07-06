@@ -148,7 +148,52 @@ test("menus: MenuItem slots — .option background with highlighted→hover, .op
   assert.match(out, /cssState: __mitem1\.highlighted \? \["hover"\] : \[\]/);
   assert.match(out, /cssClass: \["option-label"\]/);
   assert.match(out, /text: "New"/);
-  assert.match(out, /text: __mitem1\.text/);
+  // Label strips the mnemonic marker (`&N` → N) for display.
+  assert.match(out, /text: __mitem1\.text\.replace\(\/&\(\.\)\/g, "\$1"\)/);
+});
+
+test("menus: MenuItem shows a pointing-hand cursor (desktop affordance)", async () => {
+  const out = await qml(MENU_SRC);
+  assert.match(out, /HoverHandler \{ cursorShape: Qt\.PointingHandCursor \}/);
+});
+
+// ---------------------------------------------------------------------------
+// <Menu trigger={…}> — self-managed, toggled by its embedded trigger
+// ---------------------------------------------------------------------------
+
+const TRIGGER_SRC = `
+  export function F() {
+    const [last, setLast] = createSignal("");
+    return (
+      <Menu trigger={<button>Actions</button>}>
+        <MenuItem onClick={() => setLast("new")}>&New file</MenuItem>
+        <MenuItem onClick={() => setLast("del")}>&Delete</MenuItem>
+      </Menu>
+    );
+  }
+`;
+
+test("menus: <Menu trigger> toggles itself with a __closedAt debounce, no external Binding", async () => {
+  const out = await qml(TRIGGER_SRC);
+  assert.match(out, /property double __closedAt: 0/);
+  assert.match(out, /onClicked: \{ if \(__menu0\.visible\) __menu0\.close\(\); else if \(Date\.now\(\) - __menu0\.__closedAt > 250\) __menu0\.open\(\) \}/);
+  assert.match(out, /onClosed: \{ __closedAt = Date\.now\(\);/);
+  // Self-managed: no controlled-open Binding element.
+  assert.doesNotMatch(out, /property: "visible"/);
+});
+
+test("menus: <Menu trigger> emits the trigger and sizes the host to it", async () => {
+  const out = await qml(TRIGGER_SRC);
+  assert.match(out, /id: __mtrig0/);
+  assert.match(out, /implicitWidth: __mtrig0\.implicitWidth/);
+  assert.match(out, /y: __menuHost0\.height \+ 2/);
+});
+
+test("menus: <Menu trigger> that isn't a button throws a clear error", async () => {
+  await assert.rejects(
+    qml(`export function F(){ return <Menu trigger={<text>x</text>}><MenuItem>A</MenuItem></Menu>; }`),
+    /trigger.*must be a <button>/,
+  );
 });
 
 test("menus: <MenuSeparator> emits T.MenuSeparator with a 1px .sep CssRect", async () => {

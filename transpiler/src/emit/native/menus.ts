@@ -23,7 +23,7 @@
 import * as t from "@babel/types";
 import { registerNativeTags, requireImport } from "./index.ts";
 import { emitExpr, type Scope } from "../expr.ts";
-import { buildCssClassLine, guardLine, INDENT } from "../qml.ts";
+import { buildCssClassLine, emitChildren, guardLine, INDENT } from "../qml.ts";
 import { hParts, isHCall } from "../../ast/h.ts";
 import { safeName } from "../../names/safe.ts";
 
@@ -136,9 +136,16 @@ function menuObjectLines(opts: {
   xExpr?: string;
   yExpr?: string;
   onCloseBody?: string;
+  debounce?: boolean;   // record __closedAt on close so a trigger can swallow the dismissing click
 }, scope: Scope, level: number): string[] {
   const i = (n: number) => INDENT.repeat(level + n);
   const { menuId, anchorId, items, classes } = opts;
+  // A close-then-open race (clicking the trigger while open: press-outside closes, click reopens)
+  // is suppressed by recording when the menu last closed; the trigger ignores an open() within the
+  // debounce window (QToolButton+QMenu idiom). Fold any author onClose in alongside the timestamp.
+  const closedBody = opts.debounce
+    ? `__closedAt = Date.now();${opts.onCloseBody ? ` ${opts.onCloseBody}` : ""}`
+    : opts.onCloseBody;
   const counter = scope.inputCounter ?? { n: 0 };
   if (scope.usedWidgets) { scope.usedWidgets.flag = true; scope.usedWidgets.popupWindow = true; }
 
@@ -147,6 +154,7 @@ function menuObjectLines(opts: {
   const lines: string[] = [
     `${i(0)}T.Menu {`,
     `${i(1)}id: ${menuId}`,
+    ...(opts.debounce ? [`${i(1)}property double __closedAt: 0`] : []),
     ...(opts.title ? [`${i(1)}title: ${opts.title}`] : []),
     ...(opts.xExpr ? [`${i(1)}x: ${opts.xExpr}`] : []),
     ...(opts.yExpr ? [`${i(1)}y: ${opts.yExpr}`] : []),
@@ -163,7 +171,7 @@ function menuObjectLines(opts: {
     `${i(1)}implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)`,
     // padding ≥ border-width prevents the popup CssFill border from clipping rows (G3).
     `${i(1)}padding: 1`,
-    ...(opts.onCloseBody ? [`${i(1)}onClosed: { ${opts.onCloseBody} }`] : []),
+    ...(closedBody ? [`${i(1)}onClosed: { ${closedBody} }`] : []),
     // cssAncestor: popup contents reparent to the window Overlay — re-anchor the CSS walk.
     // background and contentItem are SIBLING slots; every menu descendant passes through one.
     `${i(1)}background: Css.CssFill {`,
@@ -210,6 +218,9 @@ function menuObjectLines(opts: {
       `${i(2)}rightPadding: 12`,
       `${i(2)}text: ${child.labelBinding ?? '""'}`,
       ...(clickBody ? [`${i(2)}onTriggered: { ${clickBody} }`] : []),
+      // Desktop affordance: a pointing-hand cursor over the row (HoverHandler doesn't steal the
+      // press, so highlight/activation still work through it).
+      `${i(2)}HoverHandler { cursorShape: Qt.PointingHandCursor }`,
       `${i(2)}background: Css.CssFill {`,
       `${i(3)}cssPrimitive: "div"`,
       `${i(3)}cssClass: ["option"]`,
@@ -218,7 +229,10 @@ function menuObjectLines(opts: {
       `${i(2)}contentItem: Css.CssText {`,
       `${i(3)}cssPrimitive: ""`,
       `${i(3)}cssClass: ["option-label"]`,
-      `${i(3)}text: ${itemId}.text`,
+      // Mnemonic marker: `&N` underlines/accelerates N on desktop — strip the `&` for display
+      // (a literal ampersand is written `&&`). Functional Alt+letter activation is the keyboard
+      // model pass (see the tab-focus study).
+      `${i(3)}text: ${itemId}.text.replace(/&(.)/g, "$1")`,
       `${i(2)}}`,
       `${i(1)}}`,
     );
@@ -250,8 +264,50 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
   const xProp = props.get("x");
   const yProp = props.get("y");
   const onClose = props.get("onClose");
+  const triggerProp = props.get("trigger");
 
   const items = parseMenuChildren(children, scope, "Menu");
+
+  // ── Self-managed form: <Menu trigger={<button>…</button>}> (owner directive 2026-07-05) ──
+  // The menu owns its open/close; the embedded trigger TOGGLES it. Clicking the trigger while the
+  // menu is open closes it and does NOT reopen — the __closedAt debounce swallows the same click
+  // that press-outside used to dismiss the popup (the QToolButton+QMenu idiom). No external signal.
+  if (triggerProp) {
+    if (!t.isExpression(triggerProp) || !isHCall(triggerProp))
+      throw new Error("<Menu trigger={…}> expects a single element (e.g. a <button>)");
+    const trigId = `__mtrig${n}`;
+    // Emit the trigger and (a) give its root a stable id for sizing/positioning, (b) drive the
+    // toggle from its button MouseArea's onClicked (the trigger must be a <button>).
+    const trig = emitChildren([triggerProp], scope, level + 1);
+    const openIdx = trig.findIndex((l) => /\{\s*$/.test(l));
+    if (openIdx < 0) throw new Error("<Menu trigger> did not emit an element");
+    trig.splice(openIdx + 1, 0, `${i(2)}id: ${trigId}`);
+    const toggle = `if (${menuId}.visible) ${menuId}.close(); else if (Date.now() - ${menuId}.__closedAt > 250) ${menuId}.open()`;
+    const cursorIdx = trig.findIndex((l) => l.includes("cursorShape: Qt.PointingHandCursor"));
+    if (cursorIdx < 0) throw new Error("<Menu trigger> must be a <button> (no clickable found)");
+    if (trig.some((l) => /^\s*onClicked:/.test(l)))
+      throw new Error("<Menu trigger> button must not declare its own onClick");
+    trig.splice(cursorIdx + 1, 0, `${i(3)}onClicked: { ${toggle} }`);
+
+    return [
+      `${pad}Item {`,
+      `${i(1)}id: ${hostId}`,
+      ...(guard ? [`${i(1)}visible: !!(${guard})`] : []),
+      // Size the host to the trigger's implicit (content) size — not childrenRect, which would
+      // cycle against the button's fill. The popup is not a visual child, so it doesn't count.
+      `${i(1)}implicitWidth: ${trigId}.implicitWidth`,
+      `${i(1)}implicitHeight: ${trigId}.implicitHeight`,
+      `${i(1)}Window.onActiveChanged: if (!Window.active) ${menuId}.close()`,
+      ...trig,
+      ...menuObjectLines({
+        menuId, anchorId: hostId, items, classes: classesOf(props),
+        yExpr: `${hostId}.height + 2`,
+        onCloseBody: onClose ? handlerBody(onClose, scope) : undefined,
+        debounce: true,
+      }, scope, level + 1),
+      `${pad}}`,
+    ];
+  }
 
   const lines: string[] = [
     `${pad}Item {`,

@@ -9,7 +9,6 @@ import "./menus.css";
 declare const Menu: any, MenuItem: any, MenuSeparator: any, MenuBar: any, TreeView: any, Tray: any;
 
 export function MenusAndViews() {
-  const [menuOpen, setMenuOpen] = createSignal(false);
   const [lastAction, setLastAction] = createSignal("none yet");
   const [selNode, setSelNode] = createSignal("nothing");
 
@@ -30,17 +29,16 @@ export function MenusAndViews() {
     <div class="nv-section nv-menus">
       <text class="nv-title">Menus & views</text>
 
-      {/* ── context/action menu, controlled by a signal ─────────────────────── */}
+      {/* ── action menu: self-managed, toggled by its embedded trigger ──────── */}
       <div class="nv-row">
         <text class="nv-label">menu</text>
-        <button onClick={() => setMenuOpen(true)}>Actions ▾</button>
-        <text class="nv-echo">last action: {lastAction()}</text>
-        <Menu open={menuOpen()} x={64} y={40} onClose={() => setMenuOpen(false)}>
-          <MenuItem onClick={() => setLastAction("new file")}>New file</MenuItem>
-          <MenuItem onClick={() => setLastAction("duplicate")}>Duplicate</MenuItem>
+        <Menu trigger={<button>Actions ▾</button>}>
+          <MenuItem onClick={() => setLastAction("new file")}>&New file</MenuItem>
+          <MenuItem onClick={() => setLastAction("duplicate")}>&Duplicate</MenuItem>
           <MenuSeparator />
-          <MenuItem onClick={() => setLastAction("delete")}>Delete</MenuItem>
+          <MenuItem onClick={() => setLastAction("delete")}>&Delete</MenuItem>
         </Menu>
+        <text class="nv-echo">last action: {lastAction()}</text>
       </div>
 
       {/* ── menu bar ─────────────────────────────────────────────────────────── */}

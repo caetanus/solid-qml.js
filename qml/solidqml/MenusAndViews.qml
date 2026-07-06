@@ -6,7 +6,6 @@ import qmlcss 1.0 as Css
 import QtQuick.Templates 6.8 as T
 Css.CssRect {
     id: __self
-    property var menuOpen: false
     property var lastAction: "none yet"
     property var selNode: "nothing"
     readonly property var treeData: [({ label: "src", children: [({ label: "emit", children: [({ label: "qml.ts" }), ({ label: "expr.ts" })] }), ({ label: "resolve", children: [({ label: "node.ts" })] }), ({ label: "index.ts" })] }), ({ label: "docs", children: [({ label: "roadmap.md" })] }), ({ label: "package.json" })]
@@ -25,40 +24,36 @@ Css.CssRect {
             cssPrimitive: "text"
             text: "menu"
         }
-        Css.CssFill {
-            cssState: __hover0.containsMouse ? ["hover"] : []
-            cssPrimitive: "button"
-            Css.CssText {
-                cssPrimitive: "text"
-                text: "Actions ▾"
-            }
-            MouseArea {
-                id: __hover0
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: menuOpen = true
-            }
-        }
-        Css.CssText {
-            cssClass: ["nv-echo"]
-            cssPrimitive: "text"
-            text: "last action: " + (lastAction)
-        }
         Item {
             id: __menuHost0
-            width: 0
-            height: 0
+            implicitWidth: __mtrig0.implicitWidth
+            implicitHeight: __mtrig0.implicitHeight
             Window.onActiveChanged: if (!Window.active) __menu0.close()
+            Css.CssFill {
+                id: __mtrig0
+                cssState: __hover0.containsMouse ? ["hover"] : []
+                cssPrimitive: "button"
+                Css.CssText {
+                    cssPrimitive: "text"
+                    text: "Actions ▾"
+                }
+                MouseArea {
+                    id: __hover0
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: { if (__menu0.visible) __menu0.close(); else if (Date.now() - __menu0.__closedAt > 250) __menu0.open() }
+                }
+            }
             T.Menu {
                 id: __menu0
-                x: 64
-                y: 40
+                property double __closedAt: 0
+                y: __menuHost0.height + 2
                 popupType: T.Popup.Item
                 implicitWidth: Math.max(180, implicitContentWidth + leftPadding + rightPadding)
                 implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
                 padding: 1
-                onClosed: { menuOpen = false }
+                onClosed: { __closedAt = Date.now(); }
                 background: Css.CssFill {
                     property Item cssAncestor: __menuHost0
                     cssPrimitive: "div"
@@ -78,8 +73,9 @@ Css.CssRect {
                     implicitHeight: 32
                     leftPadding: 12
                     rightPadding: 12
-                    text: "New file"
+                    text: "&New file"
                     onTriggered: { lastAction = "new file" }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     background: Css.CssFill {
                         cssPrimitive: "div"
                         cssClass: ["option"]
@@ -88,7 +84,7 @@ Css.CssRect {
                     contentItem: Css.CssText {
                         cssPrimitive: ""
                         cssClass: ["option-label"]
-                        text: __mitem1.text
+                        text: __mitem1.text.replace(/&(.)/g, "$1")
                     }
                 }
                 T.MenuItem {
@@ -98,8 +94,9 @@ Css.CssRect {
                     implicitHeight: 32
                     leftPadding: 12
                     rightPadding: 12
-                    text: "Duplicate"
+                    text: "&Duplicate"
                     onTriggered: { lastAction = "duplicate" }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     background: Css.CssFill {
                         cssPrimitive: "div"
                         cssClass: ["option"]
@@ -108,7 +105,7 @@ Css.CssRect {
                     contentItem: Css.CssText {
                         cssPrimitive: ""
                         cssClass: ["option-label"]
-                        text: __mitem2.text
+                        text: __mitem2.text.replace(/&(.)/g, "$1")
                     }
                 }
                 T.MenuSeparator {
@@ -128,8 +125,9 @@ Css.CssRect {
                     implicitHeight: 32
                     leftPadding: 12
                     rightPadding: 12
-                    text: "Delete"
+                    text: "&Delete"
                     onTriggered: { lastAction = "delete" }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     background: Css.CssFill {
                         cssPrimitive: "div"
                         cssClass: ["option"]
@@ -138,16 +136,15 @@ Css.CssRect {
                     contentItem: Css.CssText {
                         cssPrimitive: ""
                         cssClass: ["option-label"]
-                        text: __mitem3.text
+                        text: __mitem3.text.replace(/&(.)/g, "$1")
                     }
                 }
             }
-            Binding {
-                target: __menu0
-                property: "visible"
-                value: !!(menuOpen)
-                restoreMode: Binding.RestoreNone
-            }
+        }
+        Css.CssText {
+            cssClass: ["nv-echo"]
+            cssPrimitive: "text"
+            text: "last action: " + (lastAction)
         }
     }
     Css.CssRect {
@@ -214,6 +211,7 @@ Css.CssRect {
                             rightPadding: 12
                             text: "Open…"
                             onTriggered: { lastAction = "open…" }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                             background: Css.CssFill {
                                 cssPrimitive: "div"
                                 cssClass: ["option"]
@@ -222,7 +220,7 @@ Css.CssRect {
                             contentItem: Css.CssText {
                                 cssPrimitive: ""
                                 cssClass: ["option-label"]
-                                text: __mitem7.text
+                                text: __mitem7.text.replace(/&(.)/g, "$1")
                             }
                         }
                         T.MenuItem {
@@ -234,6 +232,7 @@ Css.CssRect {
                             rightPadding: 12
                             text: "Save"
                             onTriggered: { lastAction = "save" }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                             background: Css.CssFill {
                                 cssPrimitive: "div"
                                 cssClass: ["option"]
@@ -242,7 +241,7 @@ Css.CssRect {
                             contentItem: Css.CssText {
                                 cssPrimitive: ""
                                 cssClass: ["option-label"]
-                                text: __mitem8.text
+                                text: __mitem8.text.replace(/&(.)/g, "$1")
                             }
                         }
                         T.MenuSeparator {
@@ -264,6 +263,7 @@ Css.CssRect {
                             rightPadding: 12
                             text: "Quit"
                             onTriggered: { lastAction = "quit" }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                             background: Css.CssFill {
                                 cssPrimitive: "div"
                                 cssClass: ["option"]
@@ -272,7 +272,7 @@ Css.CssRect {
                             contentItem: Css.CssText {
                                 cssPrimitive: ""
                                 cssClass: ["option-label"]
-                                text: __mitem9.text
+                                text: __mitem9.text.replace(/&(.)/g, "$1")
                             }
                         }
                     }
@@ -325,6 +325,7 @@ Css.CssRect {
                             rightPadding: 12
                             text: "Copy"
                             onTriggered: { lastAction = "copy" }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                             background: Css.CssFill {
                                 cssPrimitive: "div"
                                 cssClass: ["option"]
@@ -333,7 +334,7 @@ Css.CssRect {
                             contentItem: Css.CssText {
                                 cssPrimitive: ""
                                 cssClass: ["option-label"]
-                                text: __mitem12.text
+                                text: __mitem12.text.replace(/&(.)/g, "$1")
                             }
                         }
                         T.MenuItem {
@@ -345,6 +346,7 @@ Css.CssRect {
                             rightPadding: 12
                             text: "Paste"
                             onTriggered: { lastAction = "paste" }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                             background: Css.CssFill {
                                 cssPrimitive: "div"
                                 cssClass: ["option"]
@@ -353,7 +355,7 @@ Css.CssRect {
                             contentItem: Css.CssText {
                                 cssPrimitive: ""
                                 cssClass: ["option-label"]
-                                text: __mitem13.text
+                                text: __mitem13.text.replace(/&(.)/g, "$1")
                             }
                         }
                     }
