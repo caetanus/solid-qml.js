@@ -131,66 +131,21 @@ function emitProgress(propsArg: t.Node | undefined, children: t.Node[], scope: S
   const i = (n: number) => INDENT.repeat(level + n);
   const props = readBaseProps(propsArg);
   const classLine = buildCssClassLine(props, scope, i(1));
-
-  const counter = scope.inputCounter ?? { n: 0 };
-  const ctlId = `__input${counter.n++}`;
-  if (scope.usedWidgets) scope.usedWidgets.flag = true;
+  // One .qml per component: instantiate W.Progress (T.ProgressBar + track/bar live in the .qml).
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
   const bind: Scope = { ...scope, mode: "binding" };
   const valueNode = findProp(propsArg, "value");
   const valueExpr = valueNode ? emitExpr(valueNode, bind) : null;
   const maxNode = findProp(propsArg, "max");
-  const maxExpr = maxNode ? emitExpr(maxNode, bind) : "1";
+  const maxExpr = maxNode ? emitExpr(maxNode, bind) : null;
 
-  return [
-    `${pad}Css.CssFill {`,
-    ...classLine,
-    ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "progress"`,
-    `${i(1)}cssState: ${ctlId}.indeterminate ? ["indeterminate"] : []`,
-    // Fixed implicit size: with chrome nulled the control reports 0×0 (Templates have no
-    // implicit-size policy — that's the style's job, and we ARE the style). CSS overrides.
-    `${i(1)}implicitWidth: 200`,
-    `${i(1)}implicitHeight: 8`,
-    `${i(1)}T.ProgressBar {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}anchors.fill: parent`,
-    // No visual chrome from Templates; the track/bar CssRects own every painted pixel.
-    `${i(2)}contentItem: null`,
-    `${i(2)}background: null`,
-    `${i(2)}from: 0`,
-    `${i(2)}to: ${maxExpr}`,
-    ...(valueExpr !== null ? [`${i(2)}value: ${valueExpr}`] : [`${i(2)}indeterminate: true`]),
-    // Track: fills the control (== the wrapper); author styles via `.track` (background, radius).
-    `${i(2)}Css.CssRect {`,
-    `${i(3)}cssPrimitive: ""`,
-    `${i(3)}cssClass: ["track"]`,
-    `${i(3)}anchors.fill: parent`,
-    // Bar: the covered portion. A PLAIN Rectangle inside an anchored Item host — a Css child's
-    // width binding is CLOBBERED by the layout engine (block child stretches to 100%, the
-    // "always full" bug); a plain item is not a layout child, so the visualPosition binding
-    // holds. The nested CssItem paints .bar (background-color/radius). Indeterminate: a 30%
-    // segment whose x slides across the track in a loop.
-    `${i(3)}Item {`,
-    `${i(4)}anchors.fill: parent`,
-    `${i(4)}Rectangle {`,
-    `${i(5)}width: ${ctlId}.indeterminate ? parent.width * 0.3 : ${ctlId}.visualPosition * parent.width`,
-    `${i(5)}height: parent.height`,
-    `${i(5)}color: "#176b87"`,
-    `${i(5)}Css.CssItem { cssPrimitive: "rect"; cssClass: ["bar"] }`,
-    `${i(5)}NumberAnimation on x {`,
-    `${i(6)}running: ${ctlId}.indeterminate`,
-    `${i(6)}from: 0`,
-    `${i(6)}to: ${ctlId}.width * 0.7`,
-    `${i(6)}duration: 1200`,
-    `${i(6)}loops: Animation.Infinite`,
-    `${i(5)}}`,
-    `${i(4)}}`,
-    `${i(3)}}`,
-    `${i(2)}}`,
-    `${i(1)}}`,
-    `${pad}}`,
-  ];
+  const lines = [`${pad}W.Progress {`, ...classLine, ...guardLine(guard, level)];
+  if (maxExpr !== null) lines.push(`${i(1)}max: ${maxExpr}`);
+  // No value → the component's default value (-1) means indeterminate.
+  if (valueExpr !== null) lines.push(`${i(1)}value: ${valueExpr}`);
+  lines.push(`${pad}}`);
+  return lines;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────

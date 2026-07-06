@@ -6,8 +6,6 @@ import qmlcss 1.0 as Css
 import QtQuick.Window
 
 import solidqml.Widgets 1.0 as W
-
-import QtQuick.Templates 6.0 as T
 Css.CssRect {
     id: __self
     property var pct: 0.25
@@ -27,42 +25,10 @@ Css.CssRect {
             cssPrimitive: "text"
             text: "Progress"
         }
-        Css.CssFill {
+        W.Progress {
             cssClass: ["hw-progress"]
-            cssPrimitive: "progress"
-            cssState: __input0.indeterminate ? ["indeterminate"] : []
-            implicitWidth: 200
-            implicitHeight: 8
-            T.ProgressBar {
-                id: __input0
-                anchors.fill: parent
-                contentItem: null
-                background: null
-                from: 0
-                to: 1
-                value: pct
-                Css.CssRect {
-                    cssPrimitive: ""
-                    cssClass: ["track"]
-                    anchors.fill: parent
-                    Item {
-                        anchors.fill: parent
-                        Rectangle {
-                            width: __input0.indeterminate ? parent.width * 0.3 : __input0.visualPosition * parent.width
-                            height: parent.height
-                            color: "#176b87"
-                            Css.CssItem { cssPrimitive: "rect"; cssClass: ["bar"] }
-                            NumberAnimation on x {
-                                running: __input0.indeterminate
-                                from: 0
-                                to: __input0.width * 0.7
-                                duration: 1200
-                                loops: Animation.Infinite
-                            }
-                        }
-                    }
-                }
-            }
+            max: 1
+            value: pct
         }
         W.Button {
             cssClass: ["hw-btn"]
@@ -78,42 +44,8 @@ Css.CssRect {
             cssPrimitive: "text"
             text: "Busy"
         }
-        Css.CssFill {
+        W.Progress {
             cssClass: ["hw-progress"]
-            cssPrimitive: "progress"
-            cssState: __input1.indeterminate ? ["indeterminate"] : []
-            implicitWidth: 200
-            implicitHeight: 8
-            T.ProgressBar {
-                id: __input1
-                anchors.fill: parent
-                contentItem: null
-                background: null
-                from: 0
-                to: 1
-                indeterminate: true
-                Css.CssRect {
-                    cssPrimitive: ""
-                    cssClass: ["track"]
-                    anchors.fill: parent
-                    Item {
-                        anchors.fill: parent
-                        Rectangle {
-                            width: __input1.indeterminate ? parent.width * 0.3 : __input1.visualPosition * parent.width
-                            height: parent.height
-                            color: "#176b87"
-                            Css.CssItem { cssPrimitive: "rect"; cssClass: ["bar"] }
-                            NumberAnimation on x {
-                                running: __input1.indeterminate
-                                from: 0
-                                to: __input1.width * 0.7
-                                duration: 1200
-                                loops: Animation.Infinite
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
     Css.CssFill {
@@ -150,23 +82,23 @@ Css.CssRect {
         }
     }
     Item {
-        id: __dialog2W
+        id: __dialog0W
         width: 0
         height: 0
         Window {
-            id: __dialog2
+            id: __dialog0
             flags: Qt.Dialog
             modality: Qt.WindowModal
-            transientParent: __dialog2W.Window.window
+            transientParent: __dialog0W.Window.window
             title: ""
             visible: !!(dlgOpen)
-            width: Math.max(1, __dialog2Root.implicitWidth)
-            height: Math.max(1, __dialog2Root.implicitHeight)
+            width: Math.max(1, __dialog0Root.implicitWidth)
+            height: Math.max(1, __dialog0Root.implicitHeight)
             onClosing: { dlgOpen = false }
             Css.CssRect {
-                id: __dialog2Root
+                id: __dialog0Root
                 anchors.fill: parent
-                property Item cssAncestor: __dialog2W
+                property Item cssAncestor: __dialog0W
             cssClass: ["hw-dialog"]
                 cssPrimitive: "dialog"
                 Css.CssRect {
@@ -191,7 +123,7 @@ Css.CssRect {
             }
         }
         Binding {
-            target: __dialog2
+            target: __dialog0
             property: "visible"
             value: !!(dlgOpen)
             restoreMode: Binding.RestoreNone
@@ -199,18 +131,18 @@ Css.CssRect {
     }
     Css.CssFill {
         cssClass: ["hw-details"]
-        id: __details3
+        id: __details1
         cssPrimitive: "details"
-        cssState: __details3.__open ? ["open"] : []
+        cssState: __details1.__open ? ["open"] : []
         property bool __open: !!(false)
         Css.CssFill {
             cssPrimitive: "summary"
-            cssState: (__details3.__open ? ["open"] : []).concat(__hover0.containsMouse ? ["hover"] : [])
+            cssState: (__details1.__open ? ["open"] : []).concat(__hover0.containsMouse ? ["hover"] : [])
             Item {
                 anchors.fill: parent
                 Text {
                     text: "▸"
-                    rotation: __details3.__open ? 90 : 0
+                    rotation: __details1.__open ? 90 : 0
                     anchors.left: parent.left
                     anchors.leftMargin: 6
                     anchors.verticalCenter: parent.verticalCenter
@@ -226,13 +158,13 @@ Css.CssRect {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: __details3.__open = !__details3.__open
+                onClicked: __details1.__open = !__details1.__open
             }
         }
         Css.CssRect {
             cssPrimitive: "div"
             cssClass: ["content"]
-            visible: __details3.__open
+            visible: __details1.__open
             Css.CssText {
                 cssClass: ["hw-line"]
                 cssPrimitive: "text"

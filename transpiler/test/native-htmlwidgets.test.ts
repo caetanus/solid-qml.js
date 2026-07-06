@@ -5,6 +5,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { normalize } from "../src/babel/transform.ts";
 import { findRender } from "../src/ast/find.ts";
 import { analyzeSignals } from "../src/model/symbols.ts";
@@ -49,24 +51,14 @@ async function qmlType(src: string): Promise<string> {
 // <progress> — structure
 // ---------------------------------------------------------------------------
 
-test("progress: wrapper CssFill with cssPrimitive 'progress' and nulled chrome", async () => {
+test("progress: <progress> instantiates the W.Progress component", async () => {
   const out = await qml(`export function F(){ return <progress value={0.5} />; }`);
-  assert.match(out, /Css\.CssFill \{/);
-  assert.match(out, /cssPrimitive: "progress"/);
-  assert.match(out, /T\.ProgressBar \{/);
-  assert.match(out, /contentItem: null/);
-  assert.match(out, /background: null/);
-  assert.match(out, /anchors\.fill: parent/);
+  assert.match(out, /W\.Progress \{/);
+  // The T.ProgressBar/track/bar internals now live in Progress.qml, not the emit.
+  assert.doesNotMatch(out, /T\.ProgressBar/);
 });
 
-test("progress: track and bar CssRects with visualPosition-driven width", async () => {
-  const out = await qml(`export function F(){ return <progress value={0.5} />; }`);
-  assert.match(out, /cssClass: \["track"\]/);
-  assert.match(out, /cssClass: \["bar"\]/);
-  assert.match(out, /width: __input0\.indeterminate \? parent\.width \* 0\.3 : __input0\.visualPosition \* parent\.width/);
-});
-
-test("progress: class lands on the wrapper cssClass", async () => {
+test("progress: class lands on the component cssClass", async () => {
   const out = await qml(`export function F(){ return <progress class="hw-progress" value={0.5} />; }`);
   assert.match(out, /cssClass: \["hw-progress"\]/);
 });
@@ -75,7 +67,7 @@ test("progress: class lands on the wrapper cssClass", async () => {
 // <progress> — prop wiring
 // ---------------------------------------------------------------------------
 
-test("progress: value={sig()} binds value and does NOT set indeterminate", async () => {
+test("progress: value={sig()} binds value; no value → indeterminate (component default -1)", async () => {
   const out = await qml(`
     export function F() {
       const [pct, setPct] = createSignal(0.25);
@@ -83,33 +75,29 @@ test("progress: value={sig()} binds value and does NOT set indeterminate", async
     }
   `);
   assert.match(out, /value: pct/);
-  assert.doesNotMatch(out, /indeterminate: true/);
+
+  const noVal = await qml(`export function F(){ return <progress />; }`);
+  assert.doesNotMatch(noVal, /\bvalue:/); // omitted → component's -1 default = indeterminate
 });
 
-test("progress: max={100} maps to `to: 100`; from is always 0", async () => {
+test("progress: max={100} maps to the component's max prop; default omitted (HTML spec = 1)", async () => {
   const out = await qml(`export function F(){ return <progress max={100} value={40} />; }`);
-  assert.match(out, /from: 0/);
-  assert.match(out, /to: 100/);
+  assert.match(out, /max: 100/);
+  const dflt = await qml(`export function F(){ return <progress value={0.5} />; }`);
+  assert.doesNotMatch(dflt, /\bmax:/); // omitted → component default (1)
 });
 
-test("progress: max defaults to 1 (HTML spec)", async () => {
-  const out = await qml(`export function F(){ return <progress value={0.5} />; }`);
-  assert.match(out, /to: 1/);
-});
-
-test("progress: no value prop → indeterminate with looping bar animation", async () => {
-  const out = await qml(`export function F(){ return <progress />; }`);
-  assert.match(out, /indeterminate: true/);
-  assert.doesNotMatch(out, /\n\s*value:/);
-  assert.match(out, /NumberAnimation on x \{/);
-  assert.match(out, /running: __input0\.indeterminate/);
-  assert.match(out, /loops: Animation\.Infinite/);
-  assert.match(out, /cssState: __input0\.indeterminate \? \["indeterminate"\] : \[\]/);
-});
-
-test("progress: emitting the widget flags the Templates import", async () => {
+test("progress: emitting the widget imports the solidqml.Widgets module", async () => {
   const out = await qmlType(`export function F(){ return <progress value={0.5} />; }`);
-  assert.match(out, /import QtQuick\.Templates .* as T/);
+  assert.match(out, /import solidqml\.Widgets .* as W/);
+});
+
+test("progress: Progress.qml component exists with the T.ProgressBar + bar internals", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Progress.qml", import.meta.url)), "utf8");
+  assert.match(src, /T\.ProgressBar/);
+  assert.match(src, /cssClass: \["track"\]/);
+  assert.match(src, /cssClass: \["bar"\]/);
+  assert.match(src, /indeterminate: root\.value < 0/);
 });
 
 // ---------------------------------------------------------------------------
@@ -284,6 +272,7 @@ test("htmlwidgets: ids share the input counter with other widgets", async () => 
     }
   `);
   assert.match(out, /id: __input0/);       // the text field
-  assert.match(out, /__input1\.indeterminate/); // the progress control
-  assert.match(out, /id: __details2/);     // details takes the next slot
+  assert.match(out, /W\.Progress \{/);     // progress is a component instance (no counter id)
+  // Progress no longer consumes an input-counter slot; details takes the next one after the field.
+  assert.match(out, /id: __details1/);
 });
