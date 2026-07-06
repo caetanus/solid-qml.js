@@ -39,6 +39,9 @@ Css.CssFill {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         activeFocusOnTab: solidTabstop.enabled
+        // Desktop model (study §6): clicking a control also FOCUSES it, so it becomes the tab anchor
+        // and Tab continues from the clicked button (a bare MouseArea doesn't take focus on its own).
+        onPressed: if (solidTabstop.enabled) __ma.forceActiveFocus(Qt.MouseFocusReason)
         onClicked: root.clicked()
         Keys.onSpacePressed: root.clicked()
         Keys.onReturnPressed: root.clicked()
