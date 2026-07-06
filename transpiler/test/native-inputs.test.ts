@@ -187,31 +187,32 @@ test("native-inputs: <Dial value> emits a Binding on value; onChange={(v)=>…} 
 // <Tumbler>
 // ---------------------------------------------------------------------------
 
-test("native-inputs: <Tumbler options> emits T.Tumbler with the options model and explicit wrap:false", async () => {
+test("native-inputs: <Tumbler options> instantiates W.Tumbler with the options model on the instance", async () => {
   const out = await qml(`export function F(){ return <Tumbler options={["S", "M", "L", "XL"]} />; }`);
-  assert.match(out, /T\.Tumbler \{/);
+  assert.match(out, /W\.Tumbler \{/);
+  assert.match(out, /id: __input0/);
   assert.match(out, /model: \["S", "M", "L", "XL"\]/);
-  assert.match(out, /wrap: false/);
+  // The T.Tumbler + ListView + delegate now live in Tumbler.qml, not the emit.
+  assert.doesNotMatch(out, /T\.Tumbler/);
 });
 
-test("native-inputs: <Tumbler> contentItem is the minimal non-wrap ListView (snap + strict highlight range)", async () => {
-  const out = await qml(`export function F(){ return <Tumbler options={["a"]} />; }`);
-  assert.match(out, /contentItem: ListView \{/);
-  assert.match(out, /snapMode: ListView\.SnapToItem/);
-  assert.match(out, /highlightRangeMode: ListView\.StrictlyEnforceRange/);
-  assert.match(out, /preferredHighlightBegin: height \/ 2 - height \/ __input0\.visibleItemCount \/ 2/);
-  assert.match(out, /preferredHighlightEnd: height \/ 2 \+ height \/ __input0\.visibleItemCount \/ 2/);
-});
-
-test("native-inputs: <Tumbler> delegate reads Tumbler.displacement on its root and marks the settled row selected", async () => {
-  const out = await qml(`export function F(){ return <Tumbler options={["a"]} />; }`);
-  assert.match(out, /delegate: Item \{/);
-  assert.match(out, /property real __disp: T\.Tumbler\.displacement/);
-  assert.match(out, /cssClass: \["item"\]/);
-  assert.match(out, /cssState: Math\.abs\(__disp\) < 0\.5 \? \["selected"\] : \[\]/);
-  // declarative cell size — the template's own resize formula, incubation-proof
-  assert.match(out, /width: __input0\.availableWidth/);
-  assert.match(out, /height: __input0\.availableHeight \/ __input0\.visibleItemCount/);
+test("native-inputs: Tumbler.qml holds the non-wrap ListView + displacement delegate", async () => {
+  const src = await readWidget("Tumbler");
+  assert.match(src, /T\.Tumbler \{/);
+  assert.match(src, /wrap: false/);
+  assert.match(src, /contentItem: ListView \{/);
+  assert.match(src, /snapMode: ListView\.SnapToItem/);
+  assert.match(src, /highlightRangeMode: ListView\.StrictlyEnforceRange/);
+  assert.match(src, /preferredHighlightBegin: height \/ 2 - height \/ __ctl\.visibleItemCount \/ 2/);
+  assert.match(src, /preferredHighlightEnd: height \/ 2 \+ height \/ __ctl\.visibleItemCount \/ 2/);
+  assert.match(src, /delegate: Item \{/);
+  assert.match(src, /property real __disp: T\.Tumbler\.displacement/);
+  assert.match(src, /cssClass: \["item"\]/);
+  assert.match(src, /cssState: Math\.abs\(__disp\) < 0\.5 \? \["selected"\] : \[\]/);
+  assert.match(src, /width: __ctl\.availableWidth/);
+  assert.match(src, /height: __ctl\.availableHeight \/ __ctl\.visibleItemCount/);
+  assert.match(src, /property alias model: __ctl\.model/);
+  assert.match(src, /property alias currentIndex: __ctl\.currentIndex/);
 });
 
 test("native-inputs: <Tumbler value> binds currentIndex via options.indexOf(value)", async () => {
@@ -221,6 +222,7 @@ test("native-inputs: <Tumbler value> binds currentIndex via options.indexOf(valu
       return <Tumbler options={["S", "M"]} value={size()} />;
     }
   `);
+  assert.match(out, /target: __input0/);
   assert.match(out, /property: "currentIndex"/);
   assert.match(out, /value: \(\["S", "M"\]\)\.indexOf\(size\)/);
   assert.match(out, /restoreMode: Binding\.RestoreNone/);

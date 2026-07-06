@@ -344,89 +344,40 @@ const emitDial: NativeEmit = (propsArg, _children, scope, level, guard) => {
 
 // ── <Tumbler options={[...]} value onChange={(v)=>…}> ─────────────────────────────────────
 //
-// T.Tumbler instantiates NO view of its own (qquicktumbler_p.h): the C++ walks contentItem
-// looking for a PathView or ListView (determineViewType). The Basic style uses a private
-// TumblerView helper (PathView-backed) we cannot import, so our contentItem is the minimal
-// working ListView: SnapToItem + StrictlyEnforceRange with a one-item-tall preferred
-// highlight window centred in the view — the exact non-wrap configuration TumblerView
-// generates internally. `wrap: false` is EXPLICIT: with count ≥ visibleItemCount the
-// implicit default flips to wrapping, and the C++ then expects a PathView.
-//
-// The attached Tumbler.displacement must be read on the delegate ROOT (the attached object's
-// init requires a delegate item with a parent and the `index` context property); the root
-// Item mirrors it into `__disp` for the inner CssText's cssState. Cell size is bound
-// declaratively (availableWidth × availableHeight/visibleItemCount — the template's own
-// resize formula): the C++ imperative resize misses items incubated after the last geometry
-// change (same lesson as the calendar grid delegates).
+// One .qml per component: the T.Tumbler + minimal non-wrap ListView + delegate live in Tumbler.qml.
+// The emit instantiates W.Tumbler (id kept as __inputN so the onChange value-read
+// `__inputN.model[__inputN.currentIndex]` and the controlled Binding resolve against the
+// component's `model`/`currentIndex` aliases) and wires model + onChange + the controlled value.
 const emitTumbler: NativeEmit = (propsArg, _children, scope, level, guard) => {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const ui = uiProps(propsArg);
   const classLine = buildCssClassLine(ui, scope, i(1));
-  const ctlId = allocCtl(scope);
+  const ctlId = allocInstance(scope);
 
   const optionsExpr = bindingExpr(propsArg, "options", scope) ?? "[]";
   const valueExpr = bindingExpr(propsArg, "value", scope);
   const onChangeFn = fnProp(propsArg, "onChange");
   const disabled = boolAttr(propsArg, "disabled");
 
-  const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
   // Direct-value handler: the picked option is model[currentIndex].
   const changeBody = onChangeFn
     ? translateArgsHandler(onChangeFn, [`${ctlId}.model[${ctlId}.currentIndex]`], scope)
     : "";
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.Tumbler {`,
+    `${i(1)}id: ${ctlId}`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: ""`,
-    `${i(1)}cssState: ${cssState}`,
-    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
-    `${i(1)}T.Tumbler {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
-    `${i(2)}model: ${optionsExpr}`,
-    `${i(2)}wrap: false`,
-    ...implicitFormula(i),
-    `${i(2)}delegate: Item {`,
-    `${i(3)}width: ${ctlId}.availableWidth`,
-    `${i(3)}height: ${ctlId}.availableHeight / ${ctlId}.visibleItemCount`,
-    `${i(3)}property real __disp: T.Tumbler.displacement`,
-    `${i(3)}Css.CssText {`,
-    `${i(4)}cssPrimitive: ""`,
-    `${i(4)}cssClass: ["item"]`,
-    // displacement is 0 for the row settled on the centre; the view snaps, but the settle
-    // is float-valued — a half-row tolerance marks exactly one row selected.
-    `${i(4)}cssState: Math.abs(__disp) < 0.5 ? ["selected"] : []`,
-    `${i(4)}text: modelData`,
-    `${i(4)}anchors.centerIn: parent`,
-    `${i(3)}}`,
-    `${i(2)}}`,
-    `${i(2)}contentItem: ListView {`,
-    `${i(3)}implicitWidth: 60`,
-    `${i(3)}implicitHeight: 180`,
-    `${i(3)}model: ${ctlId}.model`,
-    `${i(3)}delegate: ${ctlId}.delegate`,
-    `${i(3)}snapMode: ListView.SnapToItem`,
-    `${i(3)}highlightRangeMode: ListView.StrictlyEnforceRange`,
-    `${i(3)}preferredHighlightBegin: height / 2 - height / ${ctlId}.visibleItemCount / 2`,
-    `${i(3)}preferredHighlightEnd: height / 2 + height / ${ctlId}.visibleItemCount / 2`,
-    `${i(3)}clip: true`,
-    `${i(2)}}`,
+    `${i(1)}model: ${optionsExpr}`,
   ];
-
-  if (disabled) lines.push(`${i(2)}enabled: false`);
+  if (disabled) lines.push(`${i(1)}disabled: true`);
   // Fires for user flicks AND Binding re-assertions — the echo writes the same value back
   // into the signal, which is a no-op (same acceptance as the <select> onActivated wiring).
-  if (changeBody) lines.push(`${i(2)}onCurrentIndexChanged: { ${changeBody} }`);
-  lines.push(`${i(1)}}`);
-
+  if (changeBody) lines.push(`${i(1)}onCurrentIndexChanged: { ${changeBody} }`);
   if (valueExpr !== undefined)
     lines.push(...bindingElement(i, ctlId, "currentIndex", `(${optionsExpr}).indexOf(${valueExpr})`));
-
   lines.push(`${pad}}`);
   return lines;
 };

@@ -128,45 +128,11 @@ W.Div {
             cssClass: ["nv-label"]
             text: "size " + (size)
         }
-        Css.CssFill {
+        W.Tumbler {
+            id: __input2
             cssClass: ["ni-tumbler"]
-            cssPrimitive: ""
-            cssState: (__input2.activeFocus ? ["focus"] : []).concat(!__input2.enabled ? ["disabled"] : [])
-            implicitWidth: __input2.implicitWidth
-            implicitHeight: __input2.implicitHeight
-            T.Tumbler {
-                id: __input2
-                anchors.fill: parent
-                activeFocusOnTab: solidTabstop.enabled
-                model: ["S", "M", "L", "XL"]
-                wrap: false
-                implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
-                implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-                delegate: Item {
-                    width: __input2.availableWidth
-                    height: __input2.availableHeight / __input2.visibleItemCount
-                    property real __disp: T.Tumbler.displacement
-                    Css.CssText {
-                        cssPrimitive: ""
-                        cssClass: ["item"]
-                        cssState: Math.abs(__disp) < 0.5 ? ["selected"] : []
-                        text: modelData
-                        anchors.centerIn: parent
-                    }
-                }
-                contentItem: ListView {
-                    implicitWidth: 60
-                    implicitHeight: 180
-                    model: __input2.model
-                    delegate: __input2.delegate
-                    snapMode: ListView.SnapToItem
-                    highlightRangeMode: ListView.StrictlyEnforceRange
-                    preferredHighlightBegin: height / 2 - height / __input2.visibleItemCount / 2
-                    preferredHighlightEnd: height / 2 + height / __input2.visibleItemCount / 2
-                    clip: true
-                }
-                onCurrentIndexChanged: { __self.size = __input2.model[__input2.currentIndex] }
-            }
+            model: ["S", "M", "L", "XL"]
+            onCurrentIndexChanged: { __self.size = __input2.model[__input2.currentIndex] }
             Binding {
                 target: __input2
                 property: "currentIndex"
