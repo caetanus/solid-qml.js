@@ -179,6 +179,7 @@ Css.CssRect {
             id: __dialog2
             modal: true
             visible: dlgOpen
+            T.Overlay.modal: Rectangle { color: "#66000000" }
             parent: T.Overlay.overlay
             x: Math.round((parent.width - width) / 2)
             y: Math.round((parent.height - height) / 2)

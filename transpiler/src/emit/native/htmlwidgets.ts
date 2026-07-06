@@ -298,6 +298,10 @@ function emitDialog(propsArg: t.Node | undefined, children: t.Node[], scope: Sco
     `${i(2)}id: ${dlgId}`,
     `${i(2)}modal: true`,
     `${i(2)}visible: ${openExpr}`,
+    // Modal scrim: the default style provides none, so the dialog floats with the page fully
+    // visible behind it — it reads as a plain div, not a modal. A semi-transparent dim behind is
+    // THE visual that makes it a dialog (same fix as <Drawer>). Author can override via `.dialog`.
+    `${i(2)}T.Overlay.modal: Rectangle { color: "#66000000" }`,
     // Center on the window: popups position relative to their parent item — the Overlay.
     `${i(2)}parent: T.Overlay.overlay`,
     `${i(2)}x: Math.round((parent.width - width) / 2)`,
