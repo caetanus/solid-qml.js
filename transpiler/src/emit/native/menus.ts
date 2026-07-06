@@ -474,16 +474,15 @@ function emitTreeView(propsArg: t.Node | undefined, _children: t.Node[], scope: 
 
 // ─── <Tray tooltip onActivate icon> with optional <MenuItem> children ───────────────────────────
 
-/** Platform.SystemTrayIcon is a QObject, NOT an Item — the zero-size Item host lets the tag sit
- *  anywhere in the tree (and a Show guard folds into the icon's own `visible`, since Item
- *  visibility does not cascade to non-Item resources). */
+/** One .qml per component (owner directive 2026-07-05): the zero-size Item host + the
+ *  SystemTrayIcon shell (visible/tooltip/iconSource/activated) live in Tray.qml. The emit stays
+ *  thin — it wires those props and, ONLY when the author gave <MenuItem> children, constructs the
+ *  Platform.Menu (carrying the item handlers) and assigns it through the component's `menu` alias.
+ *  No items → no menu is set, so the SystemTrayIcon registration is byte-identical to before. */
 function emitTray(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
-  const counter = scope.inputCounter ?? { n: 0 };
-  const n = counter.n++;
-  const trayId = `__tray${n}`;
-
+  markWidgetLib(scope);
   requireImport(scope, "import Qt.labs.platform 1.1 as Platform");
 
   const props = propsOf(propsArg);
@@ -492,35 +491,29 @@ function emitTray(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
   const icon = props.get("icon");
   const onActivate = props.get("onActivate");
 
-  const lines: string[] = [
-    `${pad}Item {`,
-    `${i(1)}width: 0`,
-    `${i(1)}height: 0`,
-    `${i(1)}Platform.SystemTrayIcon {`,
-    `${i(2)}id: ${trayId}`,
-    `${i(2)}visible: ${guard ? `!!(${guard})` : "true"}`,
-    ...(tooltip ? [`${i(2)}tooltip: ${binding(tooltip)}`] : []),
-    ...(icon ? [`${i(2)}icon.source: ${binding(icon)}`] : []),
-    ...(onActivate ? [`${i(2)}onActivated: { ${handlerBody(onActivate, scope)} }`] : []),
-  ];
+  const lines: string[] = [`${pad}W.Tray {`];
+  if (guard) lines.push(`${i(1)}shown: !!(${guard})`);
+  if (tooltip) lines.push(`${i(1)}tooltip: ${binding(tooltip)}`);
+  if (icon) lines.push(`${i(1)}iconSource: ${binding(icon)}`);
+  if (onActivate) lines.push(`${i(1)}onActivated: { ${handlerBody(onActivate, scope)} }`);
 
   const items = parseMenuChildren(children, scope, "Tray");
   if (items.length > 0) {
-    lines.push(`${i(2)}menu: Platform.Menu {`);
+    lines.push(`${i(1)}menu: Platform.Menu {`);
     for (const item of items) {
-      if (item.kind === "separator") { lines.push(`${i(3)}Platform.MenuItem { separator: true }`); continue; }
+      if (item.kind === "separator") { lines.push(`${i(2)}Platform.MenuItem { separator: true }`); continue; }
       const clickBody = item.onClick ? handlerBody(item.onClick, scope) : "";
       lines.push(
-        `${i(3)}Platform.MenuItem {`,
-        `${i(4)}text: ${item.labelBinding ?? '""'}`,
-        ...(clickBody ? [`${i(4)}onTriggered: { ${clickBody} }`] : []),
-        `${i(3)}}`,
+        `${i(2)}Platform.MenuItem {`,
+        `${i(3)}text: ${item.labelBinding ?? '""'}`,
+        ...(clickBody ? [`${i(3)}onTriggered: { ${clickBody} }`] : []),
+        `${i(2)}}`,
       );
     }
-    lines.push(`${i(2)}}`);
+    lines.push(`${i(1)}}`);
   }
 
-  lines.push(`${i(1)}}`, `${pad}}`);
+  lines.push(`${pad}}`);
   return lines;
 }
 

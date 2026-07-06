@@ -360,33 +360,48 @@ const TRAY_SRC = `
   }
 `;
 
-test("tray: SystemTrayIcon wrapped in a zero-size Item (it is NOT an Item)", async () => {
+test("tray: instantiates W.Tray and wires tooltip + onActivate", async () => {
   const out = await qml(TRAY_SRC);
-  assert.match(out, /Item \{\n\s*width: 0\n\s*height: 0/);
-  assert.match(out, /Platform\.SystemTrayIcon \{/);
-  assert.match(out, /visible: true/);
-});
-
-test("tray: tooltip and onActivate wire through", async () => {
-  const out = await qml(TRAY_SRC);
+  assert.match(out, /W\.Tray \{/);
   assert.match(out, /tooltip: "solid-qml"/);
   assert.match(out, /onActivated: \{ n = n \+ 1 \}/);
+  // No guard → the component's default `shown: true` drives the icon (no explicit shown line).
+  assert.doesNotMatch(out, /Platform\.SystemTrayIcon/);
 });
 
-test("tray: <MenuItem> children become a Platform.Menu with Platform.MenuItems", async () => {
+test("tray: <MenuItem> children build a Platform.Menu assigned through the menu alias", async () => {
   const out = await qml(TRAY_SRC);
+  // The menu (with author item handlers) stays in the emit — registration is identical.
   assert.match(out, /menu: Platform\.Menu \{/);
   assert.match(out, /Platform\.MenuItem \{/);
   assert.match(out, /text: "Reset"/);
   assert.match(out, /onTriggered: \{ n = 0 \}/);
 });
 
-test("tray: icon prop maps to icon.source", async () => {
+test("tray: no <MenuItem> children → no menu is set (registration unchanged)", async () => {
   const out = await qml(`export function F(){ return <Tray icon="assets/tray.png" />; }`);
-  assert.match(out, /icon\.source: "assets\/tray\.png"/);
+  assert.doesNotMatch(out, /menu: Platform\.Menu/);
 });
 
-test("tray: qmlType output carries the Qt.labs.platform import", async () => {
+test("tray: icon prop maps to iconSource", async () => {
+  const out = await qml(`export function F(){ return <Tray icon="assets/tray.png" />; }`);
+  assert.match(out, /iconSource: "assets\/tray\.png"/);
+});
+
+test("tray: a Show guard folds into the component's shown", async () => {
+  const out = await qml(`export function F(){ const [vis] = createSignal(true); return <Show when={vis()}><Tray tooltip="x" /></Show>; }`);
+  assert.match(out, /shown: !!\(vis\(\)\)/);
+});
+
+test("tray: Tray.qml hosts the zero-size SystemTrayIcon shell", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Tray.qml", import.meta.url)), "utf8");
+  assert.match(src, /width: 0/);
+  assert.match(src, /height: 0/);
+  assert.match(src, /Platform\.SystemTrayIcon \{/);
+  assert.match(src, /visible: root\.shown/);
+});
+
+test("tray: qmlType output carries the Qt.labs.platform import (emit builds the Platform.Menu)", async () => {
   const out = await qmlType(TRAY_SRC);
   assert.match(out, /import Qt\.labs\.platform 1\.1 as Platform/);
 });
