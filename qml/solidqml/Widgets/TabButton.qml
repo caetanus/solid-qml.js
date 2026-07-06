@@ -11,7 +11,8 @@ import qmlcss 1.0 as Css
 
 T.TabButton {
     id: ctl
-    property string text: ""
+    // `text` is inherited from T.AbstractButton (a FINAL property — must not be redeclared); the
+    // transpiler sets it directly (W.TabButton { text: "…" }).
 
     // Basic-style implicit size: Templates leave implicit sizes to the style (us).
     implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
