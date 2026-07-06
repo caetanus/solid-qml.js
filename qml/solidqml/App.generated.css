@@ -10,6 +10,12 @@
   font-size: 16px;
 }
 
+/* Keyboard focus ring for buttons (desktop keyboard navigation — study §6). A type selector so it
+   covers every button regardless of its app class; box-shadow doesn't shift layout like a border. */
+button:focus {
+  box-shadow: 0 0 0 3px rgba(45, 143, 179, 0.55);
+}
+
 .gallery {
   position: relative;
   display: flex;

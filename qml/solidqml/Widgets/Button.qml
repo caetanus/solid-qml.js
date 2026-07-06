@@ -14,9 +14,11 @@ Css.CssFill {
     signal clicked()
 
     cssPrimitive: "button"
-    // Hover mirrors into cssState so `:hover` rules restyle the button (and, via ancestor scoping,
-    // its label) natively — the MouseArea doubles as the hover tracker.
-    cssState: __ma.containsMouse ? ["hover"] : []
+    // Desktop model (tab-focus study §6): a button IS a tab stop and is activated by Space/Enter as
+    // well as click. Focus lives on the MouseArea — a QtQuick item that exposes activeFocusOnTab
+    // (the engine's Css types don't, by QML registration revision) — and hover + focus mirror into
+    // cssState so `:hover`/`:focus` rules restyle the button (and its label) natively.
+    cssState: (__ma.containsMouse ? ["hover"] : []).concat(__ma.activeFocus ? ["focus"] : [])
 
     Css.CssText {
         cssPrimitive: "text"
@@ -28,6 +30,10 @@ Css.CssFill {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
+        activeFocusOnTab: solidTabstop.enabled
         onClicked: root.clicked()
+        Keys.onSpacePressed: root.clicked()
+        Keys.onReturnPressed: root.clicked()
+        Keys.onEnterPressed: root.clicked()
     }
 }
