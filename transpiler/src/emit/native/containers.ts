@@ -100,15 +100,6 @@ function markWidgetLib(scope: Scope): void {
   if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 }
 
-// Basic-style implicit size policy — Templates set NO implicit sizes themselves (that is the
-// style's job, and we ARE the style); without these a container opens 0x0.
-function implicitLines(i: (n: number) => string): string[] {
-  return [
-    `${i(2)}implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)`,
-    `${i(2)}implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)`,
-  ];
-}
-
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // <ToolBar> — semantic native chrome; the CSS engine owns paint AND layout.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -252,29 +243,23 @@ const emitSplitView: NativeEmit = (propsArg, children, scope, level, guard) => {
 
 const EDGE = { left: "Qt.LeftEdge", right: "Qt.RightEdge", top: "Qt.TopEdge", bottom: "Qt.BottomEdge" } as const;
 
-/** → an in-tree Css.CssItem anchor (carries the author's classes for selector scoping) hosting
- *  T.Drawer. Drawer contents reparent to the window Overlay, severing the visual chain author
- *  CSS matches against — background AND contentItem each carry `property Item cssAncestor`
- *  pointing back at the anchor (MANDATORY popup pitfall; they are sibling slots, so the two
- *  properties cover every descendant). No popupType Window — a drawer is an in-window panel.
- *
- *  Controlled visibility: Binding on `visible` (restoreMode RestoreNone); Qt-side closes
- *  (Esc / press outside) fire onClosed → the author's onClose keeps the signal in sync.
- *  The cross axis is NOT sized automatically by QQuickDrawer (its doc examples set both), so
- *  left/right: width = overlay.width × size (default 0.34), height = overlay.height; top/bottom
- *  transposed. contentItem is a Css container so the author's children flow through normal
- *  CSS layout inside the panel. */
+/** <Drawer open={sig()} edge="…" size={…} onClose={…}> → W.Drawer.
+ *  One .qml per component: the zero-size Css.CssItem anchor, the T.Drawer (overlay parent, enter/exit
+ *  transitions, modal scrim, cssAncestor re-anchor on background + contentItem, edge/size-driven
+ *  geometry) all live in Drawer.qml. The emit keeps the id `__drawerN` so the controlled RestoreNone
+ *  Binding resolves against the component's two-way `open` alias (→ the drawer's `visible`); it wires
+ *  edge, size, the onClose handler (via the component's `closed` signal), and the author's children
+ *  (which route into the drawer's contentItem via the default `content` alias). The <Show> guard is
+ *  folded into the Binding value (a drawer is shown, not laid out). */
 const emitDrawer: NativeEmit = (propsArg, children, scope, level, guard) => {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const props = propMap(propsArg);
   const classLine = buildCssClassLine(cssProps(props), scope, i(1));
-  markWidgets(scope);
+  markWidgetLib(scope);
 
   const counter = scope.inputCounter ?? { n: 0 };
-  const n = counter.n++;
-  const ctlId = `__drawer${n}`;
-  const wrapId = `${ctlId}W`;
+  const ctlId = `__drawer${counter.n++}`;
 
   let edge: keyof typeof EDGE = "left";
   const e = props.get("edge");
@@ -282,8 +267,7 @@ const emitDrawer: NativeEmit = (propsArg, children, scope, level, guard) => {
     if (!(e.value in EDGE)) throw new Error(`<Drawer> edge must be left|right|top|bottom, got "${e.value}"`);
     edge = e.value as keyof typeof EDGE;
   }
-  const horizontal = edge === "left" || edge === "right";
-  const size = bindExpr(props.get("size"), scope) ?? "0.34";
+  const sizeExpr = bindExpr(props.get("size"), scope);
 
   const openExpr = bindExpr(props.get("open"), scope) ?? "false";
   const visibleValue = guard ? `!!(${guard}) && !!(${openExpr})` : `!!(${openExpr})`;
@@ -291,46 +275,18 @@ const emitDrawer: NativeEmit = (propsArg, children, scope, level, guard) => {
   const closeBody = onCloseFn ? handlerBody(onCloseFn, scope) : "";
 
   const lines: string[] = [
-    // Zero-size in-tree anchor: carries the author's classes so `.my-drawer .panel` rules
-    // scope through the cssAncestor re-anchor below; paints nothing, flows as an empty box.
-    `${pad}Css.CssItem {`,
+    `${pad}W.Drawer {`,
+    `${i(1)}id: ${ctlId}`,
     ...classLine,
-    `${i(1)}id: ${wrapId}`,
-    `${i(1)}cssPrimitive: "drawer"`,
-    `${i(1)}T.Drawer {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}parent: T.Overlay.overlay`,
-    `${i(2)}edge: ${EDGE[edge]}`,
-    // Desktop semantics: no edge-swipe open (an interactive drag would fight the controlled
-    // Binding on `visible`).
-    `${i(2)}dragMargin: 0`,
-    `${i(2)}width: parent ? ${horizontal ? `parent.width * (${size})` : "parent.width"} : 0`,
-    `${i(2)}height: parent ? ${horizontal ? "parent.height" : `parent.height * (${size})`} : 0`,
-    // T.Drawer carries no built-in open/close animation — the STYLE must supply enter/exit
-    // transitions that drive `position` 0↔1. Without them `open()`/`visible:true` set
-    // `opened:true` but `position` stays 0, leaving the panel anchored off-screen.
-    `${i(2)}enter: Transition { NumberAnimation { property: "position"; to: 1.0; duration: 220; easing.type: Easing.OutCubic } }`,
-    `${i(2)}exit: Transition { NumberAnimation { property: "position"; to: 0.0; duration: 180; easing.type: Easing.InCubic } }`,
-    // Semi-transparent modal scrim (default style provides none → an opaque dim).
-    `${i(2)}T.Overlay.modal: Rectangle { color: "#66000000" }`,
-    `${i(2)}background: Css.CssFill {`,
-    `${i(3)}property Item cssAncestor: ${wrapId}`,
-    `${i(3)}cssPrimitive: "div"`,
-    `${i(3)}cssClass: ["panel"]`,
-    `${i(2)}}`,
-    `${i(2)}contentItem: Css.CssFill {`,
-    `${i(3)}property Item cssAncestor: ${wrapId}`,
-    `${i(3)}cssPrimitive: "div"`,
-    `${i(3)}cssClass: ["content"]`,
-    ...emitChildren(children, scope, level + 3),
-    `${i(2)}}`,
+    `${i(1)}edge: ${EDGE[edge]}`,
   ];
-  if (closeBody) lines.push(`${i(2)}onClosed: { ${closeBody} }`);
+  if (sizeExpr !== null) lines.push(`${i(1)}size: ${sizeExpr}`);
+  if (closeBody) lines.push(`${i(1)}onClosed: { ${closeBody} }`);
+  lines.push(...emitChildren(children, scope, level + 1));
   lines.push(
-    `${i(1)}}`,
     `${i(1)}Binding {`,
     `${i(2)}target: ${ctlId}`,
-    `${i(2)}property: "visible"`,
+    `${i(2)}property: "open"`,
     `${i(2)}value: ${visibleValue}`,
     `${i(2)}restoreMode: Binding.RestoreNone`,
     `${i(1)}}`,

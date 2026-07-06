@@ -129,56 +129,35 @@ W.Div {
             text: "" + (drawerOpen ? "open" : "closed")
         }
     }
-    Css.CssItem {
+    W.Drawer {
+        id: __drawer1
         cssClass: ["ct-drawer"]
-        id: __drawer1W
-        cssPrimitive: "drawer"
-        T.Drawer {
-            id: __drawer1
-            parent: T.Overlay.overlay
-            edge: Qt.LeftEdge
-            dragMargin: 0
-            width: parent ? parent.width * (0.34) : 0
-            height: parent ? parent.height : 0
-            enter: Transition { NumberAnimation { property: "position"; to: 1.0; duration: 220; easing.type: Easing.OutCubic } }
-            exit: Transition { NumberAnimation { property: "position"; to: 0.0; duration: 180; easing.type: Easing.InCubic } }
-            T.Overlay.modal: Rectangle { color: "#66000000" }
-            background: Css.CssFill {
-                property Item cssAncestor: __drawer1W
-                cssPrimitive: "div"
-                cssClass: ["panel"]
-            }
-            contentItem: Css.CssFill {
-                property Item cssAncestor: __drawer1W
-                cssPrimitive: "div"
-                cssClass: ["content"]
-                W.Text {
-                    cssClass: ["ct-drawer-title"]
-                    text: "Navigation"
-                }
-                W.Text {
-                    cssClass: ["ct-drawer-item"]
-                    text: "Home"
-                }
-                W.Text {
-                    cssClass: ["ct-drawer-item"]
-                    text: "Profile"
-                }
-                W.Text {
-                    cssClass: ["ct-drawer-item"]
-                    text: "Preferences"
-                }
-                W.Button {
-                    cssClass: ["ct-close"]
-                    text: "Close"
-                    onClicked: drawerOpen = false
-                }
-            }
-            onClosed: { drawerOpen = false }
+        edge: Qt.LeftEdge
+        onClosed: { drawerOpen = false }
+        W.Text {
+            cssClass: ["ct-drawer-title"]
+            text: "Navigation"
+        }
+        W.Text {
+            cssClass: ["ct-drawer-item"]
+            text: "Home"
+        }
+        W.Text {
+            cssClass: ["ct-drawer-item"]
+            text: "Profile"
+        }
+        W.Text {
+            cssClass: ["ct-drawer-item"]
+            text: "Preferences"
+        }
+        W.Button {
+            cssClass: ["ct-close"]
+            text: "Close"
+            onClicked: drawerOpen = false
         }
         Binding {
             target: __drawer1
-            property: "visible"
+            property: "open"
             value: !!(drawerOpen)
             restoreMode: Binding.RestoreNone
         }

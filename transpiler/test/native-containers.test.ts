@@ -220,31 +220,21 @@ const DRAWER = `
   }
 `;
 
-test("containers: <Drawer> emits an in-tree anchor + T.Drawer on the overlay", async () => {
+test("containers: <Drawer> instantiates W.Drawer keeping the __drawer0 id + edge", async () => {
   const out = await qml(DRAWER);
-  assert.match(out, /Css\.CssItem \{/);
-  assert.match(out, /id: __drawer0W/);
-  assert.match(out, /cssPrimitive: "drawer"/);
+  assert.match(out, /W\.Drawer \{/);
+  assert.match(out, /id: __drawer0/);
   assert.match(out, /cssClass: \["nav"\]/);
-  assert.match(out, /T\.Drawer \{/);
-  assert.match(out, /parent: T\.Overlay\.overlay/);
   assert.match(out, /edge: Qt\.LeftEdge/);
-  assert.match(out, /dragMargin: 0/);
+  // The T.Drawer + overlay/scrim/cssAncestor internals now live in Drawer.qml.
+  assert.doesNotMatch(out, /T\.Drawer/);
+  assert.doesNotMatch(out, /parent: T\.Overlay\.overlay/);
 });
 
-test("containers: <Drawer> background AND contentItem carry the cssAncestor re-anchor", async () => {
+test("containers: <Drawer open> binds the two-way open alias via a RestoreNone Binding", async () => {
   const out = await qml(DRAWER);
-  const matches = out.match(/property Item cssAncestor: __drawer0W/g);
-  assert.equal(matches?.length, 2, "cssAncestor must appear on both background and contentItem");
-  assert.match(out, /background: Css\.CssFill \{/);
-  assert.match(out, /cssClass: \["panel"\]/);
-  assert.match(out, /contentItem: Css\.CssFill \{/);
-  assert.match(out, /cssClass: \["content"\]/);
-});
-
-test("containers: <Drawer open> binds visible via a RestoreNone Binding", async () => {
-  const out = await qml(DRAWER);
-  assert.match(out, /property: "visible"/);
+  assert.match(out, /target: __drawer0/);
+  assert.match(out, /property: "open"/);
   assert.match(out, /value: !!\(open\)/);
   assert.match(out, /restoreMode: Binding\.RestoreNone/);
 });
@@ -254,13 +244,12 @@ test("containers: <Drawer onClose> maps to onClosed", async () => {
   assert.match(out, /onClosed: \{ open = false \}/);
 });
 
-test("containers: left drawer sizes width by the default 0.34 fraction, full height", async () => {
+test("containers: <Drawer> without size omits it (component default 0.34)", async () => {
   const out = await qml(DRAWER);
-  assert.match(out, /width: parent \? parent\.width \* \(0\.34\) : 0/);
-  assert.match(out, /height: parent \? parent\.height : 0/);
+  assert.doesNotMatch(out, /\bsize:/);
 });
 
-test("containers: <Drawer edge='bottom' size={0.5}> transposes the axes", async () => {
+test("containers: <Drawer edge='bottom' size={0.5}> passes edge + size to the component", async () => {
   const out = await qml(`
     export function F() {
       const [open, setOpen] = createSignal(false);
@@ -268,11 +257,10 @@ test("containers: <Drawer edge='bottom' size={0.5}> transposes the axes", async 
     }
   `);
   assert.match(out, /edge: Qt\.BottomEdge/);
-  assert.match(out, /width: parent \? parent\.width : 0/);
-  assert.match(out, /height: parent \? parent\.height \* \(0\.5\) : 0/);
+  assert.match(out, /size: 0\.5/);
 });
 
-test("containers: <Drawer> inside <Show> folds the guard into the visible Binding", async () => {
+test("containers: <Drawer> inside <Show> folds the guard into the open Binding", async () => {
   const out = await qml(`
     export function F() {
       const [shown, setShown] = createSignal(true);
@@ -281,6 +269,23 @@ test("containers: <Drawer> inside <Show> folds the guard into the visible Bindin
     }
   `);
   assert.match(out, /value: !!\(shown\) && !!\(open\)/);
+});
+
+test("containers: Drawer.qml hosts the T.Drawer + overlay/scrim/cssAncestor internals", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Drawer.qml", import.meta.url)), "utf8");
+  assert.match(src, /T\.Drawer \{/);
+  assert.match(src, /parent: T\.Overlay\.overlay/);
+  assert.match(src, /T\.Overlay\.modal: Rectangle/);
+  assert.match(src, /property alias open: ctl\.visible/);
+  assert.match(src, /default property alias content: contentBox\.content/);
+  // Both slots carry the cssAncestor re-anchor (overlay reparent severs the CSS chain).
+  const anchors = src.match(/property Item cssAncestor: root/g);
+  assert.equal(anchors?.length, 2, "cssAncestor must appear on both background and contentItem");
+  assert.match(src, /cssClass: \["panel"\]/);
+  assert.match(src, /cssClass: \["content"\]/);
+  // enter/exit transitions drive position 0↔1 so the panel actually slides.
+  assert.match(src, /enter: Transition \{ NumberAnimation \{ property: "position"; to: 1\.0/);
+  assert.match(src, /exit: Transition \{ NumberAnimation \{ property: "position"; to: 0\.0/);
 });
 
 test("containers: <Drawer> rejects an unknown edge", async () => {

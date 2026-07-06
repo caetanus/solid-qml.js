@@ -3,6 +3,7 @@ BusyIndicator 1.0 BusyIndicator.qml
 Button 1.0 Button.qml
 DelayButton 1.0 DelayButton.qml
 Dial 1.0 Dial.qml
+Drawer 1.0 Drawer.qml
 Details 1.0 Details.qml
 Div 1.0 Div.qml
 Fieldset 1.0 Fieldset.qml
