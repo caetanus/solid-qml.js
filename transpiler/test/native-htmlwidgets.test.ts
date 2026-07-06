@@ -162,51 +162,50 @@ const DIALOG_SRC = `
   }
 `;
 
-test("dialog: zero-size wrapper CssFill + modal T.Dialog centered on the Overlay", async () => {
+test("dialog: is a REAL modal Window (Qt.Dialog), not an overlay popup", async () => {
   const out = await qml(DIALOG_SRC);
+  // Owner directive: a dialog is a window. No T.Dialog / overlay popup.
+  assert.match(out, /Window \{/);
+  assert.match(out, /flags: Qt\.Dialog/);
+  assert.match(out, /modality: Qt\.WindowModal/);
+  assert.match(out, /transientParent: __dialog0W\.Window\.window/);
   assert.match(out, /cssPrimitive: "dialog"/);
-  assert.match(out, /id: __dialog0W/);
-  assert.match(out, /T\.Dialog \{/);
-  assert.match(out, /modal: true/);
-  assert.match(out, /parent: T\.Overlay\.overlay/);
-  assert.match(out, /x: Math\.round\(\(parent\.width - width\) \/ 2\)/);
-  assert.match(out, /y: Math\.round\(\(parent\.height - height\) \/ 2\)/);
-  assert.doesNotMatch(out, /popupType/); // in-window modal, NOT a native popup window
+  assert.doesNotMatch(out, /T\.Dialog/);
+  assert.doesNotMatch(out, /T\.Overlay\.overlay/);
 });
 
-test("dialog: implicit size from content + paddings (Templates popups have none)", async () => {
+test("dialog: window sizes itself to the content's implicit size", async () => {
   const out = await qml(DIALOG_SRC);
-  assert.match(out, /implicitWidth: contentWidth \+ leftPadding \+ rightPadding/);
-  assert.match(out, /implicitHeight: contentHeight \+ topPadding \+ bottomPadding/);
+  assert.match(out, /width: Math\.max\(1, __dialog0Root\.implicitWidth\)/);
+  assert.match(out, /height: Math\.max\(1, __dialog0Root\.implicitHeight\)/);
 });
 
 test("dialog: open prop drives visible + a RestoreNone Binding (survives self-close)", async () => {
   const out = await qml(DIALOG_SRC);
-  assert.match(out, /visible: open/);
+  assert.match(out, /visible: !!\(open\)/);
   assert.match(out, /Binding \{/);
   assert.match(out, /target: __dialog0/);
   assert.match(out, /property: "visible"/);
-  assert.match(out, /value: open/);
+  assert.match(out, /value: !!\(open\)/);
   assert.match(out, /restoreMode: Binding\.RestoreNone/);
 });
 
-test("dialog: onClose handler wires to onClosed", async () => {
+test("dialog: onClose handler wires to the window's onClosing", async () => {
   const out = await qml(DIALOG_SRC);
-  assert.match(out, /onClosed: \{ open = false \}/);
+  assert.match(out, /onClosing: \{ open = false \}/);
 });
 
-test("dialog: cssAncestor re-anchors BOTH background and contentItem at the wrapper", async () => {
+test("dialog: author classes land on the dialog window's Css root", async () => {
   const out = await qml(DIALOG_SRC);
-  const hits = out.match(/property Item cssAncestor: __dialog0W/g) ?? [];
-  assert.equal(hits.length, 2, "background AND contentItem must carry cssAncestor");
-  assert.match(out, /cssClass: \["popup"\]/);
+  assert.match(out, /id: __dialog0Root/);
+  assert.match(out, /cssClass: \["dlg"\]/);
 });
 
-test("dialog: children emit inside the contentItem", async () => {
+test("dialog: children emit inside the dialog window's Css root", async () => {
   const out = await qml(DIALOG_SRC);
-  const contentAt = out.indexOf("contentItem: Item {");
+  const rootAt = out.indexOf("id: __dialog0Root");
   const bodyAt = out.indexOf('cssClass: ["body"]');
-  assert.ok(contentAt >= 0 && bodyAt > contentAt, "author children must live inside contentItem");
+  assert.ok(rootAt >= 0 && bodyAt > rootAt, "author children must live inside the dialog root");
 });
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,8 @@ import QtQuick
 import qmlcss 1.0 as Css
 
 
+import QtQuick.Window
+
 import QtQuick.Templates 6.0 as T
 Css.CssRect {
     id: __self
@@ -167,35 +169,25 @@ Css.CssRect {
             }
         }
     }
-    Css.CssFill {
-        cssClass: ["hw-dialog"]
+    Item {
         id: __dialog2W
-        cssPrimitive: "dialog"
         width: 0
         height: 0
-        implicitWidth: 0
-        implicitHeight: 0
-        T.Dialog {
+        Window {
             id: __dialog2
-            modal: true
-            visible: dlgOpen
-            T.Overlay.modal: Rectangle { color: "#66000000" }
-            parent: T.Overlay.overlay
-            x: Math.round((parent.width - width) / 2)
-            y: Math.round((parent.height - height) / 2)
-            implicitWidth: contentWidth + leftPadding + rightPadding
-            implicitHeight: contentHeight + topPadding + bottomPadding
-            padding: 1
-            onClosed: { dlgOpen = false }
-            background: Css.CssFill {
-                property Item cssAncestor: __dialog2W
-                cssPrimitive: "div"
-                cssClass: ["popup"]
-            }
-            contentItem: Item {
-                property Item cssAncestor: __dialog2W
-                implicitWidth: childrenRect.width
-                implicitHeight: childrenRect.height
+            flags: Qt.Dialog
+            modality: Qt.WindowModal
+            transientParent: __dialog2W.Window.window
+            title: ""
+            visible: !!(dlgOpen)
+            width: Math.max(1, __dialog2Root.implicitWidth)
+            height: Math.max(1, __dialog2Root.implicitHeight)
+            onClosing: { dlgOpen = false }
+            Css.CssRect {
+                id: __dialog2Root
+                anchors.fill: parent
+            cssClass: ["hw-dialog"]
+                cssPrimitive: "dialog"
                 Css.CssRect {
                     cssClass: ["hw-dialog-body"]
                     cssPrimitive: "div"
@@ -231,7 +223,7 @@ Css.CssRect {
         Binding {
             target: __dialog2
             property: "visible"
-            value: dlgOpen
+            value: !!(dlgOpen)
             restoreMode: Binding.RestoreNone
         }
     }

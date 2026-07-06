@@ -10,7 +10,7 @@
 // (background/contentItem chrome nulled or slot-filled with Css items), ids come from the
 // shared scope.inputCounter, and `scope.usedWidgets.flag` gates the Templates import.
 import * as t from "@babel/types";
-import { registerNativeTags } from "./index.ts";
+import { registerNativeTags, requireImport } from "./index.ts";
 import { emitExpr, type Scope } from "../expr.ts";
 import { emitChildren, buildCssClassLine, guardLine, INDENT } from "../qml.ts";
 import { isHCall, hParts } from "../../ast/h.ts";
@@ -247,88 +247,76 @@ function emitFieldset(propsArg: t.Node | undefined, children: t.Node[], scope: S
 // <dialog open={} onClose={}> → T.Dialog (in-window modal)
 // ─────────────────────────────────────────────────────────────────────────────────────────
 
-/** <dialog open={expr} onClose={fn}>children</dialog> → zero-size wrapper CssFill + T.Dialog.
+/** <dialog open={expr} onClose={fn} title="…">children</dialog> → a REAL top-level Window.
  *
- *  The wrapper only anchors CSS identity/scoping (id target for cssAncestor); the dialog itself
- *  renders on the window Overlay, so the wrapper is 0×0 and never disturbs the parent's layout.
+ *  Owner directive (2026-07-05): "dialog é uma janela, não um div. dialog é uma janela." A desktop
+ *  dialog is an actual OS window (like QDialog), NOT an in-window overlay popup. This supersedes the
+ *  earlier T.Dialog-on-the-Overlay approach: a QtQuick Window with `flags: Qt.Dialog` (dialog frame),
+ *  `modality: Qt.WindowModal` (blocks its parent), and `transientParent` pinned to the owning window
+ *  so the compositor stacks/centers it as a child dialog.
  *
- *  In-window modal (owner directive: NOT popupType Window — a dialog dims and blocks its own
- *  window). anchors.centerIn does not exist on popups (they are not Items): re-parent to
- *  T.Overlay.overlay and center with x/y arithmetic against it.
+ *  Structure: a zero-size Item anchor in the page (carries the guard fold + gives `transientParent`
+ *  via its `Window.window`); the Window sizes itself to the content (`root.implicitWidth/Height`),
+ *  and a Css.CssRect root inside carries the author classes. No overlay reparent → NO cssAncestor
+ *  hack: the CSS ancestor walk stays inside the dialog window, so `.my-dialog .body` matches normally.
+ *  The CSS engine's context props (cssTheme/cssLayout) resolve in the child window (shared root ctx).
  *
- *  visible: the literal `visible: <open>` binding is BROKEN the first time the dialog closes
- *  itself (Escape / press-outside call close(), an imperative write) — the sibling Binding
- *  element (restoreMode: RestoreNone) keeps re-asserting the author's open signal afterwards,
- *  the same controlled-value idiom as every input widget.
- *
- *  Popup pitfall (mandatory): dialog contents reparent to the window Overlay, severing the
- *  visual chain author CSS matches against (`.my-dialog .popup`) — `cssAncestor` on BOTH
- *  sibling slots (background and contentItem) re-anchors the engine's ancestor walk at the
- *  wrapper. Templates popups have NO implicit-size policy: implicitWidth/Height from
- *  contentWidth/Height + paddings, or the dialog opens 0×0. */
+ *  visible: controlled by the author's `open` signal via a RestoreNone Binding (survives a self-close
+ *  — the window's own close button / Esc); `onClosing` fires the author's onClose so the signal stays
+ *  honest when the user closes the window chrome. */
 function emitDialog(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard: string | undefined): string[] {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const props = readBaseProps(propsArg);
-  const classLine = buildCssClassLine(props, scope, i(1));
+  const classLine = buildCssClassLine(props, scope, i(2));
+  requireImport(scope, "import QtQuick.Window");
 
   const counter = scope.inputCounter ?? { n: 0 };
   const n = counter.n++;
   const wrapId = `__dialog${n}W`;
   const dlgId = `__dialog${n}`;
-  if (scope.usedWidgets) scope.usedWidgets.flag = true;
+  const rootId = `__dialog${n}Root`;
 
   const openNode = findProp(propsArg, "open");
   const openExpr = openNode ? emitExpr(openNode, { ...scope, mode: "binding" }) : "false";
+  // Fold a <Show> guard into the window's visibility (a window is shown, not laid out).
+  const visibleValue = guard ? `!!(${guard}) && !!(${openExpr})` : `!!(${openExpr})`;
   const onCloseFn = findFnProp(propsArg, "onClose");
   const closeBody = onCloseFn ? handlerBody(onCloseFn, scope) : "";
+  const titleNode = findProp(propsArg, "title");
+  const titleExpr = titleNode ? emitExpr(titleNode, { ...scope, mode: "binding" }) : '""';
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
-    ...classLine,
-    ...guardLine(guard, level),
+    // Zero-size page anchor: provides transientParent (its Window.window) and the guard fold.
+    `${pad}Item {`,
     `${i(1)}id: ${wrapId}`,
-    `${i(1)}cssPrimitive: "dialog"`,
-    // Zero-size: the wrapper is a CSS anchor only — the dialog paints on the Overlay.
     `${i(1)}width: 0`,
     `${i(1)}height: 0`,
-    `${i(1)}implicitWidth: 0`,
-    `${i(1)}implicitHeight: 0`,
-    `${i(1)}T.Dialog {`,
+    `${i(1)}Window {`,
     `${i(2)}id: ${dlgId}`,
-    `${i(2)}modal: true`,
-    `${i(2)}visible: ${openExpr}`,
-    // Modal scrim: the default style provides none, so the dialog floats with the page fully
-    // visible behind it — it reads as a plain div, not a modal. A semi-transparent dim behind is
-    // THE visual that makes it a dialog (same fix as <Drawer>). Author can override via `.dialog`.
-    `${i(2)}T.Overlay.modal: Rectangle { color: "#66000000" }`,
-    // Center on the window: popups position relative to their parent item — the Overlay.
-    `${i(2)}parent: T.Overlay.overlay`,
-    `${i(2)}x: Math.round((parent.width - width) / 2)`,
-    `${i(2)}y: Math.round((parent.height - height) / 2)`,
-    `${i(2)}implicitWidth: contentWidth + leftPadding + rightPadding`,
-    `${i(2)}implicitHeight: contentHeight + topPadding + bottomPadding`,
-    `${i(2)}padding: 1`,
-    ...(closeBody ? [`${i(2)}onClosed: { ${closeBody} }`] : []),
-    `${i(2)}background: Css.CssFill {`,
-    `${i(3)}property Item cssAncestor: ${wrapId}`,
-    `${i(3)}cssPrimitive: "div"`,
-    `${i(3)}cssClass: ["popup"]`,
-    `${i(2)}}`,
-    // contentItem: plain Item host (children keep their own Css layout); implicit size from
-    // childrenRect so contentWidth/Height see the author's root element.
-    `${i(2)}contentItem: Item {`,
-    `${i(3)}property Item cssAncestor: ${wrapId}`,
-    `${i(3)}implicitWidth: childrenRect.width`,
-    `${i(3)}implicitHeight: childrenRect.height`,
+    `${i(2)}flags: Qt.Dialog`,
+    `${i(2)}modality: Qt.WindowModal`,
+    `${i(2)}transientParent: ${wrapId}.Window.window`,
+    `${i(2)}title: ${titleExpr}`,
+    `${i(2)}visible: ${visibleValue}`,
+    // Size the window to its content (the Css root's implicit size). Not circular: the root's
+    // implicit is content-driven, its actual size comes back via anchors.fill.
+    `${i(2)}width: Math.max(1, ${rootId}.implicitWidth)`,
+    `${i(2)}height: Math.max(1, ${rootId}.implicitHeight)`,
+    ...(closeBody ? [`${i(2)}onClosing: { ${closeBody} }`] : []),
+    `${i(2)}Css.CssRect {`,
+    `${i(3)}id: ${rootId}`,
+    `${i(3)}anchors.fill: parent`,
+    ...classLine,
+    `${i(3)}cssPrimitive: "dialog"`,
     ...emitChildren(children, scope, level + 3),
     `${i(2)}}`,
     `${i(1)}}`,
-    // Controlled open state: survives the imperative visible=false a self-close performs.
+    // Controlled open state: survives the imperative visible=false a window self-close performs.
     `${i(1)}Binding {`,
     `${i(2)}target: ${dlgId}`,
     `${i(2)}property: "visible"`,
-    `${i(2)}value: ${openExpr}`,
+    `${i(2)}value: ${visibleValue}`,
     `${i(2)}restoreMode: Binding.RestoreNone`,
     `${i(1)}}`,
     `${pad}}`,
