@@ -28,9 +28,13 @@ Css.CssFill {
             antialiasingQuality: SceneEnvironment.High
         }
 
+        // Framed to keep Suzanne fully in view: the balsam mesh spans ~±1.4, so at scale 1.3 it's
+        // ~3.6 wide — pulled straight back to z=8 (default 60° FOV → ~9-wide view at origin) it stays
+        // centred and never leaves frame while it spins. Explicit clip planes so nothing culls it.
         PerspectiveCamera {
-            position: Qt.vector3d(0, 1.2, 5.2)
-            eulerRotation.x: -8
+            position: Qt.vector3d(0, 0, 8)
+            clipNear: 0.1
+            clipFar: 1000
         }
 
         // Three-point lighting: a bright key, a cool fill, and a warm rim for shape and mood.

@@ -83,9 +83,11 @@ function emitSurface(propsArg: t.Node | undefined, _children: t.Node[], scope: S
   const lines: string[] = [`${pad}WSurface.Surface {`, ...buildCssClassLine(cssPropsShim(props), scope, i(1))];
   if (guard) lines.push(`${i(1)}visible: !!(${guard})`);
   const heightMap = props.get("heightMap");
-  const surfaceColor = props.get("surfaceColor");
+  const valueMin = props.get("valueMin");
+  const valueMax = props.get("valueMax");
   if (heightMap) lines.push(`${i(1)}heightMap: ${bind(heightMap)}`);
-  if (surfaceColor) lines.push(`${i(1)}surfaceColor: ${bind(surfaceColor)}`);
+  if (valueMin) lines.push(`${i(1)}valueMin: ${bind(valueMin)}`);
+  if (valueMax) lines.push(`${i(1)}valueMax: ${bind(valueMax)}`);
   lines.push(`${pad}}`);
   return lines;
 }

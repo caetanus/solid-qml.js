@@ -27,16 +27,25 @@ export function ChartsAnd3D() {
           </div>
         }
       >
+        {/* Complex 2D plot (module solidqml.Widgets.Chart): a filled area, two splines and a scatter
+            overlay share value axes, with hover tooltips. Bars are intentionally absent — those we
+            draw with the CSS engine; QtGraphs earns its place only for the hard, multi-series stuff. */}
         <div class="dv-card">
-          <text class="dv-label">Complex plot — area · splines · scatter (QtGraphs)</text>
+          <text class="dv-label">Complex plot — area · splines · scatter, hover for values (QtGraphs)</text>
           <Chart class="dv-chart" />
         </div>
+        {/* Real-time 3D (module solidqml.Widgets.Scene3D): the Blender monkey (Suzanne) imported via
+            balsam to a .mesh, under a three-point light rig, slowly spinning on a GPU surface. */}
         <div class="dv-card">
-          <text class="dv-label">Blender monkey · three-point lighting (Qt Quick 3D)</text>
+          <text class="dv-label">Blender monkey · three-point lighting, spinning (Qt Quick 3D)</text>
           <Scene3D class="dv-scene" />
         </div>
+        {/* 3D + data viz combined (module solidqml.Widgets.Surface): the REAL Walker Lake exhaustive
+            grid (Isaaks & Srivastava, 260×300 V values) as a height-coloured surface. Drag to rotate,
+            wheel to zoom, click to select (Surface3D built-ins); the scale legend reads real V, and
+            Reset restores the view. */}
         <div class="dv-card">
-          <text class="dv-label">Walker Lake topography — 3D surface (QtGraphs Surface3D)</text>
+          <text class="dv-label">Walker Lake topography — heat-mapped 3D surface, mouse-driven (QtGraphs Surface3D)</text>
           <Surface class="dv-surface" />
         </div>
       </Show>

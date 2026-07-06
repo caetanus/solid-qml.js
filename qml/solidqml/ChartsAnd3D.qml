@@ -25,7 +25,7 @@ W.Div {
         visible: !!(isNative)
         W.Text {
             cssClass: ["dv-label"]
-            text: "Complex plot — area · splines · scatter (QtGraphs)"
+            text: "Complex plot — area · splines · scatter, hover for values (QtGraphs)"
         }
         WChart.Chart {
             cssClass: ["dv-chart"]
@@ -36,7 +36,7 @@ W.Div {
         visible: !!(isNative)
         W.Text {
             cssClass: ["dv-label"]
-            text: "Blender monkey · three-point lighting (Qt Quick 3D)"
+            text: "Blender monkey · three-point lighting, spinning (Qt Quick 3D)"
         }
         WScene3D.Scene3D {
             cssClass: ["dv-scene"]
@@ -47,7 +47,7 @@ W.Div {
         visible: !!(isNative)
         W.Text {
             cssClass: ["dv-label"]
-            text: "Walker Lake topography — 3D surface (QtGraphs Surface3D)"
+            text: "Walker Lake topography — heat-mapped 3D surface, mouse-driven (QtGraphs Surface3D)"
         }
         WSurface.Surface {
             cssClass: ["dv-surface"]
