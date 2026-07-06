@@ -37,4 +37,17 @@ Css.CssFill {
             cssClass: ["menubar"]
         }
     }
+
+    // F10 enters the menu bar (desktop convention, study §6): highlight+focus the first entry so the
+    // built-in Left/Right/Down/Enter navigation takes over. Alt does this natively (QQuickMenuBar
+    // Alt-press-release); F10 isn't handled by the control, so drive it here.
+    Shortcut {
+        sequences: ["F10"]
+        enabled: bar.count > 0 && solidTabstop.enabled
+        onActivated: {
+            var it = bar.itemAt(0);
+            if (it)
+                it.forceActiveFocus(Qt.MenuBarFocusReason);
+        }
+    }
 }
