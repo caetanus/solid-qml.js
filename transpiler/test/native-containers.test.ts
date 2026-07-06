@@ -300,16 +300,24 @@ test("containers: <StackView current> shows only child[current] (phase-1 contrac
       );
     }
   `);
-  assert.match(out, /Css\.CssRect \{/);
-  assert.match(out, /cssPrimitive: "stack"/);
+  assert.match(out, /W\.StackView \{/);
+  assert.match(out, /cssClass: \["st"\]/);
   assert.match(out, /visible: !!\(\(page\) === 0\)/);
   assert.match(out, /visible: !!\(\(page\) === 1\)/);
+  // The "stack" Css host now lives in StackView.qml.
+  assert.doesNotMatch(out, /cssPrimitive: "stack"/);
 });
 
 test("containers: <StackView> without current defaults to page 0", async () => {
   const out = await qml(`export function F(){ return <StackView><div /><div /></StackView>; }`);
   assert.match(out, /visible: !!\(\(0\) === 0\)/);
   assert.match(out, /visible: !!\(\(0\) === 1\)/);
+});
+
+test("containers: StackView.qml is the pure Css 'stack' host", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/StackView.qml", import.meta.url)), "utf8");
+  assert.match(src, /Css\.CssRect \{/);
+  assert.match(src, /cssPrimitive: "stack"/);
 });
 
 // ---------------------------------------------------------------------------

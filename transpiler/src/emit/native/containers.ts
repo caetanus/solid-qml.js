@@ -358,24 +358,25 @@ const emitDrawer: NativeEmit = (propsArg, children, scope, level, guard) => {
 // <StackView current={i()}> — phase-1 simplified contract
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** PHASE-1 CONTRACT: children are pages, only child[current] is visible. T.StackView's API is
- *  imperative (push/pop/replace) and does not fit the declarative controlled-index shape, so this
- *  emits a plain Css.CssRect host (cssPrimitive "stack") with per-child `visible` guards — the
- *  layout engine already treats an invisible child as out of flow, so the visible page gets the
+/** PHASE-1 CONTRACT: children are pages, only child[current] is visible → W.StackView.
+ *  One .qml per component: the Css.CssRect "stack" host lives in StackView.qml. T.StackView's API is
+ *  imperative (push/pop/replace) and does not fit the declarative controlled-index shape, so the host
+ *  is a pure Css box; the emit bakes a per-child `visible` guard (`(current) === k`) onto each page —
+ *  the layout engine already treats an invisible child as out of flow, so the visible page gets the
  *  full CSS box. Imperative push/pop via refs is a later phase. */
 const emitStackView: NativeEmit = (propsArg, children, scope, level, guard) => {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const props = propMap(propsArg);
   const classLine = buildCssClassLine(cssProps(props), scope, i(1));
+  markWidgetLib(scope);
 
   const currentExpr = bindExpr(props.get("current"), scope) ?? "0";
 
   const lines: string[] = [
-    `${pad}Css.CssRect {`,
+    `${pad}W.StackView {`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "stack"`,
   ];
   let k = 0;
   for (const child of children) {

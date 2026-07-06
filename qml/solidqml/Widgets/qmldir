@@ -10,6 +10,7 @@ Image 1.0 Image.qml
 Progress 1.0 Progress.qml
 RangeSlider 1.0 RangeSlider.qml
 RoundButton 1.0 RoundButton.qml
+StackView 1.0 StackView.qml
 TabBar 1.0 TabBar.qml
 TabButton 1.0 TabButton.qml
 ToolBar 1.0 ToolBar.qml

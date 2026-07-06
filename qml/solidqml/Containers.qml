@@ -62,9 +62,8 @@ W.Div {
             restoreMode: Binding.RestoreNone
         }
     }
-    Css.CssRect {
+    W.StackView {
         cssClass: ["ct-stack"]
-        cssPrimitive: "stack"
         W.Div {
             cssClass: ["ct-page"]
             visible: !!((tab) === 0)
