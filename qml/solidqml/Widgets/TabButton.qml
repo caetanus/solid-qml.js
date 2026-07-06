@@ -18,7 +18,10 @@ T.TabButton {
     implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
     implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
     padding: 8
-    activeFocusOnTab: solidTabstop.enabled
+    // Desktop model (study §6): a tab BAR is ONE tab stop — Tab reaches the CURRENT tab, Left/Right
+    // switch tabs (T.TabBar's built-in key navigation), and Tab again moves into the page content.
+    // So only the checked tab is a tab stop; the others are reached with arrows, not Tab.
+    activeFocusOnTab: solidTabstop.enabled && checked
 
     background: Css.CssFill {
         cssPrimitive: "div"
