@@ -52,7 +52,7 @@ Css.CssFill {
 
         Model {
             id: monkey
-            source: "../assets/suzanne.mesh"
+            source: "suzanne.mesh"
             scale: Qt.vector3d(1.35, 1.35, 1.35)
             eulerRotation.x: 12
             materials: PrincipledMaterial {
