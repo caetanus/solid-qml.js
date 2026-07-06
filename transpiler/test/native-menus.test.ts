@@ -420,3 +420,10 @@ test("tray: qmlType output carries the Qt.labs.platform import (emit builds the 
   const out = await qmlType(TRAY_SRC);
   assert.match(out, /import Qt\.labs\.platform 1\.1 as Platform/);
 });
+
+test("shortcut: <Shortcut keys onActivated> → QML Shortcut with sequences", async () => {
+  const single = await qml(`export function F(){ return <Shortcut keys="Ctrl+S" onActivated={() => 0} />; }`);
+  assert.match(single, /Shortcut \{\n\s*sequences: \["Ctrl\+S"\]\n\s*onActivated: \{ 0 \}/);
+  const multi = await qml(`export function F(){ return <Shortcut keys={["Ctrl+Q","Ctrl+W"]} onActivated={() => 0} />; }`);
+  assert.match(multi, /sequences: \["Ctrl\+Q", "Ctrl\+W"\]/);
+});
