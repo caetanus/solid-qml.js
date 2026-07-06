@@ -227,52 +227,65 @@ const DETAILS_SRC = `
   }
 `;
 
-test("details: wrapper CssFill with cssPrimitive 'details' and open cssState", async () => {
+test("details: <details> instantiates the W.Details component (no inline __open/wrapper)", async () => {
   const out = await qml(DETAILS_SRC);
-  assert.match(out, /cssPrimitive: "details"/);
-  assert.match(out, /id: __details0/);
-  assert.match(out, /cssState: __details0\.__open \? \["open"\] : \[\]/);
-  assert.match(out, /property bool __open: !!\(false\)/);
+  assert.match(out, /W\.Details \{/);
+  assert.match(out, /cssClass: \["dt"\]/);
+  // The CssFill "details" wrapper, __open and the summary/content boxes now live in Details.qml.
+  assert.doesNotMatch(out, /cssPrimitive: "details"/);
+  assert.doesNotMatch(out, /property bool __open/);
+  assert.doesNotMatch(out, /id: __details/);
 });
 
-test("details: open prop initializes __open", async () => {
+test("details: no open prop → omitted (component default false)", async () => {
+  const out = await qml(DETAILS_SRC);
+  assert.doesNotMatch(out, /\bopen:/);
+});
+
+test("details: open prop seeds the component's open (init binding source)", async () => {
   const out = await qml(`
     export function F() {
       const [o, setO] = createSignal(true);
       return <details open={o()}><summary>t</summary><text>c</text></details>;
     }
   `);
-  assert.match(out, /property bool __open: !!\(o\)/);
+  assert.match(out, /open: o/);
 });
 
-test("details: summary renders as a header CssFill with toggle MouseArea", async () => {
+test("details: summary author classes pass through as summaryClass", async () => {
   const out = await qml(DETAILS_SRC);
-  assert.match(out, /cssPrimitive: "summary"/);
-  assert.match(out, /cssClass: \["hd"\]/);
-  assert.match(out, /MouseArea \{/);
-  assert.match(out, /onClicked: __details0\.__open = !__details0\.__open/);
-  assert.match(out, /cssState: \(__details0\.__open \? \["open"\] : \[\]\)\.concat\(__hover0\.containsMouse \? \["hover"\] : \[\]\)/);
+  assert.match(out, /summaryClass: \["hd"\]/);
 });
 
-test("details: marker glyph is a plain Text inside an anchors.fill Item host", async () => {
+test("details: summary children pass through as a summaryContent list literal", async () => {
   const out = await qml(DETAILS_SRC);
-  assert.match(out, /text: "▸"/);
-  assert.match(out, /rotation: __details0\.__open \? 90 : 0/);
-  assert.match(out, /Css\.CssItem \{ cssPrimitive: "text"; cssClass: \["marker"\] \}/);
-  // Layout pitfall: the plain Text must live inside an anchored Item host.
-  const itemAt = out.indexOf("Item {\n");
-  const markerAt = out.indexOf('text: "▸"');
-  assert.ok(itemAt >= 0 && itemAt < markerAt, "marker must be hosted in a plain Item");
-  assert.match(out, /Item \{\n\s+anchors\.fill: parent\n\s+Text \{/);
+  assert.match(out, /summaryContent: \[/);
+  const sumAt = out.indexOf("summaryContent: [");
+  const moreAt = out.indexOf('text: "More"');
+  assert.ok(sumAt >= 0 && moreAt > sumAt, "summary label lives inside the summaryContent list");
+  // The marker glyph / MouseArea now live in Details.qml, not the emit.
+  assert.doesNotMatch(out, /text: "▸"/);
 });
 
-test("details: remaining children render in a content CssRect visible only when open", async () => {
+test("details: disclosure body passes as the default content children", async () => {
   const out = await qml(DETAILS_SRC);
-  assert.match(out, /cssClass: \["content"\]/);
-  assert.match(out, /visible: __details0\.__open/);
-  const contentAt = out.indexOf('cssClass: ["content"]');
-  const lineAt = out.indexOf('cssClass: ["line"]');
-  assert.ok(contentAt >= 0 && lineAt > contentAt, "body children must live inside the content box");
+  assert.match(out, /cssClass: \["line"\]/);
+  // The content CssRect (cssClass ["content"], visible: __open) is inside Details.qml.
+  assert.doesNotMatch(out, /cssClass: \["content"\]/);
+});
+
+test("details: Details.qml component holds the wrapper, marker and content internals", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { fileURLToPath } = await import("node:url");
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Details.qml", import.meta.url)), "utf8");
+  assert.match(src, /cssPrimitive: "details"/);
+  assert.match(src, /cssPrimitive: "summary"/);
+  assert.match(src, /text: "▸"/);
+  assert.match(src, /cssClass: \["marker"\]/);
+  assert.match(src, /cssClass: \["content"\]/);
+  assert.match(src, /property bool __open: !!\(root\.open\)/);
+  assert.match(src, /property alias summaryContent: summaryBox\.data/);
+  assert.match(src, /default property alias content: contentBox\.data/);
 });
 
 // ---------------------------------------------------------------------------
@@ -288,6 +301,8 @@ test("htmlwidgets: ids share the input counter with other widgets", async () => 
   `);
   assert.match(out, /id: __input0/);       // the text field
   assert.match(out, /W\.Progress \{/);     // progress is a component instance (no counter id)
-  // Progress no longer consumes an input-counter slot; details takes the next one after the field.
-  assert.match(out, /id: __details1/);
+  assert.match(out, /W\.Details \{/);      // details is a component instance (no counter id)
+  // Neither progress nor details consumes an input-counter slot now; only the text field does.
+  assert.doesNotMatch(out, /id: __input1/);
+  assert.doesNotMatch(out, /id: __details/);
 });

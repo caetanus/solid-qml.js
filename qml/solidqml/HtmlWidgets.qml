@@ -128,52 +128,23 @@ Css.CssRect {
             restoreMode: Binding.RestoreNone
         }
     }
-    Css.CssFill {
+    W.Details {
         cssClass: ["hw-details"]
-        id: __details1
-        cssPrimitive: "details"
-        cssState: __details1.__open ? ["open"] : []
-        property bool __open: !!(false)
-        Css.CssFill {
-            cssPrimitive: "summary"
-            cssState: (__details1.__open ? ["open"] : []).concat(__hover0.containsMouse ? ["hover"] : [])
-            Item {
-                anchors.fill: parent
-                Text {
-                    text: "▸"
-                    rotation: __details1.__open ? 90 : 0
-                    anchors.left: parent.left
-                    anchors.leftMargin: 6
-                    anchors.verticalCenter: parent.verticalCenter
-                    Css.CssItem { cssPrimitive: "text"; cssClass: ["marker"] }
-                }
-            }
+        summaryContent: [
             Css.CssText {
                 cssPrimitive: ""
                 text: "More details"
             }
-            MouseArea {
-                id: __hover0
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: __details1.__open = !__details1.__open
-            }
+        ]
+        Css.CssText {
+            cssClass: ["hw-line"]
+            cssPrimitive: "text"
+            text: "The disclosure content only occupies space while open."
         }
-        Css.CssRect {
-            cssPrimitive: "div"
-            cssClass: ["content"]
-            visible: __details1.__open
-            Css.CssText {
-                cssClass: ["hw-line"]
-                cssPrimitive: "text"
-                text: "The disclosure content only occupies space while open."
-            }
-            Css.CssText {
-                cssClass: ["hw-line"]
-                cssPrimitive: "text"
-                text: "Click the summary row to toggle."
-            }
+        Css.CssText {
+            cssClass: ["hw-line"]
+            cssPrimitive: "text"
+            text: "Click the summary row to toggle."
         }
     }
 }

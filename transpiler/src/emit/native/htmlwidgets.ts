@@ -289,35 +289,23 @@ function emitDialog(propsArg: t.Node | undefined, children: t.Node[], scope: Sco
 // <details open> + <summary> → disclosure expander
 // ─────────────────────────────────────────────────────────────────────────────────────────
 
-/** <details open={expr}><summary>Label</summary>children</details> → expander.
+/** <details open={expr}><summary>Label</summary>children</details> → W.Details.
  *
- *  Wrapper Css.CssFill (cssPrimitive "details") owns `property bool __open`, initialized from
- *  the `open` prop when present (the init binding breaks on the first user toggle — standard
- *  QML semantics, same as the calendar's nav month). cssState carries "open" for author CSS.
- *
- *  The first <summary> child renders as a header row: Css.CssFill (cssPrimitive "summary")
- *  with a "▸" marker glyph, the summary's own children, and a MouseArea that toggles __open
- *  (doubling as the hover tracker, like the button emitter). The marker is a plain Text —
- *  anchored plain internals of a Css container MUST live inside an anchors.fill Item host:
- *  once the author gives the container box rules the engine's flex pass hits plain children
- *  too (see the checkbox indicator emitter). The nested CssItem injects `.marker` CSS
- *  (color/font) without joining any layout. Give the summary padding-left in CSS to clear it.
- *
- *  Remaining children render inside a content Css.CssRect (cssClass ["content"]) visible only
- *  while open — the layout engine skips invisible items, so closing reclaims the space. */
+ *  One .qml per component: the CssFill "details" wrapper, the `__open` state, the summary header row
+ *  (marker glyph + toggle/hover MouseArea) and the content box all live in Details.qml. The emit
+ *  only: seeds `open` (when present); passes the summary's author classes as `summaryClass` and the
+ *  summary's own children as `summaryContent` (a QML list literal appended after the marker/
+ *  MouseArea); and passes the disclosure body via the component's default `content`. */
 function emitDetails(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard: string | undefined): string[] {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const props = readBaseProps(propsArg);
   const classLine = buildCssClassLine(props, scope, i(1));
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
-  const counter = scope.inputCounter ?? { n: 0 };
-  const detId = `__details${counter.n++}`;
-  const hoverCounter = scope.hoverCounter ?? { n: 0 };
-  const maId = `__hover${hoverCounter.n++}`;
-
+  // No value → the component's default open (false). Present → seed the init binding.
   const openNode = findProp(propsArg, "open");
-  const openExpr = openNode ? emitExpr(openNode, { ...scope, mode: "binding" }) : "false";
+  const openExpr = openNode ? emitExpr(openNode, { ...scope, mode: "binding" }) : null;
 
   // Split out the first <summary> child; everything else is disclosure content.
   const summaryIdx = children.findIndex((c) => hTag(c) === "summary");
@@ -325,55 +313,34 @@ function emitDetails(propsArg: t.Node | undefined, children: t.Node[], scope: Sc
   const rest = children.filter((_, k) => k !== summaryIdx);
   const summaryProps = readBaseProps(summaryCall ? hParts(summaryCall).props : undefined);
   const summaryKids = summaryCall ? hParts(summaryCall).children : [];
-  const summaryClassLine = buildCssClassLine(summaryProps, scope, i(2));
+  // buildCssClassLine yields `cssClass: <array>` — strip the label to reuse the array for summaryClass.
+  const summaryClassLine = buildCssClassLine(summaryProps, scope, "");
+  const summaryClassArr = summaryClassLine.length ? summaryClassLine[0].replace(/^cssClass:\s*/, "") : null;
 
-  const summaryState = `(${detId}.__open ? ["open"] : []).concat(${maId}.containsMouse ? ["hover"] : [])`;
+  const lines = [`${pad}W.Details {`, ...classLine, ...guardLine(guard, level)];
+  if (openExpr !== null) lines.push(`${i(1)}open: ${openExpr}`);
+  if (summaryClassArr !== null) lines.push(`${i(1)}summaryClass: ${summaryClassArr}`);
+  // Summary's own children as a QML list literal (aliased into the summary box, after marker/MouseArea).
+  lines.push(...emitListLiteral("summaryContent", summaryKids, scope, level + 1));
+  // Disclosure body → the component's default `content` alias.
+  lines.push(...emitChildren(rest, scope, level + 1));
+  lines.push(`${pad}}`);
+  return lines;
+}
 
-  return [
-    `${pad}Css.CssFill {`,
-    ...classLine,
-    ...guardLine(guard, level),
-    `${i(1)}id: ${detId}`,
-    `${i(1)}cssPrimitive: "details"`,
-    `${i(1)}cssState: ${detId}.__open ? ["open"] : []`,
-    // Disclosure state — init binding from `open` breaks on the first click (QML semantics).
-    `${i(1)}property bool __open: !!(${openExpr})`,
-    // ── summary header row ────────────────────────────────────────────────
-    `${i(1)}Css.CssFill {`,
-    ...summaryClassLine,
-    `${i(2)}cssPrimitive: "summary"`,
-    `${i(2)}cssState: ${summaryState}`,
-    // Marker glyph: plain Text inside an anchors.fill Item host (flex-pass insulation —
-    // see jsdoc); rotates 90° while open. `.marker` CSS lands via the nested CssItem.
-    `${i(2)}Item {`,
-    `${i(3)}anchors.fill: parent`,
-    `${i(3)}Text {`,
-    `${i(4)}text: "▸"`,
-    `${i(4)}rotation: ${detId}.__open ? 90 : 0`,
-    `${i(4)}anchors.left: parent.left`,
-    `${i(4)}anchors.leftMargin: 6`,
-    `${i(4)}anchors.verticalCenter: parent.verticalCenter`,
-    `${i(4)}Css.CssItem { cssPrimitive: "text"; cssClass: ["marker"] }`,
-    `${i(3)}}`,
-    `${i(2)}}`,
-    ...emitChildren(summaryKids, scope, level + 2),
-    `${i(2)}MouseArea {`,
-    `${i(3)}id: ${maId}`,
-    `${i(3)}anchors.fill: parent`,
-    `${i(3)}hoverEnabled: true`,
-    `${i(3)}cursorShape: Qt.PointingHandCursor`,
-    `${i(3)}onClicked: ${detId}.__open = !${detId}.__open`,
-    `${i(2)}}`,
-    `${i(1)}}`,
-    // ── disclosure content: only while open (invisible items leave the layout) ──
-    `${i(1)}Css.CssRect {`,
-    `${i(2)}cssPrimitive: "div"`,
-    `${i(2)}cssClass: ["content"]`,
-    `${i(2)}visible: ${detId}.__open`,
-    ...emitChildren(rest, scope, level + 2),
-    `${i(1)}}`,
-    `${pad}}`,
-  ];
+/** Emit `name: [ <children> ]` — the children as elements of a QML list literal. Groups adjacent
+ *  text/interpolation runs into a single CssText exactly like emitChildren, then comma-joins the
+ *  top-level blocks (identified by their closing brace at the base indent). Returns [] when empty. */
+function emitListLiteral(name: string, children: t.Node[], scope: Scope, level: number): string[] {
+  const inner = level + 1;
+  const block = emitChildren(children, scope, inner);
+  if (block.length === 0) return [];
+  const close = INDENT.repeat(inner) + "}";
+  const closeIdxs: number[] = [];
+  block.forEach((l, k) => { if (l === close) closeIdxs.push(k); });
+  for (let k = 0; k < closeIdxs.length - 1; k++) block[closeIdxs[k]] += ",";
+  const pad = INDENT.repeat(level);
+  return [`${pad}${name}: [`, ...block, `${pad}]`];
 }
 
 registerNativeTags({
