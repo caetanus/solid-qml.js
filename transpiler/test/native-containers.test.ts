@@ -13,7 +13,6 @@ import { findRender } from "../src/ast/find.ts";
 import { analyzeSignals } from "../src/model/symbols.ts";
 import { emitQml } from "../src/emit/qml.ts";
 import { emitComponentType } from "../src/emit/component.ts";
-import { generate } from "../src/index.ts";
 import type { Scope } from "../src/emit/expr.ts";
 import * as t from "@babel/types";
 
@@ -163,11 +162,13 @@ test("containers: <TabButton> outside <TabBar> throws", async () => {
 // <SplitView>
 // ---------------------------------------------------------------------------
 
-test("containers: <SplitView> defaults to horizontal orientation", async () => {
+test("containers: <SplitView> instantiates W.SplitView, defaulting to horizontal", async () => {
   const out = await qml(`export function F(){ return <SplitView class="sp"><div class="a" /><div class="b" /></SplitView>; }`);
-  assert.match(out, /cssPrimitive: "splitview"/);
-  assert.match(out, /T\.SplitView \{/);
+  assert.match(out, /W\.SplitView \{/);
+  assert.match(out, /cssClass: \["sp"\]/);
   assert.match(out, /orientation: Qt\.Horizontal/);
+  // The T.SplitView control + handle now live in SplitView.qml.
+  assert.doesNotMatch(out, /T\.SplitView \{/);
 });
 
 test("containers: <SplitView orientation='vertical'> maps to Qt.Vertical", async () => {
@@ -175,22 +176,27 @@ test("containers: <SplitView orientation='vertical'> maps to Qt.Vertical", async
   assert.match(out, /orientation: Qt\.Vertical/);
 });
 
-test("containers: <SplitView> handle is the stock SplitHandle, panes get fillWidth hint", async () => {
+test("containers: <SplitView> panes get the per-pane fillWidth hint", async () => {
   const out = await qml(`export function F(){ return <SplitView><div /><div /></SplitView>; }`);
-  // Handle is the stock component (plain-Rectangle root survives the CSS content-measure so it
-  // keeps a real implicit thickness — a bare Css.CssRect measures 0 and the handle vanishes).
-  assert.match(out, /handle: SplitHandle \{/);
-  assert.match(out, /cssAncestor: __split0W/);
-  assert.match(out, /horizontal: __split0\.orientation === Qt\.Horizontal/);
   // Panes carry a SplitView size hint so they share space (else the first pane's content eats it).
+  // This attached-property reference stays in the generated output (needs the Templates import).
   assert.match(out, /T\.SplitView\.fillWidth: true/);
+  // The handle wiring moved into SplitView.qml.
+  assert.doesNotMatch(out, /handle: SplitHandle/);
 });
 
-test("containers: SplitHandle stock component ships with the app", async () => {
-  const app = await generate(`export function F(){ return <SplitView><div /><div /></SplitView>; }`, "/x.tsx");
-  assert.ok(app.components.SplitHandle, "SplitHandle.qml should be in the components map");
-  assert.match(app.components.SplitHandle, /T\.SplitHandle\.pressed/);
-  assert.match(app.components.SplitHandle, /cssClass: \["handle"\]/);
+test("containers: SplitView.qml + SplitHandle.qml host the control internals", async () => {
+  const sv = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/SplitView.qml", import.meta.url)), "utf8");
+  assert.match(sv, /T\.SplitView \{/);
+  assert.match(sv, /handle: SplitHandle \{/);
+  assert.match(sv, /cssAncestor: root/);
+  assert.match(sv, /horizontal: split\.orientation === Qt\.Horizontal/);
+  assert.match(sv, /default property alias panes: split\.contentData/);
+  // The stock handle now ships as a module-local component (plain-Rectangle root survives the CSS
+  // content-measure, keeping a real implicit thickness — a bare Css.CssRect measures 0 and vanishes).
+  const sh = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/SplitHandle.qml", import.meta.url)), "utf8");
+  assert.match(sh, /T\.SplitHandle\.pressed/);
+  assert.match(sh, /cssClass: \["handle"\]/);
 });
 
 test("containers: <SplitView> children emit as direct SplitView children", async () => {

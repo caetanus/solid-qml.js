@@ -93,33 +93,23 @@ W.Div {
         cssClass: ["nv-label"]
         text: "SplitView"
     }
-    Css.CssFill {
+    W.SplitView {
         cssClass: ["ct-split"]
-        id: __split1W
-        cssPrimitive: "splitview"
-        T.SplitView {
-            id: __split1
-            anchors.fill: parent
-            orientation: Qt.Horizontal
-            handle: SplitHandle {
-                cssAncestor: __split1W
-                horizontal: __split1.orientation === Qt.Horizontal
+        orientation: Qt.Horizontal
+        W.Div {
+            T.SplitView.fillWidth: true
+            cssClass: ["ct-pane"]
+            W.Text {
+                cssClass: ["ct-pane-t"]
+                text: "Left pane — drag the handle."
             }
-            W.Div {
-                T.SplitView.fillWidth: true
-                cssClass: ["ct-pane"]
-                W.Text {
-                    cssClass: ["ct-pane-t"]
-                    text: "Left pane — drag the handle."
-                }
-            }
-            W.Div {
-                T.SplitView.fillWidth: true
-                cssClass: ["ct-pane", "ct-pane-alt"]
-                W.Text {
-                    cssClass: ["ct-pane-t"]
-                    text: "Right pane."
-                }
+        }
+        W.Div {
+            T.SplitView.fillWidth: true
+            cssClass: ["ct-pane", "ct-pane-alt"]
+            W.Text {
+                cssClass: ["ct-pane-t"]
+                text: "Right pane."
             }
         }
     }
@@ -141,10 +131,10 @@ W.Div {
     }
     Css.CssItem {
         cssClass: ["ct-drawer"]
-        id: __drawer2W
+        id: __drawer1W
         cssPrimitive: "drawer"
         T.Drawer {
-            id: __drawer2
+            id: __drawer1
             parent: T.Overlay.overlay
             edge: Qt.LeftEdge
             dragMargin: 0
@@ -154,12 +144,12 @@ W.Div {
             exit: Transition { NumberAnimation { property: "position"; to: 0.0; duration: 180; easing.type: Easing.InCubic } }
             T.Overlay.modal: Rectangle { color: "#66000000" }
             background: Css.CssFill {
-                property Item cssAncestor: __drawer2W
+                property Item cssAncestor: __drawer1W
                 cssPrimitive: "div"
                 cssClass: ["panel"]
             }
             contentItem: Css.CssFill {
-                property Item cssAncestor: __drawer2W
+                property Item cssAncestor: __drawer1W
                 cssPrimitive: "div"
                 cssClass: ["content"]
                 W.Text {
@@ -187,7 +177,7 @@ W.Div {
             onClosed: { drawerOpen = false }
         }
         Binding {
-            target: __drawer2
+            target: __drawer1
             property: "visible"
             value: !!(drawerOpen)
             restoreMode: Binding.RestoreNone
@@ -198,9 +188,9 @@ W.Div {
         text: "SwipeView"
     }
     W.SwipeView {
-        id: __swipe3
+        id: __swipe2
         cssClass: ["ct-swipe"]
-        onCurrentIndexChanged: { page = __swipe3.currentIndex }
+        onCurrentIndexChanged: { page = __swipe2.currentIndex }
         W.Div {
             cssClass: ["ct-slide", "ct-slide-a"]
             W.Text {
@@ -223,7 +213,7 @@ W.Div {
             }
         }
         Binding {
-            target: __swipe3
+            target: __swipe2
             property: "currentIndex"
             value: page
             restoreMode: Binding.RestoreNone

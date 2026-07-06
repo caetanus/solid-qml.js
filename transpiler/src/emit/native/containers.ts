@@ -202,19 +202,20 @@ const emitTabButtonError: NativeEmit = () => {
 // <SplitView orientation="horizontal|vertical">
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** → wrapper Css.CssFill (cssPrimitive "splitview") + T.SplitView { orientation }.
- *  Children emit as DIRECT children of the SplitView — the Container manages their geometry
- *  (pane implicit sizes come from each pane's own Css layout). The handle is a styleable
- *  Css.CssRect ["handle"], 6px thick, with hover/active cssState from the SplitHandle attached. */
+/** <SplitView orientation="horizontal|vertical"> → W.SplitView.
+ *  One .qml per component: the CssFill "splitview" wrapper, the T.SplitView and its SplitHandle
+ *  (module-local) live in SplitView.qml. The emit passes the orientation and the panes (into the
+ *  control's contentData via the default `panes` alias). It still INJECTS the per-pane
+ *  `T.SplitView.fillWidth/fillHeight` hint on each pane's own object: QQuickSplitView reserves space
+ *  only for panes that carry a size hint (else the first pane's content-implicit eats the row). That
+ *  attached-property reference keeps the Templates import in the generated file. */
 const emitSplitView: NativeEmit = (propsArg, children, scope, level, guard) => {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const props = propMap(propsArg);
   const classLine = buildCssClassLine(cssProps(props), scope, i(1));
-  markWidgets(scope);
-
-  const counter = scope.inputCounter ?? { n: 0 };
-  const splitId = `__split${counter.n++}`;
+  markWidgetLib(scope);
+  markWidgets(scope); // the per-pane T.SplitView attached hint needs the Templates import
 
   let orientation = "Qt.Horizontal";
   const o = props.get("orientation");
@@ -223,40 +224,24 @@ const emitSplitView: NativeEmit = (propsArg, children, scope, level, guard) => {
     else if (o.value !== "horizontal") throw new Error(`<SplitView> orientation must be "horizontal" or "vertical", got "${o.value}"`);
   }
 
-  const wrapId = `${splitId}W`;
-
-  // Each direct child is a pane. QQuickSplitView reserves space only for panes that carry a
-  // SplitView size hint (or a definite implicit); without one, the first pane's content-implicit
-  // eats the row and later panes collapse to 0. Inject `T.SplitView.fillWidth/fillHeight: true`
-  // into every pane (after its opening brace) so they share the space and are resizable by the
-  // handle. Emit children one at a time so the hint lands on each pane's own object.
+  // Inject `T.SplitView.fillWidth/fillHeight: true` into every pane (after its opening brace) so they
+  // share the space and are resizable by the handle. Emit children one at a time so the hint lands on
+  // each pane's own object.
   const fillProp = orientation === "Qt.Horizontal" ? "fillWidth" : "fillHeight";
   const paneLines: string[] = [];
   for (const child of children) {
-    const emitted = emitChildren([child], scope, level + 2);
+    const emitted = emitChildren([child], scope, level + 1);
     const braceIdx = emitted.findIndex((l) => /\{\s*$/.test(l));
-    if (braceIdx >= 0) emitted.splice(braceIdx + 1, 0, `${i(3)}T.SplitView.${fillProp}: true`);
+    if (braceIdx >= 0) emitted.splice(braceIdx + 1, 0, `${i(2)}T.SplitView.${fillProp}: true`);
     paneLines.push(...emitted);
   }
 
   return [
-    `${pad}Css.CssFill {`,
+    `${pad}W.SplitView {`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}id: ${wrapId}`,
-    `${i(1)}cssPrimitive: "splitview"`,
-    `${i(1)}T.SplitView {`,
-    `${i(2)}id: ${splitId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}orientation: ${orientation}`,
-    // Handle is a stock component: its plain-Rectangle root keeps a real implicit thickness (a bare
-    // Css.CssRect measures its empty content as 0 → SplitView reserves no space → invisible handle).
-    `${i(2)}handle: SplitHandle {`,
-    `${i(3)}cssAncestor: ${wrapId}`,
-    `${i(3)}horizontal: ${splitId}.orientation === Qt.Horizontal`,
-    `${i(2)}}`,
+    `${i(1)}orientation: ${orientation}`,
     ...paneLines,
-    `${i(1)}}`,
     `${pad}}`,
   ];
 };
