@@ -20,6 +20,7 @@ import { CssGaps } from "./cssgaps";
 import { Dashboard } from "./dashboard";
 import { Widgets } from "./widgets";
 import { NativeOnly } from "./native";
+import { ChartsAnd3D } from "./native/dataviz";
 import "./examples.css";
 
 export function Gallery() {
@@ -50,6 +51,7 @@ export function Gallery() {
         <button classList={{ active: view() === "dashboard" }} onClick={() => setView("dashboard")}>Dashboard</button>
         <button classList={{ active: view() === "widgets" }} onClick={() => setView("widgets")}>Widgets</button>
         <button classList={{ active: view() === "native" }} onClick={() => setView("native")}>Native</button>
+        <button classList={{ active: view() === "charts3d" }} onClick={() => setView("charts3d")}>Charts &amp; 3D</button>
       </div>
       <Switch>
         <Match when={view() === "hello"}><Hello /></Match>
@@ -69,6 +71,7 @@ export function Gallery() {
         <Match when={view() === "dashboard"}><Dashboard /></Match>
         <Match when={view() === "widgets"}><Widgets /></Match>
         <Match when={view() === "native"}><NativeOnly /></Match>
+        <Match when={view() === "charts3d"}><ChartsAnd3D /></Match>
       </Switch>
     </div>
   );

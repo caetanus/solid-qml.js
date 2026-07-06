@@ -2351,3 +2351,71 @@ button:hover {
   font-size: 13px;
   color: #17222c;
 }
+
+
+/* Charts & 3D page — a dark showcase for the optional QtGraphs / Qt Quick 3D widgets. */
+.dv {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  /* Pinned to the viewport minus the gallery nav (2 rows at this width) so the tall stack of
+     chart/3D cards scrolls with the desktop scrollbar instead of overflowing off-screen. */
+  height: calc(100vh - 88px);
+  overflow-y: auto;
+}
+
+.dv-h {
+  font-size: 24px;
+  font-weight: 700;
+  color: #e8eef5;
+}
+
+.dv-sub {
+  font-size: 14px;
+  color: #7d92a5;
+  margin-bottom: 6px;
+}
+
+.dv-fallback {
+  padding: 40px;
+  background: #16212e;
+  border: 1px dashed #2e4256;
+  border-radius: 10px;
+}
+
+.dv-fallback-t {
+  color: #7d92a5;
+  font-size: 15px;
+}
+
+.dv-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: #16212e;
+  border: 1px solid #223140;
+  border-radius: 10px;
+}
+
+.dv-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #b9c7d4;
+}
+
+.dv-chart {
+  width: 560px;
+  height: 340px;
+}
+
+.dv-scene {
+  width: 560px;
+  height: 300px;
+}
+
+.dv-surface {
+  width: 560px;
+  height: 340px;
+}

@@ -99,6 +99,11 @@ W.Div {
             text: "Native"
             onClicked: view = "native"
         }
+        W.Button {
+            cssClass: [].concat(view === "charts3d" ? ["active"] : [])
+            text: "Charts & 3D"
+            onClicked: view = "charts3d"
+        }
     }
     Css.CssIncubator {
         active: (view === "hello") ? true : false
@@ -216,6 +221,13 @@ W.Div {
         active: ((view === "native") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch") || (view === "todomvc") || (view === "nodeimports") || (view === "cssgaps") || (view === "dashboard") || (view === "widgets"))) ? true : false
         sourceComponent: Component {
             NativeOnly {
+            }
+        }
+    }
+    Css.CssIncubator {
+        active: ((view === "charts3d") && !((view === "hello") || (view === "counters") || (view === "counter") || (view === "children") || (view === "derived") || (view === "index") || (view === "dynamic") || (view === "props") || (view === "context") || (view === "refs") || (view === "fetch") || (view === "todomvc") || (view === "nodeimports") || (view === "cssgaps") || (view === "dashboard") || (view === "widgets") || (view === "native"))) ? true : false
+        sourceComponent: Component {
+            ChartsAnd3D {
             }
         }
     }

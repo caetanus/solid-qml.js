@@ -31,17 +31,56 @@ Css.CssFill {
         axisX: ValueAxis { min: 0; max: root.xMax; subTickCount: 4 }
         axisY: ValueAxis { min: -1.5; max: 5 }
 
+        // Hover tooltip: QtGraphs has no built-in one, so each series reports `hover(name, pos, value)`
+        // and we place a small balloon at the cursor with the data value (onHoverExit hides it).
+        function showTip(name, pos, value) {
+            tip.text = name + "  (" + value.x.toFixed(1) + ", " + value.y.toFixed(2) + ")";
+            tip.x = Math.min(Math.max(pos.x - tip.width / 2, 0), gv.width - tip.width);
+            tip.y = Math.max(pos.y - tip.height - 10, 0);
+            tip.visible = true;
+        }
+
         AreaSeries {
             color: "#2241cd52"; borderColor: root.accent; borderWidth: 2
             upperSeries: LineSeries { id: area }
         }
-        SplineSeries { id: wave; width: 3 }
-        SplineSeries { id: ripple; width: 2 }
+        SplineSeries {
+            id: wave; width: 3; hoverable: true
+            onHover: (name, pos, value) => gv.showTip("wave", pos, value)
+            onHoverExit: tip.visible = false
+        }
+        SplineSeries {
+            id: ripple; width: 2; hoverable: true
+            onHover: (name, pos, value) => gv.showTip("ripple", pos, value)
+            onHoverExit: tip.visible = false
+        }
         ScatterSeries {
             id: samples
+            hoverable: true
+            onHover: (name, pos, value) => gv.showTip("sample", pos, value)
+            onHoverExit: tip.visible = false
             pointDelegate: Rectangle {
                 width: 9; height: 9; radius: 4.5
                 color: "#ff8a3d"; border.color: "#0f1720"; border.width: 1
+            }
+        }
+
+        Rectangle {
+            id: tip
+            property alias text: tipText.text
+            visible: false
+            z: 100
+            width: tipText.implicitWidth + 16
+            height: tipText.implicitHeight + 10
+            radius: 5
+            color: "#f0141c26"
+            border.color: "#41cd52"
+            border.width: 1
+            Text {
+                id: tipText
+                anchors.centerIn: parent
+                color: "#e8eef5"
+                font.pixelSize: 12
             }
         }
 
