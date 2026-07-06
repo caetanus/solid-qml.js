@@ -111,35 +111,11 @@ W.Div {
                     cssClass: ["wg-label"]
                     text: "Notes"
                 }
-                Css.CssFill {
+                W.TextArea {
+                    id: __input4
                     cssClass: ["wg-textarea"]
-                    cssPrimitive: "textarea"
-                    cssState: (__input4.activeFocus ? ["focus"] : []).concat(!__input4.enabled ? ["disabled"] : [])
-                    implicitWidth: __input4.implicitWidth
-                    implicitHeight: __input4.implicitHeight
-                    T.TextArea {
-                        id: __input4
-                        anchors.fill: parent
-                        background: null
-                        wrapMode: TextEdit.Wrap
-                        color: cssTheme.parseColor(parent.inheritedColor || "#2b2b2b")
-                        font.family: cssTheme.resolveFontFamily(parent.inheritedFontFamily || "Sans Serif")
-                        font.pixelSize: cssTheme.parseFontSize(parent.inheritedFontSize || "13px", 13)
-                        padding: 12
-                        selectByMouse: true
-                        activeFocusOnTab: solidTabstop.enabled
-                        onTextChanged: { inputNotes = text }
-                        Text {
-                            anchors.top: parent.top
-                            anchors.left: parent.left
-                            anchors.topMargin: parent.padding
-                            anchors.leftMargin: parent.padding
-                            visible: parent.text.length === 0 && !parent.activeFocus
-                            text: "Add notes…"
-                            color: "#9aa0a6"
-                            font: parent.font
-                        }
-                    }
+                    placeholder: "Add notes…"
+                    onTextChanged: { inputNotes = text }
                     Binding {
                         target: __input4
                         property: "text"

@@ -223,22 +223,24 @@ test("widgets: <input> without placeholder does NOT set the placeholder prop", a
 // <textarea>
 // ---------------------------------------------------------------------------
 
-test("widgets: <textarea> emits CssFill with cssPrimitive 'textarea'", async () => {
+const TEXTAREA_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TextArea.qml", import.meta.url)), "utf8");
+
+test("widgets: <textarea> instantiates the W.TextArea component", async () => {
   const out = await qml(`export function F(){ return <textarea></textarea>; }`);
-  assert.match(out, /Css\.CssFill \{/);
-  assert.match(out, /cssPrimitive: "textarea"/);
+  assert.match(out, /W\.TextArea \{/);
+  assert.match(out, /id: __input0/);
+  assert.doesNotMatch(out, /T\.TextArea/);
 });
 
-test("widgets: <textarea> inner control is T.TextArea with wrapMode and background null", async () => {
-  const out = await qml(`export function F(){ return <textarea></textarea>; }`);
-  assert.match(out, /T\.TextArea \{/);
-  assert.match(out, /wrapMode: TextEdit\.Wrap/);
-  assert.match(out, /background: null/);
+test("widgets: TextArea.qml has a T.TextArea with wrapMode, background null, cssPrimitive 'textarea'", async () => {
+  assert.match(TEXTAREA_QML, /cssPrimitive: "textarea"/);
+  assert.match(TEXTAREA_QML, /T\.TextArea \{/);
+  assert.match(TEXTAREA_QML, /wrapMode: TextEdit\.Wrap/);
+  assert.match(TEXTAREA_QML, /background: null/);
 });
 
-test("widgets: <textarea> cssState includes focus and disabled (same pattern as input)", async () => {
-  const out = await qml(`export function F(){ return <textarea></textarea>; }`);
-  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)/);
+test("widgets: TextArea.qml cssState includes focus and disabled (same pattern as input)", async () => {
+  assert.match(TEXTAREA_QML, /cssState: \(field\.activeFocus \? \["focus"\] : \[\]\)/);
 });
 
 test("widgets: <textarea> onInput maps to onTextChanged (T.TextArea has no textEdited)", async () => {
@@ -270,10 +272,10 @@ test("widgets: <textarea disabled> sets enabled: false", async () => {
   assert.match(out, /enabled: false/);
 });
 
-test("widgets: <textarea placeholder='...'>  emits an overlay Text anchored top-left", async () => {
+test("widgets: <textarea placeholder='...'> sets the placeholder prop; overlay lives in TextArea.qml", async () => {
   const out = await qml(`export function F(){ return <textarea placeholder="Notes..."></textarea>; }`);
-  assert.match(out, /text: "Notes\.\.\."/);
-  assert.match(out, /anchors\.top: parent\.top/);
+  assert.match(out, /placeholder: "Notes\.\.\."/);
+  assert.match(TEXTAREA_QML, /anchors\.top: parent\.top/);
 });
 
 // ---------------------------------------------------------------------------
@@ -305,13 +307,14 @@ test("widgets: Widgets import is prepended when component contains an <input>", 
   assert.doesNotMatch(out, /import QtQuick\.Templates/);
 });
 
-test("widgets: Templates import is prepended when component contains a <textarea>", async () => {
+test("widgets: Widgets import is prepended when component contains a <textarea>", async () => {
   const out = await qmlType(`
     export function F() {
       return <textarea></textarea>;
     }
   `);
-  assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
+  assert.doesNotMatch(out, /import QtQuick\.Templates/);
 });
 
 test("widgets: Templates import is NOT emitted for a plain div (no widget)", async () => {
@@ -1274,8 +1277,8 @@ test("tabstop: TextField.qml binds activeFocusOnTab to solidTabstop.enabled", as
   assert.match(TEXTFIELD_QML, TAB_STOP);
 });
 
-test("tabstop: <textarea> binds activeFocusOnTab to solidTabstop.enabled", async () => {
-  assert.match(await qml(`export function F(){ return <textarea />; }`), TAB_STOP);
+test("tabstop: TextArea.qml binds activeFocusOnTab to solidTabstop.enabled", async () => {
+  assert.match(TEXTAREA_QML, TAB_STOP);
 });
 
 test("tabstop: <input type='checkbox'> binds activeFocusOnTab to solidTabstop.enabled", async () => {

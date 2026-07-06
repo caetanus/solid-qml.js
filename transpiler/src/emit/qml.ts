@@ -611,61 +611,31 @@ function emitTextarea(propsArg: t.Node | undefined, props: Props, scope: Scope, 
   const counter = scope.inputCounter ?? { n: 0 };
   const ctlId = `__input${counter.n++}`;
 
-  if (scope.usedWidgets) scope.usedWidgets.flag = true;
+  // One .qml per component: instantiate W.TextArea (the T.TextArea + wrap + placeholder + CSS-bridged
+  // colour/font live in TextArea.qml). Keep the id so the controlled Binding resolves.
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
   const { valueExpr, signalName, placeholder, onInputFn, onChangeFn, disabled, readOnly }
     = readWidgetProps(propsArg, scope);
 
-  const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
-
-  // T.TextArea has no textEdited signal: map both onInput and onChange to onTextChanged.
-  // (onInput takes priority if both are specified.)
+  // T.TextArea has no textEdited signal: map both onInput and onChange to the instance's
+  // onTextChanged (text is a two-way alias, so textChanged exists on the component). onInput wins.
   const fn = onInputFn ?? onChangeFn;
-  let textChangedBody = fn
+  const textChangedBody = fn
     ? translateInputHandler(fn, scope)
     : signalName ? `${safeName(signalName)} = text` : "";
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.TextArea {`,
+    `${i(1)}id: ${ctlId}`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "textarea"`,
-    `${i(1)}cssState: ${cssState}`,
-    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
-    `${i(1)}T.TextArea {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}background: null`,
-    // Allow the text to wrap; callers can override via CSS `white-space: nowrap` (not yet mapped).
-    `${i(2)}wrapMode: TextEdit.Wrap`,
-    ...widgetColorFont(i),
-    `${i(2)}padding: 12`,
-    `${i(2)}selectByMouse: true`,
-    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
   ];
 
-  if (disabled) lines.push(`${i(2)}enabled: false`);
-  if (readOnly) lines.push(`${i(2)}readOnly: true`);
-  if (textChangedBody) lines.push(`${i(2)}onTextChanged: { ${textChangedBody} }`);
-
-  // Placeholder: overlaid at the top-left of the editing area (top-aligned for multi-line).
-  if (placeholder) {
-    lines.push(
-      `${i(2)}Text {`,
-      `${i(3)}anchors.top: parent.top`,
-      `${i(3)}anchors.left: parent.left`,
-      `${i(3)}anchors.topMargin: parent.padding`,
-      `${i(3)}anchors.leftMargin: parent.padding`,
-      `${i(3)}visible: parent.text.length === 0 && !parent.activeFocus`,
-      `${i(3)}text: ${JSON.stringify(placeholder)}`,
-      `${i(3)}color: "#9aa0a6"`,
-      `${i(3)}font: parent.font`,
-      `${i(2)}}`,
-    );
-  }
-
-  lines.push(`${i(1)}}`);
+  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (readOnly) lines.push(`${i(1)}readOnly: true`);
+  if (placeholder) lines.push(`${i(1)}placeholder: ${JSON.stringify(placeholder)}`);
+  if (textChangedBody) lines.push(`${i(1)}onTextChanged: { ${textChangedBody} }`);
 
   if (valueExpr !== null) {
     lines.push(
