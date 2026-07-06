@@ -1141,183 +1141,6 @@ function translateDateClickHandler(fn: t.ArrowFunctionExpression | t.FunctionExp
     .replace(/__ev\.(?:currentTarget|target)\.value/g, dateExpr);
 }
 
-/** Shared month-grid inner structure — emits lines for the calendar header (nav buttons + title),
- *  the DayOfWeekRow and the AbstractMonthGrid with its day delegate. The CALLER is responsible for
- *  emitting the surrounding container and the `__calVal<n>`, `__calMonth<n>`, `__calYear<n>`
- *  properties on it; all inline references use `ownerId.__calXXX<n>`.
- *
- *  @param ownerId - QML id of the item that owns __calVal/Month/Year (the calendar wrapper or date-field wrapper)
- *  @param n       - unique numeric suffix (from inputCounter) used for all generated ids in this calendar instance
- *  @param clickExtra - optional QML statement(s) appended after the onChange body (e.g. popup.close())
- *  @param onChangeFn - the author's onChange / onInput handler, or null
- *  @param level   - indentation level of the CONTAINER's children (the inner Item or popup contentItem)
- */
-function emitMonthGridLines(
-  ownerId: string,
-  n: number,
-  onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null,
-  clickExtra: string,
-  scope: Scope,
-  level: number,
-  cursorExpr?: string, // keyboard-cursor Date expr; adds a "focus" state to the matching cell
-): string[] {
-  const i = (d: number) => INDENT.repeat(level + d);
-  const mgId = `__mg${n}`;
-  const delId = `__mgDel${n}`;
-  const dowId = `__dow${n}`;
-
-  const clickBody = onChangeFn ? translateDateClickHandler(onChangeFn, scope) : "";
-  const fullClick = [clickBody, clickExtra].filter(Boolean).join("; ");
-
-  const selCheck =
-    `${ownerId}.__calVal${n} instanceof Date` +
-    ` && model.year === ${ownerId}.__calVal${n}.getFullYear()` +
-    ` && model.month === ${ownerId}.__calVal${n}.getMonth()` +
-    ` && model.day === ${ownerId}.__calVal${n}.getDate()`;
-  const cursorCheck = cursorExpr
-    ? `${cursorExpr} instanceof Date` +
-      ` && model.year === ${cursorExpr}.getFullYear()` +
-      ` && model.month === ${cursorExpr}.getMonth()` +
-      ` && model.day === ${cursorExpr}.getDate()`
-    : null;
-  const dayCssState =
-    `(model.today ? ["today"] : [])` +
-    `.concat((${selCheck}) ? ["selected"] : [])` +
-    `.concat(model.month !== ${mgId}.month ? ["outside"] : [])` +
-    `.concat(${delId}.hovered ? ["hover"] : [])` +
-    (cursorCheck ? `.concat((${cursorCheck}) ? ["focus"] : [])` : ``);
-
-  return [
-    // ── prev nav button ────────────────────────────────────────────────────
-    `${i(0)}Css.CssFill {`,
-    `${i(1)}cssPrimitive: "button"`,
-    `${i(1)}cssClass: ["cal-nav"]`,
-    `${i(1)}x: 0`,
-    `${i(1)}y: 0`,
-    `${i(1)}width: 32`,
-    `${i(1)}height: 32`,
-    `${i(1)}implicitWidth: 32`,
-    `${i(1)}implicitHeight: 32`,
-    `${i(1)}Css.CssText { cssPrimitive: ""; text: "‹"; anchors.centerIn: parent }`,
-    `${i(1)}MouseArea {`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}onClicked: {`,
-    `${i(3)}if (${ownerId}.__calMonth${n} === 0) { ${ownerId}.__calYear${n} = ${ownerId}.__calYear${n} - 1; ${ownerId}.__calMonth${n} = 11 }`,
-    `${i(3)}else ${ownerId}.__calMonth${n} = ${ownerId}.__calMonth${n} - 1`,
-    `${i(2)}}`,
-    `${i(1)}}`,
-    `${i(0)}}`,
-    // ── month/year label ───────────────────────────────────────────────────
-    `${i(0)}Css.CssText {`,
-    `${i(1)}cssPrimitive: ""`,
-    `${i(1)}cssClass: ["cal-title"]`,
-    `${i(1)}x: 32`,
-    `${i(1)}y: 0`,
-    `${i(1)}width: parent.width - 64`,
-    `${i(1)}height: 32`,
-    `${i(1)}text: Qt.locale().monthName(${ownerId}.__calMonth${n}) + " " + ${ownerId}.__calYear${n}`,
-    // CssText does not expose horizontalAlignment/verticalAlignment as QML properties.
-    // verticalAlignment is always AlignVCenter inside CssText (hardcoded in applyToText).
-    // horizontal centering is driven by the style map key "text-align".
-    `${i(1)}style: ({"text-align": "center"})`,
-    `${i(0)}}`,
-    // ── next nav button ────────────────────────────────────────────────────
-    `${i(0)}Css.CssFill {`,
-    `${i(1)}cssPrimitive: "button"`,
-    `${i(1)}cssClass: ["cal-nav"]`,
-    `${i(1)}x: parent.width - 32`,
-    `${i(1)}y: 0`,
-    `${i(1)}width: 32`,
-    `${i(1)}height: 32`,
-    `${i(1)}implicitWidth: 32`,
-    `${i(1)}implicitHeight: 32`,
-    `${i(1)}Css.CssText { cssPrimitive: ""; text: "›"; anchors.centerIn: parent }`,
-    `${i(1)}MouseArea {`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}onClicked: {`,
-    `${i(3)}if (${ownerId}.__calMonth${n} === 11) { ${ownerId}.__calYear${n} = ${ownerId}.__calYear${n} + 1; ${ownerId}.__calMonth${n} = 0 }`,
-    `${i(3)}else ${ownerId}.__calMonth${n} = ${ownerId}.__calMonth${n} + 1`,
-    `${i(2)}}`,
-    `${i(1)}}`,
-    `${i(0)}}`,
-    // ── day-of-week row ────────────────────────────────────────────────────
-    // The Abstract templates instantiate NO delegates in C++ — the style (us) must supply a
-    // contentItem whose Repeater binds control.source → control.delegate. The template's C++
-    // then only sizes contentItem children (width/7); the Row/Grid positioner places them.
-    `${i(0)}T.AbstractDayOfWeekRow {`,
-    `${i(1)}id: ${dowId}`,
-    `${i(1)}x: 0`,
-    `${i(1)}y: 32`,
-    `${i(1)}width: parent.width`,
-    `${i(1)}height: 24`,
-    `${i(1)}contentItem: Row {`,
-    `${i(2)}Repeater {`,
-    `${i(3)}model: ${dowId}.source`,
-    `${i(3)}delegate: ${dowId}.delegate`,
-    `${i(2)}}`,
-    `${i(1)}}`,
-    // Delegate host is a plain Item sized DECLARATIVELY with the template's own cell formula.
-    // The C++ resizeItems() only fires on geometryChange — under CssIncubator the Repeater
-    // populates after the last geometry change, so imperative sizing never lands and the Row
-    // stacks 0-wide cells. A binding is timing-proof. The CssText centres inside the cell
-    // (a bare CssText would re-assert its text-metrics size and misalign the Row).
-    `${i(1)}delegate: Item {`,
-    `${i(2)}width: (${dowId}.contentItem.width - 6 * ${dowId}.spacing) / 7`,
-    `${i(2)}height: ${dowId}.contentItem.height`,
-    `${i(2)}Css.CssText {`,
-    `${i(3)}cssPrimitive: ""`,
-    `${i(3)}cssClass: ["dow"]`,
-    `${i(3)}text: model.shortName`,
-    `${i(3)}anchors.centerIn: parent`,
-    `${i(2)}}`,
-    `${i(1)}}`,
-    `${i(0)}}`,
-    // ── month grid ─────────────────────────────────────────────────────────
-    `${i(0)}T.AbstractMonthGrid {`,
-    `${i(1)}id: ${mgId}`,
-    `${i(1)}x: 0`,
-    `${i(1)}y: 56`,
-    `${i(1)}width: parent.width`,
-    `${i(1)}height: parent.height - 56`,
-    `${i(1)}month: ${ownerId}.__calMonth${n}`,
-    `${i(1)}year: ${ownerId}.__calYear${n}`,
-    `${i(1)}contentItem: Grid {`,
-    `${i(2)}columns: 7`,
-    `${i(2)}rows: 6`,
-    `${i(2)}Repeater {`,
-    `${i(3)}model: ${mgId}.source`,
-    `${i(3)}delegate: ${mgId}.delegate`,
-    `${i(2)}}`,
-    `${i(1)}}`,
-    `${i(1)}delegate: T.AbstractButton {`,
-    `${i(2)}id: ${delId}`,
-    `${i(2)}implicitWidth: 32`,
-    `${i(2)}implicitHeight: 32`,
-    // Declarative cell size (same formula as the template's resizeItems) — see the
-    // day-of-week delegate note: incubated creation misses the imperative resize.
-    `${i(2)}width: (${mgId}.contentItem.width - 6 * ${mgId}.spacing) / 7`,
-    `${i(2)}height: (${mgId}.contentItem.height - 5 * ${mgId}.spacing) / 6`,
-    // background: a CssFill carrying the day's CSS class / pseudo-class state
-    `${i(2)}background: Css.CssFill {`,
-    `${i(3)}cssPrimitive: "div"`,
-    `${i(3)}cssClass: ["day"]`,
-    `${i(3)}cssState: ${dayCssState}`,
-    `${i(2)}}`,
-    // contentItem: the day number label. It carries the SAME state list as the background —
-    // background and contentItem are sibling slots, so `.day:outside .day-label` can never
-    // match (no ancestor relation); `.day-label:outside` does.
-    `${i(2)}contentItem: Css.CssText {`,
-    `${i(3)}cssPrimitive: ""`,
-    `${i(3)}cssClass: ["day-label"]`,
-    `${i(3)}cssState: ${dayCssState}`,
-    `${i(3)}text: model.day`,
-    `${i(2)}}`,
-    ...(fullClick ? [`${i(2)}onClicked: { ${fullClick} }`] : []),
-    `${i(1)}}`,
-    `${i(0)}}`,
-  ];
-}
-
 /** <Calendar value={expr} onChange={fn} class="…"> — an inline month-grid widget (our tag, not HTML).
  *
  *  Wrapper: Css.CssFill (cssPrimitive "div") — participates in the parent's flex/grid layout.
@@ -1343,11 +1166,10 @@ function emitCalendar(propsArg: t.Node | undefined, scope: Scope, level: number,
   const classLine = buildCssClassLine(props, scope, i(1));
 
   const counter = scope.inputCounter ?? { n: 0 };
-  const n = counter.n++;
+  counter.n++;
 
-  if (scope.usedWidgets) { scope.usedWidgets.flag = true; scope.usedWidgets.calendar = true; }
-
-  const calId = `__cal${n}`;
+  // One .qml per component: instantiate W.Calendar (the MonthGrid body lives in Calendar.qml).
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
   let valueExpr: string | null = null;
   let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
@@ -1363,31 +1185,18 @@ function emitCalendar(propsArg: t.Node | undefined, scope: Scope, level: number,
     }
   }
 
-  const calValExpr = valueExpr ?? "null";
+  // Picking a day fires dayPicked(date); translate the author's onChange so e.target.value → `date`.
+  const pickedBody = onChangeFn ? translateDateClickHandler(onChangeFn, scope, "date") : "";
 
-  return [
-    `${pad}Css.CssFill {`,
+  const lines: string[] = [
+    `${pad}W.Calendar {`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}id: ${calId}`,
-    `${i(1)}cssPrimitive: "div"`,
-    // Fixed implicit size: 7 cells × 32 px wide; 32 (header) + 24 (DOW) + 6 rows × 32 = 280.
-    `${i(1)}implicitWidth: 224`,
-    `${i(1)}implicitHeight: 280`,
-    // Reactive value property — source of truth for :selected highlight.
-    `${i(1)}property var __calVal${n}: ${calValExpr}`,
-    // View month/year initialized from value; binding breaks after the first nav click (QML semantics),
-    // after which they track the user's navigation position independently.
-    `${i(1)}property int __calMonth${n}: __calVal${n} instanceof Date ? __calVal${n}.getMonth() : new Date().getMonth()`,
-    `${i(1)}property int __calYear${n}: __calVal${n} instanceof Date ? __calVal${n}.getFullYear() : new Date().getFullYear()`,
-    // Plain Item insulates the calendar internals from the outer CSS layout engine (non-Css items
-    // are skipped by isLayoutChild). The nav buttons / title / DOW / MonthGrid use explicit x/y.
-    `${i(1)}Item {`,
-    `${i(2)}anchors.fill: parent`,
-    ...emitMonthGridLines(calId, n, onChangeFn, "", scope, level + 2),
-    `${i(1)}}`,
-    `${pad}}`,
   ];
+  if (valueExpr !== null) lines.push(`${i(1)}value: ${valueExpr}`);
+  if (pickedBody) lines.push(`${i(1)}onDayPicked: (date) => { ${pickedBody} }`);
+  lines.push(`${pad}}`);
+  return lines;
 }
 
 /** <input type="date" value={expr} onChange={fn}> → readOnly text field (formatted via Qt.formatDate)
@@ -1421,14 +1230,12 @@ function emitDateInput(
     }
   }
 
-  // Derive per-instance ids from the pre-allocated ctlId (avoids an extra counter increment).
-  const wrapId = `${ctlId}W`;   // outer CssFill wrapper (carries state/props)
-  const fldId  = ctlId;          // T.TextField (the text display control)
-  const popId  = `${ctlId}P`;   // T.Popup (the calendar dropdown)
-  // n used for month-grid sub-ids; extract from ctlId e.g. "__input3" → 3.
-  const n = parseInt(ctlId.replace("__input", ""), 10);
+  // One .qml per component: instantiate W.DateField (the readOnly field + chevron + popup + shared
+  // MonthGrid live in DateField.qml). The counter slot allocated by emitInput is consumed so sibling
+  // widgets stay monotonically numbered; DateField needs no external id (its state is self-contained).
+  void ctlId;
 
-  if (scope.usedWidgets) { scope.usedWidgets.flag = true; scope.usedWidgets.calendar = true; scope.usedWidgets.popupWindow = true; }
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
   let valueExpr: string | null = null;
   let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
@@ -1447,145 +1254,19 @@ function emitDateInput(
     }
   }
 
-  const calValExpr = valueExpr ?? "null";
-  // cssState: :focus when popup is open (visible = keyboard focus equivalent); :disabled from field.
-  const cssState = `(${popId}.visible ? ["focus"] : []).concat(!${fldId}.enabled ? ["disabled"] : [])`;
-
-  // Enter with the popup open commits the keyboard cursor through the SAME author onChange
-  // path a cell click takes, then closes.
-  const rawCommit = onChangeFn ? translateDateClickHandler(onChangeFn, scope, `__calCursor${n}`) : "";
-  const commitBody = rawCommit && !rawCommit.trimEnd().endsWith(";") ? `${rawCommit}; ` : rawCommit ? `${rawCommit} ` : "";
-  const commitFnLines = [
-    `${i(1)}function __calCommit${n}() { if (!(__calCursor${n} instanceof Date)) return; ${commitBody}${popId}.close() }`,
-  ];
+  // Picking a day (or committing the keyboard cursor) fires dayPicked(date); translate the author's
+  // onChange so e.target.value / e.target.valueAsDate → `date`.
+  const pickedBody = onChangeFn ? translateDateClickHandler(onChangeFn, scope, "date") : "";
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.DateField {`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}id: ${wrapId}`,
-    `${i(1)}cssPrimitive: "input"`,
-    `${i(1)}cssState: ${cssState}`,
-    `${i(1)}implicitWidth: 200`,
-    `${i(1)}implicitHeight: 36`,
-    // Reactive value property — source of truth for :selected highlight and formatted display.
-    `${i(1)}property var __calVal${n}: ${calValExpr}`,
-    `${i(1)}property int __calMonth${n}: __calVal${n} instanceof Date ? __calVal${n}.getMonth() : new Date().getMonth()`,
-    `${i(1)}property int __calYear${n}: __calVal${n} instanceof Date ? __calVal${n}.getFullYear() : new Date().getFullYear()`,
-    // Keyboard cursor: arrows move it by ±1 (left/right) and ±7 (up/down) days, following the
-    // shown month; Enter commits it through the same onChange path a cell click uses.
-    // Qt::Popup semantics: vanish when the app window loses focus (see emitSelect).
-    `${i(1)}Window.onActiveChanged: if (!Window.active) ${popId}.close()`,
-    `${i(1)}property var __calCursor${n}: null`,
-    `${i(1)}function __calStep${n}(days) { var b = __calCursor${n} instanceof Date ? __calCursor${n} : (__calVal${n} instanceof Date ? __calVal${n} : new Date()); var d = new Date(b.getFullYear(), b.getMonth(), b.getDate() + days); __calCursor${n} = d; __calMonth${n} = d.getMonth(); __calYear${n} = d.getFullYear() }`,
-    ...(commitFnLines),
-    // Anchored plain-Item host: the wrapper is a Css container, and once the author's CSS
-    // gives it box rules (e.g. `.wg-date { padding: … }`) the layout engine runs a flex pass
-    // over ALL contentHolder children — plain ones included — stretching the chevron Text to
-    // the content box (measured: 1-glyph Text at width 560) and squeezing the TextField. An
-    // anchors.fill Item is skipped by the layout; everything inside keeps its anchors. Same
-    // insulation pattern as the inline <Calendar>.
-    `${i(1)}Item {`,
-    `${i(2)}anchors.fill: parent`,
-    // ReadOnly text field — display only; typing dates is out of scope.
-    `${i(2)}T.TextField {`,
-    `${i(3)}id: ${fldId}`,
-    `${i(3)}anchors.fill: parent`,
-    `${i(3)}background: null`,
-    `${i(3)}readOnly: true`,
-    `${i(3)}activeFocusOnTab: solidTabstop.enabled`,
-    // Keyboard: Enter/Space/Down open the popup; with it open, arrows move the day cursor
-    // (±1 left/right, ±7 up/down — HTML date-picker semantics) and Enter/Space commit it.
-    // The popup keeps focus on this field (focus: false default), so keys land here.
-    `${i(3)}Keys.onReturnPressed: ${popId}.visible ? ${wrapId}.__calCommit${n}() : ${popId}.open()`,
-    `${i(3)}Keys.onSpacePressed: ${popId}.visible ? ${wrapId}.__calCommit${n}() : ${popId}.open()`,
-    `${i(3)}Keys.onDownPressed: ${popId}.visible ? ${wrapId}.__calStep${n}(7) : ${popId}.open()`,
-    `${i(3)}Keys.onUpPressed: { if (${popId}.visible) ${wrapId}.__calStep${n}(-7) }`,
-    `${i(3)}Keys.onLeftPressed: { if (${popId}.visible) ${wrapId}.__calStep${n}(-1) }`,
-    `${i(3)}Keys.onRightPressed: { if (${popId}.visible) ${wrapId}.__calStep${n}(1) }`,
-    ...widgetColorFont(i, 1, wrapId),
-    `${i(3)}leftPadding: 12`,
-    `${i(3)}rightPadding: 36`,
-    `${i(3)}verticalAlignment: TextInput.AlignVCenter`,
   ];
-
-  if (disabled) lines.push(`${i(3)}enabled: false`);
-  lines.push(`${i(2)}}`);
-
-  // Binding: keep the displayed text in sync with the signal value, formatted as ISO date.
-  // restoreMode: RestoreNone — the binding survives popup open/close without reverting.
-  lines.push(
-    `${i(2)}Binding {`,
-    `${i(3)}target: ${fldId}`,
-    `${i(3)}property: "text"`,
-    // Guard: Qt.formatDate throws on null/undefined (no Date object yet).
-    `${i(3)}value: ${wrapId}.__calVal${n} instanceof Date ? Qt.formatDate(${wrapId}.__calVal${n}, "yyyy-MM-dd") : ""`,
-    `${i(3)}restoreMode: Binding.RestoreNone`,
-    `${i(2)}}`,
-  );
-
-  // Calendar glyph — a CssText IDENTICAL to the <select> chevron (same class, same CSS
-  // box: `.chevron { padding-right; height }` applies), so the two dropdowns align.
-  // Living inside the anchored host Item keeps it out of the wrapper's CSS layout pass.
-  lines.push(
-    `${i(2)}Css.CssText {`,
-    `${i(3)}cssPrimitive: ""`,
-    `${i(3)}cssClass: ["chevron"]`,
-    `${i(3)}text: "▾"`,
-    `${i(3)}anchors.right: parent.right`,
-    `${i(3)}anchors.rightMargin: 8`,
-    `${i(3)}anchors.verticalCenter: parent.verticalCenter`,
-    `${i(2)}}`,
-  );
-
-  // MouseArea over the whole field: click toggles the popup. CloseOnPressOutside fires on
-  // the PRESS, so by the time the click lands here the popup already closed — a naive
-  // visible-check reopens it. The popup stamps its close time; a click right after a
-  // close (same interaction) is a toggle-close, not an open.
-  lines.push(
-    `${i(2)}MouseArea {`,
-    `${i(3)}anchors.fill: parent`,
-    `${i(3)}onClicked: { ${fldId}.forceActiveFocus(); if (${popId}.visible) ${popId}.close(); else if (Date.now() - ${popId}.__closedAt > 150) ${popId}.open() }`,
-    `${i(2)}}`,
-  );
-  lines.push(`${i(1)}}`);
-
-  // Popup: T.Popup renders on the window overlay; padding ≥ 1 prevents CssFill border clip (G3).
-  // The contentItem is a plain Item holding the shared month-grid structure (same as Calendar).
-  // Nav buttons inside the popup reference wrapId.__calMonth/Year (shared nav state).
-  lines.push(
-    `${i(1)}T.Popup {`,
-    `${i(2)}id: ${popId}`,
-    `${i(2)}property double __closedAt: 0`,
-    `${i(2)}onOpened: ${wrapId}.__calCursor${n} = ${wrapId}.__calVal${n} instanceof Date ? ${wrapId}.__calVal${n} : new Date()`,
-    `${i(2)}onClosed: { __closedAt = Date.now(); ${wrapId}.__calCursor${n} = null }`,
-    // In-scene overlay popup, flip on WINDOW overflow (see emitSelect — Popup.Window
-    // mis-positions on Wayland once the app window floats).
-    `${i(2)}popupType: T.Popup.Item`,
-    `${i(2)}y: (${wrapId}.mapToItem(null, 0, ${wrapId}.height + 2).y + height > (${wrapId}.Window.height || Screen.height)) ? -(height + 2) : ${wrapId}.height + 2`,
-    // Templates popups have no implicit-size policy (style's job — ours): without these
-    // two lines the calendar dropdown opens 0x0.
-    `${i(2)}implicitWidth: contentWidth + leftPadding + rightPadding`,
-    `${i(2)}implicitHeight: contentHeight + topPadding + bottomPadding`,
-    `${i(2)}padding: 1`,
-    // cssAncestor: overlay reparenting severs the visual chain (see emitSelect) — re-anchor
-    // at the date wrapper so `.wg-date .popup` / `.wg-date .day` keep matching.
-    `${i(2)}background: Css.CssFill {`,
-    `${i(3)}property Item cssAncestor: ${wrapId}`,
-    `${i(3)}cssPrimitive: "div"`,
-    `${i(3)}cssClass: ["popup"]`,
-    `${i(2)}}`,
-    `${i(2)}contentItem: Item {`,
-    `${i(3)}property Item cssAncestor: ${wrapId}`,
-    `${i(3)}implicitWidth: 224`,
-    `${i(3)}implicitHeight: 280`,
-    // Shared month-grid structure: nav + DOW + MonthGrid; clicking a day fires onChange + close.
-    ...emitMonthGridLines(wrapId, n, onChangeFn, `${popId}.close()`, scope, level + 3, `${wrapId}.__calCursor${n}`),
-    `${i(2)}}`,
-    `${i(1)}}`,
-    `${pad}}`,
-  );
-
+  if (valueExpr !== null) lines.push(`${i(1)}value: ${valueExpr}`);
+  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (pickedBody) lines.push(`${i(1)}onDayPicked: (date) => { ${pickedBody} }`);
+  lines.push(`${pad}}`);
   return lines;
 }
 

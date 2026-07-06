@@ -957,118 +957,108 @@ test("widgets: number Widgets import is prepended", async () => {
 // Phase 5: <Calendar> — inline month grid
 // ---------------------------------------------------------------------------
 
-test("widgets: <Calendar> emits wrapper CssFill with cssPrimitive 'div'", async () => {
+const MONTHGRID_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/MonthGrid.qml", import.meta.url)), "utf8");
+const CALENDAR_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Calendar.qml", import.meta.url)), "utf8");
+const DATEFIELD_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/DateField.qml", import.meta.url)), "utf8");
+
+test("widgets: <Calendar> instantiates the W.Calendar component (wrapper cssPrimitive 'div')", async () => {
   const out = await qml(`export function F(){ return <Calendar />; }`);
-  assert.match(out, /Css\.CssFill \{/);
-  assert.match(out, /cssPrimitive: "div"/);
+  assert.match(out, /W\.Calendar \{/);
+  assert.doesNotMatch(out, /T\.AbstractMonthGrid/);
+  assert.match(CALENDAR_QML, /cssPrimitive: "div"/);
 });
 
-test("widgets: <Calendar> emits T.AbstractMonthGrid with month and year bound to view properties", async () => {
-  const out = await qml(`export function F(){ return <Calendar />; }`);
-  assert.match(out, /T\.AbstractMonthGrid \{/);
-  assert.match(out, /month: __cal0\.__calMonth0/);
-  assert.match(out, /year: __cal0\.__calYear0/);
+test("widgets: MonthGrid.qml emits T.AbstractMonthGrid with month and year bound to view properties", async () => {
+  assert.match(MONTHGRID_QML, /T\.AbstractMonthGrid \{/);
+  assert.match(MONTHGRID_QML, /month: root\.viewMonth/);
+  assert.match(MONTHGRID_QML, /year: root\.viewYear/);
 });
 
-test("widgets: <Calendar> T.AbstractMonthGrid carries height: parent.height - 56 so rows are visible", async () => {
-  const out = await qml(`export function F(){ return <Calendar />; }`);
-  // Without explicit height, T.AbstractMonthGrid collapses to 0 and no day cells render.
-  assert.match(out, /height: parent\.height - 56/);
+test("widgets: MonthGrid.qml T.AbstractMonthGrid carries height: parent.height - 56 so rows are visible", async () => {
+  assert.match(MONTHGRID_QML, /height: parent\.height - 56/);
 });
 
-test("widgets: <Calendar> emits T.AbstractDayOfWeekRow with Css.CssText delegate", async () => {
-  const out = await qml(`export function F(){ return <Calendar />; }`);
-  assert.match(out, /T\.AbstractDayOfWeekRow \{/);
-  assert.match(out, /cssClass: \["dow"\]/);
-  assert.match(out, /text: model\.shortName/);
+test("widgets: MonthGrid.qml emits T.AbstractDayOfWeekRow with Css.CssText delegate", async () => {
+  assert.match(MONTHGRID_QML, /T\.AbstractDayOfWeekRow \{/);
+  assert.match(MONTHGRID_QML, /cssClass: \["dow"\]/);
+  assert.match(MONTHGRID_QML, /text: model\.shortName/);
 });
 
-test("widgets: <Calendar> emits prev/next cal-nav buttons and cal-title label", async () => {
-  const out = await qml(`export function F(){ return <Calendar />; }`);
-  assert.match(out, /cssClass: \["cal-nav"\]/);
-  assert.match(out, /cssClass: \["cal-title"\]/);
-  assert.match(out, /text: "‹"/);
-  assert.match(out, /text: "›"/);
+test("widgets: MonthGrid.qml emits prev/next cal-nav buttons and cal-title label", async () => {
+  assert.match(MONTHGRID_QML, /cssClass: \["cal-nav"\]/);
+  assert.match(MONTHGRID_QML, /cssClass: \["cal-title"\]/);
+  assert.match(MONTHGRID_QML, /text: "‹"/);
+  assert.match(MONTHGRID_QML, /text: "›"/);
 });
 
-test("widgets: <Calendar> nav prev button wraps Dec→Jan on month 0", async () => {
-  const out = await qml(`export function F(){ return <Calendar />; }`);
-  // Month wrap: if month==0, year-- and month=11
-  assert.match(out, /__cal0\.__calMonth0 === 0/);
-  assert.match(out, /__cal0\.__calYear0 = __cal0\.__calYear0 - 1/);
-  assert.match(out, /__cal0\.__calMonth0 = 11/);
+test("widgets: MonthGrid.qml nav prev button wraps Dec→Jan on month 0", async () => {
+  assert.match(MONTHGRID_QML, /root\.viewMonth === 0/);
+  assert.match(MONTHGRID_QML, /root\.viewYear = root\.viewYear - 1/);
+  assert.match(MONTHGRID_QML, /root\.viewMonth = 11/);
 });
 
-test("widgets: <Calendar> nav next button wraps Dec→Jan on month 11", async () => {
-  const out = await qml(`export function F(){ return <Calendar />; }`);
-  assert.match(out, /__cal0\.__calMonth0 === 11/);
-  assert.match(out, /__cal0\.__calYear0 = __cal0\.__calYear0 \+ 1/);
-  assert.match(out, /__cal0\.__calMonth0 = 0/);
+test("widgets: MonthGrid.qml nav next button wraps Dec→Jan on month 11", async () => {
+  assert.match(MONTHGRID_QML, /root\.viewMonth === 11/);
+  assert.match(MONTHGRID_QML, /root\.viewYear = root\.viewYear \+ 1/);
+  assert.match(MONTHGRID_QML, /root\.viewMonth = 0/);
 });
 
-test("widgets: <Calendar> day delegate carries cssState: today/selected/outside/hover", async () => {
-  const out = await qml(`export function F(){ return <Calendar />; }`);
-  assert.match(out, /cssClass: \["day"\]/);
-  assert.match(out, /model\.today \? \["today"\]/);
-  assert.match(out, /\["selected"\]/);
-  assert.match(out, /model\.month !== __mg0\.month \? \["outside"\]/);
-  assert.match(out, /__mgDel0\.hovered \? \["hover"\]/);
+test("widgets: MonthGrid.qml day delegate carries cssState: today/selected/outside/hover", async () => {
+  assert.match(MONTHGRID_QML, /cssClass: \["day"\]/);
+  assert.match(MONTHGRID_QML, /model\.today \? \["today"\]/);
+  assert.match(MONTHGRID_QML, /\["selected"\]/);
+  assert.match(MONTHGRID_QML, /model\.month !== mg\.month \? \["outside"\]/);
+  assert.match(MONTHGRID_QML, /mgDel\.hovered \? \["hover"\]/);
 });
 
-test("widgets: <Calendar> day delegate contentItem is Css.CssText with class 'day-label'", async () => {
-  const out = await qml(`export function F(){ return <Calendar />; }`);
-  assert.match(out, /cssClass: \["day-label"\]/);
-  assert.match(out, /text: model\.day/);
+test("widgets: MonthGrid.qml day delegate contentItem is Css.CssText with class 'day-label'", async () => {
+  assert.match(MONTHGRID_QML, /cssClass: \["day-label"\]/);
+  assert.match(MONTHGRID_QML, /text: model\.day/);
 });
 
-test("widgets: <Calendar> day delegate is T.AbstractButton with 32x32 implicit size", async () => {
-  const out = await qml(`export function F(){ return <Calendar />; }`);
-  assert.match(out, /T\.AbstractButton \{/);
-  assert.match(out, /implicitWidth: 32/);
-  assert.match(out, /implicitHeight: 32/);
+test("widgets: MonthGrid.qml day delegate is T.AbstractButton with 32x32 implicit size", async () => {
+  assert.match(MONTHGRID_QML, /T\.AbstractButton \{/);
+  assert.match(MONTHGRID_QML, /implicitWidth: 32/);
+  assert.match(MONTHGRID_QML, /implicitHeight: 32/);
 });
 
-test("widgets: <Calendar> value={sig()} emits reactive __calVal0 property and :selected check", async () => {
+test("widgets: <Calendar> value={sig()} sets the value prop; MonthGrid.qml carries the :selected check", async () => {
   const out = await qmlType(`
     export function F() {
       const [d, setD] = createSignal(null);
       return <Calendar value={d()} />;
     }
   `);
-  assert.match(out, /property var __calVal0: d/);
-  // :selected check compares model.year/month/day to the calVal Date
-  assert.match(out, /__cal0\.__calVal0 instanceof Date/);
-  assert.match(out, /model\.year === __cal0\.__calVal0\.getFullYear\(\)/);
-  assert.match(out, /model\.month === __cal0\.__calVal0\.getMonth\(\)/);
-  assert.match(out, /model\.day === __cal0\.__calVal0\.getDate\(\)/);
+  assert.match(out, /value: d/);
+  // :selected check compares model.year/month/day to the selectedDate Date (in MonthGrid.qml).
+  assert.match(MONTHGRID_QML, /root\.selectedDate instanceof Date/);
+  assert.match(MONTHGRID_QML, /model\.year === root\.selectedDate\.getFullYear\(\)/);
+  assert.match(MONTHGRID_QML, /model\.month === root\.selectedDate\.getMonth\(\)/);
+  assert.match(MONTHGRID_QML, /model\.day === root\.selectedDate\.getDate\(\)/);
 });
 
-test("widgets: <Calendar> with no value emits __calVal0: null and falls back to today", async () => {
+test("widgets: <Calendar> with no value does NOT set value; MonthGrid.qml falls back to today", async () => {
   const out = await qml(`export function F(){ return <Calendar />; }`);
-  assert.match(out, /property var __calVal0: null/);
-  assert.match(out, /new Date\(\)\.getMonth\(\)/);
-  assert.match(out, /new Date\(\)\.getFullYear\(\)/);
+  assert.doesNotMatch(out, /value:/);
+  assert.match(MONTHGRID_QML, /new Date\(\)\.getMonth\(\)/);
+  assert.match(MONTHGRID_QML, /new Date\(\)\.getFullYear\(\)/);
 });
 
-test("widgets: <Calendar> view month/year initialized from value when present", async () => {
-  const out = await qmlType(`
-    export function F() {
-      const [d, setD] = createSignal(null);
-      return <Calendar value={d()} />;
-    }
-  `);
-  assert.match(out, /property int __calMonth0: __calVal0 instanceof Date \? __calVal0\.getMonth\(\) : new Date\(\)\.getMonth\(\)/);
-  assert.match(out, /property int __calYear0: __calVal0 instanceof Date \? __calVal0\.getFullYear\(\) : new Date\(\)\.getFullYear\(\)/);
+test("widgets: MonthGrid.qml view month/year initialized from selectedDate when present", async () => {
+  assert.match(MONTHGRID_QML, /property int viewMonth: selectedDate instanceof Date \? selectedDate\.getMonth\(\) : new Date\(\)\.getMonth\(\)/);
+  assert.match(MONTHGRID_QML, /property int viewYear: selectedDate instanceof Date \? selectedDate\.getFullYear\(\) : new Date\(\)\.getFullYear\(\)/);
 });
 
-test("widgets: <Calendar> onChange fires synthetic Date via new Date(model.year, model.month, model.day)", async () => {
+test("widgets: <Calendar> onChange fires onDayPicked with the picked Date (e.target.value → date)", async () => {
   const out = await qmlType(`
     export function F() {
       const [d, setD] = createSignal(null);
       return <Calendar value={d()} onChange={(e) => setD(e.target.value)} />;
     }
   `);
-  assert.match(out, /onClicked: \{ d = new Date\(model\.year, model\.month, model\.day\) \}/);
+  assert.match(out, /onDayPicked: \(date\) => \{ d = date \}/);
+  // MonthGrid.qml computes the Date and fires dayPicked on click.
+  assert.match(MONTHGRID_QML, /onClicked: root\.dayPicked\(new Date\(model\.year, model\.month, model\.day\)\)/);
 });
 
 test("widgets: <Calendar> onChange also handles e.target.valueAsDate", async () => {
@@ -1078,7 +1068,7 @@ test("widgets: <Calendar> onChange also handles e.target.valueAsDate", async () 
       return <Calendar value={d()} onChange={(e) => setD(e.target.valueAsDate)} />;
     }
   `);
-  assert.match(out, /onClicked: \{ d = new Date\(model\.year, model\.month, model\.day\) \}/);
+  assert.match(out, /onDayPicked: \(date\) => \{ d = date \}/);
 });
 
 test("widgets: <Calendar class='my-cal'> passes class to wrapper cssClass", async () => {
@@ -1086,9 +1076,10 @@ test("widgets: <Calendar class='my-cal'> passes class to wrapper cssClass", asyn
   assert.match(out, /cssClass: \["my-cal"\]/);
 });
 
-test("widgets: <Calendar> Templates import uses version 6.3", async () => {
+test("widgets: <Calendar> Widgets import is prepended (Calendar.qml owns the Templates import)", async () => {
   const out = await qmlType(`export function F(){ return <Calendar />; }`);
-  assert.match(out, /import QtQuick\.Templates 6\.3 as T/);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
+  assert.doesNotMatch(out, /import QtQuick\.Templates/);
 });
 
 test("widgets: <Calendar> is dispatched as builtin even when Calendar is in scope.components", async () => {
@@ -1102,11 +1093,11 @@ test("widgets: <Calendar> is dispatched as builtin even when Calendar is in scop
     inputCounter: { n: 0 },
     hoverCounter: { n: 0 },
     components: new Map([["Calendar", "MyCalendarComp"]]),   // user component shadowed
-    usedWidgets: { flag: false, calendar: false },
+    usedWidgets: { flag: false, calendar: false, widgetLib: false },
   };
   const out = emitQml(render, scope).join("\n");
-  // Our builtin emits T.AbstractMonthGrid; user component MyCalendarComp must NOT appear.
-  assert.match(out, /T\.AbstractMonthGrid/);
+  // Our builtin instantiates W.Calendar; user component MyCalendarComp must NOT appear.
+  assert.match(out, /W\.Calendar/);
   assert.doesNotMatch(out, /MyCalendarComp/);
 });
 
@@ -1114,91 +1105,87 @@ test("widgets: <Calendar> is dispatched as builtin even when Calendar is in scop
 // Phase 5: <input type="date"> — readOnly field + calendar popup
 // ---------------------------------------------------------------------------
 
-test("widgets: <input type='date'> emits wrapper CssFill with cssPrimitive 'input'", async () => {
+test("widgets: <input type='date'> instantiates the W.DateField component", async () => {
   const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /Css\.CssFill \{/);
-  assert.match(out, /cssPrimitive: "input"/);
+  assert.match(out, /W\.DateField \{/);
+  assert.doesNotMatch(out, /T\.TextField/);
+  assert.match(DATEFIELD_QML, /cssPrimitive: "input"/);
 });
 
-test("widgets: <input type='date'> emits readOnly T.TextField inside the wrapper", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /T\.TextField \{/);
-  assert.match(out, /readOnly: true/);
-  assert.match(out, /background: null/);
+test("widgets: DateField.qml has a readOnly T.TextField inside the wrapper", async () => {
+  assert.match(DATEFIELD_QML, /T\.TextField \{/);
+  assert.match(DATEFIELD_QML, /readOnly: true/);
+  assert.match(DATEFIELD_QML, /background: null/);
 });
 
-test("widgets: <input type='date'> Binding formats value via Qt.formatDate", async () => {
+test("widgets: <input type='date'> value={sig()} sets the value prop; DateField.qml formats via Qt.formatDate", async () => {
   const out = await qmlType(`
     export function F() {
       const [d, setD] = createSignal(null);
       return <input type="date" value={d()} />;
     }
   `);
-  assert.match(out, /Binding \{/);
-  assert.match(out, /property: "text"/);
-  assert.match(out, /value: __input0W\.__calVal0 instanceof Date \? Qt\.formatDate\(__input0W\.__calVal0, "yyyy-MM-dd"\) : ""/);
-  assert.match(out, /restoreMode: Binding\.RestoreNone/);
+  assert.match(out, /value: d/);
+  assert.match(DATEFIELD_QML, /Binding \{/);
+  assert.match(DATEFIELD_QML, /property: "text"/);
+  assert.match(DATEFIELD_QML, /value: root\.value instanceof Date \? Qt\.formatDate\(root\.value, "yyyy-MM-dd"\) : ""/);
+  assert.match(DATEFIELD_QML, /restoreMode: Binding\.RestoreNone/);
 });
 
-test("widgets: <input type='date'> emits chevron glyph anchored to the right", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /cssClass: \["chevron"\]/);
-  assert.match(out, /text: "▾"/);
-  assert.match(out, /anchors\.right: parent\.right/);
+test("widgets: DateField.qml emits chevron glyph anchored to the right", async () => {
+  assert.match(DATEFIELD_QML, /cssClass: \["chevron"\]/);
+  assert.match(DATEFIELD_QML, /text: "▾"/);
+  assert.match(DATEFIELD_QML, /anchors\.right: parent\.right/);
 });
 
-test("widgets: <input type='date'> MouseArea toggles popup open/close (with reopen guard)", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /onClicked: \{ __input0\.forceActiveFocus\(\); if \(__input0P\.visible\) __input0P\.close\(\); else if \(Date\.now\(\) - __input0P\.__closedAt > 150\) __input0P\.open\(\) \}/);
+test("widgets: DateField.qml MouseArea toggles popup open/close (with reopen guard)", async () => {
+  assert.match(DATEFIELD_QML, /onClicked: \{ field\.forceActiveFocus\(\); if \(pop\.visible\) pop\.close\(\); else if \(Date\.now\(\) - pop\.__closedAt > 150\) pop\.open\(\) \}/);
 });
 
-test("widgets: <input type='date'> cssState: focus when popup open, disabled when field disabled", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /__input0P\.visible \? \["focus"\]/);
-  assert.match(out, /!__input0\.enabled \? \["disabled"\]/);
+test("widgets: DateField.qml cssState: focus when popup open, disabled when field disabled", async () => {
+  assert.match(DATEFIELD_QML, /pop\.visible \? \["focus"\]/);
+  assert.match(DATEFIELD_QML, /!field\.enabled \? \["disabled"\]/);
 });
 
-test("widgets: <input type='date'> popup is T.Popup below the field with padding 1 and .popup background", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /T\.Popup \{/);
-  assert.match(out, /: __input0W\.height \+ 2/); // flip expression ends in the below-position
-  assert.match(out, /padding: 1/);
-  assert.match(out, /cssClass: \["popup"\]/);
+test("widgets: DateField.qml popup is T.Popup below the field with padding 1 and .popup background", async () => {
+  assert.match(DATEFIELD_QML, /T\.Popup \{/);
+  assert.match(DATEFIELD_QML, /: root\.height \+ 2/); // flip expression ends in the below-position
+  assert.match(DATEFIELD_QML, /padding: 1/);
+  assert.match(DATEFIELD_QML, /cssClass: \["popup"\]/);
 });
 
-test("widgets: <input type='date'> popup contains T.AbstractMonthGrid", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /T\.AbstractMonthGrid \{/);
+test("widgets: DateField.qml popup contentItem is the shared MonthGrid", async () => {
+  assert.match(DATEFIELD_QML, /contentItem: MonthGrid \{/);
 });
 
-test("widgets: <input type='date'> day click fires onChange and closes popup", async () => {
+test("widgets: <input type='date'> day click fires onDayPicked; DateField.qml closes the popup", async () => {
   const out = await qmlType(`
     export function F() {
       const [d, setD] = createSignal(null);
       return <input type="date" value={d()} onChange={(e) => setD(e.target.value)} />;
     }
   `);
-  // onClick body must include both the onChange action and popup.close()
-  assert.match(out, /d = new Date\(model\.year, model\.month, model\.day\)/);
-  assert.match(out, /__input0P\.close\(\)/);
+  assert.match(out, /onDayPicked: \(date\) => \{ d = date \}/);
+  // MonthGrid's dayPicked routes through DateField.qml, which relays to the emit handler then closes.
+  assert.match(DATEFIELD_QML, /onDayPicked: \(date\) => \{ root\.dayPicked\(date\); pop\.close\(\) \}/);
 });
 
-test("widgets: <input type='date'> popup day cssState carries today/selected/outside/hover", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /model\.today \? \["today"\]/);
-  assert.match(out, /\["selected"\]/);
-  assert.match(out, /model\.month !== __mg0\.month \? \["outside"\]/);
-  assert.match(out, /__mgDel0\.hovered \? \["hover"\]/);
+test("widgets: MonthGrid.qml day cssState carries today/selected/outside/hover (used by the date popup)", async () => {
+  assert.match(MONTHGRID_QML, /model\.today \? \["today"\]/);
+  assert.match(MONTHGRID_QML, /\["selected"\]/);
+  assert.match(MONTHGRID_QML, /model\.month !== mg\.month \? \["outside"\]/);
+  assert.match(MONTHGRID_QML, /mgDel\.hovered \? \["hover"\]/);
 });
 
-test("widgets: <input type='date'> disabled sets enabled: false on T.TextField", async () => {
+test("widgets: <input type='date'> disabled sets enabled: false on the instance", async () => {
   const out = await qml(`export function F(){ return <input type="date" disabled />; }`);
   assert.match(out, /enabled: false/);
 });
 
-test("widgets: <input type='date'> Templates import uses version 6.3", async () => {
+test("widgets: <input type='date'> Widgets import is prepended (DateField.qml owns the Templates import)", async () => {
   const out = await qmlType(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /import QtQuick\.Templates 6\.8 as T/);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
+  assert.doesNotMatch(out, /import QtQuick\.Templates/);
 });
 
 test("widgets: <input type='date'> min throws a clear not-supported error", async () => {
@@ -1294,11 +1281,10 @@ test("tabstop: SpinBox.qml forwards scope focus into the editable text", async (
   assert.match(SPINBOX_QML, /contentItem: TextInput \{[\s\S]*?focus: true/);
 });
 
-test("tabstop: <input type='date'> field is a tab stop and opens the popup from the keyboard", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, TAB_STOP);
-  assert.match(out, /Keys\.onReturnPressed/);
-  assert.match(out, /Keys\.onSpacePressed/);
+test("tabstop: DateField.qml field is a tab stop and opens the popup from the keyboard", async () => {
+  assert.match(DATEFIELD_QML, TAB_STOP);
+  assert.match(DATEFIELD_QML, /Keys\.onReturnPressed/);
+  assert.match(DATEFIELD_QML, /Keys\.onSpacePressed/);
 });
 
 test("tabstop: no widget hardcodes activeFocusOnTab: true", async () => {
@@ -1312,25 +1298,22 @@ test("tabstop: no widget hardcodes activeFocusOnTab: true", async () => {
 // contentItem->childItems(); positioning is the positioner's job). Without this the calendar
 // renders header-only (the vertical collapse the owner reported). ---
 
-test("calendar: MonthGrid gets a Grid(7x6)+Repeater contentItem wired to source/delegate", async () => {
-  const out = await qml(`export function F(){ return <Calendar />; }`);
-  assert.match(out, /T\.AbstractMonthGrid \{[\s\S]*?contentItem: Grid \{[\s\S]*?columns: 7[\s\S]*?rows: 6[\s\S]*?Repeater \{[\s\S]*?model: __mg\d+\.source[\s\S]*?delegate: __mg\d+\.delegate/);
+test("calendar: MonthGrid.qml gets a Grid(7x6)+Repeater contentItem wired to source/delegate", async () => {
+  assert.match(MONTHGRID_QML, /T\.AbstractMonthGrid \{[\s\S]*?contentItem: Grid \{[\s\S]*?columns: 7[\s\S]*?rows: 6[\s\S]*?Repeater \{[\s\S]*?model: mg\.source[\s\S]*?delegate: mg\.delegate/);
 });
 
-test("calendar: DayOfWeekRow gets a Row+Repeater contentItem wired to source/delegate", async () => {
-  const out = await qml(`export function F(){ return <Calendar />; }`);
-  assert.match(out, /T\.AbstractDayOfWeekRow \{[\s\S]*?contentItem: Row \{[\s\S]*?Repeater \{[\s\S]*?model: __dow\d+\.source[\s\S]*?delegate: __dow\d+\.delegate/);
+test("calendar: MonthGrid.qml DayOfWeekRow gets a Row+Repeater contentItem wired to source/delegate", async () => {
+  assert.match(MONTHGRID_QML, /T\.AbstractDayOfWeekRow \{[\s\S]*?contentItem: Row \{[\s\S]*?Repeater \{[\s\S]*?model: dow\.source[\s\S]*?delegate: dow\.delegate/);
 });
 
-test("calendar: date input popup shares the same repeater-backed grids", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /contentItem: Grid \{[\s\S]*?Repeater \{[\s\S]*?model: __mg\d+\.source/);
+test("calendar: both Calendar and the date popup embed the shared MonthGrid", async () => {
+  assert.match(CALENDAR_QML, /MonthGrid \{/);
+  assert.match(DATEFIELD_QML, /contentItem: MonthGrid \{/);
 });
 
-test("calendar: cells size declaratively (incubated creation misses the C++ resizeItems)", async () => {
-  const out = await qml(`export function F(){ return <Calendar />; }`);
-  assert.match(out, /delegate: Item \{[\s\S]*?width: \(__dow\d+\.contentItem\.width - 6 \* __dow\d+\.spacing\) \/ 7/);
-  assert.match(out, /T\.AbstractButton \{[\s\S]*?width: \(__mg\d+\.contentItem\.width - 6 \* __mg\d+\.spacing\) \/ 7[\s\S]*?height: \(__mg\d+\.contentItem\.height - 5 \* __mg\d+\.spacing\) \/ 6/);
+test("calendar: MonthGrid.qml cells size declaratively (incubated creation misses the C++ resizeItems)", async () => {
+  assert.match(MONTHGRID_QML, /delegate: Item \{[\s\S]*?width: \(dow\.contentItem\.width - 6 \* dow\.spacing\) \/ 7/);
+  assert.match(MONTHGRID_QML, /T\.AbstractButton \{[\s\S]*?width: \(mg\.contentItem\.width - 6 \* mg\.spacing\) \/ 7[\s\S]*?height: \(mg\.contentItem\.height - 5 \* mg\.spacing\) \/ 6/);
 });
 
 // --- Toggles must SHOW tab focus: AbstractButton already takes tab focus in C++
@@ -1372,10 +1355,9 @@ test("select: Select.qml popup background and contentItem re-anchor the CSS chai
   assert.match(SELECT_QML, /contentItem: ListView \{[\s\S]*?property Item cssAncestor: ctl/);
 });
 
-test("date: popup background and contentItem re-anchor the CSS chain at the wrapper", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /T\.Popup \{[\s\S]*?background: Css\.CssFill \{[\s\S]*?property Item cssAncestor: __input0W/);
-  assert.match(out, /T\.Popup \{[\s\S]*?contentItem: Item \{[\s\S]*?property Item cssAncestor: __input0W/);
+test("date: DateField.qml popup background and contentItem re-anchor the CSS chain at the wrapper", async () => {
+  assert.match(DATEFIELD_QML, /T\.Popup \{[\s\S]*?background: Css\.CssFill \{[\s\S]*?property Item cssAncestor: root/);
+  assert.match(DATEFIELD_QML, /T\.Popup \{[\s\S]*?contentItem: MonthGrid \{[\s\S]*?property Item cssAncestor: root/);
 });
 
 // --- Arrow keys (desktop): radios navigate AND check within their ButtonGroup (HTML/desktop
@@ -1421,14 +1403,14 @@ test("wheel: Slider.qml steps value when focused and re-emits moved()", async ()
   assert.match(SLIDER_QML, /WheelHandler \{[\s\S]*?acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*?ctl\.moved\(\)/);
 });
 
-test("date: chevron is the same CssText as the select's, anchored right inside the host Item", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /Css\.CssText \{\n\s*cssPrimitive: ""\n\s*cssClass: \["chevron"\]\n\s*text: "▾"\n\s*anchors\.right: parent\.right\n\s*anchors\.rightMargin: 8/);
+test("date: DateField.qml chevron is the same CssText as the select's, anchored right inside the host Item", async () => {
+  assert.match(DATEFIELD_QML, /Css\.CssText \{\n\s*cssPrimitive: ""\n\s*cssClass: \["chevron"\]\n\s*text: "▾"\n\s*anchors\.right: parent\.right\n\s*anchors\.rightMargin: 8/);
 });
 
-test("calendar: the day label carries the day states (sibling slots — no ancestor relation)", async () => {
-  const out = await qml(`export function F(){ return <Calendar />; }`);
-  assert.match(out, /cssClass: \["day-label"\]\n\s*cssState: \(model\.today \? \["today"\] : \[\]\)/);
+test("calendar: MonthGrid.qml day label carries the day states (sibling slots — no ancestor relation)", async () => {
+  // Both background and contentItem reference the shared __dayState (today/selected/outside/hover/focus).
+  assert.match(MONTHGRID_QML, /cssClass: \["day-label"\]\n\s*cssState: mgDel\.__dayState/);
+  assert.match(MONTHGRID_QML, /readonly property var __dayState: \(model\.today \? \["today"\] : \[\]\)/);
 });
 
 // --- Desktop popups: combo/date dropdowns are REAL windows (popupType: Popup.Window,
@@ -1440,67 +1422,64 @@ test("popups: Select.qml popup is an in-scene item popup and flips above on wind
   assert.match(SELECT_QML, /y: \(ctl\.mapToItem\(null, 0, ctl\.height \+ 2\)\.y \+ height > \(ctl\.Window\.height \|\| Screen\.height\)\) \? -\(height \+ 2\) : ctl\.height \+ 2/);
 });
 
-test("popups: date popup is an in-scene item popup and flips above on window overflow", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /T\.Popup \{[\s\S]*?popupType: T\.Popup\.Item/);
-  assert.match(out, /y: \(__input0W\.mapToItem\(null, 0, __input0W\.height \+ 2\)\.y \+ height > \(__input0W\.Window\.height \|\| Screen\.height\)\) \? -\(height \+ 2\) : __input0W\.height \+ 2/);
+test("popups: DateField.qml popup is an in-scene item popup and flips above on window overflow", async () => {
+  assert.match(DATEFIELD_QML, /T\.Popup \{[\s\S]*?popupType: T\.Popup\.Item/);
+  assert.match(DATEFIELD_QML, /y: \(root\.mapToItem\(null, 0, root\.height \+ 2\)\.y \+ height > \(root\.Window\.height \|\| Screen\.height\)\) \? -\(height \+ 2\) : root\.height \+ 2/);
 });
 
-test("popups: date widget still bumps the Templates import to 6.8 (popupType)", async () => {
-  // Select is now a component (its .qml owns the Templates import); the date widget is still inline.
-  const out = await qmlType(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /import QtQuick\.Templates 6\.8 as T/);
+test("popups: DateField.qml uses the Item popupType (6.8 Templates import owned by the .qml)", async () => {
+  // The Templates version lives in DateField.qml now; the generated component imports Widgets only.
+  assert.match(DATEFIELD_QML, /popupType: T\.Popup\.Item/);
 });
 
 test("select: Select.qml delegate binds highlighted to the combo's highlightedIndex (keyboard nav visible)", async () => {
   assert.match(SELECT_QML, /T\.ItemDelegate \{[\s\S]*?highlighted: ctl\.highlightedIndex === index/);
 });
 
-test("date: field click after a press-outside close does not reopen (toggle race)", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /property double __closedAt: 0/);
-  assert.match(out, /onClosed: \{ __closedAt = Date\.now\(\)/);
-  assert.match(out, /onClicked: \{ __input0\.forceActiveFocus\(\); if \(__input0P\.visible\) __input0P\.close\(\); else if \(Date\.now\(\) - __input0P\.__closedAt > 150\) __input0P\.open\(\) \}/);
+test("date: DateField.qml field click after a press-outside close does not reopen (toggle race)", async () => {
+  assert.match(DATEFIELD_QML, /property double __closedAt: 0/);
+  assert.match(DATEFIELD_QML, /onClosed: \{ __closedAt = Date\.now\(\)/);
+  assert.match(DATEFIELD_QML, /onClicked: \{ field\.forceActiveFocus\(\); if \(pop\.visible\) pop\.close\(\); else if \(Date\.now\(\) - pop\.__closedAt > 150\) pop\.open\(\) \}/);
 });
 
 // --- Date popup keyboard: arrows move a day cursor (±1 / ±7), Enter/Space commit it
 // through the same onChange path a cell click uses; Down opens the closed popup. The
 // popup keeps focus on the field, so the Keys live there. ---
 
-test("date keyboard: field arrows step the cursor and Enter commits", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /function __calStep0\(days\)/);
-  assert.match(out, /Keys\.onDownPressed: __input0P\.visible \? __input0W\.__calStep0\(7\) : __input0P\.open\(\)/);
-  assert.match(out, /Keys\.onLeftPressed: \{ if \(__input0P\.visible\) __input0W\.__calStep0\(-1\) \}/);
-  assert.match(out, /Keys\.onReturnPressed: __input0P\.visible \? __input0W\.__calCommit0\(\) : __input0P\.open\(\)/);
+test("date keyboard: DateField.qml field arrows step the cursor and Enter commits", async () => {
+  assert.match(DATEFIELD_QML, /function __step\(days\)/);
+  assert.match(DATEFIELD_QML, /Keys\.onDownPressed: pop\.visible \? root\.__step\(7\) : pop\.open\(\)/);
+  assert.match(DATEFIELD_QML, /Keys\.onLeftPressed: \{ if \(pop\.visible\) root\.__step\(-1\) \}/);
+  assert.match(DATEFIELD_QML, /Keys\.onReturnPressed: pop\.visible \? root\.__commit\(\) : pop\.open\(\)/);
 });
 
-test("date keyboard: popup inits the cursor on open, clears on close, cell shows :focus", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /onOpened: __input0W\.__calCursor0 = __input0W\.__calVal0 instanceof Date \? __input0W\.__calVal0 : new Date\(\)/);
-  assert.match(out, /onClosed: \{ __closedAt = Date\.now\(\); __input0W\.__calCursor0 = null \}/);
-  assert.match(out, /\.concat\(\(__input0W\.__calCursor0 instanceof Date[\s\S]*?\) \? \["focus"\] : \[\]\)/);
+test("date keyboard: DateField.qml popup inits the cursor on open, clears on close; MonthGrid cell shows :focus", async () => {
+  assert.match(DATEFIELD_QML, /onOpened: root\.cursor = root\.value instanceof Date \? root\.value : new Date\(\)/);
+  assert.match(DATEFIELD_QML, /onClosed: \{ __closedAt = Date\.now\(\); root\.cursor = null \}/);
+  // The :focus concat rides the shared cursorDate (DateField passes root.cursor into the grid).
+  assert.match(DATEFIELD_QML, /cursorDate: root\.cursor/);
+  assert.match(MONTHGRID_QML, /\.concat\(\(root\.cursorDate instanceof Date[\s\S]*?\) \? \["focus"\] : \[\]\)/);
 });
 
-test("date keyboard: Enter commit runs the author's onChange with the cursor date", async () => {
+test("date keyboard: Enter commit routes the cursor date through onDayPicked (the author's onChange)", async () => {
   const out = await qmlType(`
     export function F() {
       const [d, setD] = createSignal(null);
       return <input type="date" value={d()} onChange={(e) => setD(e.target.valueAsDate)} />;
     }
   `);
-  assert.match(out, /function __calCommit0\(\) \{ if \(!\(__calCursor0 instanceof Date\)\) return; d = __calCursor0; __input0P\.close\(\) \}/);
+  // DateField.qml's __commit fires dayPicked(cursor) then closes; the emit's onDayPicked runs the body.
+  assert.match(DATEFIELD_QML, /function __commit\(\) \{[\s\S]*?root\.dayPicked\(cursor\)[\s\S]*?pop\.close\(\)/);
+  assert.match(out, /onDayPicked: \(date\) => \{ d = date \}/);
 });
 
-test("date keyboard: field click gives the field focus (keyboard works after mouse open)", async () => {
-  const out = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(out, /onClicked: \{ __input0\.forceActiveFocus\(\);/);
+test("date keyboard: DateField.qml field click gives the field focus (keyboard works after mouse open)", async () => {
+  assert.match(DATEFIELD_QML, /onClicked: \{ field\.forceActiveFocus\(\);/);
 });
 
 test("popups: dropdowns close when the app window deactivates (Qt::Popup semantics)", async () => {
   assert.match(SELECT_QML, /Window\.onActiveChanged: if \(!Window\.active\) ctl\.popup\.close\(\)/);
-  const date = await qml(`export function F(){ return <input type="date" />; }`);
-  assert.match(date, /Window\.onActiveChanged: if \(!Window\.active\) __input0P\.close\(\)/);
+  assert.match(DATEFIELD_QML, /Window\.onActiveChanged: if \(!Window\.active\) pop\.close\(\)/);
 });
 
 test("tabstop: a radio group is ONE tab stop — checked radio (or first) only", async () => {
