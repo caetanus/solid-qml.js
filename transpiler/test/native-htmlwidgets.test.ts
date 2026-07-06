@@ -201,6 +201,12 @@ test("dialog: author classes land on the dialog window's Css root", async () => 
   assert.match(out, /cssClass: \["dlg"\]/);
 });
 
+test("dialog: root re-anchors the CSS ancestor walk at the page wrapper", async () => {
+  const out = await qml(DIALOG_SRC);
+  // A separate window severs the ancestor chain; cssAncestor restores scoped rules + inheritance.
+  assert.match(out, /property Item cssAncestor: __dialog0W/);
+});
+
 test("dialog: children emit inside the dialog window's Css root", async () => {
   const out = await qml(DIALOG_SRC);
   const rootAt = out.indexOf("id: __dialog0Root");

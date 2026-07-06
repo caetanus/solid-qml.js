@@ -186,6 +186,7 @@ Css.CssRect {
             Css.CssRect {
                 id: __dialog2Root
                 anchors.fill: parent
+                property Item cssAncestor: __dialog2W
             cssClass: ["hw-dialog"]
                 cssPrimitive: "dialog"
                 Css.CssRect {

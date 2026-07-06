@@ -68,13 +68,10 @@
 }
 
 /* ─── <dialog> ────────────────────────────────────────────────────────────────────────── */
-/* The dialog paints on the window Overlay; `.popup` is the T.Dialog background slot
-   (cssAncestor re-anchors it under .hw-dialog, so this scoped rule matches). */
-.native .hw-dialog .popup {
+/* A dialog is a real modal Window (owner directive). `.hw-dialog` is the window's Css root —
+   it paints the window background; cssAncestor re-anchors it under `.native` so this matches. */
+.native .hw-dialog {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(23, 34, 44, 0.18);
 }
 
 .native .hw-dialog .hw-dialog-body {

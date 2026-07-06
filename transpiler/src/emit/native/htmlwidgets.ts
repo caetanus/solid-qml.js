@@ -257,8 +257,10 @@ function emitFieldset(propsArg: t.Node | undefined, children: t.Node[], scope: S
  *
  *  Structure: a zero-size Item anchor in the page (carries the guard fold + gives `transientParent`
  *  via its `Window.window`); the Window sizes itself to the content (`root.implicitWidth/Height`),
- *  and a Css.CssRect root inside carries the author classes. No overlay reparent → NO cssAncestor
- *  hack: the CSS ancestor walk stays inside the dialog window, so `.my-dialog .body` matches normally.
+ *  and a Css.CssRect root inside carries the author classes. A SEPARATE window severs the CSS
+ *  ancestor chain even harder than an overlay reparent — scoped selectors (`.native .my-dialog …`)
+ *  and inherited props would stop flowing — so the root carries `cssAncestor: <wrap>` to re-anchor
+ *  the engine's ancestor walk back at the page anchor (which still sits under `.native`).
  *  The CSS engine's context props (cssTheme/cssLayout) resolve in the child window (shared root ctx).
  *
  *  visible: controlled by the author's `open` signal via a RestoreNone Binding (survives a self-close
@@ -307,6 +309,9 @@ function emitDialog(propsArg: t.Node | undefined, children: t.Node[], scope: Sco
     `${i(2)}Css.CssRect {`,
     `${i(3)}id: ${rootId}`,
     `${i(3)}anchors.fill: parent`,
+    // Re-anchor the CSS ancestor walk at the page wrapper: the dialog lives in a separate window,
+    // so without this scoped rules (`.native .dialog …`) and inheritance don't reach it.
+    `${i(3)}property Item cssAncestor: ${wrapId}`,
     ...classLine,
     `${i(3)}cssPrimitive: "dialog"`,
     ...emitChildren(children, scope, level + 3),
