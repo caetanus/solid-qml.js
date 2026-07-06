@@ -384,40 +384,19 @@ W.Div {
                 onClicked: { __self.clicks = clicks + 1 }
             }
         }
-        Css.CssFill {
+        W.ToolSeparator {
             cssClass: ["ni-sep"]
-            cssPrimitive: ""
-            implicitWidth: __input6.implicitWidth
-            implicitHeight: __input6.implicitHeight
-            T.ToolSeparator {
-                id: __input6
-                anchors.fill: parent
-                background: null
-                implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
-                implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-                contentItem: Item {
-                    implicitWidth: 9
-                    implicitHeight: 28
-                    Css.CssRect {
-                        cssClass: ["sep"]
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 1
-                        height: parent.height * 0.6
-                    }
-                }
-            }
         }
         Css.CssFill {
             cssClass: ["ni-tool", "tool"]
             cssPrimitive: "button"
-            cssState: (__input7.hovered ? ["hover"] : []).concat(__input7.pressed ? ["active"] : []).concat(__input7.activeFocus ? ["focus"] : []).concat(!__input7.enabled ? ["disabled"] : [])
+            cssState: (__input6.hovered ? ["hover"] : []).concat(__input6.pressed ? ["active"] : []).concat(__input6.activeFocus ? ["focus"] : []).concat(!__input6.enabled ? ["disabled"] : [])
             Css.CssText {
                 cssPrimitive: "text"
                 text: "reset"
             }
             T.ToolButton {
-                id: __input7
+                id: __input6
                 anchors.fill: parent
                 activeFocusOnTab: solidTabstop.enabled
                 hoverEnabled: true

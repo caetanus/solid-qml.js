@@ -6,6 +6,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { normalize } from "../src/babel/transform.ts";
 import { findRender } from "../src/ast/find.ts";
 import { analyzeSignals } from "../src/model/symbols.ts";
@@ -44,6 +46,11 @@ async function qmlType(src: string): Promise<string> {
   if (!fn) throw new Error("no fn");
   const render = findRender(ast)!;
   return emitComponentType(fn, render, new Map()).join("\n");
+}
+
+/** Read a migrated component's .qml source from the solidqml.Widgets module. */
+function readWidget(name: string): Promise<string> {
+  return readFile(fileURLToPath(new URL(`../../qml/solidqml/Widgets/${name}.qml`, import.meta.url)), "utf8");
 }
 
 // ---------------------------------------------------------------------------
@@ -345,14 +352,26 @@ test("native-inputs: Round/Tool buttons carry hover/active/focus/disabled state 
 // <ToolSeparator>
 // ---------------------------------------------------------------------------
 
-test("native-inputs: <ToolSeparator> emits T.ToolSeparator with a centred 1px × 60% CssRect", async () => {
-  const out = await qml(`export function F(){ return <ToolSeparator />; }`);
-  assert.match(out, /T\.ToolSeparator \{/);
-  assert.match(out, /cssClass: \["sep"\]/);
-  assert.match(out, /width: 1/);
-  assert.match(out, /height: parent\.height \* 0\.6/);
-  assert.match(out, /anchors\.horizontalCenter: parent\.horizontalCenter/);
-  assert.match(out, /anchors\.verticalCenter: parent\.verticalCenter/);
+test("native-inputs: <ToolSeparator> instantiates the W.ToolSeparator component", async () => {
+  const out = await qml(`export function F(){ return <ToolSeparator class="sep-x" />; }`);
+  assert.match(out, /W\.ToolSeparator \{/);
+  assert.match(out, /cssClass: \["sep-x"\]/);
+  // The T.ToolSeparator + centred "sep" CssRect now live in ToolSeparator.qml, not the emit.
+  assert.doesNotMatch(out, /T\.ToolSeparator/);
+});
+
+test("native-inputs: emitting <ToolSeparator> imports the solidqml.Widgets module", async () => {
+  const out = await qmlType(`export function F(){ return <ToolSeparator />; }`);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
+});
+
+test("native-inputs: ToolSeparator.qml holds the T.ToolSeparator + centred sep CssRect", async () => {
+  const src = await readWidget("ToolSeparator");
+  assert.match(src, /T\.ToolSeparator \{/);
+  assert.match(src, /cssClass: \["sep"\]/);
+  assert.match(src, /width: 1/);
+  assert.match(src, /height: parent\.height \* 0\.6/);
+  assert.match(src, /anchors\.horizontalCenter: parent\.horizontalCenter/);
 });
 
 // ---------------------------------------------------------------------------

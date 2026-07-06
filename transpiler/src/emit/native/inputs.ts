@@ -635,40 +635,19 @@ function buttonLike(tType: string, extraClass: string): NativeEmit {
 
 // ── <ToolSeparator> ───────────────────────────────────────────────────────────────────────
 //
-// The contentItem is an Item host carrying the natural size; the visible rule is a CssRect
-// ["sep"] centred inside it (1px wide, 60% of the available height). The host insulates the
-// centring anchors from any CSS pass and gives the control its implicit metrics.
+// One .qml per component: the T.ToolSeparator + centred "sep" CssRect live in ToolSeparator.qml.
+// The emit only instantiates the component and wires the author classes.
 const emitToolSeparator: NativeEmit = (propsArg, _children, scope, level, guard) => {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const ui = uiProps(propsArg);
   const classLine = buildCssClassLine(ui, scope, i(1));
-  const ctlId = allocCtl(scope);
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
   return [
-    `${pad}Css.CssFill {`,
+    `${pad}W.ToolSeparator {`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: ""`,
-    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
-    `${i(1)}T.ToolSeparator {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}background: null`,
-    ...implicitFormula(i),
-    `${i(2)}contentItem: Item {`,
-    `${i(3)}implicitWidth: 9`,
-    `${i(3)}implicitHeight: 28`,
-    `${i(3)}Css.CssRect {`,
-    `${i(4)}cssClass: ["sep"]`,
-    `${i(4)}anchors.horizontalCenter: parent.horizontalCenter`,
-    `${i(4)}anchors.verticalCenter: parent.verticalCenter`,
-    `${i(4)}width: 1`,
-    `${i(4)}height: parent.height * 0.6`,
-    `${i(3)}}`,
-    `${i(2)}}`,
-    `${i(1)}}`,
     `${pad}}`,
   ];
 };
