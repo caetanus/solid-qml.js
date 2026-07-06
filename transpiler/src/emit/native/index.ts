@@ -49,3 +49,4 @@ import "./htmlwidgets.ts"; // <progress>, <fieldset>/<legend>, title→ToolTip, 
 import "./containers.ts";  // <ToolBar>, <TabBar>/<TabButton>, <SplitView>, <Drawer>, <StackView>, <SwipeView>/<PageIndicator>
 import "./inputs.ts";      // <RangeSlider>, <Dial>, <Tumbler>, <DelayButton>, <BusyIndicator>, <RoundButton>, <ToolButton>, <ToolSeparator>
 import "./menus.ts";       // <Menu>/<MenuItem>/<MenuSeparator>/<MenuBar>, oncontextmenu, <TreeView>, <Tray>
+import "./dataviz.ts";     // <Chart> (QtGraphs), <Scene3D> (QtQuick3D)
