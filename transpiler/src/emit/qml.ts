@@ -786,9 +786,12 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
 
   // Arrow keys move FOCUS through the group in DECLARATION order (the group's `order`
   // list — ButtonGroup.buttons follows attachment order, which incubation scrambles),
-  // wrapping. Space CHECKS the focused radio (AbstractButton native) — owner semantics.
+  // wrapping. Desktop model (tab-focus study §6): arrow-navigating a radio group MOVES THE
+  // SELECTION as it moves focus — there is no focused-but-unchecked radio during arrow nav — so
+  // __step CHECKS the target (exclusive group unchecks the rest) and focuses it. Space also checks
+  // the focused radio (AbstractButton native). Tab leaves the group (activeFocusOnTab above).
   if (groupId) lines.push(
-    `${i(2)}function __step(d) { var bs = ${groupId}.order; var j = (bs.indexOf(${ctlId}) + d + bs.length) % bs.length; bs[j].forceActiveFocus(Qt.TabFocusReason) }`,
+    `${i(2)}function __step(d) { var bs = ${groupId}.order; var j = (bs.indexOf(${ctlId}) + d + bs.length) % bs.length; bs[j].checked = true; bs[j].forceActiveFocus(Qt.TabFocusReason) }`,
     `${i(2)}Keys.onDownPressed: __step(1)`,
     `${i(2)}Keys.onRightPressed: __step(1)`,
     `${i(2)}Keys.onUpPressed: __step(-1)`,
@@ -826,7 +829,12 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
   );
 
   if (disabled) lines.push(`${i(2)}enabled: false`);
-  if (onChangeFn) lines.push(`${i(2)}onToggled: { ${translateToggleHandler(onChangeFn, ctlId, scope)} }`);
+  // onChange fires when this radio BECOMES checked — by click, Space, OR arrow-nav (§6: arrows move
+  // the selection). Arrow-nav sets `checked` programmatically, and `toggled()` is emitted ONLY on
+  // interactive toggles (verified in qquickabstractbutton.cpp), so onToggled would miss it. Guard on
+  // `checked` so the auto-UNchecked sibling in the exclusive group doesn't fire the handler, and so a
+  // controlled Binding re-assert (same value) is a harmless no-op — no echo.
+  if (onChangeFn) lines.push(`${i(2)}onCheckedChanged: { if (${ctlId}.checked) { ${translateToggleHandler(onChangeFn, ctlId, scope)} } }`);
 
   lines.push(`${i(1)}}`);
 

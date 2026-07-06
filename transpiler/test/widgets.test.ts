@@ -543,14 +543,16 @@ test("widgets: radio checked={sig()} emits Binding on property 'checked'", async
   assert.match(out, /value: sel/);
 });
 
-test("widgets: radio onChange wires onToggled with e.target.checked translated", async () => {
+test("widgets: radio onChange fires via onCheckedChanged guarded on checked (arrow-nav propagates)", async () => {
   const out = await qmlType(`
     export function F() {
       const [sel, setSel] = createSignal(false);
       return <input type="radio" name="x" checked={sel()} onChange={(e) => setSel(e.target.checked)} />;
     }
   `);
-  assert.match(out, /onToggled: \{ sel = __input0\.checked \}/);
+  // onToggled would miss arrow-nav (programmatic checked doesn't emit toggled); guard on checked so
+  // the auto-unchecked sibling doesn't fire and a controlled re-assert is a no-op.
+  assert.match(out, /onCheckedChanged: \{ if \(__input0\.checked\) \{ sel = __input0\.checked \} \}/);
 });
 
 test("widgets: radio Templates import is prepended", async () => {
@@ -1364,10 +1366,11 @@ test("date: DateField.qml popup background and contentItem re-anchor the CSS cha
 // semantics); checkbox/switch arrows move focus along the tab chain (dialog semantics),
 // gated by the tabstop opt-out. Slider gains the same focused-wheel stepping as SpinBox. ---
 
-test("arrows: radio moves FOCUS through the group's declaration order; Space checks (native)", async () => {
+test("arrows: radio moves SELECTION through the group (checks + focuses, wraps) — §6", async () => {
   const out = await qml(`export function F(){ return <input type="radio" name="g" />; }`);
-  assert.match(out, /function __step\(d\) \{ var bs = __group_g\.order;[\s\S]*?forceActiveFocus\(Qt\.TabFocusReason\) \}/);
-  assert.doesNotMatch(out, /checked = true/);
+  // §6: arrows move the selection (no focused-but-unchecked radio) — __step CHECKS the target then
+  // focuses it, wrapping via modulo over the group's declaration order.
+  assert.match(out, /function __step\(d\) \{ var bs = __group_g\.order;[\s\S]*?bs\[j\]\.checked = true; bs\[j\]\.forceActiveFocus\(Qt\.TabFocusReason\) \}/);
   assert.match(out, /Keys\.onDownPressed: __step\(1\)/);
   assert.match(out, /Keys\.onRightPressed: __step\(1\)/);
   assert.match(out, /Keys\.onUpPressed: __step\(-1\)/);

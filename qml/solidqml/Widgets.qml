@@ -234,7 +234,7 @@ W.Div {
                         contentItem: null
                         activeFocusOnTab: solidTabstop.enabled && (__input10.checked || (!__group_plan.checkedButton && __group_plan.buttons.length > 0 && __group_plan.buttons[0] === __input10))
                         T.ButtonGroup.group: __group_plan
-                        function __step(d) { var bs = __group_plan.order; var j = (bs.indexOf(__input10) + d + bs.length) % bs.length; bs[j].forceActiveFocus(Qt.TabFocusReason) }
+                        function __step(d) { var bs = __group_plan.order; var j = (bs.indexOf(__input10) + d + bs.length) % bs.length; bs[j].checked = true; bs[j].forceActiveFocus(Qt.TabFocusReason) }
                         Keys.onDownPressed: __step(1)
                         Keys.onRightPressed: __step(1)
                         Keys.onUpPressed: __step(-1)
@@ -260,7 +260,7 @@ W.Div {
                                 }
                             }
                         }
-                        onToggled: { plan = "free" }
+                        onCheckedChanged: { if (__input10.checked) { plan = "free" } }
                     }
                     Binding {
                         target: __input10
@@ -289,7 +289,7 @@ W.Div {
                         contentItem: null
                         activeFocusOnTab: solidTabstop.enabled && (__input11.checked || (!__group_plan.checkedButton && __group_plan.buttons.length > 0 && __group_plan.buttons[0] === __input11))
                         T.ButtonGroup.group: __group_plan
-                        function __step(d) { var bs = __group_plan.order; var j = (bs.indexOf(__input11) + d + bs.length) % bs.length; bs[j].forceActiveFocus(Qt.TabFocusReason) }
+                        function __step(d) { var bs = __group_plan.order; var j = (bs.indexOf(__input11) + d + bs.length) % bs.length; bs[j].checked = true; bs[j].forceActiveFocus(Qt.TabFocusReason) }
                         Keys.onDownPressed: __step(1)
                         Keys.onRightPressed: __step(1)
                         Keys.onUpPressed: __step(-1)
@@ -315,7 +315,7 @@ W.Div {
                                 }
                             }
                         }
-                        onToggled: { plan = "pro" }
+                        onCheckedChanged: { if (__input11.checked) { plan = "pro" } }
                     }
                     Binding {
                         target: __input11
@@ -344,7 +344,7 @@ W.Div {
                         contentItem: null
                         activeFocusOnTab: solidTabstop.enabled && (__input12.checked || (!__group_plan.checkedButton && __group_plan.buttons.length > 0 && __group_plan.buttons[0] === __input12))
                         T.ButtonGroup.group: __group_plan
-                        function __step(d) { var bs = __group_plan.order; var j = (bs.indexOf(__input12) + d + bs.length) % bs.length; bs[j].forceActiveFocus(Qt.TabFocusReason) }
+                        function __step(d) { var bs = __group_plan.order; var j = (bs.indexOf(__input12) + d + bs.length) % bs.length; bs[j].checked = true; bs[j].forceActiveFocus(Qt.TabFocusReason) }
                         Keys.onDownPressed: __step(1)
                         Keys.onRightPressed: __step(1)
                         Keys.onUpPressed: __step(-1)
@@ -370,7 +370,7 @@ W.Div {
                                 }
                             }
                         }
-                        onToggled: { plan = "team" }
+                        onCheckedChanged: { if (__input12.checked) { plan = "team" } }
                     }
                     Binding {
                         target: __input12
