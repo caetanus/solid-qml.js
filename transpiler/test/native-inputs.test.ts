@@ -274,42 +274,42 @@ test("native-inputs: <DelayButton> carries the full button state list", async ()
 // <BusyIndicator>
 // ---------------------------------------------------------------------------
 
-test("native-inputs: <BusyIndicator running> wires running and hides when stopped", async () => {
+test("native-inputs: <BusyIndicator running> instantiates W.BusyIndicator and forwards running", async () => {
   const out = await qmlType(`
     export function F() {
       const [busy, setBusy] = createSignal(true);
       return <BusyIndicator running={busy()} />;
     }
   `);
-  assert.match(out, /T\.BusyIndicator \{/);
+  assert.match(out, /W\.BusyIndicator \{/);
   assert.match(out, /running: busy/);
-  assert.match(out, /visible: running/);
+  // The T.BusyIndicator + spokes now live in BusyIndicator.qml, not the emit.
+  assert.doesNotMatch(out, /T\.BusyIndicator/);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
 });
 
-test("native-inputs: <BusyIndicator> spins 8 staggered spokes on an Item host", async () => {
+test("native-inputs: <BusyIndicator> with no running attr omits the prop (component default true)", async () => {
   const out = await qml(`export function F(){ return <BusyIndicator />; }`);
-  assert.match(out, /contentItem: Item \{/);
-  assert.match(out, /RotationAnimation on rotation \{/);
-  assert.match(out, /duration: 900/);
-  assert.match(out, /loops: Animation\.Infinite/);
-  const spokes = out.match(/cssClass: \["spoke"\]/g) ?? [];
-  assert.equal(spokes.length, 8);
-  const rects = out.match(/^\s*Rectangle \{/gm) ?? [];
-  assert.equal(rects.length, 8);
-  // circle placement + opacity stagger
-  assert.match(out, /Math\.cos\(3 \* Math\.PI \/ 4\)/);
-  assert.match(out, /opacity: 0\.125/);
-  assert.match(out, /opacity: 1/);
+  assert.match(out, /W\.BusyIndicator \{/);
+  assert.doesNotMatch(out, /running:/);
 });
 
-test("native-inputs: <BusyIndicator> animation is gated on the author's running expression", async () => {
-  const out = await qmlType(`
-    export function F() {
-      const [busy, setBusy] = createSignal(false);
-      return <BusyIndicator running={busy()} />;
-    }
-  `);
-  assert.match(out, /RotationAnimation on rotation \{[\s\S]*?running: busy[\s\S]*?\}/);
+test("native-inputs: BusyIndicator.qml spins 8 staggered spokes gated on running", async () => {
+  const src = await readWidget("BusyIndicator");
+  assert.match(src, /T\.BusyIndicator \{/);
+  assert.match(src, /contentItem: Item \{/);
+  assert.match(src, /RotationAnimation on rotation \{/);
+  assert.match(src, /duration: 900/);
+  assert.match(src, /loops: Animation\.Infinite/);
+  assert.match(src, /running: root\.running/);
+  const spokes = src.match(/cssClass: \["spoke"\]/g) ?? [];
+  assert.equal(spokes.length, 8);
+  const rects = src.match(/^\s*Rectangle \{/gm) ?? [];
+  assert.equal(rects.length, 8);
+  assert.match(src, /Math\.cos\(3 \* Math\.PI \/ 4\)/);
+  assert.match(src, /opacity: 0\.125/);
+  assert.match(src, /opacity: 1/);
+  assert.match(src, /visible: running/);
 });
 
 // ---------------------------------------------------------------------------

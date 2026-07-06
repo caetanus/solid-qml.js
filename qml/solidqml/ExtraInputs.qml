@@ -257,111 +257,9 @@ W.Div {
             text: "" + (busy ? "stop" : "start")
             onClicked: busy = !busy
         }
-        Css.CssFill {
+        W.BusyIndicator {
             cssClass: ["ni-busy"]
-            cssPrimitive: ""
-            implicitWidth: __input4.implicitWidth
-            implicitHeight: __input4.implicitHeight
-            T.BusyIndicator {
-                id: __input4
-                anchors.fill: parent
-                running: busy
-                visible: running
-                implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
-                implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
-                contentItem: Item {
-                    implicitWidth: 40
-                    implicitHeight: 40
-                    property real __r: Math.min(width, height) / 2 - 5
-                    RotationAnimation on rotation {
-                        from: 0
-                        to: 360
-                        duration: 900
-                        loops: Animation.Infinite
-                        running: busy
-                    }
-                    Rectangle {
-                        width: 6
-                        height: 6
-                        radius: 3
-                        color: "#176b87"
-                        opacity: 0.125
-                        x: parent.width / 2 + Math.cos(0 * Math.PI / 4) * parent.__r - width / 2
-                        y: parent.height / 2 + Math.sin(0 * Math.PI / 4) * parent.__r - height / 2
-                        Css.CssItem { cssPrimitive: "rect"; cssClass: ["spoke"] }
-                    }
-                    Rectangle {
-                        width: 6
-                        height: 6
-                        radius: 3
-                        color: "#176b87"
-                        opacity: 0.25
-                        x: parent.width / 2 + Math.cos(1 * Math.PI / 4) * parent.__r - width / 2
-                        y: parent.height / 2 + Math.sin(1 * Math.PI / 4) * parent.__r - height / 2
-                        Css.CssItem { cssPrimitive: "rect"; cssClass: ["spoke"] }
-                    }
-                    Rectangle {
-                        width: 6
-                        height: 6
-                        radius: 3
-                        color: "#176b87"
-                        opacity: 0.375
-                        x: parent.width / 2 + Math.cos(2 * Math.PI / 4) * parent.__r - width / 2
-                        y: parent.height / 2 + Math.sin(2 * Math.PI / 4) * parent.__r - height / 2
-                        Css.CssItem { cssPrimitive: "rect"; cssClass: ["spoke"] }
-                    }
-                    Rectangle {
-                        width: 6
-                        height: 6
-                        radius: 3
-                        color: "#176b87"
-                        opacity: 0.5
-                        x: parent.width / 2 + Math.cos(3 * Math.PI / 4) * parent.__r - width / 2
-                        y: parent.height / 2 + Math.sin(3 * Math.PI / 4) * parent.__r - height / 2
-                        Css.CssItem { cssPrimitive: "rect"; cssClass: ["spoke"] }
-                    }
-                    Rectangle {
-                        width: 6
-                        height: 6
-                        radius: 3
-                        color: "#176b87"
-                        opacity: 0.625
-                        x: parent.width / 2 + Math.cos(4 * Math.PI / 4) * parent.__r - width / 2
-                        y: parent.height / 2 + Math.sin(4 * Math.PI / 4) * parent.__r - height / 2
-                        Css.CssItem { cssPrimitive: "rect"; cssClass: ["spoke"] }
-                    }
-                    Rectangle {
-                        width: 6
-                        height: 6
-                        radius: 3
-                        color: "#176b87"
-                        opacity: 0.75
-                        x: parent.width / 2 + Math.cos(5 * Math.PI / 4) * parent.__r - width / 2
-                        y: parent.height / 2 + Math.sin(5 * Math.PI / 4) * parent.__r - height / 2
-                        Css.CssItem { cssPrimitive: "rect"; cssClass: ["spoke"] }
-                    }
-                    Rectangle {
-                        width: 6
-                        height: 6
-                        radius: 3
-                        color: "#176b87"
-                        opacity: 0.875
-                        x: parent.width / 2 + Math.cos(6 * Math.PI / 4) * parent.__r - width / 2
-                        y: parent.height / 2 + Math.sin(6 * Math.PI / 4) * parent.__r - height / 2
-                        Css.CssItem { cssPrimitive: "rect"; cssClass: ["spoke"] }
-                    }
-                    Rectangle {
-                        width: 6
-                        height: 6
-                        radius: 3
-                        color: "#176b87"
-                        opacity: 1
-                        x: parent.width / 2 + Math.cos(7 * Math.PI / 4) * parent.__r - width / 2
-                        y: parent.height / 2 + Math.sin(7 * Math.PI / 4) * parent.__r - height / 2
-                        Css.CssItem { cssPrimitive: "rect"; cssClass: ["spoke"] }
-                    }
-                }
-            }
+            running: busy
         }
     }
     W.Div {
@@ -369,13 +267,13 @@ W.Div {
         Css.CssFill {
             cssClass: ["ni-round", "round"]
             cssPrimitive: "button"
-            cssState: (__input5.hovered ? ["hover"] : []).concat(__input5.pressed ? ["active"] : []).concat(__input5.activeFocus ? ["focus"] : []).concat(!__input5.enabled ? ["disabled"] : [])
+            cssState: (__input4.hovered ? ["hover"] : []).concat(__input4.pressed ? ["active"] : []).concat(__input4.activeFocus ? ["focus"] : []).concat(!__input4.enabled ? ["disabled"] : [])
             Css.CssText {
                 cssPrimitive: "text"
                 text: "+1"
             }
             T.RoundButton {
-                id: __input5
+                id: __input4
                 anchors.fill: parent
                 activeFocusOnTab: solidTabstop.enabled
                 hoverEnabled: true
@@ -390,13 +288,13 @@ W.Div {
         Css.CssFill {
             cssClass: ["ni-tool", "tool"]
             cssPrimitive: "button"
-            cssState: (__input6.hovered ? ["hover"] : []).concat(__input6.pressed ? ["active"] : []).concat(__input6.activeFocus ? ["focus"] : []).concat(!__input6.enabled ? ["disabled"] : [])
+            cssState: (__input5.hovered ? ["hover"] : []).concat(__input5.pressed ? ["active"] : []).concat(__input5.activeFocus ? ["focus"] : []).concat(!__input5.enabled ? ["disabled"] : [])
             Css.CssText {
                 cssPrimitive: "text"
                 text: "reset"
             }
             T.ToolButton {
-                id: __input6
+                id: __input5
                 anchors.fill: parent
                 activeFocusOnTab: solidTabstop.enabled
                 hoverEnabled: true

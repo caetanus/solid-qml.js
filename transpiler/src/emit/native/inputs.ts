@@ -525,65 +525,22 @@ const emitDelayButton: NativeEmit = (propsArg, children, scope, level, guard) =>
 
 // ── <BusyIndicator running={bool}> ────────────────────────────────────────────────────────
 //
-// Eight plain Rectangles on a circle inside the contentItem Item host (a control slot — the
-// CSS layout never sees it), opacity staggered 1/8…1, the HOST spun by a RotationAnimation
-// gated on the author's running expression (so an idle indicator costs zero frames). Each
-// spoke nests a CssItem ["spoke"] that injects background-color/radius from CSS (the same
-// injection idiom as the switch knob).
+// One .qml per component: the T.BusyIndicator + the eight spinning spokes live in
+// BusyIndicator.qml. The emit only instantiates the component and forwards `running`
+// (absent → the component default `true`).
 const emitBusyIndicator: NativeEmit = (propsArg, _children, scope, level, guard) => {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const ui = uiProps(propsArg);
   const classLine = buildCssClassLine(ui, scope, i(1));
-  const ctlId = allocCtl(scope);
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
-  const runningExpr = bindingExpr(propsArg, "running", scope) ?? "true";
+  const runningExpr = bindingExpr(propsArg, "running", scope);
 
-  const spokes: string[] = [];
-  for (let k = 0; k < 8; k++) {
-    spokes.push(
-      `${i(3)}Rectangle {`,
-      `${i(4)}width: 6`,
-      `${i(4)}height: 6`,
-      `${i(4)}radius: 3`,
-      `${i(4)}color: "#176b87"`,
-      `${i(4)}opacity: ${(k + 1) / 8}`,
-      `${i(4)}x: parent.width / 2 + Math.cos(${k} * Math.PI / 4) * parent.__r - width / 2`,
-      `${i(4)}y: parent.height / 2 + Math.sin(${k} * Math.PI / 4) * parent.__r - height / 2`,
-      `${i(4)}Css.CssItem { cssPrimitive: "rect"; cssClass: ["spoke"] }`,
-      `${i(3)}}`,
-    );
-  }
-
-  return [
-    `${pad}Css.CssFill {`,
-    ...classLine,
-    ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: ""`,
-    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
-    `${i(1)}T.BusyIndicator {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}running: ${runningExpr}`,
-    `${i(2)}visible: running`,
-    ...implicitFormula(i),
-    `${i(2)}contentItem: Item {`,
-    `${i(3)}implicitWidth: 40`,
-    `${i(3)}implicitHeight: 40`,
-    `${i(3)}property real __r: Math.min(width, height) / 2 - 5`,
-    `${i(3)}RotationAnimation on rotation {`,
-    `${i(4)}from: 0`,
-    `${i(4)}to: 360`,
-    `${i(4)}duration: 900`,
-    `${i(4)}loops: Animation.Infinite`,
-    `${i(4)}running: ${runningExpr}`,
-    `${i(3)}}`,
-    ...spokes,
-    `${i(2)}}`,
-    `${i(1)}}`,
-    `${pad}}`,
-  ];
+  const lines = [`${pad}W.BusyIndicator {`, ...classLine, ...guardLine(guard, level)];
+  if (runningExpr !== undefined) lines.push(`${i(1)}running: ${runningExpr}`);
+  lines.push(`${pad}}`);
+  return lines;
 };
 
 // ── <RoundButton> / <ToolButton> ──────────────────────────────────────────────────────────
