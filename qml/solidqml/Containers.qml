@@ -208,19 +208,18 @@ Css.CssRect {
     }
     Css.CssFill {
         cssClass: ["ct-split"]
+        id: __split1W
         cssPrimitive: "splitview"
         T.SplitView {
             id: __split1
             anchors.fill: parent
             orientation: Qt.Horizontal
-            handle: Css.CssRect {
-                cssPrimitive: "div"
-                cssClass: ["handle"]
-                cssState: (T.SplitHandle.pressed ? ["active"] : []).concat(T.SplitHandle.hovered ? ["hover"] : [])
-                implicitWidth: __split1.orientation === Qt.Horizontal ? 6 : __split1.width
-                implicitHeight: __split1.orientation === Qt.Horizontal ? __split1.height : 6
+            handle: SplitHandle {
+                cssAncestor: __split1W
+                horizontal: __split1.orientation === Qt.Horizontal
             }
             Css.CssRect {
+                T.SplitView.fillWidth: true
                 cssClass: ["ct-pane"]
                 cssPrimitive: "div"
                 Css.CssText {
@@ -230,6 +229,7 @@ Css.CssRect {
                 }
             }
             Css.CssRect {
+                T.SplitView.fillWidth: true
                 cssClass: ["ct-pane", "ct-pane-alt"]
                 cssPrimitive: "div"
                 Css.CssText {

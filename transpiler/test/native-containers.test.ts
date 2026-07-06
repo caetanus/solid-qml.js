@@ -11,6 +11,7 @@ import { findRender } from "../src/ast/find.ts";
 import { analyzeSignals } from "../src/model/symbols.ts";
 import { emitQml } from "../src/emit/qml.ts";
 import { emitComponentType } from "../src/emit/component.ts";
+import { generate } from "../src/index.ts";
 import type { Scope } from "../src/emit/expr.ts";
 import * as t from "@babel/types";
 
@@ -165,14 +166,22 @@ test("containers: <SplitView orientation='vertical'> maps to Qt.Vertical", async
   assert.match(out, /orientation: Qt\.Vertical/);
 });
 
-test("containers: <SplitView> emits a 6px styleable Css handle with SplitHandle states", async () => {
+test("containers: <SplitView> handle is the stock SplitHandle, panes get fillWidth hint", async () => {
   const out = await qml(`export function F(){ return <SplitView><div /><div /></SplitView>; }`);
-  assert.match(out, /handle: Css\.CssRect \{/);
-  assert.match(out, /cssClass: \["handle"\]/);
-  assert.match(out, /implicitWidth: __split0\.orientation === Qt\.Horizontal \? 6 : __split0\.width/);
-  assert.match(out, /implicitHeight: __split0\.orientation === Qt\.Horizontal \? __split0\.height : 6/);
-  assert.match(out, /T\.SplitHandle\.pressed \? \["active"\]/);
-  assert.match(out, /T\.SplitHandle\.hovered \? \["hover"\]/);
+  // Handle is the stock component (plain-Rectangle root survives the CSS content-measure so it
+  // keeps a real implicit thickness — a bare Css.CssRect measures 0 and the handle vanishes).
+  assert.match(out, /handle: SplitHandle \{/);
+  assert.match(out, /cssAncestor: __split0W/);
+  assert.match(out, /horizontal: __split0\.orientation === Qt\.Horizontal/);
+  // Panes carry a SplitView size hint so they share space (else the first pane's content eats it).
+  assert.match(out, /T\.SplitView\.fillWidth: true/);
+});
+
+test("containers: SplitHandle stock component ships with the app", async () => {
+  const app = await generate(`export function F(){ return <SplitView><div /><div /></SplitView>; }`, "/x.tsx");
+  assert.ok(app.components.SplitHandle, "SplitHandle.qml should be in the components map");
+  assert.match(app.components.SplitHandle, /T\.SplitHandle\.pressed/);
+  assert.match(app.components.SplitHandle, /cssClass: \["handle"\]/);
 });
 
 test("containers: <SplitView> children emit as direct SplitView children", async () => {

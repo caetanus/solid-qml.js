@@ -269,23 +269,39 @@ const emitSplitView: NativeEmit = (propsArg, children, scope, level, guard) => {
     else if (o.value !== "horizontal") throw new Error(`<SplitView> orientation must be "horizontal" or "vertical", got "${o.value}"`);
   }
 
+  const wrapId = `${splitId}W`;
+
+  // Each direct child is a pane. QQuickSplitView reserves space only for panes that carry a
+  // SplitView size hint (or a definite implicit); without one, the first pane's content-implicit
+  // eats the row and later panes collapse to 0. Inject `T.SplitView.fillWidth/fillHeight: true`
+  // into every pane (after its opening brace) so they share the space and are resizable by the
+  // handle. Emit children one at a time so the hint lands on each pane's own object.
+  const fillProp = orientation === "Qt.Horizontal" ? "fillWidth" : "fillHeight";
+  const paneLines: string[] = [];
+  for (const child of children) {
+    const emitted = emitChildren([child], scope, level + 2);
+    const braceIdx = emitted.findIndex((l) => /\{\s*$/.test(l));
+    if (braceIdx >= 0) emitted.splice(braceIdx + 1, 0, `${i(3)}T.SplitView.${fillProp}: true`);
+    paneLines.push(...emitted);
+  }
+
   return [
     `${pad}Css.CssFill {`,
     ...classLine,
     ...guardLine(guard, level),
+    `${i(1)}id: ${wrapId}`,
     `${i(1)}cssPrimitive: "splitview"`,
     `${i(1)}T.SplitView {`,
     `${i(2)}id: ${splitId}`,
     `${i(2)}anchors.fill: parent`,
     `${i(2)}orientation: ${orientation}`,
-    `${i(2)}handle: Css.CssRect {`,
-    `${i(3)}cssPrimitive: "div"`,
-    `${i(3)}cssClass: ["handle"]`,
-    `${i(3)}cssState: (T.SplitHandle.pressed ? ["active"] : []).concat(T.SplitHandle.hovered ? ["hover"] : [])`,
-    `${i(3)}implicitWidth: ${splitId}.orientation === Qt.Horizontal ? 6 : ${splitId}.width`,
-    `${i(3)}implicitHeight: ${splitId}.orientation === Qt.Horizontal ? ${splitId}.height : 6`,
+    // Handle is a stock component: its plain-Rectangle root keeps a real implicit thickness (a bare
+    // Css.CssRect measures its empty content as 0 → SplitView reserves no space → invisible handle).
+    `${i(2)}handle: SplitHandle {`,
+    `${i(3)}cssAncestor: ${wrapId}`,
+    `${i(3)}horizontal: ${splitId}.orientation === Qt.Horizontal`,
     `${i(2)}}`,
-    ...emitChildren(children, scope, level + 2),
+    ...paneLines,
     `${i(1)}}`,
     `${pad}}`,
   ];

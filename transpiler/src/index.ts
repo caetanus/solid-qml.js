@@ -3,6 +3,7 @@ import { readFile as fsReadFile } from "node:fs/promises";
 import * as t from "@babel/types";
 import { normalize } from "./babel/transform.ts";
 import { emitComponentType } from "./emit/component.ts";
+import { STOCK_COMPONENTS } from "./emit/stock.ts";
 import { analyzeContexts, analyzeProvider, analyzeSignals, analyzeUseContext } from "./model/symbols.ts";
 import { hParts, isComponentIdentifier, isHCall } from "./ast/h.ts";
 import { isBareSpecifier, isRuntimeOnlyImport, mirrorNodeImports, resolveNodeImport } from "./resolve/node.ts";
@@ -308,6 +309,23 @@ export async function generate(source: string, filename: string, opts: GenerateO
   }
   // Custom `.qml` files ride `components` verbatim — gen.mjs writes each as `<name>.qml`.
   for (const [, { typeName: tn, source }] of qmlForeign) components[tn] = source;
+  // Stock primitive/host components (SplitHandle, …): shipped ONLY when referenced by type name in
+  // the emitted output (keeps a small app from carrying the whole stock library). Fixpoint so a
+  // stock component that references another stock component pulls it in too.
+  {
+    const referenced = (name: string, sources: string[]) => {
+      const re = new RegExp(`\\b${name}\\b`);
+      return sources.some((s) => re.test(s));
+    };
+    let changed = true;
+    while (changed) {
+      changed = false;
+      const sources = [entry, ...Object.values(components)];
+      for (const [name, source] of Object.entries(STOCK_COMPONENTS)) {
+        if (!components[name] && referenced(name, sources)) { components[name] = source; changed = true; }
+      }
+    }
+  }
   // CSS sidecar: concatenate every imported .css across the graph, in discovery order.
   let css = "";
   for (const f of cssFiles) {
