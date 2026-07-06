@@ -2,22 +2,21 @@
 //   <RangeSlider>, <Dial>, <Tumbler>, <DelayButton>, <BusyIndicator>,
 //   <RoundButton>, <ToolButton>, <ToolSeparator>
 //
-// Every control follows the house widget idiom (see emitSlider / emitCheckboxToggle in
-// ../qml.ts): a wrapper Css.CssFill carries CSS identity (classes, cssState, layout
-// participation) and the T.* Templates control fills it with anchors.fill. Template slots
-// (background / handle / contentItem / indicator) are filled with Css items; PLAIN internals
-// that need anchors/x/y inside a Css container are hosted in an `Item { anchors.fill: parent }`
-// — the CSS layout engine skips anchored plain Items but flex-lays-out (or top-left-pins)
-// everything else (see the checkbox indicator comment in ../qml.ts for the full story).
+// One .qml per component (owner directive 2026-07-05): every widget is a native .qml in the
+// solidqml.Widgets module — the wrapper Css.CssFill, the T.* Templates control filling it with
+// anchors.fill, the slot Css items, the implicit-size formula and every animation live in the
+// .qml (see qml/solidqml/Widgets/<Name>.qml). This module only INSTANTIATES `W.<Name> { … }` and
+// wires props/children; `scope.usedWidgets.widgetLib` gates the `import solidqml.Widgets` header.
+//
+// Value-read handlers across the component boundary: widgets whose author handler reads the
+// control's own value (Dial/Tumbler/RangeSlider) keep the instance id `__inputN` and the .qml
+// exposes the value(s) as two-way property aliases to the control (`value`, `first`/`second`,
+// `model`/`currentIndex`). So the emitted handler body (`__self.x = __inputN.value`) and the
+// controlled `Binding { target: __inputN… }` still resolve against the instance.
 //
 // Handler convention for these QML-only tags: handlers receive VALUES directly
 // (onChange={(lo, hi) => …}, onChange={(v) => …}) — not a synthetic DOM event. These tags
 // have no HTML counterpart, so there is no `e.target.value` idiom to preserve.
-//
-// Templates implicit sizes: T.* controls have implicitWidth/Height 0 — deriving them is the
-// STYLE's job (we are the style). Each control root gets the Basic-style formula
-// (max of background+insets and content+paddings) so a bare widget has a sane natural size;
-// authors override via CSS on the wrapper as with every other widget.
 import * as t from "@babel/types";
 import { registerNativeTags, type NativeEmit } from "./index.ts";
 import { emitExpr, type Scope } from "../expr.ts";
@@ -123,15 +122,6 @@ function emitEventHandler(node: t.Node | undefined, scope: Scope, argExprs: stri
 
 // ── shared emission bits ─────────────────────────────────────────────────────────────────
 
-/** Allocate the control id and mark the Templates import (same idiom as emitInput).
- *  Used by the still-inline emitters (RangeSlider/Tumbler); migrated widgets use allocInstance. */
-function allocCtl(scope: Scope): string {
-  const counter = scope.inputCounter ?? { n: 0 };
-  const ctlId = `__input${counter.n++}`;
-  if (scope.usedWidgets) scope.usedWidgets.flag = true;
-  return ctlId;
-}
-
 /** Allocate the W.<Name> instance id and mark the solidqml.Widgets import. The instance keeps the
  *  `__inputN` name so author handlers that read the control value (`__inputN.value`) and controlled
  *  Bindings resolve against the component's exposed properties/aliases. */
@@ -173,42 +163,20 @@ function bindingElement(i: (n: number) => string, target: string, property: stri
   ];
 }
 
-/** The focused-wheel accumulator from emitSlider (Mouse|TouchPad, 120-unit notches), stepping
- *  the given value holder (`ctl` for Slider-likes, `ctl.first` for the RangeSlider) and
- *  re-firing its moved() so the author's onChange wiring runs. */
-function wheelStepper(i: (n: number) => string, ctlId: string, node: string): string[] {
-  return [
-    `${i(2)}WheelHandler {`,
-    `${i(3)}property real __acc: 0`,
-    `${i(3)}enabled: ${ctlId}.activeFocus`,
-    `${i(3)}acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad`,
-    `${i(3)}onWheel: (ev) => { __acc += ev.angleDelta.y !== 0 ? ev.angleDelta.y : ev.pixelDelta.y * 8; var s = 0; while (__acc >= 120) { __acc -= 120; s++ } while (__acc <= -120) { __acc += 120; s-- } if (s !== 0) { ${node}.value = Math.max(${ctlId}.from, Math.min(${ctlId}.to, ${node}.value + s * ${ctlId}.stepSize)); ${node}.moved() } }`,
-    `${i(2)}}`,
-  ];
-}
-
-/** Basic-style implicit size formula: templates leave implicit sizes to the style (us). */
-function implicitFormula(i: (n: number) => string): string[] {
-  return [
-    `${i(2)}implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)`,
-    `${i(2)}implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)`,
-  ];
-}
-
 // ── <RangeSlider min max step first={a()} second={b()} onChange={(lo,hi)=>…}> ─────────────
 //
-// T.RangeSlider has NO value/handle of its own: `first` and `second` are sub-objects
-// (QQuickRangeSliderNode, qquickrangeslider_p.h) each carrying value / visualPosition /
-// handle / moved(). Track and handle geometry copy emitSlider; the range fill spans
-// [first.visualPosition, second.visualPosition]. The fill lives in an anchored Item host:
-// unlike the Slider's zero-based fill, its x offset must survive the CSS flex pass that
-// runs over the track's Css children once `.track` carries box rules.
+// One .qml per component: the T.RangeSlider + track + range fill + two handles + wheel stepper live
+// in RangeSlider.qml. The emit instantiates W.RangeSlider (id kept as __inputN so the onChange
+// value-reads `__inputN.first.value` / `.second.value` and the per-node controlled Bindings resolve
+// against the component's `first`/`second` sub-node aliases) and wires from/to/stepSize + onChange
+// + the controlled values. `moved()` is fired from BOTH nodes, so a single onMoved handler on the
+// instance covers dragging either handle.
 const emitRangeSlider: NativeEmit = (propsArg, _children, scope, level, guard) => {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const ui = uiProps(propsArg);
   const classLine = buildCssClassLine(ui, scope, i(1));
-  const ctlId = allocCtl(scope);
+  const ctlId = allocInstance(scope);
 
   const min = numericAttr(propsArg, "min", "0", scope);
   const max = numericAttr(propsArg, "max", "100", scope);
@@ -218,87 +186,25 @@ const emitRangeSlider: NativeEmit = (propsArg, _children, scope, level, guard) =
   const onChangeFn = fnProp(propsArg, "onChange");
   const disabled = boolAttr(propsArg, "disabled");
 
-  const cssState = `(${ctlId}.activeFocus ? ["focus"] : []).concat(!${ctlId}.enabled ? ["disabled"] : [])`;
-  // onChange(lo, hi) — direct values, fired from BOTH nodes' moved() signals.
+  // onChange(lo, hi) — direct values, fired from the component's moved() (either node).
   const changeBody = onChangeFn
     ? translateArgsHandler(onChangeFn, [`${ctlId}.first.value`, `${ctlId}.second.value`], scope)
     : "";
 
   const lines: string[] = [
-    `${pad}Css.CssFill {`,
+    `${pad}W.RangeSlider {`,
+    `${i(1)}id: ${ctlId}`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}cssPrimitive: "input"`,
-    `${i(1)}cssState: ${cssState}`,
-    `${i(1)}implicitWidth: ${ctlId}.implicitWidth`,
-    `${i(1)}implicitHeight: ${ctlId}.implicitHeight`,
-    `${i(1)}T.RangeSlider {`,
-    `${i(2)}id: ${ctlId}`,
-    `${i(2)}anchors.fill: parent`,
-    `${i(2)}activeFocusOnTab: solidTabstop.enabled`,
-    `${i(2)}from: ${min}`,
-    `${i(2)}to: ${max}`,
-    `${i(2)}stepSize: ${step}`,
-    // Style-side implicit size: background/handles carry the natural metrics (Basic idiom).
-    `${i(2)}implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, first.implicitHandleWidth + leftPadding + rightPadding)`,
-    `${i(2)}implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, first.implicitHandleHeight + topPadding + bottomPadding)`,
-    // Track: same geometry as emitSlider (6px tall, centred within the control).
-    `${i(2)}background: Css.CssFill {`,
-    `${i(3)}cssPrimitive: ""`,
-    `${i(3)}cssClass: ["track"]`,
-    `${i(3)}x: ${ctlId}.leftPadding`,
-    `${i(3)}y: ${ctlId}.topPadding + (${ctlId}.availableHeight - height) / 2`,
-    `${i(3)}width: ${ctlId}.availableWidth`,
-    `${i(3)}height: 6`,
-    `${i(3)}implicitWidth: 200`,
-    `${i(3)}implicitHeight: 6`,
-    // Anchored Item host: the range fill starts at first.visualPosition (x ≠ 0) — a bare Css
-    // child would be re-laid-out to x 0 by the CSS flex pass over the styled track.
-    `${i(3)}Item {`,
-    `${i(4)}anchors.fill: parent`,
-    `${i(4)}Css.CssRect {`,
-    `${i(5)}cssClass: ["track-fill"]`,
-    `${i(5)}x: ${ctlId}.first.visualPosition * parent.width`,
-    `${i(5)}width: (${ctlId}.second.visualPosition - ${ctlId}.first.visualPosition) * parent.width`,
-    `${i(5)}height: parent.height`,
-    `${i(4)}}`,
-    `${i(3)}}`,
-    `${i(2)}}`,
-    // Handles: emitSlider's handle geometry, one per node, positioned by the node's own
-    // visualPosition. No Behavior — dragging must be 1:1.
-    `${i(2)}first.handle: Css.CssRect {`,
-    `${i(3)}cssClass: ["handle"]`,
-    `${i(3)}width: 18`,
-    `${i(3)}height: 18`,
-    `${i(3)}implicitWidth: 18`,
-    `${i(3)}implicitHeight: 18`,
-    `${i(3)}x: ${ctlId}.leftPadding + ${ctlId}.first.visualPosition * (${ctlId}.availableWidth - width)`,
-    `${i(3)}y: ${ctlId}.topPadding + ${ctlId}.availableHeight / 2 - height / 2`,
-    `${i(2)}}`,
-    `${i(2)}second.handle: Css.CssRect {`,
-    `${i(3)}cssClass: ["handle"]`,
-    `${i(3)}width: 18`,
-    `${i(3)}height: 18`,
-    `${i(3)}implicitWidth: 18`,
-    `${i(3)}implicitHeight: 18`,
-    `${i(3)}x: ${ctlId}.leftPadding + ${ctlId}.second.visualPosition * (${ctlId}.availableWidth - width)`,
-    `${i(3)}y: ${ctlId}.topPadding + ${ctlId}.availableHeight / 2 - height / 2`,
-    `${i(2)}}`,
-    // Focused wheel steps the FIRST handle (emitSlider's accumulator, re-fires first.moved()).
-    ...wheelStepper(i, ctlId, `${ctlId}.first`),
+    `${i(1)}from: ${min}`,
+    `${i(1)}to: ${max}`,
+    `${i(1)}stepSize: ${step}`,
   ];
-
-  if (disabled) lines.push(`${i(2)}enabled: false`);
-  if (changeBody) {
-    lines.push(`${i(2)}first.onMoved: { ${changeBody} }`);
-    lines.push(`${i(2)}second.onMoved: { ${changeBody} }`);
-  }
-  lines.push(`${i(1)}}`);
-
-  // Controlled values: one Binding per node — Binding.target accepts the sub-object directly.
+  if (disabled) lines.push(`${i(1)}disabled: true`);
+  if (changeBody) lines.push(`${i(1)}onMoved: { ${changeBody} }`);
+  // Controlled values: one Binding per node — Binding.target accepts the aliased sub-object.
   if (firstExpr !== undefined) lines.push(...bindingElement(i, `${ctlId}.first`, "value", firstExpr));
   if (secondExpr !== undefined) lines.push(...bindingElement(i, `${ctlId}.second`, "value", secondExpr));
-
   lines.push(`${pad}}`);
   return lines;
 };

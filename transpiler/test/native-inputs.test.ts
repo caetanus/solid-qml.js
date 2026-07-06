@@ -57,15 +57,15 @@ function readWidget(name: string): Promise<string> {
 // <RangeSlider>
 // ---------------------------------------------------------------------------
 
-test("native-inputs: <RangeSlider> emits wrapper CssFill + T.RangeSlider with from/to/stepSize", async () => {
+test("native-inputs: <RangeSlider> instantiates W.RangeSlider with from/to/stepSize on the instance", async () => {
   const out = await qml(`export function F(){ return <RangeSlider min={10} max={90} step={5} />; }`);
-  assert.match(out, /Css\.CssFill \{/);
-  assert.match(out, /cssPrimitive: "input"/);
-  assert.match(out, /T\.RangeSlider \{/);
+  assert.match(out, /W\.RangeSlider \{/);
   assert.match(out, /id: __input0/);
   assert.match(out, /from: 10/);
   assert.match(out, /to: 90/);
   assert.match(out, /stepSize: 5/);
+  // The T.RangeSlider + track + handles now live in RangeSlider.qml, not the emit.
+  assert.doesNotMatch(out, /T\.RangeSlider/);
 });
 
 test("native-inputs: <RangeSlider> defaults min/max/step to 0/100/1", async () => {
@@ -75,23 +75,29 @@ test("native-inputs: <RangeSlider> defaults min/max/step to 0/100/1", async () =
   assert.match(out, /stepSize: 1/);
 });
 
-test("native-inputs: <RangeSlider> emits track, range fill and TWO handles", async () => {
-  const out = await qml(`export function F(){ return <RangeSlider />; }`);
-  assert.match(out, /cssClass: \["track"\]/);
-  // range fill spans first→second visualPosition, hosted in an anchored Item
-  assert.match(out, /cssClass: \["track-fill"\]/);
-  assert.match(out, /x: __input0\.first\.visualPosition \* parent\.width/);
-  assert.match(out, /width: \(__input0\.second\.visualPosition - __input0\.first\.visualPosition\) \* parent\.width/);
-  // both handle slots, emitSlider's 18×18 geometry
-  assert.match(out, /first\.handle: Css\.CssRect \{/);
-  assert.match(out, /second\.handle: Css\.CssRect \{/);
-  assert.match(out, /x: __input0\.leftPadding \+ __input0\.first\.visualPosition \* \(__input0\.availableWidth - width\)/);
-  assert.match(out, /x: __input0\.leftPadding \+ __input0\.second\.visualPosition \* \(__input0\.availableWidth - width\)/);
-  const handles = out.match(/cssClass: \["handle"\]/g) ?? [];
+test("native-inputs: RangeSlider.qml holds track, range fill, two handles and the wheel stepper", async () => {
+  const src = await readWidget("RangeSlider");
+  assert.match(src, /T\.RangeSlider \{/);
+  assert.match(src, /cssPrimitive: "input"/);
+  assert.match(src, /cssClass: \["track"\]/);
+  assert.match(src, /cssClass: \["track-fill"\]/);
+  assert.match(src, /x: __ctl\.first\.visualPosition \* parent\.width/);
+  assert.match(src, /width: \(__ctl\.second\.visualPosition - __ctl\.first\.visualPosition\) \* parent\.width/);
+  assert.match(src, /first\.handle: Css\.CssRect \{/);
+  assert.match(src, /second\.handle: Css\.CssRect \{/);
+  const handles = src.match(/cssClass: \["handle"\]/g) ?? [];
   assert.equal(handles.length, 2);
+  assert.match(src, /WheelHandler \{/);
+  assert.match(src, /enabled: __ctl\.activeFocus/);
+  assert.match(src, /acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad/);
+  assert.match(src, /__ctl\.first\.value = Math\.max\(__ctl\.from, Math\.min\(__ctl\.to, __ctl\.first\.value \+ s \* __ctl\.stepSize\)\)/);
+  assert.match(src, /__ctl\.first\.moved\(\)/);
+  assert.match(src, /property alias first: __ctl\.first/);
+  assert.match(src, /property alias second: __ctl\.second/);
+  assert.match(src, /cssState: \(__ctl\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!__ctl\.enabled \? \["disabled"\] : \[\]\)/);
 });
 
-test("native-inputs: <RangeSlider first second> emits two Binding elements on the sub-nodes", async () => {
+test("native-inputs: <RangeSlider first second> emits two Binding elements on the aliased sub-nodes", async () => {
   const out = await qmlType(`
     export function F() {
       const [lo, setLo] = createSignal(20);
@@ -108,7 +114,7 @@ test("native-inputs: <RangeSlider first second> emits two Binding elements on th
   assert.equal(restores.length, 2);
 });
 
-test("native-inputs: <RangeSlider onChange> fires from first.onMoved AND second.onMoved with both values", async () => {
+test("native-inputs: <RangeSlider onChange> fires from a single onMoved (moved() from either node)", async () => {
   const out = await qmlType(`
     export function F() {
       const [lo, setLo] = createSignal(20);
@@ -116,28 +122,13 @@ test("native-inputs: <RangeSlider onChange> fires from first.onMoved AND second.
       return <RangeSlider first={lo()} second={hi()} onChange={(a, b) => { setLo(a); setHi(b); }} />;
     }
   `);
-  assert.match(out, /first\.onMoved: \{ __self\.lo = __input0\.first\.value; __self\.hi = __input0\.second\.value; \}/);
-  assert.match(out, /second\.onMoved: \{ __self\.lo = __input0\.first\.value; __self\.hi = __input0\.second\.value; \}/);
+  assert.match(out, /onMoved: \{ __self\.lo = __input0\.first\.value; __self\.hi = __input0\.second\.value; \}/);
 });
 
-test("native-inputs: <RangeSlider> focused wheel steps the FIRST handle (accumulator, Mouse|TouchPad)", async () => {
-  const out = await qml(`export function F(){ return <RangeSlider />; }`);
-  assert.match(out, /WheelHandler \{/);
-  assert.match(out, /enabled: __input0\.activeFocus/);
-  assert.match(out, /acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad/);
-  assert.match(out, /__input0\.first\.value = Math\.max\(__input0\.from, Math\.min\(__input0\.to, __input0\.first\.value \+ s \* __input0\.stepSize\)\)/);
-  assert.match(out, /__input0\.first\.moved\(\)/);
-});
-
-test("native-inputs: <RangeSlider> is a tab stop and carries focus/disabled cssState", async () => {
-  const out = await qml(`export function F(){ return <RangeSlider />; }`);
-  assert.match(out, /activeFocusOnTab: solidTabstop\.enabled/);
-  assert.match(out, /cssState: \(__input0\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!__input0\.enabled \? \["disabled"\] : \[\]\)/);
-});
-
-test("native-inputs: <RangeSlider> emits the Templates import in the component type", async () => {
+test("native-inputs: emitting <RangeSlider> imports the solidqml.Widgets module (no Templates)", async () => {
   const out = await qmlType(`export function F(){ return <RangeSlider />; }`);
-  assert.match(out, /import QtQuick\.Templates 6\.0 as T/);
+  assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
+  assert.doesNotMatch(out, /import QtQuick\.Templates .* as T/);
 });
 
 // ---------------------------------------------------------------------------

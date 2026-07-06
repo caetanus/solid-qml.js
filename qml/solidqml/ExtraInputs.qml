@@ -4,8 +4,6 @@ import qmlcss 1.0 as Css
 
 
 import solidqml.Widgets 1.0 as W
-
-import QtQuick.Templates 6.0 as T
 W.Div {
     id: __self
     property var lo: 20
@@ -26,67 +24,13 @@ W.Div {
             cssClass: ["nv-label"]
             text: "range " + (lo) + "–" + (hi)
         }
-        Css.CssFill {
+        W.RangeSlider {
+            id: __input0
             cssClass: ["ni-range"]
-            cssPrimitive: "input"
-            cssState: (__input0.activeFocus ? ["focus"] : []).concat(!__input0.enabled ? ["disabled"] : [])
-            implicitWidth: __input0.implicitWidth
-            implicitHeight: __input0.implicitHeight
-            T.RangeSlider {
-                id: __input0
-                anchors.fill: parent
-                activeFocusOnTab: solidTabstop.enabled
-                from: 0
-                to: 100
-                stepSize: 1
-                implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, first.implicitHandleWidth + leftPadding + rightPadding)
-                implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, first.implicitHandleHeight + topPadding + bottomPadding)
-                background: Css.CssFill {
-                    cssPrimitive: ""
-                    cssClass: ["track"]
-                    x: __input0.leftPadding
-                    y: __input0.topPadding + (__input0.availableHeight - height) / 2
-                    width: __input0.availableWidth
-                    height: 6
-                    implicitWidth: 200
-                    implicitHeight: 6
-                    Item {
-                        anchors.fill: parent
-                        Css.CssRect {
-                            cssClass: ["track-fill"]
-                            x: __input0.first.visualPosition * parent.width
-                            width: (__input0.second.visualPosition - __input0.first.visualPosition) * parent.width
-                            height: parent.height
-                        }
-                    }
-                }
-                first.handle: Css.CssRect {
-                    cssClass: ["handle"]
-                    width: 18
-                    height: 18
-                    implicitWidth: 18
-                    implicitHeight: 18
-                    x: __input0.leftPadding + __input0.first.visualPosition * (__input0.availableWidth - width)
-                    y: __input0.topPadding + __input0.availableHeight / 2 - height / 2
-                }
-                second.handle: Css.CssRect {
-                    cssClass: ["handle"]
-                    width: 18
-                    height: 18
-                    implicitWidth: 18
-                    implicitHeight: 18
-                    x: __input0.leftPadding + __input0.second.visualPosition * (__input0.availableWidth - width)
-                    y: __input0.topPadding + __input0.availableHeight / 2 - height / 2
-                }
-                WheelHandler {
-                    property real __acc: 0
-                    enabled: __input0.activeFocus
-                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                    onWheel: (ev) => { __acc += ev.angleDelta.y !== 0 ? ev.angleDelta.y : ev.pixelDelta.y * 8; var s = 0; while (__acc >= 120) { __acc -= 120; s++ } while (__acc <= -120) { __acc += 120; s-- } if (s !== 0) { __input0.first.value = Math.max(__input0.from, Math.min(__input0.to, __input0.first.value + s * __input0.stepSize)); __input0.first.moved() } }
-                }
-                first.onMoved: { __self.lo = __input0.first.value; __self.hi = __input0.second.value; }
-                second.onMoved: { __self.lo = __input0.first.value; __self.hi = __input0.second.value; }
-            }
+            from: 0
+            to: 100
+            stepSize: 1
+            onMoved: { __self.lo = __input0.first.value; __self.hi = __input0.second.value; }
             Binding {
                 target: __input0.first
                 property: "value"
