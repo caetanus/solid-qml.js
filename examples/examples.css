@@ -10,10 +10,12 @@
   font-size: 16px;
 }
 
-/* Keyboard focus ring for buttons (desktop keyboard navigation — study §6). A type selector so it
-   covers every button regardless of its app class; box-shadow doesn't shift layout like a border. */
-button:focus {
-  box-shadow: 0 0 0 3px rgba(45, 143, 179, 0.55);
+/* Keyboard focus ring for the nav buttons (desktop keyboard navigation — study §6). Uses `border`
+   (reactive to the `:focus` state) at higher specificity than `.nav button` so it isn't overridden.
+   A clean GLOBAL button focus ring wants box-shadow SPREAD (no layout shift, no per-context
+   specificity) — the engine's box-shadow has no spread param yet; tracked for the CSS-gaps queue. */
+.nav button:focus {
+  border: 2px solid #2d8fb3;
 }
 
 .gallery {
