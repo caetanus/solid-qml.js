@@ -2,13 +2,15 @@
 import QtQuick
 import qmlcss 1.0 as Css
 
+
+import solidqml.Widgets 1.0 as W
 Css.CssRect {
     id: __self
     property var url: "qrc:/images/logo.png"
     cssClass: ["container"]
     cssPrimitive: "div"
-    Css.CssImage {
+    W.Image {
         cssClass: ["hero"]
-        source: url || ""
+        src: url || ""
     }
 }

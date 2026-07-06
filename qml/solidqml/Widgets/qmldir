@@ -1,3 +1,4 @@
 module solidqml.Widgets
 Button 1.0 Button.qml
+Image 1.0 Image.qml
 Progress 1.0 Progress.qml

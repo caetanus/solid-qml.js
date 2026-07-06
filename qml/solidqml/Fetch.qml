@@ -3,6 +3,8 @@ import QtQuick
 import qmlcss 1.0 as Css
 
 
+import solidqml.Widgets 1.0 as W
+
 import QtQuick.Templates 6.0 as T
 Css.CssRect {
     id: __self
@@ -65,9 +67,9 @@ Css.CssRect {
         cssClass: ["fetch-card"]
         visible: !!((!(user_loading)) && (user))
         cssPrimitive: "div"
-        Css.CssImage {
+        W.Image {
             cssClass: ["fetch-avatar"]
-            source: (user || ({})).avatar_url || ""
+            src: (user || ({})).avatar_url || ""
         }
         Css.CssText {
             cssClass: ["fetch-name"]

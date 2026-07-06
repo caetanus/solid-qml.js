@@ -360,12 +360,14 @@ function emitButton(props: Props, children: t.Node[], scope: Scope, level: numbe
   return lines;
 }
 
-/** <img class="a" src={u} /> → Css.CssImage { source: <src> || "" } (CssImage does object-fit +
- *  rounded-rect clip via MultiEffect, so `border-radius` yields a real circular avatar). */
+/** <img class="a" src={u} /> → W.Image (CssImage does object-fit + rounded-rect clip via MultiEffect,
+ *  so `border-radius` yields a real circular avatar). One .qml per component: the CssImage + `src`
+ *  slot live in Image.qml; the emit just wires the class and source. */
 function emitImage(propsArg: t.Node | undefined, props: Props, scope: Scope, level: number, guard?: string): string[] {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const classLine = buildCssClassLine(props, scope, i(1));
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
   // Resolve the `src` prop via emitExpr in binding mode.
   let src = '""';
   if (propsArg && t.isObjectExpression(propsArg)) {
@@ -375,10 +377,10 @@ function emitImage(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
     }
   }
   return [
-    `${pad}Css.CssImage {`,
+    `${pad}W.Image {`,
     ...classLine,
     ...guardLine(guard, level),
-    `${i(1)}source: ${src} || ""`,
+    `${i(1)}src: ${src} || ""`,
     `${pad}}`,
   ];
 }

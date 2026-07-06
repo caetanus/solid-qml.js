@@ -190,11 +190,22 @@ test("emitComponentType: non-colliding signal init is unchanged (Option 1 does n
   assert.match(out, /property var score: initial \|\| 0/);
 });
 
-test("emitQml: <img class='a' src={u} /> -> Css.CssImage with source binding", async () => {
+test("emitQml: <img class='a' src={u} /> -> W.Image (widget-library component) with src binding", async () => {
   const out = await qml(`export function F(){ const [u,setU]=createSignal(""); return <img class="a" src={u()} />; }`);
-  assert.match(out, /Css\.CssImage \{/);
+  // One .qml per component: <img> instantiates the library Image; CssImage internals live in Image.qml.
+  assert.match(out, /W\.Image \{/);
+  assert.doesNotMatch(out, /Css\.CssImage/);
   assert.match(out, /cssClass: \["a"\]/);
-  assert.match(out, /source: u \|\| ""/);
+  assert.match(out, /src: u \|\| ""/);
+});
+
+test("emitQml: Image.qml component exists and extends CssImage with a src slot", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { fileURLToPath } = await import("node:url");
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Image.qml", import.meta.url)), "utf8");
+  assert.match(src, /Css\.CssImage \{/);
+  assert.match(src, /property url src/);
+  assert.match(src, /source: root\.src/);
 });
 
 // --- Task 3: <input> ---

@@ -135,14 +135,14 @@ test("golden: show-fallback.tsx emits child with positive guard and fallback wit
   assert.match(got, /visible: !\(ok\)[\s\S]*text: "none"/);
 });
 
-test("golden: img-demo.tsx emits Css.CssImage with source binding", async () => {
+test("golden: img-demo.tsx emits W.Image with src binding", async () => {
   const src = await readFile(`${dir}img-demo.tsx`, "utf8");
   const got = (await generate(src, "img-demo.tsx")).entry;
   const want = await readFile(`${dir}img-demo.expected.qml`, "utf8");
   assert.equal(got.trimEnd(), want.trimEnd());
-  assert.match(got, /Css\.CssImage \{/);
+  assert.match(got, /W\.Image \{/);
   assert.match(got, /cssClass: \["hero"\]/);
-  assert.match(got, /source: url \|\| ""/);
+  assert.match(got, /src: url \|\| ""/);
 });
 
 test("golden: effect-smoke.tsx emits onCompleted body + Connections dep-tracking", async () => {

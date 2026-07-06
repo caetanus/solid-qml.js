@@ -351,9 +351,9 @@ Css.CssRect {
                             Css.CssRect {
                                 cssClass: ["slide"].concat(slide === index ? ["current"] : [])
                                 cssPrimitive: "div"
-                                Css.CssImage {
+                                W.Image {
                                     cssClass: ["slide-img"]
-                                    source: modelData.src || ""
+                                    src: modelData.src || ""
                                 }
                                 Css.CssRect {
                                     cssClass: ["slide-cap"]
