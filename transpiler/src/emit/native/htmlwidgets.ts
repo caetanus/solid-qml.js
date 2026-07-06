@@ -10,7 +10,7 @@
 // (background/contentItem chrome nulled or slot-filled with Css items), ids come from the
 // shared scope.inputCounter, and `scope.usedWidgets.flag` gates the Templates import.
 import * as t from "@babel/types";
-import { registerNativeTags, requireImport } from "./index.ts";
+import { registerNativeTags } from "./index.ts";
 import { emitExpr, type Scope } from "../expr.ts";
 import { emitChildren, buildCssClassLine, guardLine, INDENT } from "../qml.ts";
 import { isHCall, hParts } from "../../ast/h.ts";
@@ -226,60 +226,31 @@ function emitDialog(propsArg: t.Node | undefined, children: t.Node[], scope: Sco
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
   const props = readBaseProps(propsArg);
-  const classLine = buildCssClassLine(props, scope, i(2));
-  requireImport(scope, "import QtQuick.Window");
-
+  const classLine = buildCssClassLine(props, scope, i(1));
+  // One .qml per component: instantiate W.Dialog (the page-anchor Item + modal Window + Css root live
+  // in Dialog.qml). Consume a counter slot to keep sibling widgets monotonically numbered.
   const counter = scope.inputCounter ?? { n: 0 };
-  const n = counter.n++;
-  const wrapId = `__dialog${n}W`;
-  const dlgId = `__dialog${n}`;
-  const rootId = `__dialog${n}Root`;
+  counter.n++;
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
   const openNode = findProp(propsArg, "open");
   const openExpr = openNode ? emitExpr(openNode, { ...scope, mode: "binding" }) : "false";
-  // Fold a <Show> guard into the window's visibility (a window is shown, not laid out).
+  // Fold a <Show> guard into the window's visibility (a window is shown, not laid out) — passed as
+  // the component's `open` prop rather than a guardLine (the page-anchor Item is always in the tree).
   const visibleValue = guard ? `!!(${guard}) && !!(${openExpr})` : `!!(${openExpr})`;
   const onCloseFn = findFnProp(propsArg, "onClose");
   const closeBody = onCloseFn ? handlerBody(onCloseFn, scope) : "";
   const titleNode = findProp(propsArg, "title");
-  const titleExpr = titleNode ? emitExpr(titleNode, { ...scope, mode: "binding" }) : '""';
+  const titleExpr = titleNode ? emitExpr(titleNode, { ...scope, mode: "binding" }) : null;
 
   const lines: string[] = [
-    // Zero-size page anchor: provides transientParent (its Window.window) and the guard fold.
-    `${pad}Item {`,
-    `${i(1)}id: ${wrapId}`,
-    `${i(1)}width: 0`,
-    `${i(1)}height: 0`,
-    `${i(1)}Window {`,
-    `${i(2)}id: ${dlgId}`,
-    `${i(2)}flags: Qt.Dialog`,
-    `${i(2)}modality: Qt.WindowModal`,
-    `${i(2)}transientParent: ${wrapId}.Window.window`,
-    `${i(2)}title: ${titleExpr}`,
-    `${i(2)}visible: ${visibleValue}`,
-    // Size the window to its content (the Css root's implicit size). Not circular: the root's
-    // implicit is content-driven, its actual size comes back via anchors.fill.
-    `${i(2)}width: Math.max(1, ${rootId}.implicitWidth)`,
-    `${i(2)}height: Math.max(1, ${rootId}.implicitHeight)`,
-    ...(closeBody ? [`${i(2)}onClosing: { ${closeBody} }`] : []),
-    `${i(2)}Css.CssRect {`,
-    `${i(3)}id: ${rootId}`,
-    `${i(3)}anchors.fill: parent`,
-    // Re-anchor the CSS ancestor walk at the page wrapper: the dialog lives in a separate window,
-    // so without this scoped rules (`.native .dialog …`) and inheritance don't reach it.
-    `${i(3)}property Item cssAncestor: ${wrapId}`,
+    `${pad}W.Dialog {`,
+    `${i(1)}open: ${visibleValue}`,
+    ...(titleExpr !== null ? [`${i(1)}title: ${titleExpr}`] : []),
     ...classLine,
-    `${i(3)}cssPrimitive: "dialog"`,
-    ...emitChildren(children, scope, level + 3),
-    `${i(2)}}`,
-    `${i(1)}}`,
-    // Controlled open state: survives the imperative visible=false a window self-close performs.
-    `${i(1)}Binding {`,
-    `${i(2)}target: ${dlgId}`,
-    `${i(2)}property: "visible"`,
-    `${i(2)}value: ${visibleValue}`,
-    `${i(2)}restoreMode: Binding.RestoreNone`,
-    `${i(1)}}`,
+    // onDialogClosed relays the window's onClosing so the author's onClose keeps the signal honest.
+    ...(closeBody ? [`${i(1)}onDialogClosed: { ${closeBody} }`] : []),
+    ...emitChildren(children, scope, level + 1),
     `${pad}}`,
   ];
   return lines;

@@ -165,56 +165,66 @@ const DIALOG_SRC = `
   }
 `;
 
-test("dialog: is a REAL modal Window (Qt.Dialog), not an overlay popup", async () => {
+const DIALOG_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Dialog.qml", import.meta.url)), "utf8");
+
+test("dialog: <dialog> instantiates the W.Dialog component", async () => {
   const out = await qml(DIALOG_SRC);
-  // Owner directive: a dialog is a window. No T.Dialog / overlay popup.
-  assert.match(out, /Window \{/);
-  assert.match(out, /flags: Qt\.Dialog/);
-  assert.match(out, /modality: Qt\.WindowModal/);
-  assert.match(out, /transientParent: __dialog0W\.Window\.window/);
-  assert.match(out, /cssPrimitive: "dialog"/);
+  assert.match(out, /W\.Dialog \{/);
+  // The modal Window internals now live in Dialog.qml, not the emit.
+  assert.doesNotMatch(out, /Window \{/);
   assert.doesNotMatch(out, /T\.Dialog/);
-  assert.doesNotMatch(out, /T\.Overlay\.overlay/);
 });
 
-test("dialog: window sizes itself to the content's implicit size", async () => {
-  const out = await qml(DIALOG_SRC);
-  assert.match(out, /width: Math\.max\(1, __dialog0Root\.implicitWidth\)/);
-  assert.match(out, /height: Math\.max\(1, __dialog0Root\.implicitHeight\)/);
+test("dialog: Dialog.qml is a REAL modal Window (Qt.Dialog), not an overlay popup", async () => {
+  assert.match(DIALOG_QML, /Window \{/);
+  assert.match(DIALOG_QML, /flags: Qt\.Dialog/);
+  assert.match(DIALOG_QML, /modality: Qt\.WindowModal/);
+  assert.match(DIALOG_QML, /transientParent: wrap\.Window\.window/);
+  assert.match(DIALOG_QML, /cssPrimitive: "dialog"/);
+  assert.doesNotMatch(DIALOG_QML, /T\.Dialog/);
+  assert.doesNotMatch(DIALOG_QML, /T\.Overlay\.overlay/);
+});
+
+test("dialog: Dialog.qml window sizes itself to the content's implicit size", async () => {
+  assert.match(DIALOG_QML, /width: Math\.max\(1, root\.implicitWidth\)/);
+  assert.match(DIALOG_QML, /height: Math\.max\(1, root\.implicitHeight\)/);
 });
 
 test("dialog: open prop drives visible + a RestoreNone Binding (survives self-close)", async () => {
   const out = await qml(DIALOG_SRC);
-  assert.match(out, /visible: !!\(open\)/);
-  assert.match(out, /Binding \{/);
-  assert.match(out, /target: __dialog0/);
-  assert.match(out, /property: "visible"/);
-  assert.match(out, /value: !!\(open\)/);
-  assert.match(out, /restoreMode: Binding\.RestoreNone/);
+  // The emit folds the open signal (and any Show guard) into the component's `open` prop.
+  assert.match(out, /open: !!\(open\)/);
+  // Dialog.qml drives the window visible from `open` via a plain binding AND a RestoreNone Binding.
+  assert.match(DIALOG_QML, /visible: wrap\.open/);
+  assert.match(DIALOG_QML, /Binding \{/);
+  assert.match(DIALOG_QML, /target: dlg/);
+  assert.match(DIALOG_QML, /property: "visible"/);
+  assert.match(DIALOG_QML, /value: wrap\.open/);
+  assert.match(DIALOG_QML, /restoreMode: Binding\.RestoreNone/);
 });
 
-test("dialog: onClose handler wires to the window's onClosing", async () => {
+test("dialog: onClose handler wires to onDialogClosed (relayed from the window's onClosing)", async () => {
   const out = await qml(DIALOG_SRC);
-  assert.match(out, /onClosing: \{ open = false \}/);
+  assert.match(out, /onDialogClosed: \{ open = false \}/);
+  assert.match(DIALOG_QML, /onClosing: wrap\.dialogClosed\(\)/);
 });
 
-test("dialog: author classes land on the dialog window's Css root", async () => {
+test("dialog: author classes land on the component cssClass (forwarded to the Css root)", async () => {
   const out = await qml(DIALOG_SRC);
-  assert.match(out, /id: __dialog0Root/);
   assert.match(out, /cssClass: \["dlg"\]/);
+  assert.match(DIALOG_QML, /property alias cssClass: root\.cssClass/);
 });
 
-test("dialog: root re-anchors the CSS ancestor walk at the page wrapper", async () => {
-  const out = await qml(DIALOG_SRC);
+test("dialog: Dialog.qml root re-anchors the CSS ancestor walk at the page wrapper", async () => {
   // A separate window severs the ancestor chain; cssAncestor restores scoped rules + inheritance.
-  assert.match(out, /property Item cssAncestor: __dialog0W/);
+  assert.match(DIALOG_QML, /property Item cssAncestor: wrap/);
 });
 
-test("dialog: children emit inside the dialog window's Css root", async () => {
+test("dialog: children emit inside the W.Dialog instance (the default content slot)", async () => {
   const out = await qml(DIALOG_SRC);
-  const rootAt = out.indexOf("id: __dialog0Root");
+  const dlgAt = out.indexOf("W.Dialog {");
   const bodyAt = out.indexOf('cssClass: ["body"]');
-  assert.ok(rootAt >= 0 && bodyAt > rootAt, "author children must live inside the dialog root");
+  assert.ok(dlgAt >= 0 && bodyAt > dlgAt, "author children must live inside the W.Dialog block");
 });
 
 // ---------------------------------------------------------------------------

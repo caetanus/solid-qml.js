@@ -4,6 +4,7 @@ Button 1.0 Button.qml
 Calendar 1.0 Calendar.qml
 Checkbox 1.0 Checkbox.qml
 DateField 1.0 DateField.qml
+Dialog 1.0 Dialog.qml
 DelayButton 1.0 DelayButton.qml
 Dial 1.0 Dial.qml
 Drawer 1.0 Drawer.qml

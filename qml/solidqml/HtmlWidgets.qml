@@ -3,8 +3,6 @@ import QtQuick
 import qmlcss 1.0 as Css
 
 
-import QtQuick.Window
-
 import solidqml.Widgets 1.0 as W
 W.Div {
     id: __self
@@ -70,49 +68,25 @@ W.Div {
             onClicked: dlgOpen = true
         }
     }
-    Item {
-        id: __dialog0W
-        width: 0
-        height: 0
-        Window {
-            id: __dialog0
-            flags: Qt.Dialog
-            modality: Qt.WindowModal
-            transientParent: __dialog0W.Window.window
-            title: ""
-            visible: !!(dlgOpen)
-            width: Math.max(1, __dialog0Root.implicitWidth)
-            height: Math.max(1, __dialog0Root.implicitHeight)
-            onClosing: { dlgOpen = false }
-            Css.CssRect {
-                id: __dialog0Root
-                anchors.fill: parent
-                property Item cssAncestor: __dialog0W
-            cssClass: ["hw-dialog"]
-                cssPrimitive: "dialog"
-                W.Div {
-                    cssClass: ["hw-dialog-body"]
-                    W.Text {
-                        cssClass: ["hw-dialog-title"]
-                        text: "Native dialog"
-                    }
-                    W.Text {
-                        cssClass: ["hw-line"]
-                        text: "A modal T.Dialog centered on the window overlay."
-                    }
-                    W.Button {
-                        cssClass: ["hw-btn"]
-                        text: "Close"
-                        onClicked: dlgOpen = false
-                    }
-                }
+    W.Dialog {
+        open: !!(dlgOpen)
+        cssClass: ["hw-dialog"]
+        onDialogClosed: { dlgOpen = false }
+        W.Div {
+            cssClass: ["hw-dialog-body"]
+            W.Text {
+                cssClass: ["hw-dialog-title"]
+                text: "Native dialog"
             }
-        }
-        Binding {
-            target: __dialog0
-            property: "visible"
-            value: !!(dlgOpen)
-            restoreMode: Binding.RestoreNone
+            W.Text {
+                cssClass: ["hw-line"]
+                text: "A modal T.Dialog centered on the window overlay."
+            }
+            W.Button {
+                cssClass: ["hw-btn"]
+                text: "Close"
+                onClicked: dlgOpen = false
+            }
         }
     }
     W.Details {
