@@ -28,6 +28,7 @@ SpinBox 1.0 SpinBox.qml
 SplitHandle 1.0 SplitHandle.qml
 SplitView 1.0 SplitView.qml
 StackView 1.0 StackView.qml
+SwipeView 1.0 SwipeView.qml
 TabBar 1.0 TabBar.qml
 TabButton 1.0 TabButton.qml
 ToolBar 1.0 ToolBar.qml
