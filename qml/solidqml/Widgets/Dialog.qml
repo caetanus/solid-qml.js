@@ -28,6 +28,22 @@ Item {
     default property alias content: root.data
     signal dialogClosed()
 
+    // Find the default button (<button type="submit"> → isDefault) anywhere in the dialog content,
+    // so Enter fires it (study §6). Recursive over visual children; non-buttons lack `isDefault`.
+    function __findDefault(item) {
+        if (!item || !item.children)
+            return null;
+        for (var k = 0; k < item.children.length; k++) {
+            var c = item.children[k];
+            if (c && c.isDefault === true)
+                return c;
+            var f = __findDefault(c);
+            if (f)
+                return f;
+        }
+        return null;
+    }
+
     width: 0
     height: 0
 
@@ -45,9 +61,12 @@ Item {
         onClosing: wrap.dialogClosed()
 
         // Tab-stop is born by default in the dialog too (study §6, owner call): a modal opens with
-        // keyboard focus already on its first focusable, so Tab works and the ring shows without a
-        // click. A separate window has its own focus chain, so this is independent of the app root.
+        // keyboard focus already placed, so Tab works and the ring shows without a click. Prefer the
+        // default button (<button type="submit">) so Enter confirms it (desktop autoDefault); else the
+        // first focusable. A separate window has its own focus chain, independent of the app root.
         onVisibleChanged: if (visible && solidTabstop.enabled) Qt.callLater(function() {
+            var def = wrap.__findDefault(root);
+            if (def && def.takeFocus) { def.takeFocus(); return; }
             var f = dlg.contentItem.nextItemInFocusChain(true);
             if (f) f.forceActiveFocus(Qt.TabFocusReason);
         })
@@ -68,6 +87,13 @@ Item {
             // window, so without this scoped rules (`.native .dialog …`) and inheritance don't reach it.
             property Item cssAncestor: wrap
             cssPrimitive: "dialog"
+
+            // Enter fires the default button — but only when it BUBBLES up to here, i.e. the focused
+            // item didn't consume it. A focused button handles Enter itself (activating THAT button)
+            // and accepts the event, so it never reaches this handler — no double-fire, and Enter on
+            // a non-default button still activates just that button, matching the desktop model (§6).
+            Keys.onReturnPressed: (event) => { var b = wrap.__findDefault(root); if (b) { b.clicked(); event.accepted = true; } }
+            Keys.onEnterPressed: (event) => { var b = wrap.__findDefault(root); if (b) { b.clicked(); event.accepted = true; } }
         }
 
         // The keyboard tab-focus ring, scoped to THIS window's focus chain (the dialog is a

@@ -52,6 +52,28 @@ async function qmlType(src: string): Promise<string> {
 // ---------------------------------------------------------------------------
 
 const TEXTFIELD_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TextField.qml", import.meta.url)), "utf8");
+const BUTTON_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Button.qml", import.meta.url)), "utf8");
+const DIALOG_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Dialog.qml", import.meta.url)), "utf8");
+
+test("default button: <button type=\"submit\"> emits isDefault; a plain button does not", async () => {
+  const submit = await qml(`export function F(){ return <button type="submit">OK</button>; }`);
+  assert.match(submit, /W\.Button \{[\s\S]*?isDefault: true[\s\S]*?text: "OK"/);
+  const plain = await qml(`export function F(){ return <button>Cancel</button>; }`);
+  assert.doesNotMatch(plain, /isDefault/);
+});
+
+test("default button: Button.qml surfaces isDefault as a `default` cssState + a takeFocus()", async () => {
+  assert.match(BUTTON_QML, /property bool isDefault: false/);
+  assert.match(BUTTON_QML, /root\.isDefault \? \["default"\] : \[\]/);
+  assert.match(BUTTON_QML, /function takeFocus\(\) \{ __ma\.forceActiveFocus/);
+});
+
+test("default button: Dialog fires the default on Enter (bubbled) and focuses it on open", async () => {
+  assert.match(DIALOG_QML, /function __findDefault\(item\)/);
+  assert.match(DIALOG_QML, /Keys\.onReturnPressed:.*__findDefault\(root\).*b\.clicked\(\)/);
+  assert.match(DIALOG_QML, /Keys\.onEnterPressed:.*__findDefault\(root\).*b\.clicked\(\)/);
+  assert.match(DIALOG_QML, /var def = wrap\.__findDefault\(root\);[\s\S]*?def\.takeFocus\(\)/);
+});
 
 test("widgets: <input> instantiates the W.TextField component", async () => {
   const out = await qml(`export function F(){ return <input />; }`);

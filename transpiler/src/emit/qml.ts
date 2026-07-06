@@ -11,6 +11,7 @@ interface Props {
   classes: string[];
   classList: Array<{ key: string; expr: t.Expression }>;
   onClick: t.Node | undefined;
+  type: string | undefined; // the `type` attr (e.g. <button type="submit"> → default button)
   ref: string | undefined; // the local var name a ref={ident} binds to
   // HTML5 drag-and-drop subset: draggable + dragData on the source, onDrop on the target.
   // The drop handler's parameter receives the SOURCE's dragData (not a DragEvent).
@@ -362,10 +363,15 @@ function emitButton(props: Props, children: t.Node[], scope: Scope, level: numbe
   // props/children — the button's internals (hover state, label, MouseArea) live in the .qml, not
   // here. The `import "widgets" as W` header is added by emitComponentType when widgetLib is set.
   if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
+  // <button type="submit"> is the dialog's default button (owner call 2026-07-06): HTML's submit
+  // button is the Enter-activated one, so the enclosing Dialog fires it on Enter. `isDefault` also
+  // surfaces as a `default` cssState, so `button:default { … }` can emphasise it.
+  const isSubmit = props.type === "submit";
   const lines = [
     `${pad}W.Button {`,
     ...classLine,
     ...guardLine(guard, level),
+    ...(isSubmit ? [`${i(1)}isDefault: true`] : []),
     `${i(1)}text: ${textBinding(textKids, scope)}`,
     ...emitChildren(elemKids, scope, level + 1),
   ];
@@ -1351,7 +1357,7 @@ function emitHandler(node: t.Node | undefined, scope: Scope): string | null {
 }
 
 function readProps(propsArg: t.Node | undefined): Props {
-  const props: Props = { classes: [], classList: [], onClick: undefined, ref: undefined, draggable: false, dragData: undefined, onDrop: undefined };
+  const props: Props = { classes: [], classList: [], onClick: undefined, type: undefined, ref: undefined, draggable: false, dragData: undefined, onDrop: undefined };
   if (!propsArg || !t.isObjectExpression(propsArg)) return props;
   for (const p of propsArg.properties) {
     if (!t.isObjectProperty(p) || !t.isIdentifier(p.key)) continue;
@@ -1364,6 +1370,7 @@ function readProps(propsArg: t.Node | undefined): Props {
       }
     }
     if (p.key.name === "onClick") props.onClick = p.value;
+    if (p.key.name === "type" && t.isStringLiteral(p.value)) props.type = p.value.value;
     if (p.key.name === "draggable") props.draggable = !t.isBooleanLiteral(p.value) || p.value.value;
     if (p.key.name === "dragData" && t.isExpression(p.value)) props.dragData = p.value;
     if (p.key.name === "onDrop") props.onDrop = p.value;
