@@ -323,6 +323,24 @@ function emitWindow(propsArg: t.Node | undefined, children: t.Node[], scope: Sco
     `${i(2)}cssPrimitive: "window"`,
     ...emitChildren(children, scope, level + 2),
     `${i(1)}}`,
+    // Global keyboard-focus ring (study §6): follows the window's activeFocusItem so EVERY focusable
+    // control shows a visible focus marker — universal, no per-widget CSS, no box-shadow-spread. A
+    // plain Rectangle (no MouseArea) so clicks pass through; a frame timer tracks the item's screen
+    // rect (mapToItem isn't reactive to Flickable scroll on its own). Honors the solidTabstop opt-out.
+    `${i(1)}Rectangle {`,
+    `${i(2)}id: __focusRing`,
+    `${i(2)}z: 100000`,
+    `${i(2)}visible: solidTabstop.enabled && !!__self.activeFocusItem && __self.activeFocusItem !== __self.contentItem`,
+    `${i(2)}color: "transparent"`,
+    `${i(2)}border.width: 2`,
+    `${i(2)}border.color: "#2d8fb3"`,
+    `${i(2)}radius: 4`,
+    `${i(2)}antialiasing: true`,
+    `${i(2)}Timer {`,
+    `${i(3)}interval: 16; repeat: true; running: __focusRing.visible; triggeredOnStart: true`,
+    `${i(3)}onTriggered: { var t = __self.activeFocusItem; if (!t) return; var p = t.mapToItem(__focusRing.parent, 0, 0); __focusRing.x = p.x - 2; __focusRing.y = p.y - 2; __focusRing.width = t.width + 4; __focusRing.height = t.height + 4 }`,
+    `${i(2)}}`,
+    `${i(1)}}`,
     `${pad}}`,
   );
   return lines;
