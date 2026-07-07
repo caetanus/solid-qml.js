@@ -8,6 +8,7 @@ W.Div {
     id: __self
     property var lastAction: "none yet"
     property var selNode: "nothing"
+    property var selItem: "nothing"
     readonly property var treeData: [({ label: "src", children: [({ label: "emit", children: [({ label: "qml.ts" }), ({ label: "expr.ts" })] }), ({ label: "resolve", children: [({ label: "node.ts" })] }), ({ label: "index.ts" })] }), ({ label: "docs", children: [({ label: "roadmap.md" })] }), ({ label: "package.json" })]
     cssClass: ["nv-section", "nv-menus"]
     W.Text {
@@ -115,6 +116,22 @@ W.Div {
         W.Text {
             cssClass: ["nv-echo"]
             text: "selected: " + (selNode)
+        }
+    }
+    W.Div {
+        cssClass: ["nv-row", "nv-tree-row-host"]
+        W.Text {
+            cssClass: ["nv-label"]
+            text: "listview"
+        }
+        W.ListView {
+            cssClass: ["nv-list"]
+            __listData: ["Inbox", "Starred", "Sent", "Drafts", "Spam", "Trash", "Archive"]
+            onSelected: (item, index) => { selItem = item }
+        }
+        W.Text {
+            cssClass: ["nv-echo"]
+            text: "selected: " + (selItem)
         }
     }
     W.Div {

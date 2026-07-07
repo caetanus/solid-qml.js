@@ -6,11 +6,12 @@ import { createSignal } from "solid-js";
 import { div, text, button } from "../../src/solid-qml/runtime";
 import "./menus.css";
 
-declare const Menu: any, MenuItem: any, MenuSeparator: any, MenuBar: any, TreeView: any, Tray: any;
+declare const Menu: any, MenuItem: any, MenuSeparator: any, MenuBar: any, TreeView: any, ListView: any, Tray: any;
 
 export function MenusAndViews() {
   const [lastAction, setLastAction] = createSignal("none yet");
   const [selNode, setSelNode] = createSignal("nothing");
+  const [selItem, setSelItem] = createSignal("nothing");
 
   const treeData = [
     {
@@ -63,6 +64,17 @@ export function MenusAndViews() {
         <text class="nv-label">treeview</text>
         <TreeView class="nv-tree" data={treeData} onSelect={(node) => setSelNode(node.label)} />
         <text class="nv-echo">selected: {selNode()}</text>
+      </div>
+
+      {/* ── virtualized list view (real QtQuick ListView) ────────────────────── */}
+      <div class="nv-row nv-tree-row-host">
+        <text class="nv-label">listview</text>
+        <ListView
+          class="nv-list"
+          data={["Inbox", "Starred", "Sent", "Drafts", "Spam", "Trash", "Archive"]}
+          onSelect={(item) => setSelItem(item)}
+        />
+        <text class="nv-echo">selected: {selItem()}</text>
       </div>
 
       {/* <Tray> is real (Platform.SystemTrayIcon) and TESTED, but NOT instantiated here:

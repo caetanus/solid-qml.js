@@ -407,12 +407,41 @@ function emitTray(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
   return lines;
 }
 
+// ─── <ListView data={…} onSelect={(item, index) => …}> — a real virtualized QtQuick ListView ──────
+
+/** One .qml per component: the QtQuick ListView + `.list-item` delegate live in ListView.qml; this
+ *  emit wires the author classes, the `data` array (as `__listData` — same self-reference guard as
+ *  TreeView's `__treeData`), and onSelect → the component's `selected(item, index)` signal. */
+function emitListView(propsArg: t.Node | undefined, _children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  markWidgetLib(scope);
+  const props = propsOf(propsArg);
+  const classLine = buildCssClassLine(cssPropsShim(propsArg), scope, i(1));
+  const dataProp = props.get("data");
+  const dataExpr = dataProp ? emitExpr(dataProp, { ...scope, mode: "binding" }) : "[]";
+  const onSelect = props.get("onSelect");
+  const selBody = onSelect ? handlerBody(onSelect, scope, "item") : "";
+
+  const lines: string[] = [
+    `${pad}W.ListView {`,
+    ...classLine,
+    ...guardLine(guard, level),
+    `${i(1)}__listData: ${dataExpr}`,
+  ];
+  // The QML signal is selected(item, index); the author's first param maps to `item`.
+  if (selBody) lines.push(`${i(1)}onSelected: (item, index) => { ${selBody} }`);
+  lines.push(`${pad}}`);
+  return lines;
+}
+
 // ─── registration ───────────────────────────────────────────────────────────────────────────────
 
 registerNativeTags({
   Menu: emitMenu,
   MenuBar: emitMenuBar,
   TreeView: emitTreeView,
+  ListView: emitListView,
   Tray: emitTray,
   // Only meaningful as children of <Menu>/<MenuBar>/<Tray>; a stray one is an authoring error.
   MenuItem: () => { throw new Error("<MenuItem> must be a child of <Menu> or <Tray>"); },

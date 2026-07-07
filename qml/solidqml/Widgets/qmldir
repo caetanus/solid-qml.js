@@ -14,6 +14,7 @@ Fieldset 1.0 Fieldset.qml
 Tabstop 1.0 Tabstop.qml
 Image 1.0 Image.qml
 Menu 1.0 Menu.qml
+ListView 1.0 ListView.qml
 MenuBar 1.0 MenuBar.qml
 MenuBarItem 1.0 MenuBarItem.qml
 MenuItem 1.0 MenuItem.qml

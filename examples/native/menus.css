@@ -101,3 +101,32 @@
   font-size: 13px;
   color: #17222c;
 }
+
+.native .nv-list {
+  width: 220px;
+  height: 240px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.native .list-item {
+  background: transparent;
+}
+
+.native .list-item:hover {
+  background: #e6f2f7;
+}
+
+.native .list-item.selected {
+  background: #176b87;
+}
+
+.native .list-label {
+  font-size: 13px;
+  color: #17222c;
+}
+
+.native .list-item.selected .list-label {
+  color: #ffffff;
+}

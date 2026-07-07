@@ -427,3 +427,14 @@ test("shortcut: <Shortcut keys onActivated> → QML Shortcut with sequences", as
   const multi = await qml(`export function F(){ return <Shortcut keys={["Ctrl+Q","Ctrl+W"]} onActivated={() => 0} />; }`);
   assert.match(multi, /sequences: \["Ctrl\+Q", "Ctrl\+W"\]/);
 });
+
+test("listview: <ListView data onSelect> → W.ListView with __listData + selected(item,index)", async () => {
+  const out = await qml(`export function F(){ return <ListView class="lst" data={["a","b"]} onSelect={(it) => 0} />; }`);
+  assert.match(out, /W\.ListView \{/);
+  assert.match(out, /__listData: \["a", "b"\]/);
+  assert.match(out, /onSelected: \(item, index\) => \{ 0 \}/);
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/ListView.qml", import.meta.url)), "utf8");
+  assert.match(src, /import QtQuick as QtQ/);
+  assert.match(src, /QtQ\.ListView \{/);
+  assert.match(src, /cssClass: \["list-item"\]/);
+});
