@@ -147,6 +147,16 @@ export async function generate(source: string, filename: string, opts: GenerateO
     if (hit) return hit;
     const { ast } = await normalize(src, absPath);
     const file = ast as t.File;
+    // On the web the runtime module itself injects its reset.css (`import "./reset.css"` in
+    // runtime.tsx) — box-sizing: border-box on * and no UA chrome. Importing the runtime by path
+    // must pull the SAME reset (living beside it) into the sidecar, keeping the box model
+    // identical on both targets. Detected on the RAW source: normalize() strips the runtime
+    // import whenever JSX consumed all its specifiers (lowercase tags compile to h("div")
+    // strings), so the normalized AST cannot be trusted to still carry it.
+    for (const m of src.matchAll(/from\s+["']([./][^"']*\/solid-qml\/runtime(?:\.tsx?)?)["']/g)) {
+      const abs = path.resolve(path.dirname(absPath), path.dirname(m[1]), "reset.css");
+      if (!seenCss.has(abs)) { seenCss.add(abs); cssFiles.push(abs); }
+    }
     // Side-effect `import "./x.css"` (no specifiers) → collect for the CSS sidecar, in discovery order.
     for (const node of file.program.body) {
       if (t.isImportDeclaration(node) && node.specifiers.length === 0 && node.source.value.endsWith(".css")) {
