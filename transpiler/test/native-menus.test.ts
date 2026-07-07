@@ -322,22 +322,39 @@ test("treeview: onSelect wires the component's selected(node) signal", async () 
   assert.match(out, /onSelected: \(node\) => \{ sel = node\.label \}/);
 });
 
-test("treeview: TreeView.qml hosts the recursive-node structure", async () => {
+test("treeview: TreeView.qml renders the flat visible-row list (root-held expansion state)", async () => {
   const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TreeView.qml", import.meta.url)), "utf8");
-  // Recursion is a Component referenced BY ID (a self-referencing inline component is a compile error).
-  assert.match(src, /Component \{/);
-  assert.match(src, /id: nodeComp/);
-  assert.equal((src.match(/delegate: nodeComp/g) ?? []).length, 2, "child AND root Repeater reference the node component");
-  // Rows: .tree-row with hover state, depth-indented .tree-label, flipping disclosure glyph.
+  // Expansion lives on the ROOT (collapsed paths + rev counter), NOT in recursive delegates — the
+  // flat `_visibleRows` order is what keyboard navigation walks. No Component-by-id recursion left.
+  assert.match(src, /property var _collapsed: \(\{\}\)/);
+  assert.match(src, /property int _rev: 0/);
+  assert.match(src, /readonly property var _visibleRows/);
+  assert.match(src, /model: root\._visibleRows/);
+  assert.doesNotMatch(src, /Component \{/);
+  assert.doesNotMatch(src, /delegate: nodeComp/);
+  // Rows: .tree-row with hover+selected states, depth-indented .tree-label, flipping disclosure glyph.
   assert.match(src, /cssClass: \["tree-row"\]/);
-  assert.match(src, /cssState: rowMa\.containsMouse \? \["hover"\] : \[\]/);
-  assert.match(src, /x: 8 \+ nodeItem\.depth \* 16 \+ 18/);
-  assert.match(src, /\? \(nodeItem\.expanded \? "▾" : "▸"\) : ""/);
+  assert.match(src, /cssState: \(rowMa\.containsMouse \? \["hover"\] : \[\]\)\.concat\(index === root\.currentIndex \? \["selected"\] : \[\]\)/);
+  assert.match(src, /x: 8 \+ modelData\.__d \* 16 \+ 18/);
+  assert.match(src, /modelData\.__k \? \(modelData\.__e \? "▾" : "▸"\) : ""/);
   assert.match(src, /cssClass: \["tree-disclosure"\]/);
-  // Click toggles expanded and fires selected(node); children recurse with depth+1 while expanded.
-  assert.match(src, /onClicked: \{ nodeItem\.expanded = !nodeItem\.expanded; root\.selected\(nodeItem\.node\) \}/);
-  assert.match(src, /model: \(\(root\.__treeData\) \|\| \[\]\)\.map\(function\(c\) \{ return \(\{ __n: c, __d: 0 \}\) \}\)/);
-  assert.match(src, /model: \(nodeItem\.expanded && nodeItem\.node && nodeItem\.node\.children\) \? nodeItem\.node\.children\.map\(function\(c\) \{ return \(\{ __n: c, __d: nodeItem\.depth \+ 1 \}\) \}\) : \[\]/);
+  // Click focuses the tree, selects the row, toggles a branch — capturing the node BEFORE the
+  // toggle rebuilds the delegate's modelData context.
+  assert.match(src, /kb\.forceActiveFocus\(\);\n\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*var node = modelData\.__n;/);
+  assert.match(src, /if \(modelData\.__k\) root\._toggle\(modelData\.__p\);\n\s*root\.selected\(node\);/);
+});
+
+test("treeview keyboard: ONE tab stop; Up/Down move, Right expands/descends, Left collapses/ascends, Enter re-commits", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TreeView.qml", import.meta.url)), "utf8");
+  assert.match(src, /activeFocusOnTab: true/);
+  assert.match(src, /Keys\.onUpPressed: root\._move\(-1\)/);
+  assert.match(src, /Keys\.onDownPressed: root\._move\(1\)/);
+  assert.match(src, /Keys\.onRightPressed: root\._expandOrDescend\(\)/);
+  assert.match(src, /Keys\.onLeftPressed: root\._collapseOrAscend\(\)/);
+  assert.match(src, /Keys\.onReturnPressed: root\._emitCurrent\(\)/);
+  assert.match(src, /Keys\.onEnterPressed: root\._emitCurrent\(\)/);
+  // Left on a leaf/collapsed row ascends to the parent path (path minus its last segment).
+  assert.match(src, /r\.__p\.lastIndexOf\("\/"\)/);
 });
 
 // ---------------------------------------------------------------------------

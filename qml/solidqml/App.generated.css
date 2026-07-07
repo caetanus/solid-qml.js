@@ -2310,6 +2310,10 @@ button:hover {
   background: #e6f2f7;
 }
 
+.native .tree-row.selected {
+  background: #176b87;
+}
+
 .native .tree-disclosure {
   font-size: 10px;
   color: #176b87;
@@ -2318,6 +2322,14 @@ button:hover {
 .native .tree-label {
   font-size: 13px;
   color: #17222c;
+}
+
+.native .tree-row.selected .tree-label {
+  color: #ffffff;
+}
+
+.native .tree-row.selected .tree-disclosure {
+  color: #ffffff;
 }
 
 .native .nv-list {
