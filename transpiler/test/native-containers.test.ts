@@ -144,6 +144,17 @@ test("containers: TabBar.qml + TabButton.qml host the control internals", async 
   assert.match(btn, /cssState: \(ctl\.checked \? \["selected"\] : \[\]\)\.concat\(ctl\.hovered \? \["hover"\] : \[\]\)/);
 });
 
+test("containers: TabBar.qml stretches tabs to a CSS-sized bar (web align-items: stretch)", async () => {
+  const bar = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TabBar.qml", import.meta.url)), "utf8");
+  // T.TabBar sizes every tab to contentHeight (tallest tab's implicit unless explicitly set) —
+  // the bar follows the available height once CSS makes it taller than the tabs' own implicit.
+  assert.match(bar, /contentHeight: Math\.max\(__tabsImplicitHeight, availableHeight\)/);
+  // The implicit-height leg cannot read implicitContentHeight (poisoned by the explicit
+  // contentHeight) — it uses the hand-computed tab maximum instead.
+  assert.match(bar, /readonly property real __tabsImplicitHeight/);
+  assert.match(bar, /__tabsImplicitHeight \+ topPadding \+ bottomPadding/);
+});
+
 test("containers: <TabBar> rejects non-TabButton element children", async () => {
   await assert.rejects(
     qml(`export function F(){ return <TabBar><div /></TabBar>; }`),

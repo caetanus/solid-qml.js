@@ -26,9 +26,24 @@ Css.CssFill {
     T.TabBar {
         id: bar
         anchors.fill: parent
-        // Basic-style implicit size: Templates leave implicit sizes to the style (us).
+        // Basic-style implicit size: Templates leave implicit sizes to the style (us). The height
+        // leg cannot use implicitContentHeight — getContentHeight() returns the EXPLICIT
+        // contentHeight below once set — so the tabs' own implicit is computed here (count
+        // dependency re-evaluates as tabs arrive).
+        readonly property real __tabsImplicitHeight: {
+            var m = 0;
+            for (var i = 0; i < count; i++) {
+                var it = itemAt(i);
+                if (it) m = Math.max(m, it.implicitHeight);
+            }
+            return m;
+        }
         implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset, implicitContentWidth + leftPadding + rightPadding)
-        implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, implicitContentHeight + topPadding + bottomPadding)
+        implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset, __tabsImplicitHeight + topPadding + bottomPadding)
+        // Tabs stretch to a CSS-sized bar (web `align-items: stretch`): T.TabBar's updateLayout
+        // sizes every tab to contentHeight, which otherwise stays at the tallest tab's implicit —
+        // follow the available height once the CSS box makes the bar taller than the tabs.
+        contentHeight: Math.max(__tabsImplicitHeight, availableHeight)
         background: null
 
         // Desktop keyboard nav (study §6): a tab BAR is one tab stop (the current tab); Left/Right (or
