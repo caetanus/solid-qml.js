@@ -11,7 +11,7 @@ Rectangle {
     implicitWidth: row.implicitWidth + 28
     implicitHeight: 40
     radius: 20
-    color: tap.pressed ? "#12566c" : "#176b87"
+    color: mouse.pressed ? "#12566c" : "#176b87"
 
     Row {
         id: row
@@ -35,9 +35,5 @@ Rectangle {
             }
         }
     }
-    // A TapHandler, not a MouseArea: a MouseArea grabs wheel events and blocks the enclosing scroll
-    // Flickable, so scrolling with the cursor over the badge would go dead (the escape-hatch content
-    // sits low in the page, so that made the bottom unreachable). Pointer handlers don't touch wheel.
-    TapHandler { id: tap; onTapped: root.bumped() }
-    HoverHandler { cursorShape: Qt.PointingHandCursor }
+    MouseArea { id: mouse; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.bumped() }
 }

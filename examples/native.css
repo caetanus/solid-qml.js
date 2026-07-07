@@ -3,7 +3,9 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 16px 20px;
+  /* Generous bottom padding so the last card (the escape hatch) ends with clear margin instead of
+     flush against the viewport edge at max scroll — the scroll extent honors padding-bottom. */
+  padding: 16px 20px 40px;
   background: #f1f4f9;
   height: calc(100vh - 88px);
   overflow-y: auto;
