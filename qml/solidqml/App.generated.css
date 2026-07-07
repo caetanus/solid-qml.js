@@ -2362,6 +2362,18 @@ button:hover {
   border-bottom: 1px solid #e2e8f0;
 }
 
+.native .table-th {
+  background: transparent;
+}
+
+.native .table-th:hover {
+  background: #eef2f6;
+}
+
+.native .table-th.sorted {
+  background: #e6f2f7;
+}
+
 .native .table-th-label {
   font-size: 12px;
   font-weight: 600;

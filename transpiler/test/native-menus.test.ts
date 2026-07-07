@@ -430,3 +430,34 @@ test("tableview: <TableView columns data onSelect> → W.TableView with __column
   assert.match(src, /cssClass: \["table-header"\]/);
   assert.match(src, /cssClass: \["table-cell"\]/);
 });
+
+test("tableview sort: header click toggles column sort (▲/▼, numeric + locale compare, squelched reset)", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TableView.qml", import.meta.url)), "utf8");
+  assert.match(src, /property int sortColumn: -1/);
+  assert.match(src, /property bool sortAscending: true/);
+  assert.match(src, /onClicked: root\._toggleSort\(thCell\.colIndex\)/);
+  assert.match(src, /sortAscending \? " {2}▲" : " {2}▼"/); // trailing marker on the sorted header
+  assert.match(src, /\(av - bv\) \* dir/); // numbers compare numerically
+  assert.match(src, /localeCompare\("" \+ bv\) \* dir/); // everything else as strings
+  // The model swap forces currentIndex=0 eagerly — squelch must be armed BEFORE the sort state flips.
+  assert.match(src, /lv\._squelch = true;\n\s*if \(root\.sortColumn === col\)/);
+  assert.match(src, /Qt\.callLater\(function \(\) \{ lv\.currentIndex = -1; lv\._squelch = false; \}\)/);
+});
+
+test("listview/tableview keyboard: inner ListView is the tab stop, arrows navigate, Enter re-commits, no mount emit", async () => {
+  for (const f of ["ListView.qml", "TableView.qml"]) {
+    const src = await readFile(fileURLToPath(new URL(`../../qml/solidqml/Widgets/${f}`, import.meta.url)), "utf8");
+    assert.match(src, /activeFocusOnTab: true/, f);
+    assert.match(src, /keyNavigationEnabled: true/, f);
+    // Keys is an attached type from the aliased QtQuick import — MUST be QtQ-qualified (bare Keys
+    // is "Non-existent attached object" and kills the whole component).
+    assert.match(src, /QtQ\.Keys\.onReturnPressed: root\._emitCurrent\(\)/, f);
+    assert.match(src, /QtQ\.Keys\.onEnterPressed: root\._emitCurrent\(\)/, f);
+    // QtQuick forces currentIndex=0 on model load; the squelch keeps mount from firing selected().
+    assert.match(src, /property bool _squelch: true/, f);
+    assert.match(src, /if \(_squelch\)\s*return;/, f);
+    assert.match(src, /QtQ\.Component\.onCompleted: Qt\.callLater\(function \(\) \{ lv\.currentIndex = -1; lv\._squelch = false; \}\)/, f);
+    // Selection follows the INNER view's currentIndex (a click focuses it first).
+    assert.match(src, /lv\.forceActiveFocus\(\)/, f);
+  }
+});

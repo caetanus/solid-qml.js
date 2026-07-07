@@ -19,19 +19,41 @@ Css.CssFill {
     implicitWidth: 260
     implicitHeight: 240
 
+    // Fire selected() for the current row (used by arrow-key navigation, Enter, and clicks).
+    function _emitCurrent() {
+        if (lv.currentIndex >= 0 && root.__listData && root.__listData.length > lv.currentIndex)
+            root.selected(root.__listData[lv.currentIndex], lv.currentIndex);
+    }
+
     QtQ.Item {
         anchors.fill: parent
         QtQ.ListView {
             id: lv
             anchors.fill: parent
             clip: true
+            // Keyboard: the inner ListView is the tab stop; Up/Down move currentIndex
+            // (keyNavigationEnabled), selection follows focus (QtWidgets-like), Enter re-commits.
+            focus: true
+            activeFocusOnTab: true
+            keyNavigationEnabled: true
+            highlightMoveDuration: 0
             boundsBehavior: QtQ.Flickable.StopAtBounds
             model: root.__listData
-            currentIndex: root.currentIndex
+            // QtQuick forces currentIndex=0 whenever the model loads; without the squelch that
+            // would fire selected() at mount, with nobody interacting. Start unselected instead.
+            property bool _squelch: true
+            QtQ.Component.onCompleted: Qt.callLater(function () { lv.currentIndex = -1; lv._squelch = false; })
+            onCurrentIndexChanged: {
+                if (_squelch) return;
+                root.currentIndex = currentIndex;
+                root._emitCurrent();
+            }
+            QtQ.Keys.onReturnPressed: root._emitCurrent()
+            QtQ.Keys.onEnterPressed: root._emitCurrent()
             delegate: Css.CssFill {
                 cssPrimitive: "div"
                 cssClass: ["list-item"]
-                cssState: (rowMa.containsMouse ? ["hover"] : []).concat(index === root.currentIndex ? ["selected"] : [])
+                cssState: (rowMa.containsMouse ? ["hover"] : []).concat(index === lv.currentIndex ? ["selected"] : [])
                 width: lv.width
                 height: 32
                 implicitHeight: 32
@@ -49,7 +71,7 @@ Css.CssFill {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: { root.currentIndex = index; root.selected(modelData, index); }
+                        onClicked: { lv.forceActiveFocus(); lv.currentIndex = index; root._emitCurrent(); }
                     }
                 }
             }
