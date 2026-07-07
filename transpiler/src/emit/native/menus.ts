@@ -435,6 +435,35 @@ function emitListView(propsArg: t.Node | undefined, _children: t.Node[], scope: 
   return lines;
 }
 
+// ─── <TableView columns={…} data={…} onSelect={(row, index) => …}> — header + virtualized rows ────
+
+/** columns is `[{key,label}]` (or bare strings); data is an array of row objects. The header + row
+ *  ListView + `.table-*` slots live in TableView.qml; this emit wires classes, `__columns`/`__rows`,
+ *  and onSelect → the component's selected(row, index) signal (author's first param maps to `row`). */
+function emitTableView(propsArg: t.Node | undefined, _children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  markWidgetLib(scope);
+  const props = propsOf(propsArg);
+  const classLine = buildCssClassLine(cssPropsShim(propsArg), scope, i(1));
+  const bind = (e: t.Expression) => emitExpr(e, { ...scope, mode: "binding" });
+  const columns = props.get("columns");
+  const data = props.get("data");
+  const onSelect = props.get("onSelect");
+  const selBody = onSelect ? handlerBody(onSelect, scope, "row") : "";
+
+  const lines: string[] = [
+    `${pad}W.TableView {`,
+    ...classLine,
+    ...guardLine(guard, level),
+    `${i(1)}__columns: ${columns ? bind(columns) : "[]"}`,
+    `${i(1)}__rows: ${data ? bind(data) : "[]"}`,
+  ];
+  if (selBody) lines.push(`${i(1)}onSelected: (row, index) => { ${selBody} }`);
+  lines.push(`${pad}}`);
+  return lines;
+}
+
 // ─── registration ───────────────────────────────────────────────────────────────────────────────
 
 registerNativeTags({
@@ -442,6 +471,7 @@ registerNativeTags({
   MenuBar: emitMenuBar,
   TreeView: emitTreeView,
   ListView: emitListView,
+  TableView: emitTableView,
   Tray: emitTray,
   // Only meaningful as children of <Menu>/<MenuBar>/<Tray>; a stray one is an authoring error.
   MenuItem: () => { throw new Error("<MenuItem> must be a child of <Menu> or <Tray>"); },

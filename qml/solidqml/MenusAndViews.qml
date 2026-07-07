@@ -9,6 +9,7 @@ W.Div {
     property var lastAction: "none yet"
     property var selNode: "nothing"
     property var selItem: "nothing"
+    property var selRow: "nothing"
     readonly property var treeData: [({ label: "src", children: [({ label: "emit", children: [({ label: "qml.ts" }), ({ label: "expr.ts" })] }), ({ label: "resolve", children: [({ label: "node.ts" })] }), ({ label: "index.ts" })] }), ({ label: "docs", children: [({ label: "roadmap.md" })] }), ({ label: "package.json" })]
     cssClass: ["nv-section", "nv-menus"]
     W.Text {
@@ -132,6 +133,23 @@ W.Div {
         W.Text {
             cssClass: ["nv-echo"]
             text: "selected: " + (selItem)
+        }
+    }
+    W.Div {
+        cssClass: ["nv-row", "nv-tree-row-host"]
+        W.Text {
+            cssClass: ["nv-label"]
+            text: "tableview"
+        }
+        W.TableView {
+            cssClass: ["nv-table"]
+            __columns: [({ key: "name", label: "Name" }), ({ key: "role", label: "Role" }), ({ key: "lang", label: "Lang" })]
+            __rows: [({ name: "Ada Lovelace", role: "Analyst", lang: "Note G" }), ({ name: "Alan Turing", role: "Logician", lang: "Machine" }), ({ name: "Grace Hopper", role: "Compiler", lang: "COBOL" }), ({ name: "Dennis Ritchie", role: "Systems", lang: "C" })]
+            onSelected: (row, index) => { selRow = row.name }
+        }
+        W.Text {
+            cssClass: ["nv-echo"]
+            text: "selected: " + (selRow)
         }
     }
     W.Div {

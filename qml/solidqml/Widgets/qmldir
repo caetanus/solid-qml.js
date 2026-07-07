@@ -33,6 +33,7 @@ StackView 1.0 StackView.qml
 SwipeView 1.0 SwipeView.qml
 TabBar 1.0 TabBar.qml
 TabButton 1.0 TabButton.qml
+TableView 1.0 TableView.qml
 ToolBar 1.0 ToolBar.qml
 ToolButton 1.0 ToolButton.qml
 Text 1.0 Text.qml

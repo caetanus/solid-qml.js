@@ -438,3 +438,15 @@ test("listview: <ListView data onSelect> → W.ListView with __listData + select
   assert.match(src, /QtQ\.ListView \{/);
   assert.match(src, /cssClass: \["list-item"\]/);
 });
+
+test("tableview: <TableView columns data onSelect> → W.TableView with __columns/__rows + selected", async () => {
+  const out = await qml(`export function F(){ return <TableView class="tv" columns={[{key:"n",label:"N"}]} data={[{n:1}]} onSelect={(r) => 0} />; }`);
+  assert.match(out, /W\.TableView \{/);
+  assert.match(out, /__columns: \[\(\{ key: "n", label: "N" \}\)\]/);
+  assert.match(out, /__rows: \[\(\{ n: 1 \}\)\]/);
+  assert.match(out, /onSelected: \(row, index\) => \{ 0 \}/);
+  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TableView.qml", import.meta.url)), "utf8");
+  assert.match(src, /import QtQuick as QtQ/);
+  assert.match(src, /cssClass: \["table-header"\]/);
+  assert.match(src, /cssClass: \["table-cell"\]/);
+});

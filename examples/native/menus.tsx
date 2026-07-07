@@ -6,12 +6,13 @@ import { createSignal } from "solid-js";
 import { div, text, button } from "../../src/solid-qml/runtime";
 import "./menus.css";
 
-declare const Menu: any, MenuItem: any, MenuSeparator: any, MenuBar: any, TreeView: any, ListView: any, Tray: any;
+declare const Menu: any, MenuItem: any, MenuSeparator: any, MenuBar: any, TreeView: any, ListView: any, TableView: any, Tray: any;
 
 export function MenusAndViews() {
   const [lastAction, setLastAction] = createSignal("none yet");
   const [selNode, setSelNode] = createSignal("nothing");
   const [selItem, setSelItem] = createSignal("nothing");
+  const [selRow, setSelRow] = createSignal("nothing");
 
   const treeData = [
     {
@@ -75,6 +76,23 @@ export function MenusAndViews() {
           onSelect={(item) => setSelItem(item)}
         />
         <text class="nv-echo">selected: {selItem()}</text>
+      </div>
+
+      {/* ── table view (header + virtualized rows, dynamic columns) ───────────── */}
+      <div class="nv-row nv-tree-row-host">
+        <text class="nv-label">tableview</text>
+        <TableView
+          class="nv-table"
+          columns={[{ key: "name", label: "Name" }, { key: "role", label: "Role" }, { key: "lang", label: "Lang" }]}
+          data={[
+            { name: "Ada Lovelace", role: "Analyst", lang: "Note G" },
+            { name: "Alan Turing", role: "Logician", lang: "Machine" },
+            { name: "Grace Hopper", role: "Compiler", lang: "COBOL" },
+            { name: "Dennis Ritchie", role: "Systems", lang: "C" },
+          ]}
+          onSelect={(row) => setSelRow(row.name)}
+        />
+        <text class="nv-echo">selected: {selRow()}</text>
       </div>
 
       {/* <Tray> is real (Platform.SystemTrayIcon) and TESTED, but NOT instantiated here:

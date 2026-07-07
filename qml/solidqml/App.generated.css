@@ -2383,6 +2383,42 @@ button:hover {
   color: #ffffff;
 }
 
+.native .nv-table {
+  width: 360px;
+  height: 200px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.native .table-header {
+  background: #f6f8fa;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.native .table-th-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #57606a;
+}
+
+.native .table-row:hover {
+  background: #f6f8fa;
+}
+
+.native .table-row.selected {
+  background: #176b87;
+}
+
+.native .table-cell-label {
+  font-size: 13px;
+  color: #1f2328;
+}
+
+.native .table-row.selected .table-cell-label {
+  color: #ffffff;
+}
+
 
 /* Charts & 3D page — a dark showcase for the optional QtGraphs / Qt Quick 3D widgets. */
 .dv {
