@@ -22,6 +22,10 @@ T.TabButton {
     // switch tabs (T.TabBar's built-in key navigation), and Tab again moves into the page content.
     // So only the checked tab is a tab stop; the others are reached with arrows, not Tab.
     activeFocusOnTab: solidTabstop.enabled && checked
+    // Templates default to NoFocus — a CLICKED tab must take keyboard focus (QTabBar model), or
+    // arrows after a click go nowhere near the bar's Keys handlers. ClickFocus only: the tab-chain
+    // stays on the activeFocusOnTab line above (StrongFocus would overwrite that binding).
+    focusPolicy: Qt.ClickFocus
 
     background: Css.CssFill {
         cssPrimitive: "div"

@@ -142,6 +142,9 @@ test("containers: TabBar.qml + TabButton.qml host the control internals", async 
   assert.match(btn, /cssClass: \["tab"\]/);
   assert.match(btn, /cssClass: \["tab-label"\]/);
   assert.match(btn, /cssState: \(ctl\.checked \? \["selected"\] : \[\]\)\.concat\(ctl\.hovered \? \["hover"\] : \[\]\)/);
+  // A clicked tab takes keyboard focus (QTabBar model) so arrows reach the bar's Keys handlers;
+  // ClickFocus only — StrongFocus would overwrite the activeFocusOnTab tab-chain binding.
+  assert.match(btn, /focusPolicy: Qt\.ClickFocus/);
 });
 
 test("containers: TabBar.qml stretches tabs to a CSS-sized bar (web align-items: stretch)", async () => {
