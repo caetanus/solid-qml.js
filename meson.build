@@ -31,6 +31,11 @@ qml_css_engine_dep = qmlcss.get_variable('qml_css_engine_dep')
 # fetch() shim transport.
 qt6_network_dep = dependency('qt6', modules: ['Network'])
 
+# Qt Widgets: required by Qt Labs Platform for OS-native menu bars / menus / dialogs (the platform
+# reports "Qt Labs Platform requires Qt Widgets" without it). The app uses a QApplication so the
+# native <MenuBar> attaches to the window chrome (owner call 2026-07-07: accept the footprint).
+qt6_widgets_dep = dependency('qt6', modules: ['Widgets'])
+
 # No qresources: the generated app (App.generated.qml + its .js sidecar) and the stylesheet are
 # loaded from the filesystem at runtime, not baked into the binary. Release uses the AOT C++
 # back-end instead of qrc-embedded QML.
@@ -57,6 +62,6 @@ executable(
     'src/shims/nodeshims.cpp',
   ),
   solid_qml_loader_qt_sources,
-  dependencies: [qml_css_engine_dep, qt6_network_dep],
+  dependencies: [qml_css_engine_dep, qt6_network_dep, qt6_widgets_dep],
   install: true,
 )

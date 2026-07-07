@@ -254,51 +254,31 @@ const MENUBAR_SRC = `
   }
 `;
 
-test("menubar: instantiates W.MenuBar carrying the author class (chrome lives in MenuBar.qml)", async () => {
+test("menubar: instantiates a native Qt.labs.platform MenuBar (OS window chrome, no CSS)", async () => {
   const out = await qml(MENUBAR_SRC);
-  assert.match(out, /W\.MenuBar \{/);
-  assert.match(out, /cssClass: \["bar"\]/);
-  assert.doesNotMatch(out, /T\.MenuBar/);
-  assert.doesNotMatch(out, /contentItem: Row/);
+  assert.match(out, /Platform\.MenuBar \{/);
+  // OS chrome carries no scene CSS — the author class is dropped, not turned into a cssClass.
+  assert.doesNotMatch(out, /cssClass: \["bar"\]/);
+  assert.doesNotMatch(out, /W\.MenuBar/);
+  // The emit registers the labs.platform import so the full component type carries it.
+  assert.match(await qmlType(MENUBAR_SRC), /import Qt\.labs\.platform 1\.1 as Platform/);
 });
 
-test("menubar: MenuBar.qml hosts the T.MenuBar Basic-style structure", async () => {
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/MenuBar.qml", import.meta.url)), "utf8");
-  assert.match(src, /T\.MenuBar \{/);
-  assert.match(src, /contentItem: Row \{/);
-  assert.match(src, /Repeater \{ model: bar\.contentModel \}/);
-  assert.match(src, /cssClass: \["menubar"\]/);
-  assert.match(src, /default property alias barItems: bar\.contentData/);
-});
-
-test("menubar: each <Menu title> becomes a W.MenuBarItem with a W.Menu submenu", async () => {
+test("menubar: each <Menu title> becomes a native Platform.Menu with its title", async () => {
   const out = await qml(MENUBAR_SRC);
-  const items = out.match(/W\.MenuBarItem \{/g) ?? [];
-  assert.equal(items.length, 2);
-  assert.match(out, /menu: W\.Menu \{/);
+  const menus = out.match(/Platform\.Menu \{/g) ?? [];
+  assert.equal(menus.length, 2);
   assert.match(out, /title: "File"/);
   assert.match(out, /title: "Edit"/);
 });
 
-test("menubar: MenuBarItem.qml hosts the .menubar-item/.menubar-label slots + deactivation close", async () => {
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/MenuBarItem.qml", import.meta.url)), "utf8");
-  assert.match(src, /T\.MenuBarItem \{/);
-  assert.match(src, /cssClass: \["menubar-item"\]/);
-  assert.match(src, /cssState: \(ctl\.hovered \? \["hover"\] : \[\]\)\.concat\(ctl\.highlighted \? \["open"\] : \[\]\)/);
-  assert.match(src, /cssClass: \["menubar-label"\]/);
-  // The AbstractButton.text carries the `&F` mnemonic (auto-registers Alt+F via QKeySequence::mnemonic
-  // so QQuickMenuBar's built-in Alt-nav opens the menu); the label strips `&` for display.
-  assert.match(src, /text: ctl\.menu \? ctl\.menu\.title : ""/);
-  assert.match(src, /text: \(ctl\.menu \? ctl\.menu\.title : ""\)\.replace\(\/&\(\.\)\/g, "\$1"\)/);
-  assert.match(src, /Window\.onActiveChanged: if \(!Window\.active && ctl\.menu\) ctl\.menu\.close\(\)/);
-});
-
-test("menubar: submenu popups re-anchor CSS at their MenuBarItem", async () => {
+test("menubar: menu items become Platform.MenuItem with text; separators map to MenuSeparator", async () => {
   const out = await qml(MENUBAR_SRC);
-  // Counter walk (no barId, items no longer consume the counter): File item=0, File menu=1,
-  // Edit item=2, Edit menu=3. Each submenu's W.Menu re-anchors at its MenuBarItem.
-  assert.match(out, /cssAncestor: __mbi0/);
-  assert.match(out, /cssAncestor: __mbi2/);
+  assert.match(out, /Platform\.MenuItem \{/);
+  assert.match(out, /text: "New"/);
+  assert.match(out, /text: "Quit"/);
+  assert.match(out, /text: "Copy"/);
+  assert.match(out, /Platform\.MenuSeparator \{ \}/);
 });
 
 test("menubar: submenu items wire onTriggered", async () => {

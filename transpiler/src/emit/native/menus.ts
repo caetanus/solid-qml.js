@@ -290,15 +290,14 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
 function emitMenuBar(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
-  const counter = scope.inputCounter ?? { n: 0 };
-  const classLine = buildCssClassLine(cssPropsShim(propsArg), scope, i(1));
-  markWidgetLib(scope);
+  // OS-native menu bar (owner call 2026-07-07): a Qt.labs.platform.MenuBar attaches to the window
+  // chrome (needs Qt Widgets, which the loader now links + a QApplication). It is a QObject, not a
+  // visual — like <Tray>, it takes no layout slot and carries no CSS (it's OS chrome, not scene). Its
+  // <Menu title>/<MenuItem>/<MenuSeparator> children map straight to the native Platform types.
+  requireImport(scope, "import Qt.labs.platform 1.1 as Platform");
 
-  const lines: string[] = [
-    `${pad}W.MenuBar {`,
-    ...classLine,
-    ...guardLine(guard, level),
-  ];
+  const lines: string[] = [`${pad}Platform.MenuBar {`];
+  if (guard) lines.push(`${i(1)}enabled: !!(${guard})`);
 
   for (const child of children) {
     if (!isHCall(child)) continue;
@@ -310,18 +309,19 @@ function emitMenuBar(propsArg: t.Node | undefined, children: t.Node[], scope: Sc
     const title = titleExpr
       ? (t.isStringLiteral(titleExpr) ? JSON.stringify(titleExpr.value) : emitExpr(titleExpr, { ...scope, mode: "binding" }))
       : '""';
-    const itemId = `__mbi${counter.n++}`;
-    const menuId = `__menu${counter.n++}`;
     const items = parseMenuChildren(menuKids as t.Node[], scope, "Menu");
-    const menuLines = menuObjectLines({ menuId, anchorId: itemId, items, classes: classesOf(p), title }, scope, level + 2);
-    // Re-shape the submenu as the `menu:` object binding of the MenuBarItem.
-    menuLines[0] = `${i(2)}menu: ${menuLines[0].trimStart()}`;
-    lines.push(
-      `${i(1)}W.MenuBarItem {`,
-      `${i(2)}id: ${itemId}`,
-      ...menuLines,
-      `${i(1)}}`,
-    );
+    lines.push(`${i(1)}Platform.Menu {`, `${i(2)}title: ${title}`);
+    for (const item of items) {
+      if (item.kind === "separator") { lines.push(`${i(2)}Platform.MenuSeparator { }`); continue; }
+      const clickBody = item.onClick ? handlerBody(item.onClick, scope) : "";
+      lines.push(
+        `${i(2)}Platform.MenuItem {`,
+        `${i(3)}text: ${item.labelBinding ?? '""'}`,
+        ...(clickBody ? [`${i(3)}onTriggered: { ${clickBody} }`] : []),
+        `${i(2)}}`,
+      );
+    }
+    lines.push(`${i(1)}}`);
   }
 
   lines.push(`${pad}}`);

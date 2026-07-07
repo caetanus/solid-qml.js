@@ -37,42 +37,8 @@
   background: #e2e8f0;
 }
 
-/* ─── MenuBar strip ────────────────────────────────────────────────────────── */
-
-/* Native-widget wrappers host plain (non-Css) internals, so the engine's content pass measures
- * 0 and overwrites their implicit sizes — size the boxes here, like .wg-cal/.wg-date do. */
-.native .nv-menubar {
-  width: 132px;
-  height: 34px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-}
-
-.native .menubar {
-  background: #f7fafc;
-  border-radius: 8px;
-}
-
-.native .menubar-item {
-  background: transparent;
-  border-radius: 6px;
-}
-
-.native .menubar-item:hover {
-  background: #e6f2f7;
-}
-
-/* background/contentItem are sibling slots — an :open label rule could not match through the
- * background, so the open tint stays light enough for the plain label colour. */
-.native .menubar-item:open {
-  background: #cde5ee;
-}
-
-.native .menubar-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #17222c;
-}
+/* The menu bar is now OS-native window chrome (Qt.labs.platform MenuBar) — it has no in-scene
+ * representation, so it carries no CSS. See examples/native/menus.tsx. */
 
 /* ─── TreeView ─────────────────────────────────────────────────────────────── */
 

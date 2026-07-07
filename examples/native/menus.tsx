@@ -43,10 +43,15 @@ export function MenusAndViews() {
         <text class="nv-echo">last action: {lastAction()}</text>
       </div>
 
-      {/* ── menu bar ─────────────────────────────────────────────────────────── */}
+      {/* ── menu bar (OS-native window chrome) ───────────────────────────────────
+          <MenuBar> is a Qt.labs.platform MenuBar: it attaches to the window's title
+          chrome (global menu on macOS / GNOME, in-window strip elsewhere), not the
+          scene — so it takes no layout slot and carries no CSS. It renders nothing
+          inline; look at the top of the window (or the OS global menu). */}
       <div class="nv-row">
         <text class="nv-label">menubar</text>
-        <MenuBar class="nv-menubar">
+        <text class="nv-echo">(OS chrome — see the window title bar / global menu)</text>
+        <MenuBar>
           <Menu title="&File">
             <MenuItem onClick={() => setLastAction("open…")}>&Open…</MenuItem>
             <MenuItem onClick={() => setLastAction("save")}>&Save</MenuItem>

@@ -3,6 +3,8 @@ import QtQuick
 import qmlcss 1.0 as Css
 
 
+import Qt.labs.platform 1.1 as Platform
+
 import solidqml.Widgets 1.0 as W
 W.Div {
     id: __self
@@ -62,43 +64,36 @@ W.Div {
             cssClass: ["nv-label"]
             text: "menubar"
         }
-        W.MenuBar {
-            cssClass: ["nv-menubar"]
-            W.MenuBarItem {
-                id: __mbi1
-                menu: W.Menu {
-                    id: __menu2
-                    cssAncestor: __mbi1
-                    title: "&File"
-                    W.MenuItem {
-                        text: "&Open…"
-                        onTriggered: { lastAction = "open…" }
-                    }
-                    W.MenuItem {
-                        text: "&Save"
-                        onTriggered: { lastAction = "save" }
-                    }
-                    W.MenuSeparator { }
-                    W.MenuItem {
-                        text: "&Quit"
-                        onTriggered: { lastAction = "quit" }
-                    }
+        W.Text {
+            cssClass: ["nv-echo"]
+            text: "(OS chrome — see the window title bar / global menu)"
+        }
+        Platform.MenuBar {
+            Platform.Menu {
+                title: "&File"
+                Platform.MenuItem {
+                    text: "&Open…"
+                    onTriggered: { lastAction = "open…" }
+                }
+                Platform.MenuItem {
+                    text: "&Save"
+                    onTriggered: { lastAction = "save" }
+                }
+                Platform.MenuSeparator { }
+                Platform.MenuItem {
+                    text: "&Quit"
+                    onTriggered: { lastAction = "quit" }
                 }
             }
-            W.MenuBarItem {
-                id: __mbi3
-                menu: W.Menu {
-                    id: __menu4
-                    cssAncestor: __mbi3
-                    title: "&Edit"
-                    W.MenuItem {
-                        text: "&Copy"
-                        onTriggered: { lastAction = "copy" }
-                    }
-                    W.MenuItem {
-                        text: "&Paste"
-                        onTriggered: { lastAction = "paste" }
-                    }
+            Platform.Menu {
+                title: "&Edit"
+                Platform.MenuItem {
+                    text: "&Copy"
+                    onTriggered: { lastAction = "copy" }
+                }
+                Platform.MenuItem {
+                    text: "&Paste"
+                    onTriggered: { lastAction = "paste" }
                 }
             }
         }

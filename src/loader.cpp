@@ -8,6 +8,7 @@
 #include "shims/webtimers.h"
 
 #include <QCommandLineParser>
+#include <QApplication>
 #include <QGuiApplication>
 #include <QDebug>
 #include <QQmlApplicationEngine>
@@ -95,9 +96,11 @@ int main(int argc, char **argv)
     // leaves an orphaned window serving stale code.
     prctl(PR_SET_PDEATHSIG, SIGTERM);
 #endif
-    QGuiApplication app(argc, argv);
-    QGuiApplication::setApplicationName(QStringLiteral("solid-qml-loader"));
-    QGuiApplication::setOrganizationName(QStringLiteral("solid-qml"));
+    // QApplication (not QGuiApplication): Qt Labs Platform's OS-native menu bar / menus / dialogs
+    // need Qt Widgets. QApplication IS-A QGuiApplication, so runMiniNode(QGuiApplication&) is unaffected.
+    QApplication app(argc, argv);
+    QApplication::setApplicationName(QStringLiteral("solid-qml-loader"));
+    QApplication::setOrganizationName(QStringLiteral("solid-qml"));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Load a Solid QML generated root."));
