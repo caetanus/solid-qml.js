@@ -4,9 +4,8 @@
   flex-direction: column;
   gap: 12px;
   /* Pinned to the viewport minus the gallery nav (2 rows at this width) so the tall stack of
-     chart/3D cards scrolls with the desktop scrollbar instead of overflowing off-screen. Generous
-     bottom padding so the last card (Walker Lake) ends with clear margin, not flush at the edge. */
-  padding: 20px 20px 40px;
+     chart/3D cards scrolls with the desktop scrollbar instead of overflowing off-screen. */
+  padding: 20px;
   height: calc(100vh - 88px);
   overflow-y: auto;
 }
