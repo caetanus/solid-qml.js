@@ -23,9 +23,10 @@ Item {
     id: wrap
     property bool open: false
     property string title: ""
-    // Author class forwards to the Css root; children mount into the root's data (the layout box).
+    // Author class forwards to the Css root; children mount into the root's CONTENT slot (the
+    // engine's layout holder — `.data` would bypass the layout pass entirely).
     property alias cssClass: root.cssClass
-    default property alias content: root.data
+    default property alias content: root.content
     signal dialogClosed()
 
     // Find the default button (<button type="submit"> → isDefault) anywhere in the dialog content,

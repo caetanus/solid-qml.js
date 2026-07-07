@@ -294,8 +294,8 @@ test("details: Details.qml component holds the wrapper, marker and content inter
   assert.match(src, /cssClass: \["marker"\]/);
   assert.match(src, /cssClass: \["content"\]/);
   assert.match(src, /property bool __open: !!\(root\.open\)/);
-  assert.match(src, /property alias summaryContent: summaryBox\.data/);
-  assert.match(src, /default property alias content: contentBox\.data/);
+  assert.match(src, /property alias summaryContent: summaryBox\.content/);
+  assert.match(src, /default property alias content: contentBox\.content/);
 });
 
 // ---------------------------------------------------------------------------

@@ -21,11 +21,13 @@ Css.CssFill {
     property bool open: false
     // Author classes for the summary header row (so `summary { … }` / `summary:hover` apply).
     property var summaryClass: []
-    // Summary's own children (the label). Aliased into the summary box's data, appended after the
-    // inline marker + MouseArea.
-    property alias summaryContent: summaryBox.data
-    // Disclosure body: use-site children route here via the default property.
-    default property alias content: contentBox.data
+    // Summary's own children (the label). Aliased into the summary box's CONTENT slot — the
+    // engine's layout holder. (`.data` would bypass the holder: raw QQuickItem children are
+    // invisible to the CSS layout pass and pile up at 0,0 — the post-migration breakage.)
+    property alias summaryContent: summaryBox.content
+    // Disclosure body: use-site children route here via the default property (content slot —
+    // see summaryContent).
+    default property alias content: contentBox.content
 
     cssPrimitive: "details"
     cssState: root.__open ? ["open"] : []
