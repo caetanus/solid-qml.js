@@ -84,6 +84,25 @@ npm run dev               # web preview via Vite (Solid running in the browser)
 - **Importing real QML components** (interop / legacy code).
 - **Decent packaging** for deployment, and a path to **exporting into legacy projects**.
 
+## Milestone — the native widget set behaves like a desktop toolkit (2026-07)
+
+Every widget — HTML-derived (`<button>`, `<details>`, `<dialog>`, tables…) **and**
+desktop-native (`<TabBar>`, `<SplitView>`, `<TreeView>`, `<ListView>`, `<TableView>`, `<Menu>`,
+OS-chrome `<MenuBar>`, `<Tray>`…) — is now a reusable `.qml` component in the
+`solidqml.Widgets` module; the transpiler **instantiates** components instead of hand-emitting
+their internals. And the set finally *feels* native:
+
+- **Desktop keyboard model throughout** — one tab stop per group with arrows inside (lists,
+  tables, trees with expand/collapse on Right/Left/Space, tab bars with wrap), Enter fires the
+  dialog's default button, and the classic **thin dotted focus ring** (`::tab-stop`, backed by
+  engine-level `border-style: dotted`).
+- **Honest web box model** — the shared runtime reset (`* { box-sizing: border-box }`) now
+  reaches the native stylesheet, and borders take layout space in the engine (the content area
+  is the padding box) — so scroll extents, tab bars and split panes are pixel-honest against
+  the web reference.
+- **Data views** — virtualized `<ListView>`/`<TableView>` (real delegate recycling) with
+  column sorting on header click, and a `<TreeView>` over plain `{ label, children }` objects.
+
 ## Gaps / Current limitations
 
 We are in alpha and insist on being honest about what **does not exist yet** or is only partial:
