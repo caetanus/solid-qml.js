@@ -86,17 +86,27 @@ npm run dev               # web preview via Vite (Solid running in the browser)
 
 ## Gaps / Current limitations
 
-We are in alpha and insist on being honest about what **does not exist yet**:
+We are in alpha and insist on being honest about what **does not exist yet** or is only partial:
 
-- **Missing desktop integration**: D-Bus, Avahi/zeroconf and system tray, not yet.
-- **Threads** and **background services (mobile)**, not yet.
-- **Gestures** (touch), not yet.
-- Overflow **scrolling**, not yet — QtQuick offers it via `Flickable`; it is at the top of the
-  queue.
+- **Charts & 3D need optional Qt modules.** `<Chart>`/`<Surface>` (QtGraphs) and `<Scene3D>`
+  (Qt Quick 3D) are **opt-in per-widget modules** — the core engine never depends on them. You must
+  install `qt6-graphs` and `qt6-quick3d` yourself; an app that doesn't use those tags pulls nothing.
+  QtCharts is **not** used (it crashes offscreen — we use QtGraphs). Complex charts only: bar charts
+  are drawn by the CSS engine, not QtGraphs.
+- **3D renders only on a real GPU surface.** Qt Quick 3D can't render under the headless/`offscreen`
+  platform, so 3D views can't be verified in CI screenshots — only that they load.
+- **Missing desktop integration**: D-Bus, Avahi/zeroconf, deeper system-tray, not yet.
+- **Threads** and **background services (mobile)**, not yet. **Gestures** (touch), not yet.
 - `<For>` is still fragile with **nested sub-JSX** and complex cases.
 - **Advanced CSS** mappings depend on open design decisions.
+- **Menu keyboard activation** (Alt-mnemonics / F10) relies on Qt's built-ins and needs live checking
+  on the target desktop.
 - **AOT → C++ not implemented yet** — today dev runs on interpreted V4.
 - **Packaging with Qt is painful** — the deployment story is still open.
+
+Recently landed (no longer gaps): desktop **overflow scrolling** (mouse wheel, draggable scrollbar,
+focus-follows-scroll) on both `div`/`CssRect` and `CssFill` boxes; the **escape hatch** (importing a
+hand-written `.qml` as a component); the **keyboard tab-focus** model (ring, dialogs, default button).
 
 ## License
 
