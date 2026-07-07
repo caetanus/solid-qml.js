@@ -26,6 +26,9 @@ Css.CssFill {
         id: split
         anchors.fill: parent
         orientation: root.orientation
+        // Desktop semantics (QSplitter): a splitter never paints outside itself — while dragging,
+        // a pane squeezed below its content size would otherwise leak past the container border.
+        clip: true
         handle: SplitHandle {
             cssAncestor: root
             horizontal: split.orientation === Qt.Horizontal

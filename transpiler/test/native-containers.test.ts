@@ -199,6 +199,8 @@ test("containers: <SplitView> panes get the per-pane fillWidth hint", async () =
 test("containers: SplitView.qml + SplitHandle.qml host the control internals", async () => {
   const sv = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/SplitView.qml", import.meta.url)), "utf8");
   assert.match(sv, /T\.SplitView \{/);
+  // QSplitter semantics: nothing paints outside the splitter (drag squeeze would leak).
+  assert.match(sv, /clip: true/);
   assert.match(sv, /handle: SplitHandle \{/);
   assert.match(sv, /cssAncestor: root/);
   assert.match(sv, /horizontal: split\.orientation === Qt\.Horizontal/);
