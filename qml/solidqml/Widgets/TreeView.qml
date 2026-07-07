@@ -74,6 +74,12 @@ Css.CssFill {
         else _move(1);
     }
 
+    // Space: toggle the current branch open/closed (no-op on a leaf).
+    function _toggleCurrent() {
+        var r = _visibleRows[currentIndex];
+        if (r && r.__k) _toggle(r.__p);
+    }
+
     // Left: collapse an expanded branch, else jump to the parent row (path minus its last segment).
     function _collapseOrAscend() {
         var r = _visibleRows[currentIndex];
@@ -107,6 +113,7 @@ Css.CssFill {
         Keys.onLeftPressed: root._collapseOrAscend()
         Keys.onReturnPressed: root._emitCurrent()
         Keys.onEnterPressed: root._emitCurrent()
+        Keys.onSpacePressed: root._toggleCurrent()
 
         Column {
             id: rootCol

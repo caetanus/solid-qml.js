@@ -353,6 +353,7 @@ test("treeview keyboard: ONE tab stop; Up/Down move, Right expands/descends, Lef
   assert.match(src, /Keys\.onLeftPressed: root\._collapseOrAscend\(\)/);
   assert.match(src, /Keys\.onReturnPressed: root\._emitCurrent\(\)/);
   assert.match(src, /Keys\.onEnterPressed: root\._emitCurrent\(\)/);
+  assert.match(src, /Keys\.onSpacePressed: root\._toggleCurrent\(\)/);
   // Left on a leaf/collapsed row ascends to the parent path (path minus its last segment).
   assert.match(src, /r\.__p\.lastIndexOf\("\/"\)/);
 });
