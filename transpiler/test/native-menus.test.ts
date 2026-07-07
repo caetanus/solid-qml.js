@@ -186,10 +186,14 @@ test("menus: Menu.qml records __closedAt on close (debounce store) alongside men
   assert.match(src, /onClosed: \{ __closedAt = Date\.now\(\); menuClosed\(\) \}/);
 });
 
-test("menus: <Menu trigger> emits the trigger and sizes the host to it", async () => {
+test("menus: <Menu trigger> hosts the trigger in a Css box that joins the flex flow", async () => {
   const out = await qml(TRIGGER_SRC);
   assert.match(out, /id: __mtrig0/);
-  assert.match(out, /implicitWidth: __mtrig0\.implicitWidth/);
+  // A plain Item host is INVISIBLE to the layout engine (only Css children flow), so a sibling
+  // after the menu would overlap the trigger — the host is a class-less "div" measured from the
+  // button by the engine's content pass.
+  assert.match(out, /Css\.CssRect \{\n\s*id: __menuHost0\n\s*cssPrimitive: "div"/);
+  assert.doesNotMatch(out, /implicitWidth: __mtrig0\.implicitWidth/);
   assert.match(out, /y: __menuHost0\.height \+ 2/);
 });
 

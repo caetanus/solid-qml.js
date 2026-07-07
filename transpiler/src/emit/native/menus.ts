@@ -225,13 +225,14 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
     trig.splice(openIdx + 1, 0, `${i(2)}id: ${trigId}`, `${i(2)}onClicked: { ${toggle} }`);
 
     return [
-      `${pad}Item {`,
+      // The host must be a Css BOX, not a plain Item: the layout engine only flows Css children,
+      // so a plain host inside a row with other Css siblings is invisible to flex and the sibling
+      // after it overlaps the trigger. As a class-less "div" the engine measures its implicit
+      // from the button; the popup is a non-visual object child and doesn't count.
+      `${pad}Css.CssRect {`,
       `${i(1)}id: ${hostId}`,
+      `${i(1)}cssPrimitive: "div"`,
       ...(guard ? [`${i(1)}visible: !!(${guard})`] : []),
-      // Size the host to the trigger's implicit (content) size — not childrenRect, which would
-      // cycle against the button's fill. The popup is not a visual child, so it doesn't count.
-      `${i(1)}implicitWidth: ${trigId}.implicitWidth`,
-      `${i(1)}implicitHeight: ${trigId}.implicitHeight`,
       `${i(1)}Window.onActiveChanged: if (!Window.active) ${menuId}.close()`,
       ...trig,
       ...menuObjectLines({

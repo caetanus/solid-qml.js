@@ -24,10 +24,9 @@ W.Div {
             cssClass: ["nv-label"]
             text: "menu"
         }
-        Item {
+        Css.CssRect {
             id: __menuHost0
-            implicitWidth: __mtrig0.implicitWidth
-            implicitHeight: __mtrig0.implicitHeight
+            cssPrimitive: "div"
             Window.onActiveChanged: if (!Window.active) __menu0.close()
             W.Button {
                 id: __mtrig0
