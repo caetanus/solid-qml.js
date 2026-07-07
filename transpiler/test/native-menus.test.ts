@@ -351,8 +351,9 @@ test("treeview keyboard: ONE tab stop; Up/Down move, Right expands/descends, Lef
   assert.match(src, /Keys\.onDownPressed: root\._move\(1\)/);
   assert.match(src, /Keys\.onRightPressed: root\._expandOrDescend\(\)/);
   assert.match(src, /Keys\.onLeftPressed: root\._collapseOrAscend\(\)/);
-  assert.match(src, /Keys\.onReturnPressed: root\._emitCurrent\(\)/);
-  assert.match(src, /Keys\.onEnterPressed: root\._emitCurrent\(\)/);
+  // Enter mirrors a click (toggle + commit); Space only toggles.
+  assert.match(src, /Keys\.onReturnPressed: \{ root\._toggleCurrent\(\); root\._emitCurrent\(\); \}/);
+  assert.match(src, /Keys\.onEnterPressed: \{ root\._toggleCurrent\(\); root\._emitCurrent\(\); \}/);
   assert.match(src, /Keys\.onSpacePressed: root\._toggleCurrent\(\)/);
   // Left on a leaf/collapsed row ascends to the parent path (path minus its last segment).
   assert.match(src, /r\.__p\.lastIndexOf\("\/"\)/);

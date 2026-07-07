@@ -111,8 +111,9 @@ Css.CssFill {
         Keys.onDownPressed: root._move(1)
         Keys.onRightPressed: root._expandOrDescend()
         Keys.onLeftPressed: root._collapseOrAscend()
-        Keys.onReturnPressed: root._emitCurrent()
-        Keys.onEnterPressed: root._emitCurrent()
+        // Enter mirrors a click: toggles the branch AND re-commits; Space only toggles.
+        Keys.onReturnPressed: { root._toggleCurrent(); root._emitCurrent(); }
+        Keys.onEnterPressed: { root._toggleCurrent(); root._emitCurrent(); }
         Keys.onSpacePressed: root._toggleCurrent()
 
         Column {
