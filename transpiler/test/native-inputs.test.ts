@@ -75,26 +75,29 @@ test("native-inputs: <RangeSlider> defaults min/max/step to 0/100/1", async () =
   assert.match(out, /stepSize: 1/);
 });
 
-test("native-inputs: RangeSlider.qml holds track, range fill, two handles and the wheel stepper", async () => {
-  const src = await readWidget("RangeSlider");
+test("native-inputs: the C++ RangeSlider holds track, range fill, two handles and the wheel stepper", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/sliders.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/sliders.h", import.meta.url)), "utf8");
   assert.match(src, /T\.RangeSlider \{/);
-  assert.match(src, /cssPrimitive: "input"/);
+  assert.match(src, /QStringLiteral\("input"\)/); // primitive set in the C++ ctor
   assert.match(src, /cssClass: \["track"\]/);
   assert.match(src, /cssClass: \["track-fill"\]/);
   assert.match(src, /x: __ctl\.first\.visualPosition \* parent\.width/);
   assert.match(src, /width: \(__ctl\.second\.visualPosition - __ctl\.first\.visualPosition\) \* parent\.width/);
   assert.match(src, /first\.handle: Css\.CssRect \{/);
   assert.match(src, /second\.handle: Css\.CssRect \{/);
-  const handles = src.match(/cssClass: \["handle"\]/g) ?? [];
+  const range = src.slice(src.indexOf("T.RangeSlider"));
+  const handles = range.match(/cssClass: \["handle"\]/g) ?? [];
   assert.equal(handles.length, 2);
   assert.match(src, /WheelHandler \{/);
   assert.match(src, /enabled: __ctl\.activeFocus/);
   assert.match(src, /acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad/);
   assert.match(src, /__ctl\.first\.value = Math\.max\(__ctl\.from, Math\.min\(__ctl\.to, __ctl\.first\.value \+ s \* __ctl\.stepSize\)\)/);
   assert.match(src, /__ctl\.first\.moved\(\)/);
-  assert.match(src, /property alias first: __ctl\.first/);
-  assert.match(src, /property alias second: __ctl\.second/);
-  assert.match(src, /cssState: \(__ctl\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!__ctl\.enabled \? \["disabled"\] : \[\]\)/);
+  assert.match(src, /Q_PROPERTY\(QObject \*first READ first NOTIFY nodesChanged\)/); // node exposed from C++
+  assert.match(src, /Q_PROPERTY\(QObject \*second READ second NOTIFY nodesChanged\)/);
+  assert.match(src, /QStringLiteral\("focus"\)/); // focus/disabled state assembled in C++ syncState
+  assert.match(src, /QStringLiteral\("disabled"\)/);
 });
 
 test("native-inputs: <RangeSlider first second> emits two Binding elements on the aliased sub-nodes", async () => {

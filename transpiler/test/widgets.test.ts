@@ -749,7 +749,9 @@ test("widgets: dynamic <option> content throws a clear transpiler error", async 
 // Phase 4: <input type="range"> → T.Slider
 // ---------------------------------------------------------------------------
 
-const SLIDER_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Slider.qml", import.meta.url)), "utf8");
+// Slider is C++ now (widgets-to-cpp) — the control body lives as a snippet in sliders.cpp,
+// so the QML-construct assertions below still hold verbatim.
+const SLIDER_QML = await readFile(fileURLToPath(new URL("../../src/widgets/sliders.cpp", import.meta.url)), "utf8");
 
 test("widgets: <input type='range'> instantiates the W.Slider component", async () => {
   const out = await qml(`export function F(){ return <input type="range" />; }`);
@@ -759,7 +761,7 @@ test("widgets: <input type='range'> instantiates the W.Slider component", async 
 });
 
 test("widgets: Slider.qml has a T.Slider (anchors.fill) with cssPrimitive 'input'", async () => {
-  assert.match(SLIDER_QML, /cssPrimitive: "input"/);
+  assert.match(SLIDER_QML, /QStringLiteral\("input"\)/); // primitive set in the C++ ctor
   assert.match(SLIDER_QML, /T\.Slider \{/);
   assert.match(SLIDER_QML, /anchors\.fill: parent/);
 });
@@ -854,8 +856,9 @@ test("widgets: range disabled sets enabled: false on T.Slider", async () => {
   assert.match(out, /enabled: false/);
 });
 
-test("widgets: Slider.qml cssState carries focus and disabled", async () => {
-  assert.match(SLIDER_QML, /cssState: \(ctl\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!ctl\.enabled \? \["disabled"\] : \[\]\)/);
+test("widgets: the C++ Slider carries focus and disabled in syncState", async () => {
+  assert.match(SLIDER_QML, /QStringLiteral\("focus"\)/);
+  assert.match(SLIDER_QML, /QStringLiteral\("disabled"\)/);
 });
 
 test("widgets: range Widgets import is prepended", async () => {
