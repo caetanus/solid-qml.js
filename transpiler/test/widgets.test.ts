@@ -876,7 +876,10 @@ test("widgets: range Widgets import is prepended", async () => {
 // Phase 4: <input type="number"> → T.SpinBox
 // ---------------------------------------------------------------------------
 
-const SPINBOX_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/SpinBox.qml", import.meta.url)), "utf8");
+// SpinBox/Dial are C++ now (widgets-to-cpp) — snippets keep the QML internals verbatim.
+const SPINDIAL_CPP = await readFile(fileURLToPath(new URL("../../src/widgets/spindial.h", import.meta.url)), "utf8")
+  + await readFile(fileURLToPath(new URL("../../src/widgets/spindial.cpp", import.meta.url)), "utf8");
+const SPINBOX_QML = SPINDIAL_CPP.slice(0, SPINDIAL_CPP.indexOf("T.Dial {"));
 
 test("widgets: <input type='number'> instantiates the W.SpinBox component", async () => {
   const out = await qml(`export function F(){ return <input type="number" />; }`);
@@ -886,7 +889,7 @@ test("widgets: <input type='number'> instantiates the W.SpinBox component", asyn
 });
 
 test("widgets: SpinBox.qml has a T.SpinBox with editable:true and background:null", async () => {
-  assert.match(SPINBOX_QML, /cssPrimitive: "input"/);
+  assert.match(SPINDIAL_CPP, /setCssPrimitive\(QStringLiteral\("input"\)\)/);
   assert.match(SPINBOX_QML, /T\.SpinBox \{/);
   assert.match(SPINBOX_QML, /anchors\.fill: parent/);
   assert.match(SPINBOX_QML, /background: null/);
@@ -980,8 +983,8 @@ test("widgets: number disabled sets enabled: false on T.SpinBox", async () => {
   assert.match(out, /enabled: false/);
 });
 
-test("widgets: SpinBox.qml cssState carries focus and disabled", async () => {
-  assert.match(SPINBOX_QML, /cssState: \(ctl\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!ctl\.enabled \? \["disabled"\] : \[\]\)/);
+test("widgets: the C++ SpinBox cssState carries focus and disabled", async () => {
+  assert.match(SPINDIAL_CPP, /hasActiveFocus\(\)[\s\S]*?QStringLiteral\("focus"\)[\s\S]*?QStringLiteral\("disabled"\)/);
 });
 
 test("widgets: number Widgets import is prepended", async () => {

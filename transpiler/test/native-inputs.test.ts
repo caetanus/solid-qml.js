@@ -149,8 +149,10 @@ test("native-inputs: <Dial> instantiates W.Dial with from/to/stepSize on the ins
   assert.doesNotMatch(out, /T\.Dial/);
 });
 
-test("native-inputs: Dial.qml holds the T.Dial, dial face and trig-placed handle", async () => {
-  const src = await readWidget("Dial");
+test("native-inputs: the C++ Dial's snippet holds the T.Dial, dial face and trig-placed handle", async () => {
+  // Dial is C++ now (widgets-to-cpp) — the snippet keeps the QML internals verbatim.
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/spindial.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/spindial.h", import.meta.url)), "utf8");
   assert.match(src, /T\.Dial \{/);
   assert.match(src, /background: Css\.CssFill \{/);
   assert.match(src, /cssClass: \["dial"\]/);
@@ -158,7 +160,9 @@ test("native-inputs: Dial.qml holds the T.Dial, dial face and trig-placed handle
   assert.match(src, /cssClass: \["handle"\]/);
   assert.match(src, /Math\.sin\(__ctl\.angle \* Math\.PI \/ 180\) \* \(__ctl\.background\.width \/ 2 - 12\)/);
   assert.match(src, /Math\.cos\(__ctl\.angle \* Math\.PI \/ 180\) \* \(__ctl\.background\.width \/ 2 - 12\)/);
-  assert.match(src, /property alias value: __ctl\.value/);
+  // The controlled value round-trip: RestoreNone Binding in, onValueChanged mirror out.
+  assert.match(src, /Q_PROPERTY\(qreal value READ value WRITE setValue NOTIFY valueChanged\)/);
+  assert.match(src, /onValueChanged: root\.value = value/);
 });
 
 test("native-inputs: <Dial value> emits a Binding on value; onChange={(v)=>…} maps v to __input0.value via onMoved", async () => {
