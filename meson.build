@@ -46,6 +46,11 @@ notify_args = qt6_dbus_dep.found() ? ['-DHAVE_QTDBUS'] : []
 # this reader is how Qt itself opens .odt content).
 qt6_core_private_dep = dependency('qt6', modules: ['Core'], private_headers: true)
 
+# <CodeEditor> syntax highlighting: KSyntaxHighlighting (Kate's engine — the current library;
+# Scintilla has no QtQuick port). Optional: without it the editor is plain mono + gutter.
+ksyntax_dep = dependency('KF6SyntaxHighlighting', required: false)
+code_args = ksyntax_dep.found() ? ['-DHAVE_KSYNTAX'] : []
+
 # No qresources: the generated app (App.generated.qml + its .js sidecar) and the stylesheet are
 # loaded from the filesystem at runtime, not baked into the binary. Release uses the AOT C++
 # back-end instead of qrc-embedded QML.
@@ -59,6 +64,7 @@ solid_qml_loader_qt_sources = qt6.preprocess(
     'src/shims/tabstop.h',
     'src/shims/notifications.h',
     'src/shims/richtext.h',
+    'src/shims/codeeditor.h',
   ),
 )
 
@@ -74,9 +80,10 @@ executable(
     'src/shims/nodeshims.cpp',
     'src/shims/notifications.cpp',
     'src/shims/richtext.cpp',
+    'src/shims/codeeditor.cpp',
   ),
   solid_qml_loader_qt_sources,
-  cpp_args: notify_args,
-  dependencies: [qml_css_engine_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep, qt6_core_private_dep],
+  cpp_args: notify_args + code_args,
+  dependencies: [qml_css_engine_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep, qt6_core_private_dep, ksyntax_dep],
   install: true,
 )

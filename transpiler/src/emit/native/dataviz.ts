@@ -144,4 +144,23 @@ function emitRichText(propsArg: t.Node | undefined, _children: t.Node[], scope: 
   return lines;
 }
 
-registerNativeTags({ Chart: emitChart, Scene3D: emitScene3D, Surface: emitSurface, MediaPlayer: emitMediaPlayer, WebView: emitWebView, RichText: emitRichText });
+/** <CodeEditor language text> → WCode.CodeEditor (opt-in module solidqml.Widgets.Code —
+ *  KSyntaxHighlighting when the loader has it, plain mono editor otherwise). */
+function emitCodeEditor(propsArg: t.Node | undefined, _children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  requireImport(scope, "import solidqml.Widgets.Code 1.0 as WCode");
+  const props = propsOf(propsArg);
+  const bind = (e: t.Expression) => emitExpr(e, { ...scope, mode: "binding" });
+
+  const lines: string[] = [`${pad}WCode.CodeEditor {`, ...buildCssClassLine(cssPropsShim(props), scope, i(1))];
+  if (guard) lines.push(`${i(1)}visible: !!(${guard})`);
+  const language = props.get("language");
+  const text = props.get("text");
+  if (language) lines.push(`${i(1)}language: ${bind(language)}`);
+  if (text) lines.push(`${i(1)}text: ${bind(text)}`);
+  lines.push(`${pad}}`);
+  return lines;
+}
+
+registerNativeTags({ Chart: emitChart, Scene3D: emitScene3D, Surface: emitSurface, MediaPlayer: emitMediaPlayer, WebView: emitWebView, RichText: emitRichText, CodeEditor: emitCodeEditor });

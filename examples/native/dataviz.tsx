@@ -11,7 +11,7 @@ import { Show } from "solid-js";
 import { div, text } from "../../src/solid-qml/runtime";
 import "./dataviz.css";
 
-declare const Chart: any, Scene3D: any, Surface: any, MediaPlayer: any, WebView: any, RichText: any;
+declare const Chart: any, Scene3D: any, Surface: any, MediaPlayer: any, WebView: any, RichText: any, CodeEditor: any;
 
 export function ChartsAnd3D() {
   const isNative = typeof process !== "undefined" && !!(process.versions && process.versions.solidQml);
@@ -60,6 +60,14 @@ export function ChartsAnd3D() {
         <div class="dv-card">
           <text class="dv-label">Rich text — word-like editing, opens &amp; saves OpenDocument (.odt)</text>
           <RichText class="dv-rich" />
+        </div>
+        {/* Code editor (module solidqml.Widgets.Code): KSyntaxHighlighting — Kate's engine,
+            the current library for this (Scintilla has no QtQuick port) — as an OPTIONAL build
+            dep; without it the editor stays plain mono with its line-number gutter. */}
+        <div class="dv-card">
+          <text class="dv-label">Code editor — line gutter + Kate-engine highlighting (KSyntaxHighlighting)</text>
+          <CodeEditor class="dv-code" language="JavaScript"
+            text={"// solid-qml code editor\nfunction greet(name) {\n\treturn `hello ${name}`;\n}\n\nconst who = \"qt\";\nconsole.log(greet(who));"} />
         </div>
         {/* 3D + data viz combined (module solidqml.Widgets.Surface): the REAL Walker Lake exhaustive
             grid (Isaaks & Srivastava, 260×300 V values) as a height-coloured surface. Drag to rotate,

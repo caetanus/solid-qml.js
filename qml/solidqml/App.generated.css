@@ -2622,3 +2622,24 @@ button:hover {
 .dv .dv-rich .rt-btn.active .rt-btn-label {
   color: #ffffff;
 }
+
+/* ─── <CodeEditor> ────────────────────────────────────────────────────────────────────── */
+
+.dv .dv-code {
+  width: 640px;
+  height: 260px;
+  background: #ffffff;
+  border: 1px solid #223140;
+  border-radius: 10px;
+}
+
+.dv .dv-code .code-gutter {
+  background: #eef2f7;
+  border-right: 1px solid #d5dee8;
+}
+
+.dv .dv-code .code-line-no {
+  font-size: 12px;
+  color: #8595a8;
+  text-align: right;
+}

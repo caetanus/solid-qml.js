@@ -4,6 +4,7 @@ import qmlcss 1.0 as Css
 
 
 import solidqml.Widgets.Chart 1.0 as WChart
+import solidqml.Widgets.Code 1.0 as WCode
 import solidqml.Widgets.Media 1.0 as WMedia
 import solidqml.Widgets.RichText 1.0 as WRich
 import solidqml.Widgets.Scene3D 1.0 as WScene3D
@@ -79,6 +80,19 @@ W.Div {
         }
         WRich.RichText {
             cssClass: ["dv-rich"]
+        }
+    }
+    W.Div {
+        cssClass: ["dv-card"]
+        visible: !!(isNative)
+        W.Text {
+            cssClass: ["dv-label"]
+            text: "Code editor — line gutter + Kate-engine highlighting (KSyntaxHighlighting)"
+        }
+        WCode.CodeEditor {
+            cssClass: ["dv-code"]
+            language: "JavaScript"
+            text: "// solid-qml code editor\nfunction greet(name) {\n\treturn `hello ${name}`;\n}\n\nconst who = \"qt\";\nconsole.log(greet(who));"
         }
     }
     W.Div {

@@ -47,3 +47,11 @@ test("dataviz: <RichText> instantiates the opt-in RichText module", async () => 
   assert.match(out, /WRich\.RichText \{/);
   assert.match(out, /cssClass: \["ed"\]/);
 });
+
+test("dataviz: <CodeEditor> instantiates the opt-in Code module with language + text", async () => {
+  const out = await qmlType(`export function F(){ return <CodeEditor class="ed" language="QML" text={"a"} />; }`);
+  assert.match(out, /import solidqml\.Widgets\.Code 1\.0 as WCode/);
+  assert.match(out, /WCode\.CodeEditor \{/);
+  assert.match(out, /language: "QML"/);
+  assert.match(out, /text: "a"/);
+});

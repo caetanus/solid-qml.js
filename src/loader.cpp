@@ -4,6 +4,7 @@
 #include "shims/tabstop.h"
 #include "shims/notifications.h"
 #include "shims/richtext.h"
+#include "shims/codeeditor.h"
 #include "shims/webfetch.h"
 #include "shims/weblocalstorage.h"
 #include "shims/webplatform.h"
@@ -208,6 +209,7 @@ int main(int argc, char **argv)
     QmlCss::registerTypes();
     // Loader-provided helper types for the opt-in widget modules (no extra Qt deps).
     qmlRegisterType<RichTextHandler>("solidqml.native", 1, 0, "RichTextHandler");
+    qmlRegisterType<CodeHighlighter>("solidqml.native", 1, 0, "CodeHighlighter");
 
     SolidTabstop solidTabstop;
     SolidNotifications solidNotifications; // D-Bus worker thread starts now; `available` flips async
