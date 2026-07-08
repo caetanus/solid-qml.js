@@ -15,22 +15,41 @@ export function MenusAndViews() {
   const [notifyEcho, setNotifyEcho] = createSignal(
     notifications.available ? "notification server ready" : "no notification server",
   );
+  // Every sent message's body, echoed back with each event so the app SHOWS what happened
+  // to which notification. Close reasons follow the Desktop Notifications spec.
+  const [sentBodies, setSentBodies] = createSignal<Record<number, string>>({});
+  const msgOf = (id: number) => {
+    return "#" + id + " \u201C" + (sentBodies()[id] || "?") + "\u201D";
+  };
+  const reasonOf = (reason: number) => {
+    if (reason === 1) return "expired";
+    if (reason === 2) return "dismissed by the user";
+    if (reason === 3) return "closed by the app";
+    return "closed (reason " + reason + ")";
+  };
   const notifyPlain = () => {
-    const id = notifications.send({ title: "solid-qml", body: "Hello from the native gallery" });
-    setNotifyEcho("sent #" + id);
+    const body = "Hello from the native gallery";
+    const nid = notifications.send({ title: "solid-qml", body });
+    sentBodies()[nid] = body;
+    setNotifyEcho("sent " + msgOf(nid));
   };
   const notifyActions = () => {
-    const id = notifications.send({
+    const body = "Pick an action — or reply right here";
+    const nid = notifications.send({
       title: "solid-qml",
-      body: "Pick an action — or reply right here",
+      body,
       actions: [{ id: "ok", label: "OK" }, { id: "later", label: "Later" }],
       reply: "Type a reply…",
     });
-    setNotifyEcho("sent #" + id + " (actions" + (notifications.supportsReply ? " + reply" : "") + ")");
+    sentBodies()[nid] = body;
+    setNotifyEcho("sent " + msgOf(nid) + " (actions" + (notifications.supportsReply ? " + reply" : "") + ")");
   };
-  notifications.actionInvoked.connect((id: number, action: string) => setNotifyEcho("#" + id + " action: " + action));
-  notifications.replied.connect((id: number, replyText: string) => setNotifyEcho("#" + id + " reply: " + replyText));
-  notifications.closed.connect((id: number, reason: number) => setNotifyEcho("#" + id + " closed (reason " + reason + ")"));
+  notifications.actionInvoked.connect((id: number, action: string) =>
+    setNotifyEcho(msgOf(id) + " \u2192 action \u201C" + action + "\u201D"));
+  notifications.replied.connect((id: number, replyText: string) =>
+    setNotifyEcho(msgOf(id) + " \u2192 reply: \u201C" + replyText + "\u201D"));
+  notifications.closed.connect((id: number, reason: number) =>
+    setNotifyEcho(msgOf(id) + " \u2192 " + reasonOf(reason)));
   const [selNode, setSelNode] = createSignal("nothing");
   const [selItem, setSelItem] = createSignal("nothing");
   const [selRow, setSelRow] = createSignal("nothing");
