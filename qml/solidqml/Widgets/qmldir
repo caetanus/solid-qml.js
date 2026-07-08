@@ -9,10 +9,7 @@ DelayButton 1.0 DelayButton.qml
 Dial 1.0 Dial.qml
 Drawer 1.0 Drawer.qml
 Details 1.0 Details.qml
-Div 1.0 Div.qml
 Fieldset 1.0 Fieldset.qml
-Tabstop 1.0 Tabstop.qml
-Image 1.0 Image.qml
 Menu 1.0 Menu.qml
 ListView 1.0 ListView.qml
 MenuItem 1.0 MenuItem.qml
@@ -34,7 +31,6 @@ TabButton 1.0 TabButton.qml
 TableView 1.0 TableView.qml
 ToolBar 1.0 ToolBar.qml
 ToolButton 1.0 ToolButton.qml
-Text 1.0 Text.qml
 TextArea 1.0 TextArea.qml
 Toggle 1.0 Toggle.qml
 TextField 1.0 TextField.qml

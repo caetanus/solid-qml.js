@@ -5,6 +5,7 @@
 #include "shims/notifications.h"
 #include "shims/richtext.h"
 #include "shims/codeeditor.h"
+#include "widgets/solidwidgets.h"
 #include "shims/webfetch.h"
 #include "shims/weblocalstorage.h"
 #include "shims/webplatform.h"
@@ -207,6 +208,7 @@ int main(int argc, char **argv)
     // The CSS primitives are C++ QQuickItems since the qml/ dir was retired; generated QML
     // does `import qmlcss 1.0 as Css`.
     QmlCss::registerTypes();
+    SolidWidgets::registerTypes(); // the C++ widget layer (pre-AOT port; merges with the qmldir)
     // Loader-provided helper types for the opt-in widget modules (no extra Qt deps).
     qmlRegisterType<RichTextHandler>("solidqml.native", 1, 0, "RichTextHandler");
     qmlRegisterType<CodeHighlighter>("solidqml.native", 1, 0, "CodeHighlighter");

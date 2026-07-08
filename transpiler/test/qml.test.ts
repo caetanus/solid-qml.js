@@ -205,13 +205,16 @@ test("emitQml: <img class='a' src={u} /> -> W.Image (widget-library component) w
   assert.match(out, /src: u \|\| ""/);
 });
 
-test("emitQml: Image.qml component exists and extends CssImage with a src slot", async () => {
+test("emitQml: the library Image is a C++ widget (CssImage subclass with the src slot)", async () => {
+  // Ported per docs/superpowers/plans/2026-07-07-widgets-to-cpp.md — the .qml is gone; the
+  // contract (type name + `src` property under solidqml.Widgets) lives in src/widgets.
   const { readFile } = await import("node:fs/promises");
   const { fileURLToPath } = await import("node:url");
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Image.qml", import.meta.url)), "utf8");
-  assert.match(src, /Css\.CssImage \{/);
-  assert.match(src, /property url src/);
-  assert.match(src, /source: root\.src/);
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/primitives.h", import.meta.url)), "utf8");
+  assert.match(src, /class Image : public QmlCss::CssImage/);
+  assert.match(src, /Q_PROPERTY\(QUrl src READ src WRITE setSrc NOTIFY srcChanged\)/);
+  const reg = await readFile(fileURLToPath(new URL("../../src/widgets/solidwidgets.cpp", import.meta.url)), "utf8");
+  assert.match(reg, /qmlRegisterType<Image>\("solidqml\.Widgets", 1, 0, "Image"\)/);
 });
 
 // --- Task 3: <input> ---

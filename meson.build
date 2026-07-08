@@ -61,6 +61,8 @@ solid_qml_loader_qt_sources = qt6.preprocess(
     'src/shims/notifications.h',
     'src/shims/richtext.h',
     'src/shims/codeeditor.h',
+    'src/widgets/primitives.h',
+    'src/widgets/focusring.h',
   ),
 )
 
@@ -77,6 +79,8 @@ executable(
     'src/shims/notifications.cpp',
     'src/shims/richtext.cpp',
     'src/shims/codeeditor.cpp',
+    'src/widgets/solidwidgets.cpp',
+    'src/widgets/focusring.cpp',
   ),
   solid_qml_loader_qt_sources,
   cpp_args: notify_args,
