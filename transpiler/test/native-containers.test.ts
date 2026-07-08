@@ -132,12 +132,17 @@ test("containers: <TabButton> children become W.TabButton with their label text"
   assert.doesNotMatch(out, /T\.TabButton/);
 });
 
-test("containers: TabBar.qml + TabButton.qml host the control internals", async () => {
-  const bar = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TabBar.qml", import.meta.url)), "utf8");
+test("containers: the C++ TabBar + TabButton.qml host the control internals", async () => {
+  // TabBar is C++ now (widgets-to-cpp) — the snippet keeps the QML internals verbatim; the
+  // default `tabs` property forwards into the control's contentData (buffered until compose).
+  const bar = await readFile(fileURLToPath(new URL("../../src/widgets/tabbar.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/tabbar.h", import.meta.url)), "utf8");
   assert.match(bar, /T\.TabBar \{/);
   assert.match(bar, /contentItem: ListView \{/);
-  assert.match(bar, /property alias currentIndex: bar\.currentIndex/);
-  assert.match(bar, /default property alias tabs: bar\.contentData/);
+  assert.match(bar, /Q_PROPERTY\(int currentIndex READ currentIndex WRITE setCurrentIndex NOTIFY currentIndexChanged\)/);
+  assert.match(bar, /onCurrentIndexChanged: root\.currentIndex = currentIndex/);
+  assert.match(bar, /Q_CLASSINFO\("DefaultProperty", "tabs"\)/);
+  assert.match(bar, /QQmlListReference content\(m_control, "contentData"\)/);
   const btn = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TabButton.qml", import.meta.url)), "utf8");
   assert.match(btn, /T\.TabButton \{/);
   assert.match(btn, /cssClass: \["tab"\]/);
@@ -148,8 +153,8 @@ test("containers: TabBar.qml + TabButton.qml host the control internals", async 
   assert.match(btn, /focusPolicy: Qt\.ClickFocus/);
 });
 
-test("containers: TabBar.qml stretches tabs to a CSS-sized bar (web align-items: stretch)", async () => {
-  const bar = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TabBar.qml", import.meta.url)), "utf8");
+test("containers: the C++ TabBar's snippet stretches tabs to a CSS-sized bar (web align-items: stretch)", async () => {
+  const bar = await readFile(fileURLToPath(new URL("../../src/widgets/tabbar.cpp", import.meta.url)), "utf8");
   // T.TabBar sizes every tab to contentHeight (tallest tab's implicit unless explicitly set) —
   // the bar follows the available height once CSS makes it taller than the tabs' own implicit.
   assert.match(bar, /contentHeight: Math\.max\(__tabsImplicitHeight, availableHeight\)/);

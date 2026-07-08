@@ -14,7 +14,6 @@ Select 1.0 Select.qml
 SplitHandle 1.0 SplitHandle.qml
 SplitView 1.0 SplitView.qml
 SwipeView 1.0 SwipeView.qml
-TabBar 1.0 TabBar.qml
 TabButton 1.0 TabButton.qml
 TableView 1.0 TableView.qml
 Tray 1.0 Tray.qml
