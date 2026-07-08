@@ -21,6 +21,8 @@ class Button : public QmlCss::CssFill {
     // The default button (<button type="submit">): the enclosing Dialog fires it on Enter and
     // `button:default { … }` can emphasise it (surfaced as a "default" cssState).
     Q_PROPERTY(bool isDefault READ isDefault WRITE setIsDefault NOTIFY isDefaultChanged)
+    // Disabled: no interaction, `:disabled` styling (RoundButton exposes it; harmless on <button>).
+    Q_PROPERTY(bool disabled READ disabled WRITE setDisabled NOTIFY disabledChanged)
 
 public:
     explicit Button(QQuickItem *parent = nullptr);
@@ -31,6 +33,9 @@ public:
     bool isDefault() const { return m_isDefault; }
     void setIsDefault(bool v);
 
+    bool disabled() const { return m_disabled; }
+    void setDisabled(bool v);
+
     // Move keyboard focus onto the button — Dialog focuses the default button on open, so
     // Enter confirms it (study §6).
     Q_INVOKABLE void takeFocus() { forceActiveFocus(Qt::TabFocusReason); }
@@ -38,6 +43,7 @@ public:
 signals:
     void textChanged();
     void isDefaultChanged();
+    void disabledChanged();
     void clicked();
 
 protected:
@@ -56,9 +62,20 @@ private:
 
     QString m_text;
     bool m_isDefault = false;
+    bool m_disabled = false;
     bool m_hovered = false;
+    bool m_pressed = false;
     QPointer<QmlCss::CssText> m_label;
     QObject *m_tabstop = nullptr; // the loader's solidTabstop switch
+};
+
+// RoundButton — same interaction surface as Button (the "round" class comes from the emit);
+// pressed/disabled states style `:active`/`:disabled` like the T.RoundButton wrapper did.
+class RoundButton : public Button {
+    Q_OBJECT
+
+public:
+    using Button::Button;
 };
 
 } // namespace SolidWidgets

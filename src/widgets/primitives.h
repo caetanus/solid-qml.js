@@ -1,5 +1,6 @@
 #pragma once
 
+#include "qmlcss/cssfill.h"
 #include "qmlcss/cssimage.h"
 #include "qmlcss/cssrect.h"
 #include "qmlcss/csstext.h"
@@ -56,6 +57,32 @@ signals:
 
 private:
     QUrl m_src;
+};
+
+// Fieldset — the <fieldset> box: plain CssFill, primitive "fieldset" (no Templates chrome; the
+// border/box look is author CSS). The transpiler hoists the <legend> to the front of the children.
+class Fieldset : public QmlCss::CssFill {
+    Q_OBJECT
+
+public:
+    explicit Fieldset(QQuickItem *parent = nullptr)
+        : QmlCss::CssFill(parent)
+    {
+        setCssPrimitive(QStringLiteral("fieldset"));
+    }
+};
+
+// StackView — phase-1 contract: children are pages, only child[current] is visible (the
+// transpiler bakes per-page visible guards; an invisible child is out of flow).
+class StackView : public QmlCss::CssRect {
+    Q_OBJECT
+
+public:
+    explicit StackView(QQuickItem *parent = nullptr)
+        : QmlCss::CssRect(parent)
+    {
+        setCssPrimitive(QStringLiteral("stack"));
+    }
 };
 
 } // namespace SolidWidgets

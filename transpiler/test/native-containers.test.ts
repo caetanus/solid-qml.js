@@ -341,10 +341,12 @@ test("containers: <StackView> without current defaults to page 0", async () => {
   assert.match(out, /visible: !!\(\(0\) === 1\)/);
 });
 
-test("containers: StackView.qml is the pure Css 'stack' host", async () => {
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/StackView.qml", import.meta.url)), "utf8");
-  assert.match(src, /Css\.CssRect \{/);
-  assert.match(src, /cssPrimitive: "stack"/);
+test("containers: the C++ StackView is the pure Css 'stack' host", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { fileURLToPath } = await import("node:url");
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/primitives.h", import.meta.url)), "utf8");
+  assert.match(src, /class StackView : public QmlCss::CssRect/);
+  assert.match(src, /QStringLiteral\("stack"\)/);
 });
 
 // ---------------------------------------------------------------------------

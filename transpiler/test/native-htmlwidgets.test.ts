@@ -113,12 +113,12 @@ test("fieldset: <fieldset> instantiates the W.Fieldset component and renders chi
   assert.match(out, /cssClass: \["a"\]/);
 });
 
-test("fieldset: Fieldset.qml component exists as a CssFill fieldset box", async () => {
+test("fieldset: the C++ Fieldset is a CssFill fieldset box", async () => {
   const { readFile } = await import("node:fs/promises");
   const { fileURLToPath } = await import("node:url");
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Fieldset.qml", import.meta.url)), "utf8");
-  assert.match(src, /Css\.CssFill \{/);
-  assert.match(src, /cssPrimitive: "fieldset"/);
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/primitives.h", import.meta.url)), "utf8");
+  assert.match(src, /class Fieldset : public QmlCss::CssFill/);
+  assert.match(src, /QStringLiteral\("fieldset"\)/);
 });
 
 test("fieldset: <legend> becomes a CssText (cssPrimitive 'legend', cssClass ['legend'])", async () => {

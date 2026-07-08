@@ -341,13 +341,12 @@ test("native-inputs: <ToolButton> mirrors RoundButton with the 'tool' class", as
   assert.match(out, /text: "reset"/);
 });
 
-test("native-inputs: RoundButton.qml / ToolButton.qml carry the button primitive + state list", async () => {
-  const round = await readWidget("RoundButton");
-  assert.match(round, /T\.RoundButton \{/);
-  assert.match(round, /cssPrimitive: "button"/);
-  assert.match(round, /background: null/);
-  assert.match(round, /cssState: \(__ctl\.hovered \? \["hover"\] : \[\]\)\.concat\(__ctl\.pressed \? \["active"\] : \[\]\)\.concat\(__ctl\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!__ctl\.enabled \? \["disabled"\] : \[\]\)/);
-  assert.match(round, /activeFocusOnTab: solidTabstop\.enabled/);
+test("native-inputs: RoundButton is the C++ Button (active/disabled); ToolButton.qml keeps its slots", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { fileURLToPath } = await import("node:url");
+  const cpp = await readFile(fileURLToPath(new URL("../../src/widgets/button.h", import.meta.url)), "utf8");
+  assert.match(cpp, /class RoundButton : public Button/);
+  assert.match(cpp, /Q_PROPERTY\(bool disabled READ disabled WRITE setDisabled NOTIFY disabledChanged\)/);
   const tool = await readWidget("ToolButton");
   assert.match(tool, /T\.ToolButton \{/);
   assert.match(tool, /cssPrimitive: "button"/);

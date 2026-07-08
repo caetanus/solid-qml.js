@@ -42,6 +42,16 @@ void Button::setIsDefault(bool v)
     syncState();
 }
 
+void Button::setDisabled(bool v)
+{
+    if (m_disabled == v)
+        return;
+    m_disabled = v;
+    setEnabled(!v);
+    emit disabledChanged();
+    syncState();
+}
+
 void Button::componentComplete()
 {
     QmlCss::CssFill::componentComplete();
@@ -89,10 +99,14 @@ void Button::syncState()
     QVariantList state;
     if (m_hovered)
         state << QStringLiteral("hover");
+    if (m_pressed)
+        state << QStringLiteral("active");
     if (hasActiveFocus())
         state << QStringLiteral("focus");
     if (m_isDefault)
         state << QStringLiteral("default");
+    if (m_disabled)
+        state << QStringLiteral("disabled");
     setCssState(state);
 }
 
@@ -115,12 +129,16 @@ void Button::mousePressEvent(QMouseEvent *event)
     // Clicking a control also FOCUSES it (the tab anchor moves to the clicked button).
     if (activeFocusOnTab())
         forceActiveFocus(Qt::MouseFocusReason);
+    m_pressed = true;
+    syncState();
     event->accept();
 }
 
 void Button::mouseReleaseEvent(QMouseEvent *event)
 {
     event->accept();
+    m_pressed = false;
+    syncState();
     if (boundingRect().contains(event->position()))
         emit clicked();
 }

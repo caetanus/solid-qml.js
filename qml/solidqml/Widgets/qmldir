@@ -8,7 +8,6 @@ DelayButton 1.0 DelayButton.qml
 Dial 1.0 Dial.qml
 Drawer 1.0 Drawer.qml
 Details 1.0 Details.qml
-Fieldset 1.0 Fieldset.qml
 Menu 1.0 Menu.qml
 ListView 1.0 ListView.qml
 MenuItem 1.0 MenuItem.qml
@@ -17,13 +16,11 @@ MonthGrid 1.0 MonthGrid.qml
 PageIndicator 1.0 PageIndicator.qml
 Progress 1.0 Progress.qml
 RangeSlider 1.0 RangeSlider.qml
-RoundButton 1.0 RoundButton.qml
 Select 1.0 Select.qml
 Slider 1.0 Slider.qml
 SpinBox 1.0 SpinBox.qml
 SplitHandle 1.0 SplitHandle.qml
 SplitView 1.0 SplitView.qml
-StackView 1.0 StackView.qml
 SwipeView 1.0 SwipeView.qml
 TabBar 1.0 TabBar.qml
 TabButton 1.0 TabButton.qml
