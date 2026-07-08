@@ -1,0 +1,11 @@
+1
+00:00:00,500 --> 00:00:02,000
+solid-qml media player
+
+2
+00:00:02,200 --> 00:00:04,000
+external .srt subtitles, parsed natively
+
+3
+00:00:04,200 --> 00:00:05,800
+synced to the playback position

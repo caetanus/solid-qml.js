@@ -109,6 +109,8 @@ function emitMediaPlayer(propsArg: t.Node | undefined, _children: t.Node[], scop
   // resolve here, against the AUTHOR component's document base, like Image does internally.
   if (src) lines.push(`${i(1)}src: Qt.resolvedUrl(${bind(src)})`);
   if (autoplay) lines.push(`${i(1)}autoplay: ${bind(autoplay)}`);
+  const subtitles = props.get("subtitles");
+  if (subtitles) lines.push(`${i(1)}subtitles: Qt.resolvedUrl(${bind(subtitles)})`);
   lines.push(`${pad}}`);
   return lines;
 }

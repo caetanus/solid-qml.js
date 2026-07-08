@@ -29,6 +29,11 @@ test("dataviz: <MediaPlayer> instantiates the opt-in Media module with src/autop
   assert.match(out, /autoplay: true/);
 });
 
+test("dataviz: <MediaPlayer subtitles> wires the resolved .srt url", async () => {
+  const out = await qmlType(`export function F(){ return <MediaPlayer src="a.mp4" subtitles="a.srt" />; }`);
+  assert.match(out, /subtitles: Qt\.resolvedUrl\("a\.srt"\)/);
+});
+
 test("dataviz: an app without <MediaPlayer> never imports the Media module", async () => {
   const out = await qmlType(`export function F(){ return <div class="a" />; }`);
   assert.doesNotMatch(out, /solidqml\.Widgets\.Media/);

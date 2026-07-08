@@ -175,3 +175,12 @@
   color: #8595a8;
   text-align: right;
 }
+
+.dv .dv-media .media-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  background-color: #cc10161f;
+  padding: 3px 10px;
+  border-radius: 6px;
+}

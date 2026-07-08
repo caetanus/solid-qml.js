@@ -51,12 +51,12 @@ W.Div {
         visible: !!(isNative)
         W.Text {
             cssClass: ["dv-label"]
-            text: "Media player — video + play/seek/clock (QtMultimedia)"
+            text: "Media player — click play; video + seek/clock + .srt subtitles (QtMultimedia)"
         }
         WMedia.MediaPlayer {
             cssClass: ["dv-media"]
             src: Qt.resolvedUrl("assets/media-demo.mp4")
-            autoplay: true
+            subtitles: Qt.resolvedUrl("assets/media-demo.srt")
         }
     }
     W.Div {

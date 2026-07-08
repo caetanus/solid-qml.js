@@ -41,11 +41,11 @@ export function ChartsAnd3D() {
           <Scene3D class="dv-scene" />
         </div>
         {/* Media playback (module solidqml.Widgets.Media): QtMultimedia, imported only when the
-            tag is used. A generated clip autoplays as the demo's visualization: moving test-pattern
-            video with the play/seek/clock strip below. */}
+            tag is used. Starts PAUSED — playback is the user's click (desktop convention); the
+            generated clip carries external .srt subtitles, parsed natively and synced. */}
         <div class="dv-card">
-          <text class="dv-label">Media player — video + play/seek/clock (QtMultimedia)</text>
-          <MediaPlayer class="dv-media" src="assets/media-demo.mp4" autoplay />
+          <text class="dv-label">Media player — click play; video + seek/clock + .srt subtitles (QtMultimedia)</text>
+          <MediaPlayer class="dv-media" src="assets/media-demo.mp4" subtitles="assets/media-demo.srt" />
         </div>
         {/* Embedded web content (module solidqml.Widgets.Web): a REAL Chromium page via
             QtWebEngine, imported only when the tag is used (the loader pre-sets

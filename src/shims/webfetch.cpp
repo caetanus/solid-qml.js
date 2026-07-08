@@ -19,6 +19,10 @@ WebFetchReply::WebFetchReply(QNetworkReply *reply, QObject *parent)
         const int status = m_reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (m_aborted) {
             emit failed(QStringLiteral("aborted"), true);
+        } else if (status == 0 && m_reply->error() == QNetworkReply::NoError) {
+            // Local schemes (file://, qrc://) carry no HTTP status — a clean read IS a 200
+            // (browsers report file: fetches the same way).
+            emit finished(200, QStringLiteral("OK"), QVariantMap(), QString::fromUtf8(m_reply->readAll()));
         } else if (status > 0) {
             // A genuine HTTP response — resolve even for 4xx/5xx (fetch semantics).
             const QString statusText = m_reply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString();
@@ -69,7 +73,12 @@ WebFetchReply *WebFetch::request(const QString &url, const QVariantMap &options)
     const QString method = options.value(QStringLiteral("method"), QStringLiteral("GET")).toString().toUpper();
     const QByteArray body = options.value(QStringLiteral("body")).toString().toUtf8();
 
-    QNetworkReply *reply = m_nam->sendCustomRequest(request, method.toUtf8(), body);
+    // sendCustomRequest is HTTP-only; local schemes (file://, qrc://) go through the plain GET
+    // path so fetch() can read app assets (subtitles, templates) like a browser reads file: pages.
+    const QUrl parsed(url);
+    QNetworkReply *reply = (!parsed.scheme().startsWith(QLatin1String("http")) && method == QLatin1String("GET"))
+        ? m_nam->get(request)
+        : m_nam->sendCustomRequest(request, method.toUtf8(), body);
     return new WebFetchReply(reply, this);
 }
 
