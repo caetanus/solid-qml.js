@@ -1,31 +1,19 @@
-// MonthGrid — the shared month-grid calendar body in solidqml.Widgets (owner directive 2026-07-05:
-// one .qml per component). Used by both Calendar (inline) and DateField (in its popup). A plain Item
-// hosting the header (prev/next `.cal-nav` buttons + `.cal-title`), the DayOfWeekRow and the
-// AbstractMonthGrid with its day delegate. The Abstract templates instantiate NO delegates in C++ —
-// the style (us) supplies contentItems whose Repeaters bind control.source → control.delegate.
-//
-// Props:
-//   selectedDate — the currently-selected Date (drives the `.day:selected` highlight)
-//   cursorDate   — the keyboard cursor Date (drives `.day:focus`); null for the inline Calendar
-//   viewMonth/viewYear — the shown month/year; initialised from selectedDate (the binding breaks on
-//     the first nav click — QML semantics — after which they track navigation). DateField writes them
-//     imperatively from its keyboard stepping, so nav and keyboard share the same state.
-//   signal dayPicked(date) — fires new Date(year, month, day) when a day cell is clicked.
-import QtQuick
+#include "monthgrid.h"
+
+#include "snippetwidget.h"
+
+namespace {
+
+// Original MonthGrid.qml internals — `root` = the C++ wrapper; an anchored Item hosts the four
+// absolutely-positioned children so the snippet has a single root. The Abstract templates
+// instantiate NO delegates in C++ — the style (us) supplies contentItems whose Repeaters bind
+// control.source → control.delegate.
+const char *kMonthGridBody = R"(import QtQuick
 import QtQuick.Templates as T
 import qmlcss 1.0 as Css
 
 Item {
-    id: root
-    property var selectedDate: null
-    property var cursorDate: null
-    property int viewMonth: selectedDate instanceof Date ? selectedDate.getMonth() : new Date().getMonth()
-    property int viewYear: selectedDate instanceof Date ? selectedDate.getFullYear() : new Date().getFullYear()
-    signal dayPicked(var date)
-
-    // Fixed implicit size: 7 cells × 32 px wide; 32 (header) + 24 (DOW) + 6 rows × 32 = 280.
-    implicitWidth: 224
-    implicitHeight: 280
+    anchors.fill: parent
 
     // ── prev nav button ────────────────────────────────────────────────────
     Css.CssFill {
@@ -150,3 +138,83 @@ Item {
         }
     }
 }
+)";
+
+} // namespace
+
+namespace SolidWidgets {
+
+MonthGrid::MonthGrid(QQuickItem *parent)
+    : QQuickItem(parent)
+{
+    // Fixed implicit size: 7 cells × 32 px wide; 32 (header) + 24 (DOW) + 6 rows × 32 = 280.
+    setImplicitWidth(224);
+    setImplicitHeight(280);
+}
+
+QDate MonthGrid::baseDate() const
+{
+    const QDateTime dt = m_selectedDate.toDateTime();
+    return dt.isValid() ? dt.date() : QDate::currentDate();
+}
+
+void MonthGrid::setSelectedDate(const QVariant &v)
+{
+    if (m_selectedDate == v)
+        return;
+    m_selectedDate = v;
+    emit selectedDateChanged();
+    // Unwritten view props follow the selected date (JS init-binding semantics).
+    if (!m_viewMonthSet)
+        emit viewMonthChanged();
+    if (!m_viewYearSet)
+        emit viewYearChanged();
+}
+
+void MonthGrid::setCursorDate(const QVariant &v)
+{
+    if (m_cursorDate == v)
+        return;
+    m_cursorDate = v;
+    emit cursorDateChanged();
+}
+
+int MonthGrid::viewMonth() const
+{
+    if (m_viewMonthSet)
+        return m_viewMonth;
+    return baseDate().month() - 1; // JS Date months are 0-based
+}
+
+void MonthGrid::setViewMonth(int v)
+{
+    const bool same = m_viewMonthSet && m_viewMonth == v;
+    m_viewMonth = v;
+    m_viewMonthSet = true; // first write breaks the follow (QML binding-break semantics)
+    if (!same)
+        emit viewMonthChanged();
+}
+
+int MonthGrid::viewYear() const
+{
+    if (m_viewYearSet)
+        return m_viewYear;
+    return baseDate().year();
+}
+
+void MonthGrid::setViewYear(int v)
+{
+    const bool same = m_viewYearSet && m_viewYear == v;
+    m_viewYear = v;
+    m_viewYearSet = true;
+    if (!same)
+        emit viewYearChanged();
+}
+
+void MonthGrid::componentComplete()
+{
+    QQuickItem::componentComplete();
+    composeInternalPlain(this, QStringLiteral("solidwidgets-monthgrid"), kMonthGridBody);
+}
+
+} // namespace SolidWidgets

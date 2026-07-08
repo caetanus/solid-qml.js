@@ -1,8 +1,11 @@
 #include "solidwidgets.h"
 
+#include "monthgrid.h"
 #include "primitives.h"
 #include "select.h"
 #include "button.h"
+#include "calendar.h"
+#include "datefield.h"
 #include "focusring.h"
 #include "indicators.h"
 #include "sliders.h"
@@ -56,6 +59,9 @@ void registerTypes()
     qmlRegisterType<Details>("solidqml.Widgets", 1, 0, "Details");
     qmlRegisterType<Dialog>("solidqml.Widgets", 1, 0, "Dialog");
     qmlRegisterType<Select>("solidqml.Widgets", 1, 0, "Select");
+    qmlRegisterType<MonthGrid>("solidqml.Widgets", 1, 0, "MonthGrid");
+    qmlRegisterType<Calendar>("solidqml.Widgets", 1, 0, "Calendar");
+    qmlRegisterType<DateField>("solidqml.Widgets", 1, 0, "DateField");
 }
 
 } // namespace SolidWidgets
