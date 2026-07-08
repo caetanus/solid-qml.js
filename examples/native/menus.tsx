@@ -6,7 +6,7 @@ import { createSignal, Show } from "solid-js";
 import { div, text, button, notifications } from "../../src/solid-qml/runtime";
 import "./menus.css";
 
-declare const Menu: any, MenuItem: any, MenuSeparator: any, MenuBar: any, TreeView: any, ListView: any, TableView: any, Tray: any, ContextMenu: any;
+declare const Menu: any, MenuItem: any, MenuSeparator: any, MenuBar: any, TreeView: any, ListView: any, TableView: any, Tray: any, ContextMenu: any, Shortcut: any;
 
 export function MenusAndViews() {
   const [lastAction, setLastAction] = createSignal("none yet");
@@ -151,6 +151,14 @@ export function MenusAndViews() {
           <text class="nv-ctxzone-t">right-click here</text>
         </div>
         <text class="nv-echo">last action: {lastAction()}</text>
+      </div>
+
+      {/* ── Accelerators: app-wide keyboard shortcuts ──────────── */}
+      <div class="nv-row">
+        <text class="nv-label">accel</text>
+        <Shortcut keys="Ctrl+S" onActivated={() => setLastAction("accel: Ctrl+S (save)")} />
+        <Shortcut keys={["Ctrl+K", "Ctrl+Shift+P"]} onActivated={() => setLastAction("accel: Ctrl+K (palette)")} />
+        <text class="nv-echo">press Ctrl+S or Ctrl+K anywhere \u2192 last action updates</text>
       </div>
 
       {/* ── Tray + desktop notifications ─────────────────────────────────────────

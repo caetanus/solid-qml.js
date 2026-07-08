@@ -206,6 +206,25 @@ W.Div {
         cssClass: ["nv-row"]
         W.Text {
             cssClass: ["nv-label"]
+            text: "accel"
+        }
+        Shortcut {
+            sequences: ["Ctrl+S"]
+            onActivated: { lastAction = "accel: Ctrl+S (save)" }
+        }
+        Shortcut {
+            sequences: ["Ctrl+K", "Ctrl+Shift+P"]
+            onActivated: { lastAction = "accel: Ctrl+K (palette)" }
+        }
+        W.Text {
+            cssClass: ["nv-echo"]
+            text: "press Ctrl+S or Ctrl+K anywhere \\u2192 last action updates"
+        }
+    }
+    W.Div {
+        cssClass: ["nv-row"]
+        W.Text {
+            cssClass: ["nv-label"]
             text: "Tray"
         }
         W.Tray {
