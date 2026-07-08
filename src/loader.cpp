@@ -10,6 +10,7 @@
 #include "shims/weblocalstorage.h"
 #include "shims/webplatform.h"
 #include "shims/webtimers.h"
+#include "shims/backgroundtasks.h"
 #include "shims/sharedbuffers.h"
 #include "shims/webworker.h"
 
@@ -64,6 +65,7 @@ int runMiniNode(QGuiApplication &app, const QString &path)
     JsPolyfill::install(&engine);
     NodeShims::install(&engine);
     SolidWorkers::SharedBuffers::install(&engine);
+    SolidWorkers::BackgroundTasks::install(&engine);
     SolidWorkers::WebWorkerFactory::install(&engine, QUrl::fromLocalFile(QDir::currentPath() + QLatin1Char('/')));
 
     const QString abs = QFileInfo(path).absoluteFilePath();
@@ -251,6 +253,7 @@ int main(int argc, char **argv)
     NodeShims::install(&engine);       // process / fs (sync) / child_process (promise) as importable modules
     // Worker global (real OS threads, each a full shim'd engine); relative URLs anchor at the app dir.
     SolidWorkers::SharedBuffers::install(&engine); // SharedArrayBuffer + Atomics.wait/notify
+    SolidWorkers::BackgroundTasks::install(&engine); // solid:background (desktop backend)
     SolidWorkers::WebWorkerFactory::install(&engine, QUrl::fromLocalFile(QFileInfo(qmlPath).absolutePath() + QLatin1Char('/')));
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,
                      &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
