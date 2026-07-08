@@ -1,4 +1,5 @@
 import * as t from "@babel/types";
+import { safeName } from "../names/safe.ts";
 import { emitExpr, type Scope } from "./expr.ts";
 
 /** Emit one statement in BINDING mode — for use inside a block-memo IIFE body where reactive cells
@@ -11,7 +12,7 @@ export function emitBindingStmt(node: t.Statement, scope: Scope): string {
   const bScope: Scope = { ...scope, mode: "binding" };
   if (t.isVariableDeclaration(node))
     return node.declarations.map((d) =>
-      `var ${(d.id as t.Identifier).name} = ${d.init ? emitExpr(d.init, bScope) : "undefined"};`).join(" ");
+      `var ${safeName((d.id as t.Identifier).name)} = ${d.init ? emitExpr(d.init, bScope) : "undefined"};`).join(" ");
   if (t.isReturnStatement(node))
     return `return ${node.argument ? emitExpr(node.argument, bScope) : "undefined"};`;
   if (t.isExpressionStatement(node))
@@ -24,7 +25,7 @@ export function emitStmt(node: t.Statement, scope: Scope): string {
   const s: Scope = { ...scope, mode: "handler" };
   if (t.isVariableDeclaration(node))
     return node.declarations.map((d) =>
-      `var ${(d.id as t.Identifier).name} = ${d.init ? emitValue(d.init, s) : "undefined"};`).join(" ");
+      `var ${safeName((d.id as t.Identifier).name)} = ${d.init ? emitValue(d.init, s) : "undefined"};`).join(" ");
   if (t.isExpressionStatement(node)) {
     const e = node.expression;
     // onCleanup(fn) → register a teardown (a root `property var __cleanups: []`), run in onDestruction.

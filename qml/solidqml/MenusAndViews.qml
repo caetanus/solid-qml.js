@@ -17,12 +17,12 @@ W.Div {
     property var selItem: "nothing"
     property var selRow: "nothing"
     readonly property var treeData: [({ label: "src", children: [({ label: "emit", children: [({ label: "qml.ts" }), ({ label: "expr.ts" })] }), ({ label: "resolve", children: [({ label: "node.ts" })] }), ({ label: "index.ts" })] }), ({ label: "docs", children: [({ label: "roadmap.md" })] }), ({ label: "package.json" })]
-    function msgOf(id_) { return "#" + id_ + " “" + (sentBodies[id_] || "?") + "”"; }
-    function reasonOf(reason) { if (reason === 1) { return "expired"; } if (reason === 2) { return "dismissed by the user"; } if (reason === 3) { return "closed by the app"; } return "closed (reason " + reason + ")"; }
-    function notifyPlain() { var body = "Hello from the native gallery"; var nid = solidNotifications.send(({ title: "solid-qml", body: body })); sentBodies[nid] = body; notifyEcho = "sent " + msgOf(nid); }
-    function notifyActions() { var body = "Pick an action — or reply right here"; var nid = solidNotifications.send(({ title: "solid-qml", body: body, actions: [({ id: "ok", label: "OK" }), ({ id: "later", label: "Later" })], reply: "Type a reply…" })); sentBodies[nid] = body; notifyEcho = "sent " + msgOf(nid) + " (actions" + (solidNotifications.supportsReply ? " + reply" : "") + ")"; }
+    function msgOf(id_) { return "#" + (id_) + " “" + (sentBodies[id_] || "?") + "”"; }
+    function reasonOf(reason) { if (reason === 1) { return "expired"; } if (reason === 2) { return "dismissed by the user"; } if (reason === 3) { return "closed by the app"; } return "closed (reason " + (reason) + ")"; }
+    function notifyPlain() { var body = "Hello from the native gallery"; var id_ = solidNotifications.send(({ title: "solid-qml", body: body })); sentBodies[id_] = body; notifyEcho = "sent " + (msgOf(id_)); }
+    function notifyActions() { var body = "Pick an action — or reply right here"; var id_ = solidNotifications.send(({ title: "solid-qml", body: body, actions: [({ id: "ok", label: "OK" }), ({ id: "later", label: "Later" })], reply: "Type a reply…" })); sentBodies[id_] = body; notifyEcho = "sent " + (msgOf(id_)) + " (actions" + (solidNotifications.supportsReply ? " + reply" : "") + ")"; }
     property var __cleanups: []
-    Component.onCompleted: { solidNotifications.actionInvoked.connect(function(id_, action) { return notifyEcho = msgOf(id_) + " → action “" + action + "”" }); solidNotifications.replied.connect(function(id_, replyText) { return notifyEcho = msgOf(id_) + " → reply: “" + replyText + "”" }); solidNotifications.closed.connect(function(id_, reason) { return notifyEcho = msgOf(id_) + " → " + reasonOf(reason) }); }
+    Component.onCompleted: { solidNotifications.actionInvoked.connect(function(id_, action) { return notifyEcho = (msgOf(id_)) + " → action “" + (action) + "”" }); solidNotifications.replied.connect(function(id_, replyText) { return notifyEcho = (msgOf(id_)) + " → reply: “" + (replyText) + "”" }); solidNotifications.closed.connect(function(id_, reason) { return notifyEcho = (msgOf(id_)) + " → " + (reasonOf(reason)) }); }
     Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
     cssClass: ["nv-section", "nv-menus"]
     W.Text {

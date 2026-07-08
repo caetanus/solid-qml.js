@@ -42,10 +42,13 @@ export function analyzeSignals(fn: t.Function): SymbolTable {
 
         if (t.isArrayPattern(id) && t.isCallExpression(init) && t.isIdentifier(init.callee, { name: "createSignal" })) {
           const [g, s] = id.elements;
-          if (t.isIdentifier(g) && t.isIdentifier(s)) {
+          if (t.isIdentifier(g)) {
             const initArg = init.arguments[0];
-            table.set(g.name, { kind: "signal", name: g.name, setter: s.name, init: initArg && t.isExpression(initArg) ? initArg : null });
-            table.set(s.name, { kind: "setter", signal: g.name });
+            // Getter-only destructure (`const [x] = createSignal(v)`) is valid Solid: the value is
+            // still per-instance reactive state — a synthesized setter name keeps the emit uniform.
+            const setterName = t.isIdentifier(s) ? s.name : `__set_${g.name}`;
+            table.set(g.name, { kind: "signal", name: g.name, setter: setterName, init: initArg && t.isExpression(initArg) ? initArg : null });
+            table.set(setterName, { kind: "setter", signal: g.name });
           }
           return;
         }
@@ -491,11 +494,13 @@ export function analyzeHelpers(fn: t.Function): Map<string, HelperInfo> {
       if (t.isArrowFunctionExpression(init) && !t.isJSXElement(init.body) && !t.isJSXFragment(init.body)) {
         // Zero-param expression arrows → "derived" accessors handled by analyzeSignals; skip here.
         if (init.params.length === 0 && !t.isBlockStatement(init.body)) continue;
-        // Param-having or block-bodied arrows → helpers (QML object methods)
+        // Param-having or block-bodied arrows → helpers (QML object methods). An expression body
+        // IS the return value — wrapping it as a bare statement silently made every such helper
+        // return undefined.
         const params = init.params.filter((p): p is t.Identifier => t.isIdentifier(p)).map((p) => p.name);
         const body: t.BlockStatement = t.isBlockStatement(init.body)
           ? init.body
-          : t.blockStatement([t.expressionStatement(init.body as t.Expression)]);
+          : t.blockStatement([t.returnStatement(init.body as t.Expression)]);
         out.set(d.id.name, { params, body });
       } else if (t.isFunctionExpression(init)) {
         const params = init.params.filter((p): p is t.Identifier => t.isIdentifier(p)).map((p) => p.name);

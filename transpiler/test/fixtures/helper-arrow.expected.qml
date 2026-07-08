@@ -7,7 +7,7 @@ import solidqml.Widgets 1.0 as W
 W.Div {
     id: __self
     property var count: 0
-    function inc(n) { count = count + n; }
+    function inc(n) { return count = count + n; }
     function clampedInc() { if (count < 5) { inc(1); } }
     cssClass: ["app"]
     W.Button {

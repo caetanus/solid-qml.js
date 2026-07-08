@@ -13,8 +13,8 @@ W.Div {
     readonly property var visible_: (function() { var f = filter; return todos.filter(function(t) { return f === "all" ? true : f === "active" ? !t.done : t.done }); })()
     property var nextId: 1
     function add() { var title = draft.trim(); if (!title) { return undefined; } todos = (function() { var __d = todos.slice(); (function(list) { return list.push(({ id: nextId++, title: title, done: false })) })(__d); return __d; })(); draft = ""; }
-    function toggle(id_) { todos = todos.map(function(__t) { return (function(t) { return t.id === id_ })(__t) ? (function() { var __o = Object.assign({}, __t); __o["done"] = (function(d) { return !d })(__t["done"]); return __o; })() : __t; }); }
-    function remove(id_) { todos = (function(list) { return list.filter(function(t) { return t.id !== id_ }) })(todos); }
+    function toggle(id_) { return todos = todos.map(function(__t) { return (function(t) { return t.id === id_ })(__t) ? (function() { var __o = Object.assign({}, __t); __o["done"] = (function(d) { return !d })(__t["done"]); return __o; })() : __t; }); }
+    function remove(id_) { return todos = (function(list) { return list.filter(function(t) { return t.id !== id_ }) })(todos); }
     function selectAll() { for (var t of todos) { if (!t.done) { toggle(t.id); } } }
     property var __cleanups: []
     Component.onCompleted: { var saved = localStorage.getItem("todos"); if (saved) { var restored = JSON.parse(saved); todos = restored; nextId = restored.reduce(function(max, todo) { return Math.max(max, todo.id) }, 0) + 1; } localStorage.setItem("todos", JSON.stringify(todos)); }

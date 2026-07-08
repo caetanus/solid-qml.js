@@ -151,3 +151,15 @@ test("expr: word unary operators keep their separating space (typeof/void/delete
   const out = emitExpr(expr, { table: new Map(), mode: "binding" } as any);
   if (!/typeof process/.test(out)) throw new Error("missing space: " + out);
 });
+
+test("emitExpr: template literals lower to string concatenation", async () => {
+  const scope = await scopeFor(`export function C(){ const [count,setCount]=createSignal(0); return <div></div>; }`, "binding");
+  assert.equal(emitExpr(await expr("`a ${count()} b`"), scope), '"a " + (count) + " b"');
+  assert.equal(emitExpr(await expr("`${count()}`"), scope), '("" + (count))');
+  assert.equal(emitExpr(await expr("`plain`"), scope), '"plain"');
+});
+
+test("emitExpr: getter-only createSignal destructure is a reactive read", async () => {
+  const scope = await scopeFor(`export function C(){ const [cache]=createSignal({}); return <div></div>; }`, "binding");
+  assert.equal(emitExpr(await expr("cache()"), scope), "cache");
+});

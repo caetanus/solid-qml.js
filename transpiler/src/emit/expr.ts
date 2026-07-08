@@ -254,6 +254,22 @@ export function emitExpr(node: t.Node, scope: Scope): string {
     return `${left} ${node.operator} ${right}`;
   }
 
+  // `` `a ${x} b` `` — V4 supports template literals, but the emit pipeline quotes strings and
+  // resolves identifiers per-part, so lower to plain concatenation (web-identical semantics;
+  // every interpolation coerces through string concat exactly like the runtime would).
+  if (t.isTemplateLiteral(node)) {
+    const parts: string[] = [];
+    node.quasis.forEach((q, k) => {
+      if (q.value.cooked) parts.push(JSON.stringify(q.value.cooked));
+      const e = node.expressions[k];
+      if (e && t.isExpression(e)) parts.push(`(${emitExpr(e, scope)})`);
+    });
+    if (parts.length === 0) return '""';
+    // A lone interpolation still coerces to string ("" + x).
+    if (parts.length === 1 && node.expressions.length === 1) return `("" + ${parts[0]})`;
+    return parts.join(" + ");
+  }
+
   // Fallback for the few node kinds not yet handled — keep it visible, don't silently drop.
   throw new Error(`emitExpr: unsupported node ${node.type}`);
 }
@@ -264,7 +280,7 @@ export function emitExpr(node: t.Node, scope: Scope): string {
 function emitInlineStmt(node: t.Statement, scope: Scope): string {
   if (t.isVariableDeclaration(node))
     return node.declarations.map((d) =>
-      `var ${(d.id as t.Identifier).name} = ${d.init ? emitExpr(d.init, scope) : "undefined"};`).join(" ");
+      `var ${safeName((d.id as t.Identifier).name)} = ${d.init ? emitExpr(d.init, scope) : "undefined"};`).join(" ");
   if (t.isReturnStatement(node))
     return `return ${node.argument ? emitExpr(node.argument, scope) : "undefined"};`;
   if (t.isExpressionStatement(node))

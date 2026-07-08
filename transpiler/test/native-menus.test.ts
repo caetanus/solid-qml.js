@@ -411,7 +411,9 @@ test("tray: icon prop maps to iconSource", async () => {
 
 test("tray: a Show guard folds into the component's shown", async () => {
   const out = await qml(`export function F(){ const [vis] = createSignal(true); return <Show when={vis()}><Tray tooltip="x" /></Show>; }`);
-  assert.match(out, /shown: !!\(vis\(\)\)/);
+  // Getter-only createSignal destructure is a real signal now: the guard is a reactive
+  // property READ (bare name), not a function call.
+  assert.match(out, /shown: !!\(vis\)/);
 });
 
 test("tray: Tray.qml hosts the zero-size SystemTrayIcon shell", async () => {

@@ -273,7 +273,7 @@ test("golden: helper-arrow.tsx — arrow helper with params → QML method; help
   const want = await readFile(`${dir}helper-arrow.expected.qml`, "utf8");
   assert.equal(got.trimEnd(), want.trimEnd());
   // Structural assertions
-  assert.match(got, /function inc\(n\) \{ count = count \+ n; \}/);      // arrow helper → QML method
+  assert.match(got, /function inc\(n\) \{ return count = count \+ n; \}/); // arrow helper → QML method (expression body returns)
   assert.match(got, /function clampedInc\(\) \{ if \(count < 5\)/);       // IfStatement in helper body
   assert.match(got, /\{ inc\(1\); \}/);                                    // sibling call is bare
   assert.match(got, /onClicked: clampedInc\(\)/);                         // handler calls the method
@@ -289,7 +289,7 @@ test("examples/todomvc.tsx — createStore + setters fully transpiles", async ()
   assert.match(app.entry, /todos = \(function\(\) \{ var __d = todos\.slice\(\)/); // produce: copy + reassign
   assert.match(app.entry, /todos = todos\.map\(function\(__t\)/);       // path setter: map + reassign
   assert.match(app.entry, /todos = \(function\(list\)/);               // function setter: reassign
-  assert.match(app.entry, /function toggle\(id_\) \{ todos = todos\.map/); // helper param safeName'd (id->id_)
+  assert.match(app.entry, /function toggle\(id_\) \{ return todos = todos\.map/); // helper param safeName'd (id->id_)
   assert.deepEqual(app.modules, {});                                    // solid-js/store is transpiler semantics, not mirrored JS
   assert.doesNotMatch(app.entry, /import "modules\/store_/);            // no invalid V4 mirror for createStore/produce
 });
