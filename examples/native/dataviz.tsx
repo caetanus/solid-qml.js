@@ -11,7 +11,7 @@ import { Show } from "solid-js";
 import { div, text } from "../../src/solid-qml/runtime";
 import "./dataviz.css";
 
-declare const Chart: any, Scene3D: any, Surface: any, MediaPlayer: any, WebView: any;
+declare const Chart: any, Scene3D: any, Surface: any, MediaPlayer: any, WebView: any, RichText: any;
 
 export function ChartsAnd3D() {
   const isNative = typeof process !== "undefined" && !!(process.versions && process.versions.solidQml);
@@ -53,6 +53,13 @@ export function ChartsAnd3D() {
         <div class="dv-card">
           <text class="dv-label">WebView — Chromium in a card (QtWebEngine)</text>
           <WebView class="dv-web" src="assets/web-demo.html" />
+        </div>
+        {/* Word-like editor (module solidqml.Widgets.RichText): character/paragraph formatting
+            via the loader's QTextCursor handler, saving OpenDocument NATIVELY
+            (QTextDocumentWriter) and loading .odt through our content.xml reader. */}
+        <div class="dv-card">
+          <text class="dv-label">Rich text — word-like editing, opens &amp; saves OpenDocument (.odt)</text>
+          <RichText class="dv-rich" />
         </div>
         {/* 3D + data viz combined (module solidqml.Widgets.Surface): the REAL Walker Lake exhaustive
             grid (Isaaks & Srivastava, 260×300 V values) as a height-coloured surface. Drag to rotate,

@@ -114,3 +114,43 @@
   border: 1px solid #223140;
   border-radius: 10px;
 }
+
+/* ─── <RichText> ──────────────────────────────────────────────────────────────────────── */
+
+.dv .dv-rich {
+  width: 640px;
+  height: 380px;
+  background: #ffffff;
+  border: 1px solid #223140;
+  border-radius: 10px;
+  color: #1f2328;
+  font-size: 14px;
+}
+
+.dv .dv-rich .rt-toolbar {
+  background: #eef2f7;
+  border-bottom: 1px solid #d5dee8;
+}
+
+.dv .dv-rich .rt-btn {
+  background: transparent;
+  border-radius: 6px;
+}
+
+.dv .dv-rich .rt-btn.hover {
+  background: #dde6ee;
+}
+
+.dv .dv-rich .rt-btn.active {
+  background: #176b87;
+}
+
+.dv .dv-rich .rt-btn-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #17222c;
+}
+
+.dv .dv-rich .rt-btn.active .rt-btn-label {
+  color: #ffffff;
+}

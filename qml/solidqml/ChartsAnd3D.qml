@@ -5,6 +5,7 @@ import qmlcss 1.0 as Css
 
 import solidqml.Widgets.Chart 1.0 as WChart
 import solidqml.Widgets.Media 1.0 as WMedia
+import solidqml.Widgets.RichText 1.0 as WRich
 import solidqml.Widgets.Scene3D 1.0 as WScene3D
 import solidqml.Widgets.Surface 1.0 as WSurface
 import solidqml.Widgets.Web 1.0 as WWeb
@@ -67,6 +68,17 @@ W.Div {
         WWeb.WebView {
             cssClass: ["dv-web"]
             src: Qt.resolvedUrl("assets/web-demo.html")
+        }
+    }
+    W.Div {
+        cssClass: ["dv-card"]
+        visible: !!(isNative)
+        W.Text {
+            cssClass: ["dv-label"]
+            text: "Rich text — word-like editing, opens & saves OpenDocument (.odt)"
+        }
+        WRich.RichText {
+            cssClass: ["dv-rich"]
         }
     }
     W.Div {

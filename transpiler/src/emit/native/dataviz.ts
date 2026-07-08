@@ -130,4 +130,18 @@ function emitWebView(propsArg: t.Node | undefined, _children: t.Node[], scope: S
   return lines;
 }
 
-registerNativeTags({ Chart: emitChart, Scene3D: emitScene3D, Surface: emitSurface, MediaPlayer: emitMediaPlayer, WebView: emitWebView });
+/** <RichText> → WRich.RichText (opt-in module solidqml.Widgets.RichText — the word-like editor;
+ *  formatting/ODF IO via the loader-registered RichTextHandler, no extra Qt dependency). */
+function emitRichText(propsArg: t.Node | undefined, _children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  requireImport(scope, "import solidqml.Widgets.RichText 1.0 as WRich");
+  const props = propsOf(propsArg);
+
+  const lines: string[] = [`${pad}WRich.RichText {`, ...buildCssClassLine(cssPropsShim(props), scope, i(1))];
+  if (guard) lines.push(`${i(1)}visible: !!(${guard})`);
+  lines.push(`${pad}}`);
+  return lines;
+}
+
+registerNativeTags({ Chart: emitChart, Scene3D: emitScene3D, Surface: emitSurface, MediaPlayer: emitMediaPlayer, WebView: emitWebView, RichText: emitRichText });

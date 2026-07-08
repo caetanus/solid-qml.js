@@ -42,6 +42,10 @@ qt6_widgets_dep = dependency('qt6', modules: ['Widgets'])
 qt6_dbus_dep = dependency('qt6', modules: ['DBus'], required: false)
 notify_args = qt6_dbus_dep.found() ? ['-DHAVE_QTDBUS'] : []
 
+# The <RichText> module's ODF loader uses the private QZipReader (Qt ships no public unzip;
+# this reader is how Qt itself opens .odt content).
+qt6_core_private_dep = dependency('qt6', modules: ['Core'], private_headers: true)
+
 # No qresources: the generated app (App.generated.qml + its .js sidecar) and the stylesheet are
 # loaded from the filesystem at runtime, not baked into the binary. Release uses the AOT C++
 # back-end instead of qrc-embedded QML.
@@ -54,6 +58,7 @@ solid_qml_loader_qt_sources = qt6.preprocess(
     'src/shims/nodeshims.h',
     'src/shims/tabstop.h',
     'src/shims/notifications.h',
+    'src/shims/richtext.h',
   ),
 )
 
@@ -68,9 +73,10 @@ executable(
     'src/shims/jspolyfill.cpp',
     'src/shims/nodeshims.cpp',
     'src/shims/notifications.cpp',
+    'src/shims/richtext.cpp',
   ),
   solid_qml_loader_qt_sources,
   cpp_args: notify_args,
-  dependencies: [qml_css_engine_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep],
+  dependencies: [qml_css_engine_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep, qt6_core_private_dep],
   install: true,
 )

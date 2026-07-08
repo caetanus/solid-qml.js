@@ -40,3 +40,10 @@ test("dataviz: <WebView> instantiates the opt-in Web module with a resolved src"
   assert.match(out, /WWeb\.WebView \{/);
   assert.match(out, /src: Qt\.resolvedUrl\("assets\/page\.html"\)/);
 });
+
+test("dataviz: <RichText> instantiates the opt-in RichText module", async () => {
+  const out = await qmlType(`export function F(){ return <RichText class="ed" />; }`);
+  assert.match(out, /import solidqml\.Widgets\.RichText 1\.0 as WRich/);
+  assert.match(out, /WRich\.RichText \{/);
+  assert.match(out, /cssClass: \["ed"\]/);
+});

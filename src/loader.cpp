@@ -3,6 +3,7 @@
 #include "shims/nodeshims.h"
 #include "shims/tabstop.h"
 #include "shims/notifications.h"
+#include "shims/richtext.h"
 #include "shims/webfetch.h"
 #include "shims/weblocalstorage.h"
 #include "shims/webplatform.h"
@@ -205,6 +206,8 @@ int main(int argc, char **argv)
     // The CSS primitives are C++ QQuickItems since the qml/ dir was retired; generated QML
     // does `import qmlcss 1.0 as Css`.
     QmlCss::registerTypes();
+    // Loader-provided helper types for the opt-in widget modules (no extra Qt deps).
+    qmlRegisterType<RichTextHandler>("solidqml.native", 1, 0, "RichTextHandler");
 
     SolidTabstop solidTabstop;
     SolidNotifications solidNotifications; // D-Bus worker thread starts now; `available` flips async
