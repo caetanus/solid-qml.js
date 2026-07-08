@@ -138,6 +138,11 @@ void JsPolyfill::install(QQmlEngine *engine)
 {
     if (!engine)
         return;
+    // ES2020 globalThis: V4 has no self-reference on the global object (verified 2026-07-08 via
+    // --mini-node) — npm modules and our Worker wrappers use it constantly.
+    QJSValue global = engine->globalObject();
+    if (!global.hasProperty(QStringLiteral("globalThis")))
+        global.setProperty(QStringLiteral("globalThis"), global);
     const QJSValue result = engine->evaluate(QString::fromUtf8(kPolyfill));
     if (result.isError())
         qWarning().noquote() << "js polyfill failed:" << result.toString();

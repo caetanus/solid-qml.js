@@ -10,6 +10,7 @@
 #include "shims/weblocalstorage.h"
 #include "shims/webplatform.h"
 #include "shims/webtimers.h"
+#include "shims/webworker.h"
 
 #include <QCommandLineParser>
 #include <QApplication>
@@ -61,6 +62,7 @@ int runMiniNode(QGuiApplication &app, const QString &path)
     WebPlatform::install(&engine);
     JsPolyfill::install(&engine);
     NodeShims::install(&engine);
+    SolidWorkers::WebWorkerFactory::install(&engine, QUrl::fromLocalFile(QDir::currentPath() + QLatin1Char('/')));
 
     const QString abs = QFileInfo(path).absoluteFilePath();
     if (!QFileInfo::exists(abs)) {
@@ -245,6 +247,8 @@ int main(int argc, char **argv)
     WebPlatform::install(&engine);     // btoa/atob, TextEncoder/Decoder, crypto, performance, structuredClone
     JsPolyfill::install(&engine);      // additive ES2019-2023 stdlib backfill (trimStart, flat, at, fromEntries, ...)
     NodeShims::install(&engine);       // process / fs (sync) / child_process (promise) as importable modules
+    // Worker global (real OS threads, each a full shim'd engine); relative URLs anchor at the app dir.
+    SolidWorkers::WebWorkerFactory::install(&engine, QUrl::fromLocalFile(QFileInfo(qmlPath).absolutePath() + QLatin1Char('/')));
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,
                      &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     engine.load(url);
