@@ -143,14 +143,17 @@ test("menus: each <MenuItem> emits W.MenuItem with onTriggered from onClick", as
   assert.doesNotMatch(out, /option-label/);
 });
 
-test("menus: MenuItem.qml hosts the .option slots, cursor and mnemonic strip", async () => {
+test("menus: MenuItem.qml hosts the .option slots, cursor and mnemonic underline", async () => {
   const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/MenuItem.qml", import.meta.url)), "utf8");
   assert.match(src, /T\.MenuItem \{/);
   assert.match(src, /cssClass: \["option"\]/);
   assert.match(src, /cssState: ctl\.highlighted \? \["hover"\] : \[\]/);
   assert.match(src, /cssClass: \["option-label"\]/);
-  // Label strips the mnemonic marker (`&N` → N) for display.
-  assert.match(src, /text: ctl\.text\.replace\(\/&\(\.\)\/g, "\$1"\)/);
+  // The mnemonic marker renders as a real underline: `&N` → <u>N</u> via StyledText, with the
+  // author text entity-escaped and `&&` as a literal ampersand.
+  assert.match(src, /styledText: true/);
+  assert.match(src, /text: ctl\.__mnemonicMarkup\(ctl\.text\)/);
+  assert.match(src, /"<u>" \+ s\.charAt\(i\) \+ "<\/u>"/);
   // Pointing-hand cursor (desktop affordance).
   assert.match(src, /HoverHandler \{ cursorShape: Qt\.PointingHandCursor \}/);
 });

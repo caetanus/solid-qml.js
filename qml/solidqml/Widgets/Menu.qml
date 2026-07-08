@@ -49,5 +49,14 @@ T.Menu {
         model: ctl.contentModel
         currentIndex: ctl.currentIndex
         implicitHeight: contentHeight
+        // Arrow keys belong to the MENU (activateNext/PreviousItem skips separators and moves
+        // `highlighted`); an interactive ListView consumes the press itself once focus sits on
+        // an item, so navigation only advances every other key (QTBUG-17051 — Basic's Menu
+        // disables interactivity for menus that fit; explicit keyNavigationEnabled false covers
+        // the flickable-long ones too).
+        keyNavigationEnabled: false
+        interactive: Window.window
+                     ? contentHeight + ctl.topPadding + ctl.bottomPadding > ctl.height
+                     : false
     }
 }

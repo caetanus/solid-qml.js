@@ -27,11 +27,30 @@ T.MenuItem {
         cssClass: ["option"]
         cssState: ctl.highlighted ? ["hover"] : []
     }
+    // Mnemonic marker: `&N` underlines N like every desktop toolkit (`&&` is a literal ampersand).
+    // The label opts into Text.StyledText so the <u> renders; author text is entity-escaped.
+    // Functional Alt+letter activation is the keyboard-model pass.
+    function __mnemonicMarkup(s) {
+        var out = "";
+        for (var i = 0; i < s.length; i++) {
+            var c = s.charAt(i);
+            if (c === "&" && i + 1 < s.length) {
+                i++;
+                out += (s.charAt(i) === "&") ? "&amp;" : "<u>" + s.charAt(i) + "</u>";
+            } else if (c === "<") {
+                out += "&lt;";
+            } else if (c === ">") {
+                out += "&gt;";
+            } else {
+                out += c;
+            }
+        }
+        return out;
+    }
     contentItem: Css.CssText {
         cssPrimitive: ""
         cssClass: ["option-label"]
-        // Mnemonic marker: `&N` underlines/accelerates N on desktop — strip the `&` for display (a
-        // literal ampersand is written `&&`). Functional Alt+letter activation is the keyboard-model pass.
-        text: ctl.text.replace(/&(.)/g, "$1")
+        styledText: true
+        text: ctl.__mnemonicMarkup(ctl.text)
     }
 }
