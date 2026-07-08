@@ -84,6 +84,25 @@ npm run dev               # web preview via Vite (Solid running in the browser)
 - **Importing real QML components** (interop / legacy code).
 - **Decent packaging** for deployment, and a path to **exporting into legacy projects**.
 
+## Milestone — application-grade widgets & desktop integration (2026-07)
+
+The gap between "a widget toolkit" and "what real apps are made of" is closing. On top of the
+widget set below, apps written in Solid/JSX now get:
+
+- **Desktop integration that talks back** — a real guarded `<Tray>` whose menu items call into
+  component code, **desktop notifications** over org.freedesktop.Notifications on a D-Bus worker
+  thread (action buttons, close events and **inline reply** flowing back into the app),
+  `<ContextMenu>` opening at the cursor, app-wide `<Shortcut>` accelerators, and menus with
+  underlined `&`-mnemonics and one-press arrow navigation.
+- **Opt-in application widgets**, each its own lazily-imported module (an app that never uses the
+  tag pays nothing): `<MediaPlayer>` (QtMultimedia — paused until the user clicks, seek/clock,
+  **external .srt subtitles** parsed natively and synced), `<WebView>` (a real Chromium page via
+  QtWebEngine), `<RichText>` (a word-like editor that **saves and loads OpenDocument** — writing
+  through Qt's native ODF writer, reading through our own content.xml parser) and `<CodeEditor>`
+  (line gutter + our own dependency-free syntax highlighting for JS/TS, QML, CSS and JSON).
+- **fetch() reads local assets** (`file://`) like a browser, and the whole box model stays
+  pixel-honest with the web reference.
+
 ## Milestone — the native widget set behaves like a desktop toolkit (2026-07)
 
 Every widget — HTML-derived (`<button>`, `<details>`, `<dialog>`, tables…) **and**
