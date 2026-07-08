@@ -2,8 +2,6 @@
 
 #include "snippetwidget.h"
 
-#include <QQmlListReference>
-
 namespace {
 
 // Original TabBar.qml internals — `root` = the C++ wrapper. Templates create NO contentItem
@@ -77,7 +75,7 @@ T.TabBar {
 namespace SolidWidgets {
 
 TabBar::TabBar(QQuickItem *parent)
-    : QmlCss::CssFill(parent)
+    : SlotContainer(parent)
 {
     setCssPrimitive(QStringLiteral("tabbar"));
 }
@@ -90,55 +88,11 @@ void TabBar::setCurrentIndex(int v)
     emit currentIndexChanged();
 }
 
-QQmlListProperty<QObject> TabBar::tabs()
-{
-    return QQmlListProperty<QObject>(this, nullptr, tabs_append, tabs_count, tabs_at, nullptr);
-}
-
-void TabBar::tabs_append(QQmlListProperty<QObject> *prop, QObject *obj)
-{
-    static_cast<TabBar *>(prop->object)->appendTab(obj);
-}
-
-qsizetype TabBar::tabs_count(QQmlListProperty<QObject> *prop)
-{
-    auto *self = static_cast<TabBar *>(prop->object);
-    if (self->m_control) {
-        QQmlListReference content(self->m_control, "contentData");
-        return content.count();
-    }
-    return self->m_pendingTabs.size();
-}
-
-QObject *TabBar::tabs_at(QQmlListProperty<QObject> *prop, qsizetype index)
-{
-    auto *self = static_cast<TabBar *>(prop->object);
-    if (self->m_control) {
-        QQmlListReference content(self->m_control, "contentData");
-        return content.at(index);
-    }
-    return self->m_pendingTabs.value(index);
-}
-
-void TabBar::appendTab(QObject *obj)
-{
-    if (m_control) {
-        QQmlListReference content(m_control, "contentData");
-        content.append(obj);
-        return;
-    }
-    m_pendingTabs.append(obj);
-}
-
 void TabBar::componentComplete()
 {
     QmlCss::CssFill::componentComplete();
-    m_control = composeInternal(this, content(), QStringLiteral("solidwidgets-tabbar"), kTabBarBody);
+    adoptControl(composeInternal(this, content(), QStringLiteral("solidwidgets-tabbar"), kTabBarBody));
     if (m_control) {
-        QQmlListReference content(m_control, "contentData");
-        for (QObject *tab : std::as_const(m_pendingTabs))
-            content.append(tab);
-        m_pendingTabs.clear();
         const auto mirror = [this] {
             setImplicitWidth(m_control->implicitWidth());
             setImplicitHeight(m_control->implicitHeight());

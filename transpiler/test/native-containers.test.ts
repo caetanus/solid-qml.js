@@ -141,8 +141,12 @@ test("containers: the C++ TabBar + TabButton.qml host the control internals", as
   assert.match(bar, /contentItem: ListView \{/);
   assert.match(bar, /Q_PROPERTY\(int currentIndex READ currentIndex WRITE setCurrentIndex NOTIFY currentIndexChanged\)/);
   assert.match(bar, /onCurrentIndexChanged: root\.currentIndex = currentIndex/);
-  assert.match(bar, /Q_CLASSINFO\("DefaultProperty", "tabs"\)/);
-  assert.match(bar, /QQmlListReference content\(m_control, "contentData"\)/);
+  // The default slot routes tabs into the control's contentData (SlotContainer base).
+  assert.match(bar, /class TabBar : public SlotContainer/);
+  const base = await readFile(fileURLToPath(new URL("../../src/widgets/containerbase.h", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/containerbase.cpp", import.meta.url)), "utf8");
+  assert.match(base, /Q_CLASSINFO\("DefaultProperty", "slotChildren"\)/);
+  assert.match(base, /QQmlListReference content\(m_control, "contentData"\)/);
   const btn = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TabButton.qml", import.meta.url)), "utf8");
   assert.match(btn, /T\.TabButton \{/);
   assert.match(btn, /cssClass: \["tab"\]/);
@@ -205,20 +209,23 @@ test("containers: <SplitView> panes get the per-pane fillWidth hint", async () =
   assert.doesNotMatch(out, /handle: SplitHandle/);
 });
 
-test("containers: SplitView.qml + SplitHandle.qml host the control internals", async () => {
-  const sv = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/SplitView.qml", import.meta.url)), "utf8");
+test("containers: the C++ SplitView's snippet hosts the control + inlined handle", async () => {
+  // SplitView is C++ now (widgets-to-cpp) — the snippet keeps the QML internals verbatim, with
+  // the former SplitHandle.qml inlined as the handle delegate (it was module-internal only).
+  const sv = await readFile(fileURLToPath(new URL("../../src/widgets/splitview.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/splitview.h", import.meta.url)), "utf8");
   assert.match(sv, /T\.SplitView \{/);
   // QSplitter semantics: nothing paints outside the splitter (drag squeeze would leak).
   assert.match(sv, /clip: true/);
-  assert.match(sv, /handle: SplitHandle \{/);
+  assert.match(sv, /handle: Rectangle \{/);
   assert.match(sv, /cssAncestor: root/);
   assert.match(sv, /horizontal: split\.orientation === Qt\.Horizontal/);
-  assert.match(sv, /default property alias panes: split\.contentData/);
-  // The stock handle now ships as a module-local component (plain-Rectangle root survives the CSS
-  // content-measure, keeping a real implicit thickness — a bare Css.CssRect measures 0 and vanishes).
-  const sh = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/SplitHandle.qml", import.meta.url)), "utf8");
-  assert.match(sh, /T\.SplitHandle\.pressed/);
-  assert.match(sh, /cssClass: \["handle"\]/);
+  // The plain-Rectangle handle root survives the CSS content-measure, keeping a real implicit
+  // thickness — a bare Css.CssRect measures 0 and vanishes.
+  assert.match(sv, /T\.SplitHandle\.pressed/);
+  assert.match(sv, /cssClass: \["handle"\]/);
+  // Panes route through the default slot into the control's contentData.
+  assert.match(sv, /class SplitView : public SlotContainer/);
 });
 
 test("containers: <SplitView> children emit as direct SplitView children", async () => {

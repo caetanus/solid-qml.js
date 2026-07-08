@@ -7,6 +7,7 @@
 #include "sliders.h"
 #include "delaybutton.h"
 #include "spindial.h"
+#include "splitview.h"
 #include "tabbar.h"
 #include "textinputs.h"
 #include "toolbar.h"
@@ -43,6 +44,7 @@ void registerTypes()
     qmlRegisterType<ToolBar>("solidqml.Widgets", 1, 0, "ToolBar");
     qmlRegisterType<ToolSeparator>("solidqml.Widgets", 1, 0, "ToolSeparator");
     qmlRegisterType<TabBar>("solidqml.Widgets", 1, 0, "TabBar");
+    qmlRegisterType<SplitView>("solidqml.Widgets", 1, 0, "SplitView");
 }
 
 } // namespace SolidWidgets

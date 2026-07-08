@@ -11,8 +11,6 @@ MenuSeparator 1.0 MenuSeparator.qml
 MonthGrid 1.0 MonthGrid.qml
 PageIndicator 1.0 PageIndicator.qml
 Select 1.0 Select.qml
-SplitHandle 1.0 SplitHandle.qml
-SplitView 1.0 SplitView.qml
 SwipeView 1.0 SwipeView.qml
 TabButton 1.0 TabButton.qml
 TableView 1.0 TableView.qml
