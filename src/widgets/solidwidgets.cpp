@@ -1,6 +1,7 @@
 #include "solidwidgets.h"
 
 #include "primitives.h"
+#include "select.h"
 #include "button.h"
 #include "focusring.h"
 #include "indicators.h"
@@ -54,6 +55,7 @@ void registerTypes()
     qmlRegisterType<Drawer>("solidqml.Widgets", 1, 0, "Drawer");
     qmlRegisterType<Details>("solidqml.Widgets", 1, 0, "Details");
     qmlRegisterType<Dialog>("solidqml.Widgets", 1, 0, "Dialog");
+    qmlRegisterType<Select>("solidqml.Widgets", 1, 0, "Select");
 }
 
 } // namespace SolidWidgets

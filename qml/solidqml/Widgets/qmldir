@@ -6,7 +6,6 @@ ListView 1.0 ListView.qml
 MenuItem 1.0 MenuItem.qml
 MenuSeparator 1.0 MenuSeparator.qml
 MonthGrid 1.0 MonthGrid.qml
-Select 1.0 Select.qml
 TabButton 1.0 TabButton.qml
 TableView 1.0 TableView.qml
 Tray 1.0 Tray.qml

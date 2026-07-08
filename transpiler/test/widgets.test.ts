@@ -596,7 +596,9 @@ test("widgets: radio Templates import is prepended", async () => {
 // Phase 4: <select> / <option> → T.ComboBox
 // ---------------------------------------------------------------------------
 
-const SELECT_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Select.qml", import.meta.url)), "utf8");
+// Select is C++ now (widgets-to-cpp) — the snippet keeps the QML internals verbatim.
+const SELECT_QML = await readFile(fileURLToPath(new URL("../../src/widgets/select.cpp", import.meta.url)), "utf8")
+  + await readFile(fileURLToPath(new URL("../../src/widgets/select.h", import.meta.url)), "utf8");
 
 test("widgets: <select> instantiates the W.Select component", async () => {
   const out = await qml(`export function F(){ return <select><option>A</option></select>; }`);
@@ -606,7 +608,7 @@ test("widgets: <select> instantiates the W.Select component", async () => {
 });
 
 test("widgets: Select.qml has a T.ComboBox with background null and leftPadding 12", async () => {
-  assert.match(SELECT_QML, /cssPrimitive: "select"/);
+  assert.match(SELECT_QML, /setCssPrimitive\(QStringLiteral\("select"\)\)/);
   assert.match(SELECT_QML, /T\.ComboBox \{/);
   assert.match(SELECT_QML, /anchors\.fill: parent/);
   assert.match(SELECT_QML, /background: null/);
@@ -684,9 +686,9 @@ test("widgets: Select.qml popup contentItem is ListView with delegateModel and c
   assert.match(SELECT_QML, /implicitHeight: Math\.min\(contentHeight, 240\)/);
 });
 
-test("widgets: Select.qml cssState carries focus and disabled on the wrapper", async () => {
-  assert.match(SELECT_QML, /ctl\.activeFocus \? \["focus"\] : \[\]/);
-  assert.match(SELECT_QML, /!ctl\.enabled \? \["disabled"\] : \[\]/);
+test("widgets: the C++ Select cssState carries focus and disabled on the wrapper", async () => {
+  assert.match(SELECT_QML, /hasActiveFocus\(\)[\s\S]*?QStringLiteral\("focus"\)/);
+  assert.match(SELECT_QML, /if \(!isEnabled\(\)\)\s*\n\s*state << QStringLiteral\("disabled"\)/);
 });
 
 test("widgets: <select> value={sig()} emits Binding on currentIndex via indexOf", async () => {
