@@ -2,8 +2,6 @@ module solidqml.Widgets
 Calendar 1.0 Calendar.qml
 DateField 1.0 DateField.qml
 Dialog 1.0 Dialog.qml
-Drawer 1.0 Drawer.qml
-Details 1.0 Details.qml
 Menu 1.0 Menu.qml
 ListView 1.0 ListView.qml
 MenuItem 1.0 MenuItem.qml

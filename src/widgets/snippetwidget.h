@@ -15,4 +15,10 @@ namespace SolidWidgets {
 QQuickItem *composeInternal(QQuickItem *widget, QQmlListProperty<QObject> slot,
                             const QString &key, const char *qml);
 
+// Variant for widgets without a content slot (Drawer's CssItem root): the created object becomes
+// a plain child of the widget — an Item root turns into a visual child (invisible to the CSS
+// layout pass); a non-Item root (T.Drawer is a QQuickPopup, a plain QObject that parents its
+// popupItem to the window Overlay) is QObject-parented only.
+QObject *composeInternalPlain(QQuickItem *widget, const QString &key, const char *qml);
+
 } // namespace SolidWidgets

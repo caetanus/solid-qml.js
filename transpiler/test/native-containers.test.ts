@@ -300,13 +300,17 @@ test("containers: <Drawer> inside <Show> folds the guard into the open Binding",
   assert.match(out, /value: !!\(shown\) && !!\(open\)/);
 });
 
-test("containers: Drawer.qml hosts the T.Drawer + overlay/scrim/cssAncestor internals", async () => {
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Drawer.qml", import.meta.url)), "utf8");
+test("containers: the C++ Drawer's snippet hosts the T.Drawer + overlay/scrim/cssAncestor internals", async () => {
+  // Drawer is C++ now (widgets-to-cpp) — the snippet keeps the QML internals verbatim; the
+  // controlled `open` forwards via a RestoreNone Binding on visible + a mirror back.
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/drawer.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/drawer.h", import.meta.url)), "utf8");
   assert.match(src, /T\.Drawer \{/);
   assert.match(src, /parent: T\.Overlay\.overlay/);
   assert.match(src, /T\.Overlay\.modal: Rectangle/);
-  assert.match(src, /property alias open: ctl\.visible/);
-  assert.match(src, /default property alias content: contentBox\.content/);
+  assert.match(src, /Binding on visible \{[\s\S]*?value: root\.open[\s\S]*?restoreMode: Binding\.RestoreNone/);
+  assert.match(src, /onVisibleChanged: root\.open = visible/);
+  assert.match(src, /Q_CLASSINFO\("DefaultProperty", "content"\)/);
   // Both slots carry the cssAncestor re-anchor (overlay reparent severs the CSS chain).
   const anchors = src.match(/property Item cssAncestor: root/g);
   assert.equal(anchors?.length, 2, "cssAncestor must appear on both background and contentItem");

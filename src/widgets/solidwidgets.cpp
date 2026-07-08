@@ -6,6 +6,8 @@
 #include "indicators.h"
 #include "sliders.h"
 #include "delaybutton.h"
+#include "details.h"
+#include "drawer.h"
 #include "spindial.h"
 #include "splitview.h"
 #include "swipeview.h"
@@ -48,6 +50,8 @@ void registerTypes()
     qmlRegisterType<SplitView>("solidqml.Widgets", 1, 0, "SplitView");
     qmlRegisterType<SwipeView>("solidqml.Widgets", 1, 0, "SwipeView");
     qmlRegisterType<PageIndicator>("solidqml.Widgets", 1, 0, "PageIndicator");
+    qmlRegisterType<Drawer>("solidqml.Widgets", 1, 0, "Drawer");
+    qmlRegisterType<Details>("solidqml.Widgets", 1, 0, "Details");
 }
 
 } // namespace SolidWidgets

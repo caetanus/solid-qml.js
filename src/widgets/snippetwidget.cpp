@@ -35,4 +35,27 @@ QQuickItem *composeInternal(QQuickItem *widget, QQmlListProperty<QObject> slot,
     return item;
 }
 
+QObject *composeInternalPlain(QQuickItem *widget, const QString &key, const char *qml)
+{
+    QQmlEngine *eng = qmlEngine(widget);
+    if (!eng)
+        return nullptr;
+    QQmlComponent *comp = QmlCss::cachedComponent(eng, key, qml);
+    auto *ctx = new QQmlContext(qmlContext(widget), widget);
+    ctx->setContextProperty(QStringLiteral("root"), widget);
+    // The QObject parent must be in place BEFORE componentComplete runs inside completeCreate():
+    // a popup root (T.Drawer) resolves its parentItem — and through it its window and the
+    // T.Overlay.overlay attached object — by walking the QObject chain there (resetParentItem).
+    QObject *o = comp->beginCreate(ctx);
+    if (!o) {
+        qWarning("SolidWidgets: snippet '%s' failed: %s", qPrintable(key), qPrintable(comp->errorString()));
+        return nullptr;
+    }
+    o->setParent(widget);
+    if (auto *item = qobject_cast<QQuickItem *>(o))
+        item->setParentItem(widget);
+    comp->completeCreate();
+    return o;
+}
+
 } // namespace SolidWidgets

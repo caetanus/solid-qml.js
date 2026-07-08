@@ -286,18 +286,22 @@ test("details: disclosure body passes as the default content children", async ()
   assert.doesNotMatch(out, /cssClass: \["content"\]/);
 });
 
-test("details: Details.qml component holds the wrapper, marker and content internals", async () => {
+test("details: the C++ Details holds the wrapper, marker and content internals", async () => {
+  // Details is C++ now (widgets-to-cpp) — summary/body ride as snippets; `__open` follows the
+  // `open` prop until the first user toggle (the init-binding semantics), then goes independent.
   const { readFile } = await import("node:fs/promises");
   const { fileURLToPath } = await import("node:url");
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Details.qml", import.meta.url)), "utf8");
-  assert.match(src, /cssPrimitive: "details"/);
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/details.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/details.h", import.meta.url)), "utf8");
+  assert.match(src, /setCssPrimitive\(QStringLiteral\("details"\)\)/);
   assert.match(src, /cssPrimitive: "summary"/);
   assert.match(src, /text: "▸"/);
   assert.match(src, /cssClass: \["marker"\]/);
   assert.match(src, /cssClass: \["content"\]/);
-  assert.match(src, /property bool __open: !!\(root\.open\)/);
-  assert.match(src, /property alias summaryContent: summaryBox\.content/);
-  assert.match(src, /default property alias content: contentBox\.content/);
+  assert.match(src, /Q_PROPERTY\(bool __open READ isOpenNow NOTIFY effectiveOpenChanged\)/);
+  assert.match(src, /if \(!m_userToggled\)\s*\n\s*setEffectiveOpen\(v\)/);
+  assert.match(src, /Q_PROPERTY\(QQmlListProperty<QObject> summaryContent READ summaryContent CONSTANT\)/);
+  assert.match(src, /Q_CLASSINFO\("DefaultProperty", "content"\)/);
 });
 
 // ---------------------------------------------------------------------------
