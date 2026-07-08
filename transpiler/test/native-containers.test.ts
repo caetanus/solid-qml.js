@@ -421,19 +421,21 @@ test("containers: <PageIndicator> instantiates W.PageIndicator wiring count/curr
   assert.doesNotMatch(out, /delegate: Css\.CssRect/);
 });
 
-test("containers: SwipeView.qml + PageIndicator.qml host the control internals", async () => {
-  const sw = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/SwipeView.qml", import.meta.url)), "utf8");
-  assert.match(sw, /T\.SwipeView \{/);
-  assert.match(sw, /contentItem: ListView \{/);
-  assert.match(sw, /snapMode: ListView\.SnapOneItem/);
-  assert.match(sw, /property alias currentIndex: sw\.currentIndex/);
-  assert.match(sw, /default property alias pages: sw\.contentData/);
-  const pi = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/PageIndicator.qml", import.meta.url)), "utf8");
-  assert.match(pi, /T\.PageIndicator \{/);
-  assert.match(pi, /cssClass: \["dot"\]/);
-  assert.match(pi, /cssState: index === dots\.currentIndex \? \["selected"\] : \[\]/);
-  assert.match(pi, /contentItem: Row \{/);
-  assert.match(pi, /Repeater \{/);
+test("containers: the C++ SwipeView + PageIndicator host the control internals in their snippets", async () => {
+  // Both are C++ now (widgets-to-cpp) — the snippets keep the QML internals verbatim.
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/swipeview.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/swipeview.h", import.meta.url)), "utf8");
+  assert.match(src, /T\.SwipeView \{/);
+  assert.match(src, /contentItem: ListView \{/);
+  assert.match(src, /snapMode: ListView\.SnapOneItem/);
+  // Controlled currentIndex: RestoreNone Binding in, mirror out; pages via the default slot.
+  assert.match(src, /onCurrentIndexChanged: root\.currentIndex = currentIndex/);
+  assert.match(src, /class SwipeView : public SlotContainer/);
+  assert.match(src, /T\.PageIndicator \{/);
+  assert.match(src, /cssClass: \["dot"\]/);
+  assert.match(src, /cssState: index === dots\.currentIndex \? \["selected"\] : \[\]/);
+  assert.match(src, /contentItem: Row \{/);
+  assert.match(src, /Repeater \{/);
 });
 
 // ---------------------------------------------------------------------------

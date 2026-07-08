@@ -8,6 +8,7 @@
 #include "delaybutton.h"
 #include "spindial.h"
 #include "splitview.h"
+#include "swipeview.h"
 #include "tabbar.h"
 #include "textinputs.h"
 #include "toolbar.h"
@@ -45,6 +46,8 @@ void registerTypes()
     qmlRegisterType<ToolSeparator>("solidqml.Widgets", 1, 0, "ToolSeparator");
     qmlRegisterType<TabBar>("solidqml.Widgets", 1, 0, "TabBar");
     qmlRegisterType<SplitView>("solidqml.Widgets", 1, 0, "SplitView");
+    qmlRegisterType<SwipeView>("solidqml.Widgets", 1, 0, "SwipeView");
+    qmlRegisterType<PageIndicator>("solidqml.Widgets", 1, 0, "PageIndicator");
 }
 
 } // namespace SolidWidgets
