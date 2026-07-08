@@ -7,6 +7,7 @@
 #include "sliders.h"
 #include "delaybutton.h"
 #include "details.h"
+#include "dialog.h"
 #include "drawer.h"
 #include "spindial.h"
 #include "splitview.h"
@@ -52,6 +53,7 @@ void registerTypes()
     qmlRegisterType<PageIndicator>("solidqml.Widgets", 1, 0, "PageIndicator");
     qmlRegisterType<Drawer>("solidqml.Widgets", 1, 0, "Drawer");
     qmlRegisterType<Details>("solidqml.Widgets", 1, 0, "Details");
+    qmlRegisterType<Dialog>("solidqml.Widgets", 1, 0, "Dialog");
 }
 
 } // namespace SolidWidgets

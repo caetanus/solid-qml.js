@@ -167,7 +167,10 @@ const DIALOG_SRC = `
   }
 `;
 
-const DIALOG_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Dialog.qml", import.meta.url)), "utf8");
+// Dialog is C++ now (widgets-to-cpp) — the Window snippet keeps the QML internals verbatim
+// (`root` = the C++ page anchor, so wrap.* references became root.*).
+const DIALOG_QML = await readFile(fileURLToPath(new URL("../../src/widgets/dialog.cpp", import.meta.url)), "utf8")
+  + await readFile(fileURLToPath(new URL("../../src/widgets/dialog.h", import.meta.url)), "utf8");
 
 test("dialog: <dialog> instantiates the W.Dialog component", async () => {
   const out = await qml(DIALOG_SRC);
@@ -181,15 +184,15 @@ test("dialog: Dialog.qml is a REAL modal Window (Qt.Dialog), not an overlay popu
   assert.match(DIALOG_QML, /Window \{/);
   assert.match(DIALOG_QML, /flags: Qt\.Dialog/);
   assert.match(DIALOG_QML, /modality: Qt\.WindowModal/);
-  assert.match(DIALOG_QML, /transientParent: wrap\.Window\.window/);
+  assert.match(DIALOG_QML, /transientParent: root\.pageWindow/);
   assert.match(DIALOG_QML, /cssPrimitive: "dialog"/);
   assert.doesNotMatch(DIALOG_QML, /T\.Dialog/);
   assert.doesNotMatch(DIALOG_QML, /T\.Overlay\.overlay/);
 });
 
 test("dialog: Dialog.qml window sizes itself to the content's implicit size", async () => {
-  assert.match(DIALOG_QML, /width: Math\.max\(1, root\.implicitWidth\)/);
-  assert.match(DIALOG_QML, /height: Math\.max\(1, root\.implicitHeight\)/);
+  assert.match(DIALOG_QML, /width: Math\.max\(1, rootBox\.implicitWidth\)/);
+  assert.match(DIALOG_QML, /height: Math\.max\(1, rootBox\.implicitHeight\)/);
 });
 
 test("dialog: open prop drives visible + a RestoreNone Binding (survives self-close)", async () => {
@@ -197,29 +200,29 @@ test("dialog: open prop drives visible + a RestoreNone Binding (survives self-cl
   // The emit folds the open signal (and any Show guard) into the component's `open` prop.
   assert.match(out, /open: !!\(open\)/);
   // Dialog.qml drives the window visible from `open` via a plain binding AND a RestoreNone Binding.
-  assert.match(DIALOG_QML, /visible: wrap\.open/);
+  assert.match(DIALOG_QML, /visible: root\.open/);
   assert.match(DIALOG_QML, /Binding \{/);
   assert.match(DIALOG_QML, /target: dlg/);
   assert.match(DIALOG_QML, /property: "visible"/);
-  assert.match(DIALOG_QML, /value: wrap\.open/);
+  assert.match(DIALOG_QML, /value: root\.open/);
   assert.match(DIALOG_QML, /restoreMode: Binding\.RestoreNone/);
 });
 
 test("dialog: onClose handler wires to onDialogClosed (relayed from the window's onClosing)", async () => {
   const out = await qml(DIALOG_SRC);
   assert.match(out, /onDialogClosed: \{ open = false \}/);
-  assert.match(DIALOG_QML, /onClosing: wrap\.dialogClosed\(\)/);
+  assert.match(DIALOG_QML, /onClosing: root\.dialogClosed\(\)/);
 });
 
 test("dialog: author classes land on the component cssClass (forwarded to the Css root)", async () => {
   const out = await qml(DIALOG_SRC);
   assert.match(out, /cssClass: \["dlg"\]/);
-  assert.match(DIALOG_QML, /property alias cssClass: root\.cssClass/);
+  assert.match(DIALOG_QML, /cssClass: root\.cssClass/);
 });
 
 test("dialog: Dialog.qml root re-anchors the CSS ancestor walk at the page wrapper", async () => {
   // A separate window severs the ancestor chain; cssAncestor restores scoped rules + inheritance.
-  assert.match(DIALOG_QML, /property Item cssAncestor: wrap/);
+  assert.match(DIALOG_QML, /property Item cssAncestor: root/);
 });
 
 test("dialog: children emit inside the W.Dialog instance (the default content slot)", async () => {

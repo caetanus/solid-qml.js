@@ -58,7 +58,7 @@ const TEXTFIELD_QML = TEXTINPUTS_CPP.slice(0, TEXTINPUTS_CPP.indexOf("T.TextArea
 // Button is C++ now (widgets-to-cpp batch 2) — assertions read the C++ surface.
 const BUTTON_CPP = await readFile(fileURLToPath(new URL("../../src/widgets/button.h", import.meta.url)), "utf8")
   + await readFile(fileURLToPath(new URL("../../src/widgets/button.cpp", import.meta.url)), "utf8");
-const DIALOG_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Dialog.qml", import.meta.url)), "utf8");
+const DIALOG_QML = await readFile(fileURLToPath(new URL("../../src/widgets/dialog.cpp", import.meta.url)), "utf8");
 
 test("default button: <button type=\"submit\"> emits isDefault; a plain button does not", async () => {
   const submit = await qml(`export function F(){ return <button type="submit">OK</button>; }`);
@@ -75,9 +75,9 @@ test("default button: the C++ Button surfaces isDefault as a `default` cssState 
 
 test("default button: Dialog fires the default on Enter (bubbled) and focuses it on open", async () => {
   assert.match(DIALOG_QML, /function __findDefault\(item\)/);
-  assert.match(DIALOG_QML, /Keys\.onReturnPressed:.*__findDefault\(root\).*b\.clicked\(\)/);
-  assert.match(DIALOG_QML, /Keys\.onEnterPressed:.*__findDefault\(root\).*b\.clicked\(\)/);
-  assert.match(DIALOG_QML, /var def = wrap\.__findDefault\(root\);[\s\S]*?def\.takeFocus\(\)/);
+  assert.match(DIALOG_QML, /Keys\.onReturnPressed:.*__findDefault\(rootBox\).*b\.clicked\(\)/);
+  assert.match(DIALOG_QML, /Keys\.onEnterPressed:.*__findDefault\(rootBox\).*b\.clicked\(\)/);
+  assert.match(DIALOG_QML, /var def = dlg\.__findDefault\(rootBox\);[\s\S]*?def\.takeFocus\(\)/);
 });
 
 test("widgets: <input> instantiates the W.TextField component", async () => {
