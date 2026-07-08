@@ -82,6 +82,7 @@ solid_qml_loader_qt_sources = qt6.preprocess(
     'src/widgets/tabbar.h',
     'src/widgets/textinputs.h',
     'src/widgets/toolbar.h',
+    'src/widgets/tray.h',
     'src/widgets/tumbler.h',
   ),
 )
@@ -120,6 +121,7 @@ executable(
     'src/widgets/tabbar.cpp',
     'src/widgets/textinputs.cpp',
     'src/widgets/toolbar.cpp',
+    'src/widgets/tray.cpp',
     'src/widgets/tumbler.cpp',
     'src/widgets/snippetwidget.cpp',
   ),

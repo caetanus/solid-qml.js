@@ -19,6 +19,7 @@
 #include "tabbar.h"
 #include "textinputs.h"
 #include "toolbar.h"
+#include "tray.h"
 #include "tumbler.h"
 #include "toggles.h"
 
@@ -62,6 +63,7 @@ void registerTypes()
     qmlRegisterType<MonthGrid>("solidqml.Widgets", 1, 0, "MonthGrid");
     qmlRegisterType<Calendar>("solidqml.Widgets", 1, 0, "Calendar");
     qmlRegisterType<DateField>("solidqml.Widgets", 1, 0, "DateField");
+    qmlRegisterType<Tray>("solidqml.Widgets", 1, 0, "Tray");
 }
 
 } // namespace SolidWidgets

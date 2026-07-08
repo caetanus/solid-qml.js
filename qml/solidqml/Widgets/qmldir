@@ -5,5 +5,4 @@ MenuItem 1.0 MenuItem.qml
 MenuSeparator 1.0 MenuSeparator.qml
 TabButton 1.0 TabButton.qml
 TableView 1.0 TableView.qml
-Tray 1.0 Tray.qml
 TreeView 1.0 TreeView.qml

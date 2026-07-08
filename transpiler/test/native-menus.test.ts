@@ -416,12 +416,15 @@ test("tray: a Show guard folds into the component's shown", async () => {
   assert.match(out, /shown: !!\(vis\)/);
 });
 
-test("tray: Tray.qml hosts the zero-size SystemTrayIcon shell", async () => {
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Tray.qml", import.meta.url)), "utf8");
-  assert.match(src, /width: 0/);
-  assert.match(src, /height: 0/);
+test("tray: the C++ Tray hosts the zero-size SystemTrayIcon shell", async () => {
+  // Tray is C++ now (widgets-to-cpp) — the snippet keeps the Platform icon verbatim.
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/tray.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/tray.h", import.meta.url)), "utf8");
+  assert.match(src, /setWidth\(0\)/);
+  assert.match(src, /setHeight\(0\)/);
   assert.match(src, /Platform\.SystemTrayIcon \{/);
   assert.match(src, /visible: root\.shown/);
+  assert.match(src, /menu: root\.menu/);
 });
 
 test("tray: qmlType output carries the Qt.labs.platform import (emit builds the Platform.Menu)", async () => {
