@@ -1,0 +1,35 @@
+/** Opt-in viz/media modules: each tag pulls ITS module import only when used (core stays clean). */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { normalize } from "../src/babel/transform.ts";
+import { findRender } from "../src/ast/find.ts";
+import { analyzeSignals } from "../src/model/symbols.ts";
+import { emitComponentType } from "../src/emit/component.ts";
+import * as t from "@babel/types";
+
+async function qmlType(src: string): Promise<string> {
+  const { ast } = await normalize(src, "f.tsx");
+  const file = ast as t.File;
+  let fn: t.Function | null = null;
+  for (const node of file.program.body) {
+    if (t.isFunctionDeclaration(node)) fn = node;
+    if (t.isExportNamedDeclaration(node) && node.declaration && t.isFunctionDeclaration(node.declaration)) fn = node.declaration;
+  }
+  if (!fn) throw new Error("no fn");
+  const render = findRender(ast)!;
+  return emitComponentType(fn, render, new Map()).join("\n");
+}
+
+test("dataviz: <MediaPlayer> instantiates the opt-in Media module with src/autoplay", async () => {
+  const out = await qmlType(`export function F(){ return <MediaPlayer class="mp" src="assets/clip.mp4" autoplay />; }`);
+  assert.match(out, /import solidqml\.Widgets\.Media 1\.0 as WMedia/);
+  assert.match(out, /WMedia\.MediaPlayer \{/);
+  assert.match(out, /cssClass: \["mp"\]/);
+  assert.match(out, /src: Qt\.resolvedUrl\("assets\/clip\.mp4"\)/); // Qt 6: url strings resolve at USE (cwd) unless resolved at the author document
+  assert.match(out, /autoplay: true/);
+});
+
+test("dataviz: an app without <MediaPlayer> never imports the Media module", async () => {
+  const out = await qmlType(`export function F(){ return <div class="a" />; }`);
+  assert.doesNotMatch(out, /solidqml\.Widgets\.Media/);
+});

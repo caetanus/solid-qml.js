@@ -92,4 +92,25 @@ function emitSurface(propsArg: t.Node | undefined, _children: t.Node[], scope: S
   return lines;
 }
 
-registerNativeTags({ Chart: emitChart, Scene3D: emitScene3D, Surface: emitSurface });
+/** <MediaPlayer src autoplay> → WMedia.MediaPlayer (opt-in module solidqml.Widgets.Media —
+ *  QtMultimedia loads only when the tag is used; video + play/seek/clock controls). */
+function emitMediaPlayer(propsArg: t.Node | undefined, _children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  requireImport(scope, "import solidqml.Widgets.Media 1.0 as WMedia");
+  const props = propsOf(propsArg);
+  const bind = (e: t.Expression) => emitExpr(e, { ...scope, mode: "binding" });
+
+  const lines: string[] = [`${pad}WMedia.MediaPlayer {`, ...buildCssClassLine(cssPropsShim(props), scope, i(1))];
+  if (guard) lines.push(`${i(1)}visible: !!(${guard})`);
+  const src = props.get("src");
+  const autoplay = props.get("autoplay");
+  // Qt 6 keeps relative url STRINGS unresolved until use (QtMultimedia then tries the CWD) —
+  // resolve here, against the AUTHOR component's document base, like Image does internally.
+  if (src) lines.push(`${i(1)}src: Qt.resolvedUrl(${bind(src)})`);
+  if (autoplay) lines.push(`${i(1)}autoplay: ${bind(autoplay)}`);
+  lines.push(`${pad}}`);
+  return lines;
+}
+
+registerNativeTags({ Chart: emitChart, Scene3D: emitScene3D, Surface: emitSurface, MediaPlayer: emitMediaPlayer });

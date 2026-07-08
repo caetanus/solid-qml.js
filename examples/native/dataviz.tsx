@@ -11,7 +11,7 @@ import { Show } from "solid-js";
 import { div, text } from "../../src/solid-qml/runtime";
 import "./dataviz.css";
 
-declare const Chart: any, Scene3D: any, Surface: any;
+declare const Chart: any, Scene3D: any, Surface: any, MediaPlayer: any;
 
 export function ChartsAnd3D() {
   const isNative = typeof process !== "undefined" && !!(process.versions && process.versions.solidQml);
@@ -39,6 +39,13 @@ export function ChartsAnd3D() {
         <div class="dv-card">
           <text class="dv-label">Blender monkey · three-point lighting, spinning (Qt Quick 3D)</text>
           <Scene3D class="dv-scene" />
+        </div>
+        {/* Media playback (module solidqml.Widgets.Media): QtMultimedia, imported only when the
+            tag is used. A generated clip autoplays as the demo's visualization: moving test-pattern
+            video with the play/seek/clock strip below. */}
+        <div class="dv-card">
+          <text class="dv-label">Media player — video + play/seek/clock (QtMultimedia)</text>
+          <MediaPlayer class="dv-media" src="assets/media-demo.mp4" autoplay />
         </div>
         {/* 3D + data viz combined (module solidqml.Widgets.Surface): the REAL Walker Lake exhaustive
             grid (Isaaks & Srivastava, 260×300 V values) as a height-coloured surface. Drag to rotate,
