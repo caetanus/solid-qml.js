@@ -5,6 +5,7 @@
 #include "focusring.h"
 #include "indicators.h"
 #include "sliders.h"
+#include "textinputs.h"
 #include "toggles.h"
 
 namespace SolidWidgets {
@@ -27,6 +28,8 @@ void registerTypes()
     qmlRegisterType<Toggle>("solidqml.Widgets", 1, 0, "Toggle");
     qmlRegisterType<Slider>("solidqml.Widgets", 1, 0, "Slider");
     qmlRegisterType<RangeSlider>("solidqml.Widgets", 1, 0, "RangeSlider");
+    qmlRegisterType<TextField>("solidqml.Widgets", 1, 0, "TextField");
+    qmlRegisterType<TextArea>("solidqml.Widgets", 1, 0, "TextArea");
 }
 
 } // namespace SolidWidgets

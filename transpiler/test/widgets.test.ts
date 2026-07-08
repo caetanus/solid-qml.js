@@ -51,7 +51,10 @@ async function qmlType(src: string): Promise<string> {
 // <input> — wrapper shape and basic properties
 // ---------------------------------------------------------------------------
 
-const TEXTFIELD_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TextField.qml", import.meta.url)), "utf8");
+// TextField/TextArea are C++ now (widgets-to-cpp) — snippets keep the QML internals verbatim.
+const TEXTINPUTS_CPP = await readFile(fileURLToPath(new URL("../../src/widgets/textinputs.h", import.meta.url)), "utf8")
+  + await readFile(fileURLToPath(new URL("../../src/widgets/textinputs.cpp", import.meta.url)), "utf8");
+const TEXTFIELD_QML = TEXTINPUTS_CPP.slice(0, TEXTINPUTS_CPP.indexOf("T.TextArea {"));
 // Button is C++ now (widgets-to-cpp batch 2) — assertions read the C++ surface.
 const BUTTON_CPP = await readFile(fileURLToPath(new URL("../../src/widgets/button.h", import.meta.url)), "utf8")
   + await readFile(fileURLToPath(new URL("../../src/widgets/button.cpp", import.meta.url)), "utf8");
@@ -85,14 +88,14 @@ test("widgets: <input> instantiates the W.TextField component", async () => {
   assert.doesNotMatch(out, /T\.TextField/);
 });
 
-test("widgets: TextField.qml wrapper carries cssPrimitive 'input' and focus/disabled cssState", async () => {
-  assert.match(TEXTFIELD_QML, /cssPrimitive: "input"/);
-  assert.match(TEXTFIELD_QML, /cssState: \(field\.activeFocus \? \["focus"\] : \[\]\)\.concat\(!field\.enabled \? \["disabled"\] : \[\]\)/);
+test("widgets: the C++ TextField wrapper carries cssPrimitive 'input' and focus/disabled cssState", async () => {
+  assert.match(TEXTINPUTS_CPP, /setCssPrimitive\(QStringLiteral\("input"\)\)/);
+  assert.match(TEXTINPUTS_CPP, /hasActiveFocus\(\)[\s\S]*?QStringLiteral\("focus"\)[\s\S]*?QStringLiteral\("disabled"\)/);
 });
 
-test("widgets: TextField.qml mirrors implicitWidth/Height from the control", async () => {
-  assert.match(TEXTFIELD_QML, /implicitWidth: field\.implicitWidth/);
-  assert.match(TEXTFIELD_QML, /implicitHeight: field\.implicitHeight/);
+test("widgets: the C++ TextField mirrors implicitWidth/Height from the control", async () => {
+  assert.match(TEXTINPUTS_CPP, /setImplicitWidth\(m_control->implicitWidth\(\)\)/);
+  assert.match(TEXTINPUTS_CPP, /setImplicitHeight\(m_control->implicitHeight\(\)\)/);
 });
 
 test("widgets: TextField.qml has a T.TextField with background null", async () => {
@@ -202,8 +205,8 @@ test("widgets: disabled prop sets enabled: false on the control", async () => {
   assert.match(out, /enabled: false/);
 });
 
-test("widgets: TextField.qml cssState carries the disabled concat (runtime-evaluated from enabled)", async () => {
-  assert.match(TEXTFIELD_QML, /!field\.enabled \? \["disabled"\] : \[\]/);
+test("widgets: the C++ TextField cssState carries disabled (runtime-evaluated from enabled)", async () => {
+  assert.match(TEXTINPUTS_CPP, /if \(!isEnabled\(\)\)\s*\n\s*state << QStringLiteral\("disabled"\)/);
 });
 
 // ---------------------------------------------------------------------------
@@ -247,7 +250,8 @@ test("widgets: <input> without placeholder does NOT set the placeholder prop", a
 // <textarea>
 // ---------------------------------------------------------------------------
 
-const TEXTAREA_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TextArea.qml", import.meta.url)), "utf8");
+// TextArea shares textinputs.cpp — scope its asserts to the T.TextArea snippet.
+const TEXTAREA_QML = TEXTINPUTS_CPP.slice(TEXTINPUTS_CPP.lastIndexOf("T.TextArea {"));
 
 test("widgets: <textarea> instantiates the W.TextArea component", async () => {
   const out = await qml(`export function F(){ return <textarea></textarea>; }`);
@@ -256,15 +260,16 @@ test("widgets: <textarea> instantiates the W.TextArea component", async () => {
   assert.doesNotMatch(out, /T\.TextArea/);
 });
 
-test("widgets: TextArea.qml has a T.TextArea with wrapMode, background null, cssPrimitive 'textarea'", async () => {
-  assert.match(TEXTAREA_QML, /cssPrimitive: "textarea"/);
+test("widgets: the C++ TextArea has a T.TextArea snippet with wrapMode, background null, cssPrimitive 'textarea'", async () => {
+  assert.match(TEXTINPUTS_CPP, /setCssPrimitive\(QStringLiteral\("textarea"\)\)/);
   assert.match(TEXTAREA_QML, /T\.TextArea \{/);
   assert.match(TEXTAREA_QML, /wrapMode: TextEdit\.Wrap/);
   assert.match(TEXTAREA_QML, /background: null/);
 });
 
-test("widgets: TextArea.qml cssState includes focus and disabled (same pattern as input)", async () => {
-  assert.match(TEXTAREA_QML, /cssState: \(field\.activeFocus \? \["focus"\] : \[\]\)/);
+test("widgets: the C++ TextArea cssState includes focus and disabled (shared base with input)", async () => {
+  assert.match(TEXTINPUTS_CPP, /QStringLiteral\("focus"\)/);
+  assert.match(TEXTINPUTS_CPP, /QStringLiteral\("disabled"\)/);
 });
 
 test("widgets: <textarea> onInput maps to onTextChanged (T.TextArea has no textEdited)", async () => {

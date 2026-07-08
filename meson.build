@@ -67,6 +67,7 @@ solid_qml_loader_qt_sources = qt6.preprocess(
     'src/widgets/indicators.h',
     'src/widgets/toggles.h',
     'src/widgets/sliders.h',
+    'src/widgets/textinputs.h',
   ),
 )
 
@@ -89,6 +90,7 @@ executable(
     'src/widgets/indicators.cpp',
     'src/widgets/toggles.cpp',
     'src/widgets/sliders.cpp',
+    'src/widgets/textinputs.cpp',
     'src/widgets/snippetwidget.cpp',
   ),
   solid_qml_loader_qt_sources,
