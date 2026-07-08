@@ -56,6 +56,12 @@ Css.CssFill {
         nameFilters: ["OpenDocument text (*.odt)"]
         onAccepted: fmt.saveOdf(file)
     }
+    Platform.FileDialog {
+        id: imageDialog
+        fileMode: Platform.FileDialog.OpenFile
+        nameFilters: ["Images (*.png *.jpg *.jpeg *.gif *.bmp *.webp)"]
+        onAccepted: fmt.insertImage(file)
+    }
 
     Item {
         anchors.fill: parent
@@ -80,6 +86,14 @@ Css.CssFill {
                 ToolBtn { label: "H1"; active: fmt.heading === 1; onClicked: fmt.setHeading(fmt.heading === 1 ? 0 : 1) }
                 ToolBtn { label: "H2"; active: fmt.heading === 2; onClicked: fmt.setHeading(fmt.heading === 2 ? 0 : 2) }
                 ToolBtn { label: "•"; active: fmt.bulletList; onClicked: fmt.toggleBulletList() }
+                Item { width: 8; height: 1 }
+                ToolBtn { label: "🖼"; onClicked: imageDialog.open() }
+                ToolBtn { label: "⊞"; onClicked: fmt.insertTable(3, 3) }
+                // Row/column edits: only offered while the caret sits inside a table.
+                ToolBtn { label: "R+"; visible: fmt.inTable; onClicked: fmt.addTableRow() }
+                ToolBtn { label: "C+"; visible: fmt.inTable; onClicked: fmt.addTableColumn() }
+                ToolBtn { label: "R−"; visible: fmt.inTable; onClicked: fmt.removeTableRow() }
+                ToolBtn { label: "C−"; visible: fmt.inTable; onClicked: fmt.removeTableColumn() }
                 Item { width: 8; height: 1 }
                 ToolBtn { label: "⇱"; onClicked: openDialog.open() }
                 ToolBtn { label: "⇲"; onClicked: saveDialog.open() }

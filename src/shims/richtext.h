@@ -30,6 +30,8 @@ class RichTextHandler : public QObject {
     Q_PROPERTY(bool strike READ strike NOTIFY formatChanged)
     Q_PROPERTY(bool bulletList READ bulletList NOTIFY formatChanged)
     Q_PROPERTY(int heading READ heading NOTIFY formatChanged)
+    // Cursor sits inside a table — gates the row/column toolbar actions.
+    Q_PROPERTY(bool inTable READ inTable NOTIFY formatChanged)
 
 public:
     using QObject::QObject;
@@ -58,6 +60,19 @@ public:
     Q_INVOKABLE void toggleBulletList();
     Q_INVOKABLE void setHeading(int level); // 0 = body text, 1..3 = H1..H3
 
+    // Inline image at the cursor: loaded into a document resource (so QTextDocumentWriter embeds
+    // it into Pictures/ on save) and capped to a word-like page width.
+    Q_INVOKABLE void insertImage(const QUrl &file);
+
+    // Tables (owner: "no richtext temos tabela também"): a bordered QTextTable at the cursor,
+    // plus row/column edits relative to the current cell.
+    Q_INVOKABLE void insertTable(int rows, int cols);
+    Q_INVOKABLE void addTableRow();
+    Q_INVOKABLE void addTableColumn();
+    Q_INVOKABLE void removeTableRow();
+    Q_INVOKABLE void removeTableColumn();
+    bool inTable() const;
+
     Q_INVOKABLE bool saveOdf(const QUrl &file);
     Q_INVOKABLE bool loadOdf(const QUrl &file);
 
@@ -69,6 +84,7 @@ signals:
 
 private:
     QTextCursor cursor() const;              // covers the selection, or the word at the cursor
+    QTextCursor insertionCursor() const;     // plain caret position (no word expansion) — inserts
     void mergeCharFormat(const QTextCharFormat &fmt);
 
     QQuickTextDocument *m_document = nullptr;
