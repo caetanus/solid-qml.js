@@ -29,9 +29,17 @@ namespace SolidWorkers {
 // worker-global postMessage bridge.
 class WorkerScriptHost : public QObject {
     Q_OBJECT
+    // node worker_threads surface: the value passed at construction, read by the worker-side
+    // `worker_threads` module; the id feeds threadId.
+    Q_PROPERTY(QVariant workerData READ workerData CONSTANT)
+    Q_PROPERTY(int threadId READ threadId CONSTANT)
 
 public:
-    WorkerScriptHost(const QUrl &script, QObject *parent = nullptr);
+    WorkerScriptHost(const QUrl &script, const QVariant &workerData, int threadId,
+                     QObject *parent = nullptr);
+
+    QVariant workerData() const { return m_workerData; }
+    int threadId() const { return m_threadId; }
     ~WorkerScriptHost() override;
 
     QQmlEngine *engine() const { return m_engine; }
@@ -49,6 +57,8 @@ signals:
 
 private:
     QUrl m_script;
+    QVariant m_workerData;
+    int m_threadId = 0;
     QQmlEngine *m_engine = nullptr;
 };
 
@@ -57,7 +67,8 @@ class WebWorker : public QObject {
     Q_OBJECT
 
 public:
-    explicit WebWorker(const QUrl &script, QObject *parent = nullptr);
+    explicit WebWorker(const QUrl &script, const QVariant &workerData = QVariant(),
+                       QObject *parent = nullptr);
     ~WebWorker() override;
 
     Q_INVOKABLE void postMessage(const QJSValue &message);
@@ -85,6 +96,8 @@ public:
     static void install(QQmlEngine *engine, const QUrl &baseUrl);
 
     Q_INVOKABLE QObject *create(const QString &url);
+    // node worker_threads form: carries workerData into the worker engine.
+    Q_INVOKABLE QObject *createNode(const QString &url, const QVariant &workerData);
 
 private:
     QUrl m_baseUrl;

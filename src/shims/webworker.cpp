@@ -14,9 +14,12 @@ namespace SolidWorkers {
 
 // ─── WorkerScriptHost (worker thread) ───────────────────────────────────────────────────────────
 
-WorkerScriptHost::WorkerScriptHost(const QUrl &script, QObject *parent)
+WorkerScriptHost::WorkerScriptHost(const QUrl &script, const QVariant &workerData, int threadId,
+                                   QObject *parent)
     : QObject(parent)
     , m_script(script)
+    , m_workerData(workerData)
+    , m_threadId(threadId)
 {
 }
 
@@ -62,6 +65,34 @@ void WorkerScriptHost::start()
         };
     })())"));
 
+    // node worker_threads (worker side): parentPort over the same message plumbing.
+    QJSValue wtMod = m_engine->evaluate(QStringLiteral(R"((function () {
+        var listeners = { message: [], error: [] };
+        globalThis.addEventListener("message", function (ev) {
+            for (var i = 0; i < listeners.message.length; i++) listeners.message[i](ev.data);
+        });
+        var parentPort = {
+            postMessage: function (m) { __workerHost.postToParent(m); },
+            on: function (type, fn) { if (listeners[type]) listeners[type].push(fn); },
+            once: function (type, fn) {
+                if (!listeners[type]) return;
+                var wrap = function (d) { var i = listeners[type].indexOf(wrap); if (i >= 0) listeners[type].splice(i, 1); fn(d); };
+                listeners[type].push(wrap);
+            },
+            off: function (type, fn) { if (!listeners[type]) return; var i = listeners[type].indexOf(fn); if (i >= 0) listeners[type].splice(i, 1); },
+            removeListener: function (type, fn) { this.off(type, fn); }
+        };
+        return {
+            isMainThread: false,
+            parentPort: parentPort,
+            workerData: __workerHost.workerData,
+            threadId: __workerHost.threadId
+        };
+    })())"));
+    wtMod.setProperty(QStringLiteral("default"), wtMod);
+    m_engine->registerModule(QStringLiteral("worker_threads"), wtMod);
+    m_engine->registerModule(QStringLiteral("node:worker_threads"), wtMod);
+
     const QJSValue mod = m_engine->importModule(
         m_script.isLocalFile() ? m_script.toLocalFile() : m_script.toString());
     if (mod.isError()) {
@@ -92,10 +123,11 @@ void WorkerScriptHost::postToParent(const QJSValue &message)
 
 // ─── WebWorker (main thread) ────────────────────────────────────────────────────────────────────
 
-WebWorker::WebWorker(const QUrl &script, QObject *parent)
+WebWorker::WebWorker(const QUrl &script, const QVariant &workerData, QObject *parent)
     : QObject(parent)
 {
-    m_host = new WorkerScriptHost(script);
+    static QAtomicInt nextThreadId(1);
+    m_host = new WorkerScriptHost(script, workerData, nextThreadId.fetchAndAddRelaxed(1));
     m_host->moveToThread(&m_thread);
     connect(&m_thread, &QThread::started, m_host, &WorkerScriptHost::start);
     connect(&m_thread, &QThread::finished, m_host, &QObject::deleteLater);
@@ -146,8 +178,19 @@ WebWorkerFactory::WebWorkerFactory(const QUrl &baseUrl, QObject *parent)
 
 QObject *WebWorkerFactory::create(const QString &url)
 {
+    return createNode(url, QVariant());
+}
+
+QObject *WebWorkerFactory::createNode(const QString &url, const QVariant &workerData)
+{
     const QUrl resolved = m_baseUrl.resolved(QUrl(url));
-    auto *worker = new WebWorker(resolved);
+    // V4 may hand a JS object through a QVariant parameter as a wrapped QJSValue — which is
+    // bound to THIS engine and unreadable from the worker thread. Deep-convert here, on the
+    // owning thread, so the host stores plain QVariant data.
+    QVariant plain = workerData;
+    if (plain.userType() == qMetaTypeId<QJSValue>())
+        plain = plain.value<QJSValue>().toVariant();
+    auto *worker = new WebWorker(resolved, plain);
     // JS wrapper owns it (QML ownership): GC of the wrapper tears the thread down via ~WebWorker.
     QQmlEngine::setObjectOwnership(worker, QQmlEngine::JavaScriptOwnership);
     return worker;
@@ -184,6 +227,44 @@ void WebWorkerFactory::install(QQmlEngine *engine, const QUrl &baseUrl)
             w.__handle = h; // keeps the C++ handle alive with the wrapper
         };
     })())"));
+
+    // node worker_threads (main side): Worker with the EventEmitter subset over the same backend.
+    QJSValue wtMod = engine->evaluate(QStringLiteral(R"((function () {
+        function NodeWorker(filename, opts) {
+            var h = __solidWorkerFactory.createNode(String(filename), opts && opts.workerData);
+            var self = this;
+            var listeners = { message: [], error: [], exit: [] };
+            this.threadId = -1;
+            this.postMessage = function (m) { h.postMessage(m); };
+            this.terminate = function () {
+                h.terminate();
+                for (var i = 0; i < listeners.exit.length; i++) listeners.exit[i](1);
+                return Promise.resolve(1);
+            };
+            this.on = function (type, fn) { if (listeners[type]) listeners[type].push(fn); return self; };
+            this.once = function (type, fn) {
+                if (!listeners[type]) return self;
+                var wrap = function (d) { var i = listeners[type].indexOf(wrap); if (i >= 0) listeners[type].splice(i, 1); fn(d); };
+                listeners[type].push(wrap);
+                return self;
+            };
+            this.off = function (type, fn) { if (!listeners[type]) return self; var i = listeners[type].indexOf(fn); if (i >= 0) listeners[type].splice(i, 1); return self; };
+            this.removeListener = this.off;
+            h.messageReceived.connect(function (data) {
+                for (var i = 0; i < listeners.message.length; i++) listeners.message[i](data);
+            });
+            h.errorOccurred.connect(function (msg) {
+                var err = new Error(msg);
+                if (!listeners.error.length) { console.error("worker_threads error:", msg); return; }
+                for (var i = 0; i < listeners.error.length; i++) listeners.error[i](err);
+            });
+            this.__handle = h;
+        }
+        return { isMainThread: true, parentPort: null, workerData: undefined, threadId: 0, Worker: NodeWorker };
+    })())"));
+    wtMod.setProperty(QStringLiteral("default"), wtMod);
+    engine->registerModule(QStringLiteral("worker_threads"), wtMod);
+    engine->registerModule(QStringLiteral("node:worker_threads"), wtMod);
 }
 
 } // namespace SolidWorkers
