@@ -6,7 +6,7 @@ import { createSignal, Show } from "solid-js";
 import { div, text, button, notifications } from "../../src/solid-qml/runtime";
 import "./menus.css";
 
-declare const Menu: any, MenuItem: any, MenuSeparator: any, MenuBar: any, TreeView: any, ListView: any, TableView: any, Tray: any;
+declare const Menu: any, MenuItem: any, MenuSeparator: any, MenuBar: any, TreeView: any, ListView: any, TableView: any, Tray: any, ContextMenu: any;
 
 export function MenusAndViews() {
   const [lastAction, setLastAction] = createSignal("none yet");
@@ -136,6 +136,21 @@ export function MenusAndViews() {
           onSelect={(row) => setSelRow(row.name)}
         />
         <text class="nv-echo">selected: {selRow()}</text>
+      </div>
+
+      {/* ── ContextMenu: right-click anywhere on the zone ──────── */}
+      <div class="nv-row">
+        <text class="nv-label">context</text>
+        <div class="nv-ctxzone">
+          <ContextMenu>
+            <MenuItem onClick={() => setLastAction("ctx: copy")}>&Copy</MenuItem>
+            <MenuItem onClick={() => setLastAction("ctx: paste")}>&Paste</MenuItem>
+            <MenuSeparator />
+            <MenuItem onClick={() => setLastAction("ctx: delete")}>&Delete</MenuItem>
+          </ContextMenu>
+          <text class="nv-ctxzone-t">right-click here</text>
+        </div>
+        <text class="nv-echo">last action: {lastAction()}</text>
       </div>
 
       {/* ── Tray + desktop notifications ─────────────────────────────────────────

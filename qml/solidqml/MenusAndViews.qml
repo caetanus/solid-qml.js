@@ -161,6 +161,51 @@ W.Div {
         cssClass: ["nv-row"]
         W.Text {
             cssClass: ["nv-label"]
+            text: "context"
+        }
+        W.Div {
+            cssClass: ["nv-ctxzone"]
+            Item {
+                id: __menuHost1
+                anchors.fill: parent
+                Window.onActiveChanged: if (!Window.active) __menu1.close()
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.RightButton
+                    onClicked: function(mouse) { __menu1.popup(mouse.x, mouse.y) }
+                }
+                W.Menu {
+                    id: __menu1
+                    cssAncestor: __menuHost1
+                    W.MenuItem {
+                        text: "&Copy"
+                        onTriggered: { lastAction = "ctx: copy" }
+                    }
+                    W.MenuItem {
+                        text: "&Paste"
+                        onTriggered: { lastAction = "ctx: paste" }
+                    }
+                    W.MenuSeparator { }
+                    W.MenuItem {
+                        text: "&Delete"
+                        onTriggered: { lastAction = "ctx: delete" }
+                    }
+                }
+            }
+            W.Text {
+                cssClass: ["nv-ctxzone-t"]
+                text: "right-click here"
+            }
+        }
+        W.Text {
+            cssClass: ["nv-echo"]
+            text: "last action: " + (lastAction)
+        }
+    }
+    W.Div {
+        cssClass: ["nv-row"]
+        W.Text {
+            cssClass: ["nv-label"]
             text: "Tray"
         }
         W.Tray {

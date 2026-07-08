@@ -489,3 +489,30 @@ test("listview/tableview keyboard: inner ListView is the tab stop, arrows naviga
     assert.match(src, /lv\.forceActiveFocus\(\)/, f);
   }
 });
+
+test("contextmenu: <ContextMenu> fills its parent and opens at the cursor on right-click", async () => {
+  const out = await qml(`export function F(){ const [last, setLast] = createSignal(""); return (
+    <div class="zone">
+      <ContextMenu onClose={() => setLast("closed")}>
+        <MenuItem onClick={() => setLast("copy")}>&Copy</MenuItem>
+        <MenuSeparator />
+        <MenuItem onClick={() => setLast("del")}>&Delete</MenuItem>
+      </ContextMenu>
+    </div>); }`);
+  // Foreign anchored host: invisible to the CSS layout pass, covers the containing box.
+  assert.match(out, /Item \{\n\s*id: __menuHost0\n\s*anchors\.fill: parent/);
+  // Right-button only — left clicks/hover/wheel pass through to the content below.
+  assert.match(out, /acceptedButtons: Qt\.RightButton/);
+  assert.match(out, /onClicked: function\(mouse\) \{ __menu0\.popup\(mouse\.x, mouse\.y\) \}/);
+  assert.match(out, /W\.Menu \{/);
+  assert.match(out, /onMenuClosed: \{ last = "closed" \}/);
+  assert.equal((out.match(/W\.MenuItem \{/g) ?? []).length, 2);
+  assert.match(out, /W\.MenuSeparator \{ \}/);
+});
+
+test("contextmenu: rejects non-menu children", async () => {
+  await assert.rejects(
+    qml(`export function F(){ return <div><ContextMenu><div /></ContextMenu></div>; }`),
+    /only accepts <MenuItem>/,
+  );
+});

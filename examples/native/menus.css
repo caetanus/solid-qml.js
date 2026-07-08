@@ -156,3 +156,21 @@
 .native .table-row.selected .table-cell-label {
   color: #ffffff;
 }
+
+/* ─── <ContextMenu> demo zone ─────────────────────────────────────────────────────────── */
+
+.native .nv-ctxzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 220px;
+  height: 44px;
+  border: 1px dashed #a9bacb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.native .nv-ctxzone-t {
+  font-size: 12px;
+  color: #64748b;
+}

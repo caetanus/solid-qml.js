@@ -281,6 +281,42 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
 
 // ─── <MenuBar> with <Menu title="…"> children ───────────────────────────────────────────────────
 
+/** <ContextMenu> — a right-click menu for the CONTAINING element. The host Item anchors-fills
+ *  its parent box (a foreign anchored child: invisible to the CSS layout pass), and a
+ *  RightButton-only MouseArea opens the popup at the cursor via T.Menu.popup(x, y) — left
+ *  clicks, hover and wheel pass through untouched. Everything else (items, author class,
+ *  onClose, window-deactivation close) matches <Menu>. */
+function emitContextMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  const counter = scope.inputCounter ?? { n: 0 };
+  const n = counter.n++;
+  const hostId = `__menuHost${n}`;
+  const menuId = `__menu${n}`;
+
+  const props = propsOf(propsArg);
+  const onClose = props.get("onClose");
+  const items = parseMenuChildren(children, scope, "ContextMenu");
+
+  return [
+    `${pad}Item {`,
+    `${i(1)}id: ${hostId}`,
+    `${i(1)}anchors.fill: parent`,
+    ...(guard ? [`${i(1)}visible: !!(${guard})`] : []),
+    `${i(1)}Window.onActiveChanged: if (!Window.active) ${menuId}.close()`,
+    `${i(1)}MouseArea {`,
+    `${i(2)}anchors.fill: parent`,
+    `${i(2)}acceptedButtons: Qt.RightButton`,
+    `${i(2)}onClicked: function(mouse) { ${menuId}.popup(mouse.x, mouse.y) }`,
+    `${i(1)}}`,
+    ...menuObjectLines({
+      menuId, anchorId: hostId, items, classes: classesOf(props),
+      onCloseBody: onClose ? handlerBody(onClose, scope) : undefined,
+    }, scope, level + 1),
+    `${pad}}`,
+  ];
+}
+
 /** One .qml per component (owner directive 2026-07-05): the CssFill "div" wrapper, the T.MenuBar
  *  (Row+Repeater contentItem over contentModel, `.menubar` background) live in MenuBar.qml, and each
  *  top-level entry's chrome (`.menubar-item`/`.menubar-label` slots, Window-deactivation close) in
@@ -470,6 +506,7 @@ function emitTableView(propsArg: t.Node | undefined, _children: t.Node[], scope:
 registerNativeTags({
   Menu: emitMenu,
   MenuBar: emitMenuBar,
+  ContextMenu: emitContextMenu,
   TreeView: emitTreeView,
   ListView: emitListView,
   TableView: emitTableView,
