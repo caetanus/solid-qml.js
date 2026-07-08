@@ -2,6 +2,7 @@
 
 #include "jspolyfill.h"
 #include "nodeshims.h"
+#include "sharedbuffers.h"
 #include "webfetch.h"
 #include "weblocalstorage.h"
 #include "webplatform.h"
@@ -40,6 +41,7 @@ void WorkerScriptHost::start()
     WebPlatform::install(m_engine);
     JsPolyfill::install(m_engine);
     NodeShims::install(m_engine);
+    SharedBuffers::install(m_engine);
 
     // Worker-global surface: self, postMessage, onmessage/onerror slots, close().
     // globalObject().setProperty, NOT setContextProperty: plain evaluate() runs in the JS global
@@ -109,16 +111,17 @@ void WorkerScriptHost::deliver(const QVariant &data)
     QJSValue dispatch = m_engine->globalObject().property(QStringLiteral("__dispatchMessage"));
     if (!dispatch.isCallable())
         return;
-    const QJSValue result = dispatch.call({ m_engine->toScriptValue(data) });
+    const QJSValue result = dispatch.call({ SharedBuffers::rehydrate(m_engine, data) });
     if (result.isError())
         emit errorOut(result.property(QStringLiteral("message")).toString());
 }
 
 void WorkerScriptHost::postToParent(const QJSValue &message)
 {
-    // toVariant deep-converts on THIS (owning) thread — the structured-clone subset: primitives,
-    // arrays, plain objects, Date, ArrayBuffer/TypedArray as byte copies.
-    emit messageOut(message.toVariant());
+    // Deep-converts on THIS (owning) thread — the structured-clone subset: primitives, arrays,
+    // plain objects, Date, ArrayBuffer/TypedArray as byte copies; OUR SharedArrayBuffers pass
+    // the ref-counted block through uncopied (top level or one property deep).
+    emit messageOut(SharedBuffers::marshal(message));
 }
 
 // ─── WebWorker (main thread) ────────────────────────────────────────────────────────────────────
@@ -152,7 +155,7 @@ void WebWorker::postMessage(const QJSValue &message)
 {
     if (m_terminated)
         return;
-    emit deliverToWorker(message.toVariant());
+    emit deliverToWorker(SharedBuffers::marshal(message));
 }
 
 void WebWorker::terminate()
@@ -216,6 +219,7 @@ void WebWorkerFactory::install(QQmlEngine *engine, const QUrl &baseUrl)
                 var i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1);
             };
             h.messageReceived.connect(function (data) {
+                if (typeof __solidSAB !== "undefined") data = __solidSAB.hydrate(data);
                 var ev = { data: data, type: "message" };
                 if (typeof w.onmessage === "function") w.onmessage(ev);
                 for (var i = 0; i < listeners.length; i++) listeners[i](ev);
@@ -251,6 +255,7 @@ void WebWorkerFactory::install(QQmlEngine *engine, const QUrl &baseUrl)
             this.off = function (type, fn) { if (!listeners[type]) return self; var i = listeners[type].indexOf(fn); if (i >= 0) listeners[type].splice(i, 1); return self; };
             this.removeListener = this.off;
             h.messageReceived.connect(function (data) {
+                if (typeof __solidSAB !== "undefined") data = __solidSAB.hydrate(data);
                 for (var i = 0; i < listeners.message.length; i++) listeners.message[i](data);
             });
             h.errorOccurred.connect(function (msg) {
