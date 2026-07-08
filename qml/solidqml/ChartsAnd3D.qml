@@ -7,6 +7,7 @@ import solidqml.Widgets.Chart 1.0 as WChart
 import solidqml.Widgets.Media 1.0 as WMedia
 import solidqml.Widgets.Scene3D 1.0 as WScene3D
 import solidqml.Widgets.Surface 1.0 as WSurface
+import solidqml.Widgets.Web 1.0 as WWeb
 
 import solidqml.Widgets 1.0 as W
 W.Div {
@@ -54,6 +55,18 @@ W.Div {
             cssClass: ["dv-media"]
             src: Qt.resolvedUrl("assets/media-demo.mp4")
             autoplay: true
+        }
+    }
+    W.Div {
+        cssClass: ["dv-card"]
+        visible: !!(isNative)
+        W.Text {
+            cssClass: ["dv-label"]
+            text: "WebView — Chromium in a card (QtWebEngine)"
+        }
+        WWeb.WebView {
+            cssClass: ["dv-web"]
+            src: Qt.resolvedUrl("assets/web-demo.html")
         }
     }
     W.Div {

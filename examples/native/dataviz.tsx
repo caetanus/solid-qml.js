@@ -11,7 +11,7 @@ import { Show } from "solid-js";
 import { div, text } from "../../src/solid-qml/runtime";
 import "./dataviz.css";
 
-declare const Chart: any, Scene3D: any, Surface: any, MediaPlayer: any;
+declare const Chart: any, Scene3D: any, Surface: any, MediaPlayer: any, WebView: any;
 
 export function ChartsAnd3D() {
   const isNative = typeof process !== "undefined" && !!(process.versions && process.versions.solidQml);
@@ -46,6 +46,13 @@ export function ChartsAnd3D() {
         <div class="dv-card">
           <text class="dv-label">Media player — video + play/seek/clock (QtMultimedia)</text>
           <MediaPlayer class="dv-media" src="assets/media-demo.mp4" autoplay />
+        </div>
+        {/* Embedded web content (module solidqml.Widgets.Web): a REAL Chromium page via
+            QtWebEngine, imported only when the tag is used (the loader pre-sets
+            AA_ShareOpenGLContexts, dependency-free). Local HTML asset — no network needed. */}
+        <div class="dv-card">
+          <text class="dv-label">WebView — Chromium in a card (QtWebEngine)</text>
+          <WebView class="dv-web" src="assets/web-demo.html" />
         </div>
         {/* 3D + data viz combined (module solidqml.Widgets.Surface): the REAL Walker Lake exhaustive
             grid (Isaaks & Srivastava, 260×300 V values) as a height-coloured surface. Drag to rotate,

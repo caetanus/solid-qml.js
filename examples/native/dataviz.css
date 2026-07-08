@@ -105,3 +105,12 @@
   background: #e8eef5;
   border-radius: 6px;
 }
+
+/* ─── <WebView> ───────────────────────────────────────────────────────────────────────── */
+
+.dv .dv-web {
+  width: 640px;
+  height: 300px;
+  border: 1px solid #223140;
+  border-radius: 10px;
+}

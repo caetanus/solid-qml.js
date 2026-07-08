@@ -33,3 +33,10 @@ test("dataviz: an app without <MediaPlayer> never imports the Media module", asy
   const out = await qmlType(`export function F(){ return <div class="a" />; }`);
   assert.doesNotMatch(out, /solidqml\.Widgets\.Media/);
 });
+
+test("dataviz: <WebView> instantiates the opt-in Web module with a resolved src", async () => {
+  const out = await qmlType(`export function F(){ return <WebView class="wv" src="assets/page.html" />; }`);
+  assert.match(out, /import solidqml\.Widgets\.Web 1\.0 as WWeb/);
+  assert.match(out, /WWeb\.WebView \{/);
+  assert.match(out, /src: Qt\.resolvedUrl\("assets\/page\.html"\)/);
+});

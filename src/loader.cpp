@@ -99,6 +99,9 @@ int main(int argc, char **argv)
 #endif
     // QApplication (not QGuiApplication): Qt Labs Platform's OS-native menu bar / menus / dialogs
     // need Qt Widgets. QApplication IS-A QGuiApplication, so runMiniNode(QGuiApplication&) is unaffected.
+    // QtWebEngine's ONLY hard pre-app requirement for QML use: shared GL contexts. Set
+    // unconditionally (harmless, dependency-free) so the opt-in <WebView> module can compose.
+    QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("solid-qml-loader"));
     QApplication::setOrganizationName(QStringLiteral("solid-qml"));

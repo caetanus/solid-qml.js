@@ -113,4 +113,21 @@ function emitMediaPlayer(propsArg: t.Node | undefined, _children: t.Node[], scop
   return lines;
 }
 
-registerNativeTags({ Chart: emitChart, Scene3D: emitScene3D, Surface: emitSurface, MediaPlayer: emitMediaPlayer });
+/** <WebView src> → WWeb.WebView (opt-in module solidqml.Widgets.Web — QtWebEngine loads only
+ *  when the tag is used; the loader pre-sets AA_ShareOpenGLContexts, dependency-free). */
+function emitWebView(propsArg: t.Node | undefined, _children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  requireImport(scope, "import solidqml.Widgets.Web 1.0 as WWeb");
+  const props = propsOf(propsArg);
+  const bind = (e: t.Expression) => emitExpr(e, { ...scope, mode: "binding" });
+
+  const lines: string[] = [`${pad}WWeb.WebView {`, ...buildCssClassLine(cssPropsShim(props), scope, i(1))];
+  if (guard) lines.push(`${i(1)}visible: !!(${guard})`);
+  const src = props.get("src");
+  if (src) lines.push(`${i(1)}src: Qt.resolvedUrl(${bind(src)})`);
+  lines.push(`${pad}}`);
+  return lines;
+}
+
+registerNativeTags({ Chart: emitChart, Scene3D: emitScene3D, Surface: emitSurface, MediaPlayer: emitMediaPlayer, WebView: emitWebView });

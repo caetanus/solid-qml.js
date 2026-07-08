@@ -1,0 +1,2 @@
+module solidqml.Widgets.Web
+WebView 1.0 WebView.qml
