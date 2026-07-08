@@ -92,12 +92,14 @@ test("progress: emitting the widget imports the solidqml.Widgets module", async 
   assert.match(out, /import solidqml\.Widgets .* as W/);
 });
 
-test("progress: Progress.qml component exists with the T.ProgressBar + bar internals", async () => {
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Progress.qml", import.meta.url)), "utf8");
-  assert.match(src, /T\.ProgressBar/);
+test("progress: the C++ Progress hosts the T.ProgressBar + bar internals as a snippet", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { fileURLToPath } = await import("node:url");
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/indicators.cpp", import.meta.url)), "utf8");
+  assert.match(src, /T\.ProgressBar \{/);
+  assert.match(src, /indeterminate: root\.value < 0/);
   assert.match(src, /cssClass: \["track"\]/);
   assert.match(src, /cssClass: \["bar"\]/);
-  assert.match(src, /indeterminate: root\.value < 0/);
 });
 
 // ---------------------------------------------------------------------------

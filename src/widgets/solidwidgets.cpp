@@ -3,6 +3,7 @@
 #include "primitives.h"
 #include "button.h"
 #include "focusring.h"
+#include "indicators.h"
 
 namespace SolidWidgets {
 
@@ -18,6 +19,8 @@ void registerTypes()
     qmlRegisterType<RoundButton>("solidqml.Widgets", 1, 0, "RoundButton");
     qmlRegisterType<Fieldset>("solidqml.Widgets", 1, 0, "Fieldset");
     qmlRegisterType<StackView>("solidqml.Widgets", 1, 0, "StackView");
+    qmlRegisterType<Progress>("solidqml.Widgets", 1, 0, "Progress");
+    qmlRegisterType<BusyIndicator>("solidqml.Widgets", 1, 0, "BusyIndicator");
 }
 
 } // namespace SolidWidgets

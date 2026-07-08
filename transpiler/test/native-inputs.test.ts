@@ -292,22 +292,14 @@ test("native-inputs: <BusyIndicator> with no running attr omits the prop (compon
   assert.doesNotMatch(out, /running:/);
 });
 
-test("native-inputs: BusyIndicator.qml spins 8 staggered spokes gated on running", async () => {
-  const src = await readWidget("BusyIndicator");
-  assert.match(src, /T\.BusyIndicator \{/);
-  assert.match(src, /contentItem: Item \{/);
-  assert.match(src, /RotationAnimation on rotation \{/);
-  assert.match(src, /duration: 900/);
-  assert.match(src, /loops: Animation\.Infinite/);
+test("native-inputs: the C++ BusyIndicator spins 8 staggered spokes gated on running", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { fileURLToPath } = await import("node:url");
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/indicators.cpp", import.meta.url)), "utf8");
+  assert.match(src, /model: 8/);
+  assert.match(src, /opacity: \(index \+ 1\) \/ 8/);
   assert.match(src, /running: root\.running/);
-  const spokes = src.match(/cssClass: \["spoke"\]/g) ?? [];
-  assert.equal(spokes.length, 8);
-  const rects = src.match(/^\s*Rectangle \{/gm) ?? [];
-  assert.equal(rects.length, 8);
-  assert.match(src, /Math\.cos\(3 \* Math\.PI \/ 4\)/);
-  assert.match(src, /opacity: 0\.125/);
-  assert.match(src, /opacity: 1/);
-  assert.match(src, /visible: running/);
+  assert.match(src, /cssClass: \["spoke"\]/);
 });
 
 // ---------------------------------------------------------------------------

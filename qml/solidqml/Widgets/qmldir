@@ -1,5 +1,4 @@
 module solidqml.Widgets
-BusyIndicator 1.0 BusyIndicator.qml
 Calendar 1.0 Calendar.qml
 Checkbox 1.0 Checkbox.qml
 DateField 1.0 DateField.qml
@@ -14,7 +13,6 @@ MenuItem 1.0 MenuItem.qml
 MenuSeparator 1.0 MenuSeparator.qml
 MonthGrid 1.0 MonthGrid.qml
 PageIndicator 1.0 PageIndicator.qml
-Progress 1.0 Progress.qml
 RangeSlider 1.0 RangeSlider.qml
 Select 1.0 Select.qml
 Slider 1.0 Slider.qml
