@@ -20,6 +20,9 @@ Item {
     property url iconSource: ""
     property bool shown: true
     property alias menu: tray.menu
+    // Platform guard: false when the desktop offers no tray — authors gate fallback UI on it
+    // (SystemTrayIcon.visible already no-ops without one, so showing the icon is always safe).
+    readonly property alias available: tray.available
     signal activated(var reason)
 
     Platform.SystemTrayIcon {

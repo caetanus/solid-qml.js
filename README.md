@@ -114,7 +114,9 @@ We are in alpha and insist on being honest about what **does not exist yet** or 
   are drawn by the CSS engine, not QtGraphs.
 - **3D renders only on a real GPU surface.** Qt Quick 3D can't render under the headless/`offscreen`
   platform, so 3D views can't be verified in CI screenshots — only that they load.
-- **Missing desktop integration**: D-Bus, Avahi/zeroconf, deeper system-tray, not yet.
+- **Missing desktop integration**: Avahi/zeroconf and deeper tray protocols, not yet. Desktop
+  notifications landed (see below); inline reply depends on the user's notification server
+  advertising it (KDE, dunst… do).
 - **Threads** and **background services (mobile)**, not yet. **Gestures** (touch), not yet.
 - `<For>` is still fragile with **nested sub-JSX** and complex cases.
 - **Advanced CSS** mappings depend on open design decisions.
@@ -125,7 +127,10 @@ We are in alpha and insist on being honest about what **does not exist yet** or 
 
 Recently landed (no longer gaps): desktop **overflow scrolling** (mouse wheel, draggable scrollbar,
 focus-follows-scroll) on both `div`/`CssRect` and `CssFill` boxes; the **escape hatch** (importing a
-hand-written `.qml` as a component); the **keyboard tab-focus** model (ring, dialogs, default button).
+hand-written `.qml` as a component); the **keyboard tab-focus** model (ring, dialogs, default button);
+**desktop notifications** (`import { notifications } from "qml-solid"`) over org.freedesktop.Notifications
+on a D-Bus worker thread — action buttons, close events and **inline reply** flowing back into the app —
+plus a real guarded `<Tray>` whose menu items call back into component code.
 
 ## License
 

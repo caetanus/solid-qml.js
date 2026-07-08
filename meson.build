@@ -36,6 +36,12 @@ qt6_network_dep = dependency('qt6', modules: ['Network'])
 # native <MenuBar> attaches to the window chrome (owner call 2026-07-07: accept the footprint).
 qt6_widgets_dep = dependency('qt6', modules: ['Widgets'])
 
+# Desktop notifications backend (Linux): org.freedesktop.Notifications over D-Bus, on a worker
+# thread (the qbar pattern — QDBusConnection is synchronous). Optional: without it the
+# notifications shim compiles as unavailable; other platforms get their own backends later.
+qt6_dbus_dep = dependency('qt6', modules: ['DBus'], required: false)
+notify_args = qt6_dbus_dep.found() ? ['-DHAVE_QTDBUS'] : []
+
 # No qresources: the generated app (App.generated.qml + its .js sidecar) and the stylesheet are
 # loaded from the filesystem at runtime, not baked into the binary. Release uses the AOT C++
 # back-end instead of qrc-embedded QML.
@@ -47,6 +53,7 @@ solid_qml_loader_qt_sources = qt6.preprocess(
     'src/shims/webplatform.h',
     'src/shims/nodeshims.h',
     'src/shims/tabstop.h',
+    'src/shims/notifications.h',
   ),
 )
 
@@ -60,8 +67,10 @@ executable(
     'src/shims/webplatform.cpp',
     'src/shims/jspolyfill.cpp',
     'src/shims/nodeshims.cpp',
+    'src/shims/notifications.cpp',
   ),
   solid_qml_loader_qt_sources,
-  dependencies: [qml_css_engine_dep, qt6_network_dep, qt6_widgets_dep],
+  cpp_args: notify_args,
+  dependencies: [qml_css_engine_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep],
   install: true,
 )

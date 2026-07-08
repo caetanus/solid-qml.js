@@ -9,10 +9,18 @@ import solidqml.Widgets 1.0 as W
 W.Div {
     id: __self
     property var lastAction: "none yet"
+    property var trayOn: true
+    property var trayEcho: "tray idle"
+    property var notifyEcho: solidNotifications.available ? "notification server ready" : "no notification server"
     property var selNode: "nothing"
     property var selItem: "nothing"
     property var selRow: "nothing"
     readonly property var treeData: [({ label: "src", children: [({ label: "emit", children: [({ label: "qml.ts" }), ({ label: "expr.ts" })] }), ({ label: "resolve", children: [({ label: "node.ts" })] }), ({ label: "index.ts" })] }), ({ label: "docs", children: [({ label: "roadmap.md" })] }), ({ label: "package.json" })]
+    function notifyPlain() { var id = solidNotifications.send(({ title: "solid-qml", body: "Hello from the native gallery" })); notifyEcho = "sent #" + id_; }
+    function notifyActions() { var id = solidNotifications.send(({ title: "solid-qml", body: "Pick an action — or reply right here", actions: [({ id: "ok", label: "OK" }), ({ id: "later", label: "Later" })], reply: "Type a reply…" })); notifyEcho = "sent #" + id_ + " (actions" + (solidNotifications.supportsReply ? " + reply" : "") + ")"; }
+    property var __cleanups: []
+    Component.onCompleted: { solidNotifications.actionInvoked.connect(function(id_, action) { return notifyEcho = "#" + id_ + " action: " + action }); solidNotifications.replied.connect(function(id_, replyText) { return notifyEcho = "#" + id_ + " reply: " + replyText }); solidNotifications.closed.connect(function(id_, reason) { return notifyEcho = "#" + id_ + " closed (reason " + reason + ")" }); }
+    Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
     cssClass: ["nv-section", "nv-menus"]
     W.Text {
         cssClass: ["nv-title"]
@@ -152,9 +160,56 @@ W.Div {
             cssClass: ["nv-label"]
             text: "Tray"
         }
+        W.Tray {
+            shown: !!(trayOn)
+            tooltip: "solid-qml gallery"
+            iconSource: "assets/logo.png"
+            onActivated: { trayEcho = "icon activated" }
+            menu: Platform.Menu {
+                Platform.MenuItem {
+                    text: "&Open gallery"
+                    onTriggered: { trayEcho = "tray menu: open" }
+                }
+                Platform.MenuItem {
+                    text: "&Notify"
+                    onTriggered: { notifyPlain() }
+                }
+                Platform.MenuItem { separator: true }
+                Platform.MenuItem {
+                    text: "&Remove icon"
+                    onTriggered: { trayOn = false }
+                }
+            }
+        }
+        W.Button {
+            cssClass: ["hw-btn"]
+            text: "" + (trayOn ? "remove tray icon" : "show tray icon")
+            onClicked: trayOn = !trayOn
+        }
         W.Text {
             cssClass: ["nv-echo"]
-            text: "<Tray> — native SystemTrayIcon (not shown here; see tests)"
+            text: "" + (trayEcho)
+        }
+    }
+    W.Div {
+        cssClass: ["nv-row"]
+        W.Text {
+            cssClass: ["nv-label"]
+            text: "notify"
+        }
+        W.Button {
+            cssClass: ["hw-btn"]
+            text: "simple"
+            onClicked: notifyPlain()
+        }
+        W.Button {
+            cssClass: ["hw-btn"]
+            text: "actions + reply"
+            onClicked: notifyActions()
+        }
+        W.Text {
+            cssClass: ["nv-echo"]
+            text: "" + (notifyEcho)
         }
     }
 }

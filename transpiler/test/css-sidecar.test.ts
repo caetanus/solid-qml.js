@@ -53,3 +53,23 @@ test("css sidecar: the reset is collected once across the module graph", async (
   const hits = app.css.split("box-sizing: border-box").length - 1;
   assert.equal(hits, 1, "reset appears exactly once");
 });
+
+test("runtime import: `notifications` rewrites to the solidNotifications context property", async () => {
+  const files: Record<string, string> = {
+    "/app/main.tsx": [
+      `import { notifications } from "../src/solid-qml/runtime";`,
+      `import { div } from "../src/solid-qml/runtime";`,
+      `export function F(){ return <div class="a" onClick={() => notifications.send({ title: "hi" })} />; }`,
+    ].join("\n"),
+    "/src/solid-qml/reset.css": "* { box-sizing: border-box; }\n",
+  };
+  const app = await generate(files["/app/main.tsx"], "/app/main.tsx", {
+    readFile: async (p: string) => {
+      const v = files[p];
+      if (v === undefined) throw new Error(`unexpected read: ${p}`);
+      return v;
+    },
+  });
+  assert.ok(app.entry.includes("solidNotifications.send"), "identifier rewritten to the context property");
+  assert.ok(!app.entry.includes("notifications.send"), "no dangling runtime identifier");
+});

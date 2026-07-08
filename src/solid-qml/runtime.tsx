@@ -143,6 +143,22 @@ export function Calendar(props: {
 // only mirrors the API so shared sources typecheck — the browser keeps the DOM's own tab order.
 export const tabstop = { enabled: true };
 
+// Desktop notifications (`import { notifications } from "qml-solid"`). In the QML target the
+// transpiler rewrites this to the loader's `solidNotifications` context property (D-Bus worker
+// thread on Linux); this web mirror only keeps shared sources typechecking — the browser
+// preview reports the capability as absent.
+const noSignal = { connect() { /* native-only */ }, disconnect() { /* native-only */ } };
+export const notifications = {
+  available: false,
+  supportsActions: false,
+  supportsReply: false,
+  send: (_spec: Record<string, unknown>) => 0,
+  close: (_id: number) => { /* native-only */ },
+  actionInvoked: noSignal,
+  replied: noSignal,
+  closed: noSignal,
+};
+
 export function qmlComponent(path: string) {
   return function QmlImportedComponent(props: PrimitiveProps) {
     return (

@@ -2,14 +2,35 @@
 // Native-only tags are registry-dispatched by the transpiler (no runtime import — the QML
 // emitter resolves <Menu>/<MenuBar>/<TreeView>/<Tray> before user components); this module only
 // ever renders in the QML loader (native.tsx gates it behind the process.versions.solidQml probe).
-import { createSignal } from "solid-js";
-import { div, text, button } from "../../src/solid-qml/runtime";
+import { createSignal, Show } from "solid-js";
+import { div, text, button, notifications } from "../../src/solid-qml/runtime";
 import "./menus.css";
 
 declare const Menu: any, MenuItem: any, MenuSeparator: any, MenuBar: any, TreeView: any, ListView: any, TableView: any, Tray: any;
 
 export function MenusAndViews() {
   const [lastAction, setLastAction] = createSignal("none yet");
+  const [trayOn, setTrayOn] = createSignal(true);
+  const [trayEcho, setTrayEcho] = createSignal("tray idle");
+  const [notifyEcho, setNotifyEcho] = createSignal(
+    notifications.available ? "notification server ready" : "no notification server",
+  );
+  const notifyPlain = () => {
+    const id = notifications.send({ title: "solid-qml", body: "Hello from the native gallery" });
+    setNotifyEcho("sent #" + id);
+  };
+  const notifyActions = () => {
+    const id = notifications.send({
+      title: "solid-qml",
+      body: "Pick an action — or reply right here",
+      actions: [{ id: "ok", label: "OK" }, { id: "later", label: "Later" }],
+      reply: "Type a reply…",
+    });
+    setNotifyEcho("sent #" + id + " (actions" + (notifications.supportsReply ? " + reply" : "") + ")");
+  };
+  notifications.actionInvoked.connect((id: number, action: string) => setNotifyEcho("#" + id + " action: " + action));
+  notifications.replied.connect((id: number, replyText: string) => setNotifyEcho("#" + id + " reply: " + replyText));
+  notifications.closed.connect((id: number, reason: number) => setNotifyEcho("#" + id + " closed (reason " + reason + ")"));
   const [selNode, setSelNode] = createSignal("nothing");
   const [selItem, setSelItem] = createSignal("nothing");
   const [selRow, setSelRow] = createSignal("nothing");
@@ -100,14 +121,34 @@ export function MenusAndViews() {
         <text class="nv-echo">selected: {selRow()}</text>
       </div>
 
-      {/* <Tray> is real (Platform.SystemTrayIcon) and TESTED, but NOT instantiated here:
-          a SystemTrayIcon registers a StatusNotifierItem in the OS tray, and a gallery that
-          is launched/killed constantly during dev would leave ghost icons behind (SIGKILL
-          never deregisters the D-Bus item). It belongs in a real app with a clean shutdown,
-          not a showcase. See transpiler/test/native-menus.test.ts for its emission. */}
+      {/* ── Tray + desktop notifications ─────────────────────────────────────────
+          The tray icon is REAL (Platform.SystemTrayIcon): its menu items call back into this
+          component, and the toggle removes it cleanly (visible=false deregisters the D-Bus
+          StatusNotifierItem — no ghost icons). Notifications ride the loader's
+          org.freedesktop.Notifications shim (D-Bus worker thread); every event the server
+          sends back — action clicks, inline replies, closes — echoes below. */}
       <div class="nv-row">
         <text class="nv-label">Tray</text>
-        <text class="nv-echo">&lt;Tray&gt; — native SystemTrayIcon (not shown here; see tests)</text>
+        <Show when={trayOn()}>
+          <Tray tooltip="solid-qml gallery" icon="assets/logo.png"
+                onActivate={() => setTrayEcho("icon activated")}>
+            <MenuItem onClick={() => setTrayEcho("tray menu: open")}>&Open gallery</MenuItem>
+            <MenuItem onClick={() => notifyPlain()}>&Notify</MenuItem>
+            <MenuSeparator />
+            <MenuItem onClick={() => setTrayOn(false)}>&Remove icon</MenuItem>
+          </Tray>
+        </Show>
+        <button class="hw-btn" onClick={() => setTrayOn(!trayOn())}>
+          {trayOn() ? "remove tray icon" : "show tray icon"}
+        </button>
+        <text class="nv-echo">{trayEcho()}</text>
+      </div>
+
+      <div class="nv-row">
+        <text class="nv-label">notify</text>
+        <button class="hw-btn" onClick={() => notifyPlain()}>simple</button>
+        <button class="hw-btn" onClick={() => notifyActions()}>actions + reply</button>
+        <text class="nv-echo">{notifyEcho()}</text>
       </div>
     </div>
   );

@@ -167,10 +167,13 @@ export async function generate(source: string, filename: string, opts: GenerateO
     const imports = collectImports(file);
     const jsImports: Record<string, string> = {};
     const qmlImports = new Map<string, string>();
-    // `tabstop` from "qml-solid" (or the runtime module) is the loader's solidTabstop context
-    // property — the identifier rewrites in place, the import compiles away.
+    // `tabstop` / `notifications` from "qml-solid" (or the runtime module) are loader context
+    // properties (solidTabstop / solidNotifications) — the identifier rewrites in place, the
+    // import compiles away.
     for (const [local, imp] of imports) {
-      if (isRuntimeOnlyImport(imp.spec) && imp.imported === "tabstop") jsImports[local] = "solidTabstop";
+      if (!isRuntimeOnlyImport(imp.spec)) continue;
+      if (imp.imported === "tabstop") jsImports[local] = "solidTabstop";
+      if (imp.imported === "notifications") jsImports[local] = "solidNotifications";
     }
     const bareImports = [...imports.values()].filter((imp) => isBareSpecifier(imp.spec) && !isRuntimeOnlyImport(imp.spec));
     if (bareImports.length > 0) {

@@ -2,6 +2,7 @@
 #include "shims/jspolyfill.h"
 #include "shims/nodeshims.h"
 #include "shims/tabstop.h"
+#include "shims/notifications.h"
 #include "shims/webfetch.h"
 #include "shims/weblocalstorage.h"
 #include "shims/webplatform.h"
@@ -203,6 +204,7 @@ int main(int argc, char **argv)
     QmlCss::registerTypes();
 
     SolidTabstop solidTabstop;
+    SolidNotifications solidNotifications; // D-Bus worker thread starts now; `available` flips async
 
     QQmlApplicationEngine engine;
     // The generated app does `import solidqml.Widgets 1.0 as W`; the module lives in a `Widgets/`
@@ -216,6 +218,7 @@ int main(int argc, char **argv)
     engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &cssTheme);
     engine.rootContext()->setContextProperty(QStringLiteral("cssLayout"), &cssLayout);
     engine.rootContext()->setContextProperty(QStringLiteral("solidTabstop"), &solidTabstop);
+    engine.rootContext()->setContextProperty(QStringLiteral("solidNotifications"), &solidNotifications);
     // Browser-API shims for the V4 engine.
     WebLocalStorage::install(&engine); // synchronous, persistent localStorage
     WebFetch::install(&engine);        // fetch + Headers/Request/Response/AbortController
