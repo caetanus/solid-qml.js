@@ -1,6 +1,7 @@
 #include "solidwidgets.h"
 
 #include "primitives.h"
+#include "button.h"
 #include "focusring.h"
 
 namespace SolidWidgets {
@@ -13,6 +14,7 @@ void registerTypes()
     qmlRegisterType<Text>("solidqml.Widgets", 1, 0, "Text");
     qmlRegisterType<Image>("solidqml.Widgets", 1, 0, "Image");
     qmlRegisterType<Tabstop>("solidqml.Widgets", 1, 0, "Tabstop");
+    qmlRegisterType<Button>("solidqml.Widgets", 1, 0, "Button");
 }
 
 } // namespace SolidWidgets

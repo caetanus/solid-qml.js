@@ -63,6 +63,7 @@ solid_qml_loader_qt_sources = qt6.preprocess(
     'src/shims/codeeditor.h',
     'src/widgets/primitives.h',
     'src/widgets/focusring.h',
+    'src/widgets/button.h',
   ),
 )
 
@@ -81,6 +82,7 @@ executable(
     'src/shims/codeeditor.cpp',
     'src/widgets/solidwidgets.cpp',
     'src/widgets/focusring.cpp',
+    'src/widgets/button.cpp',
   ),
   solid_qml_loader_qt_sources,
   cpp_args: notify_args,

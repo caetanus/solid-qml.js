@@ -52,7 +52,9 @@ async function qmlType(src: string): Promise<string> {
 // ---------------------------------------------------------------------------
 
 const TEXTFIELD_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TextField.qml", import.meta.url)), "utf8");
-const BUTTON_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Button.qml", import.meta.url)), "utf8");
+// Button is C++ now (widgets-to-cpp batch 2) — assertions read the C++ surface.
+const BUTTON_CPP = await readFile(fileURLToPath(new URL("../../src/widgets/button.h", import.meta.url)), "utf8")
+  + await readFile(fileURLToPath(new URL("../../src/widgets/button.cpp", import.meta.url)), "utf8");
 const DIALOG_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Dialog.qml", import.meta.url)), "utf8");
 
 test("default button: <button type=\"submit\"> emits isDefault; a plain button does not", async () => {
@@ -62,10 +64,10 @@ test("default button: <button type=\"submit\"> emits isDefault; a plain button d
   assert.doesNotMatch(plain, /isDefault/);
 });
 
-test("default button: Button.qml surfaces isDefault as a `default` cssState + a takeFocus()", async () => {
-  assert.match(BUTTON_QML, /property bool isDefault: false/);
-  assert.match(BUTTON_QML, /root\.isDefault \? \["default"\] : \[\]/);
-  assert.match(BUTTON_QML, /function takeFocus\(\) \{ __ma\.forceActiveFocus/);
+test("default button: the C++ Button surfaces isDefault as a `default` cssState + a takeFocus()", async () => {
+  assert.match(BUTTON_CPP, /Q_PROPERTY\(bool isDefault READ isDefault WRITE setIsDefault NOTIFY isDefaultChanged\)/);
+  assert.match(BUTTON_CPP, /QStringLiteral\("default"\)/);
+  assert.match(BUTTON_CPP, /Q_INVOKABLE void takeFocus\(\)/);
 });
 
 test("default button: Dialog fires the default on Enter (bubbled) and focuses it on open", async () => {
