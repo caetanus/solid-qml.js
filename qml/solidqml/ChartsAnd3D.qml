@@ -87,7 +87,7 @@ W.Div {
         visible: !!(isNative)
         W.Text {
             cssClass: ["dv-label"]
-            text: "Code editor — line gutter + Kate-engine highlighting (KSyntaxHighlighting)"
+            text: "Code editor — line gutter + built-in syntax highlighting (JS/QML/CSS/JSON)"
         }
         WCode.CodeEditor {
             cssClass: ["dv-code"]

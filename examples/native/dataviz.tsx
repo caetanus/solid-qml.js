@@ -61,11 +61,10 @@ export function ChartsAnd3D() {
           <text class="dv-label">Rich text — word-like editing, opens &amp; saves OpenDocument (.odt)</text>
           <RichText class="dv-rich" />
         </div>
-        {/* Code editor (module solidqml.Widgets.Code): KSyntaxHighlighting — Kate's engine,
-            the current library for this (Scintilla has no QtQuick port) — as an OPTIONAL build
-            dep; without it the editor stays plain mono with its line-number gutter. */}
+        {/* Code editor (module solidqml.Widgets.Code): our own QSyntaxHighlighter rules —
+            no external dependency (owner directive: no KDE) — JS/TS, QML, CSS, JSON. */}
         <div class="dv-card">
-          <text class="dv-label">Code editor — line gutter + Kate-engine highlighting (KSyntaxHighlighting)</text>
+          <text class="dv-label">Code editor — line gutter + built-in syntax highlighting (JS/QML/CSS/JSON)</text>
           <CodeEditor class="dv-code" language="JavaScript"
             text={"// solid-qml code editor\nfunction greet(name) {\n\treturn `hello ${name}`;\n}\n\nconst who = \"qt\";\nconsole.log(greet(who));"} />
         </div>

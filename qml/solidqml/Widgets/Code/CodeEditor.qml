@@ -1,7 +1,7 @@
 // CodeEditor — an opt-in module (solidqml.Widgets.Code). The highlighting engine is the
-// loader-registered CodeHighlighter: KSyntaxHighlighting (Kate's engine) when the loader was
-// built with it, a plain mono editor otherwise (highlighter.available tells which). Chrome:
-// a line-number gutter that follows the document, mono font, no-wrap horizontal scroll.
+// loader-registered CodeHighlighter: OUR OWN QSyntaxHighlighter rules (owner directive: no KDE
+// dependency) — JavaScript/TypeScript, QML, CSS and JSON, always compiled in. Chrome: a
+// line-number gutter that follows the document, mono font, no-wrap horizontal scroll.
 //
 // The transpiler emits:  WCode.CodeEditor { cssClass: […]; language: "JavaScript"; text: <expr> }
 import QtQuick
