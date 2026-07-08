@@ -349,15 +349,13 @@ test("native-inputs: <ToolButton> mirrors RoundButton with the 'tool' class", as
   assert.match(out, /text: "reset"/);
 });
 
-test("native-inputs: RoundButton is the C++ Button (active/disabled); ToolButton.qml keeps its slots", async () => {
+test("native-inputs: RoundButton and ToolButton are the C++ Button (active/disabled)", async () => {
   const { readFile } = await import("node:fs/promises");
   const { fileURLToPath } = await import("node:url");
   const cpp = await readFile(fileURLToPath(new URL("../../src/widgets/button.h", import.meta.url)), "utf8");
   assert.match(cpp, /class RoundButton : public Button/);
+  assert.match(cpp, /class ToolButton : public Button/);
   assert.match(cpp, /Q_PROPERTY\(bool disabled READ disabled WRITE setDisabled NOTIFY disabledChanged\)/);
-  const tool = await readWidget("ToolButton");
-  assert.match(tool, /T\.ToolButton \{/);
-  assert.match(tool, /cssPrimitive: "button"/);
 });
 
 // ---------------------------------------------------------------------------
@@ -377,8 +375,11 @@ test("native-inputs: emitting <ToolSeparator> imports the solidqml.Widgets modul
   assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
 });
 
-test("native-inputs: ToolSeparator.qml holds the T.ToolSeparator + centred sep CssRect", async () => {
-  const src = await readWidget("ToolSeparator");
+test("native-inputs: the C++ ToolSeparator's snippet holds the T.ToolSeparator + centred sep CssRect", async () => {
+  // ToolSeparator is C++ now (widgets-to-cpp) — the snippet keeps the QML internals verbatim.
+  const { readFile } = await import("node:fs/promises");
+  const { fileURLToPath } = await import("node:url");
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/toolbar.cpp", import.meta.url)), "utf8");
   assert.match(src, /T\.ToolSeparator \{/);
   assert.match(src, /cssClass: \["sep"\]/);
   assert.match(src, /width: 1/);

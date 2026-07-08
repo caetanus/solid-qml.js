@@ -17,8 +17,5 @@ SwipeView 1.0 SwipeView.qml
 TabBar 1.0 TabBar.qml
 TabButton 1.0 TabButton.qml
 TableView 1.0 TableView.qml
-ToolBar 1.0 ToolBar.qml
-ToolButton 1.0 ToolButton.qml
-ToolSeparator 1.0 ToolSeparator.qml
 Tray 1.0 Tray.qml
 TreeView 1.0 TreeView.qml

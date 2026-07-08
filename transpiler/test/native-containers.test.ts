@@ -69,10 +69,11 @@ test("containers: <ToolBar> children emit into the component's default content s
   assert.match(out, /text: "Run"/);
 });
 
-test("containers: ToolBar.qml component hosts the T.ToolBar chrome internals", async () => {
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/ToolBar.qml", import.meta.url)), "utf8");
+test("containers: the C++ ToolBar hosts the T.ToolBar chrome internals in its snippet", async () => {
+  // ToolBar is C++ now (widgets-to-cpp) — the snippet keeps the QML internals verbatim.
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/toolbar.cpp", import.meta.url)), "utf8");
   assert.match(src, /T\.ToolBar \{/);
-  assert.match(src, /cssPrimitive: "toolbar"/);
+  assert.match(src, /setCssPrimitive\(QStringLiteral\("toolbar"\)\)/);
   assert.match(src, /background: null/);
   assert.match(src, /contentItem: Item \{ \}/);
 });

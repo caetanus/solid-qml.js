@@ -8,6 +8,7 @@
 #include "delaybutton.h"
 #include "spindial.h"
 #include "textinputs.h"
+#include "toolbar.h"
 #include "tumbler.h"
 #include "toggles.h"
 
@@ -37,6 +38,9 @@ void registerTypes()
     qmlRegisterType<Dial>("solidqml.Widgets", 1, 0, "Dial");
     qmlRegisterType<DelayButton>("solidqml.Widgets", 1, 0, "DelayButton");
     qmlRegisterType<Tumbler>("solidqml.Widgets", 1, 0, "Tumbler");
+    qmlRegisterType<ToolButton>("solidqml.Widgets", 1, 0, "ToolButton");
+    qmlRegisterType<ToolBar>("solidqml.Widgets", 1, 0, "ToolBar");
+    qmlRegisterType<ToolSeparator>("solidqml.Widgets", 1, 0, "ToolSeparator");
 }
 
 } // namespace SolidWidgets

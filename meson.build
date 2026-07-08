@@ -70,6 +70,7 @@ solid_qml_loader_qt_sources = qt6.preprocess(
     'src/widgets/delaybutton.h',
     'src/widgets/spindial.h',
     'src/widgets/textinputs.h',
+    'src/widgets/toolbar.h',
     'src/widgets/tumbler.h',
   ),
 )
@@ -96,6 +97,7 @@ executable(
     'src/widgets/delaybutton.cpp',
     'src/widgets/spindial.cpp',
     'src/widgets/textinputs.cpp',
+    'src/widgets/toolbar.cpp',
     'src/widgets/tumbler.cpp',
     'src/widgets/snippetwidget.cpp',
   ),

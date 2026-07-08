@@ -78,4 +78,13 @@ public:
     using Button::Button;
 };
 
+// ToolButton — same interaction surface as Button (the "tool" class comes from the emit); the
+// T.ToolButton the QML wrapped supplied the semantic role only, which the native handlers cover.
+class ToolButton : public Button {
+    Q_OBJECT
+
+public:
+    using Button::Button;
+};
+
 } // namespace SolidWidgets
