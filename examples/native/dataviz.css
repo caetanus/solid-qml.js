@@ -8,6 +8,9 @@
   padding: 20px;
   height: calc(100vh - 88px);
   overflow-y: auto;
+  /* The dark showcase page itself — the light .dv-h/.dv-sub header colours were designed for
+     this and sat unreadable on the app's light body until the page got its own background. */
+  background: #0f1722;
 }
 
 .dv-h {

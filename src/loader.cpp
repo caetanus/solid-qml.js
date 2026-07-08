@@ -22,6 +22,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QMouseEvent>
 #include <QPointer>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -132,6 +133,14 @@ int main(int argc, char **argv)
         QStringLiteral("Render one frame to this PNG and exit (works headless with "
                        "QT_QPA_PLATFORM=offscreen). For visual testing."),
         QStringLiteral("png"),
+    });
+    parser.addOption({
+        QStringLiteral("click"),
+        QStringLiteral("Synthesize a REAL mouse click (press+release through the window's event "
+                       "delivery) at window coordinates after a delay: \"x,y,delayMs\". Repeatable; "
+                       "clicks fire in order. For headless interaction probes (offscreen input has "
+                       "no compositor; xdotool needs a live session)."),
+        QStringLiteral("x,y,ms"),
     });
     parser.addOption({
         QStringLiteral("resize-grab"),
@@ -466,6 +475,29 @@ Rectangle {
         // Let the first frame build before the first resize.
         QTimer::singleShot(settleMs, window, [stepHolder] { (*stepHolder)(); });
         return app.exec();
+    }
+
+    // Synthetic clicks: press+release delivered like platform events (QCoreApplication::sendEvent
+    // into the QQuickWindow → normal Quick delivery: handlers, controls, flickables).
+    const QStringList clickSpecs = parser.values(QStringLiteral("click"));
+    if (!clickSpecs.isEmpty() && hostWindow) {
+        for (const QString &spec : clickSpecs) {
+            const QStringList parts = spec.split(QLatin1Char(','));
+            if (parts.size() < 3)
+                continue;
+            const QPointF pos(parts[0].toDouble(), parts[1].toDouble());
+            const int delayMs = parts[2].toInt();
+            QQuickWindow *w = hostWindow.data();
+            QTimer::singleShot(delayMs, w, [w, pos] {
+                QMouseEvent press(QEvent::MouseButtonPress, pos, w->mapToGlobal(pos),
+                                  Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+                QCoreApplication::sendEvent(w, &press);
+                QMouseEvent release(QEvent::MouseButtonRelease, pos, w->mapToGlobal(pos),
+                                    Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+                QCoreApplication::sendEvent(w, &release);
+                qInfo().noquote() << "solid-qml-loader: clicked" << pos;
+            });
+        }
     }
 
     const QString grabPath = parser.value(QStringLiteral("grab"));
