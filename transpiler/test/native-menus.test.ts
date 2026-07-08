@@ -330,13 +330,15 @@ test("treeview: onSelect wires the component's selected(node) signal", async () 
 });
 
 test("treeview: TreeView.qml renders the flat visible-row list (root-held expansion state)", async () => {
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TreeView.qml", import.meta.url)), "utf8");
-  // Expansion lives on the ROOT (collapsed paths + rev counter), NOT in recursive delegates — the
+  // TreeView is C++ now (widgets-to-cpp) — the snippet keeps the QML internals verbatim, with
+  // the expansion state living on the snippet host (kb).
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/treeview.cpp", import.meta.url)), "utf8");
+  // Expansion lives on the host (collapsed paths + rev counter), NOT in recursive delegates — the
   // flat `_visibleRows` order is what keyboard navigation walks. No Component-by-id recursion left.
   assert.match(src, /property var _collapsed: \(\{\}\)/);
   assert.match(src, /property int _rev: 0/);
   assert.match(src, /readonly property var _visibleRows/);
-  assert.match(src, /model: root\._visibleRows/);
+  assert.match(src, /model: kb\._visibleRows/);
   assert.doesNotMatch(src, /Component \{/);
   assert.doesNotMatch(src, /delegate: nodeComp/);
   // Rows: .tree-row with hover+selected states, depth-indented .tree-label, flipping disclosure glyph.
@@ -348,20 +350,20 @@ test("treeview: TreeView.qml renders the flat visible-row list (root-held expans
   // Click focuses the tree, selects the row, toggles a branch — capturing the node BEFORE the
   // toggle rebuilds the delegate's modelData context.
   assert.match(src, /kb\.forceActiveFocus\(\);\n\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*var node = modelData\.__n;/);
-  assert.match(src, /if \(modelData\.__k\) root\._toggle\(modelData\.__p\);\n\s*root\.selected\(node\);/);
+  assert.match(src, /if \(modelData\.__k\) kb\._toggle\(modelData\.__p\);\n\s*root\.selected\(node\);/);
 });
 
 test("treeview keyboard: ONE tab stop; Up/Down move, Right expands/descends, Left collapses/ascends, Enter re-commits", async () => {
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TreeView.qml", import.meta.url)), "utf8");
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/treeview.cpp", import.meta.url)), "utf8");
   assert.match(src, /activeFocusOnTab: true/);
-  assert.match(src, /Keys\.onUpPressed: root\._move\(-1\)/);
-  assert.match(src, /Keys\.onDownPressed: root\._move\(1\)/);
-  assert.match(src, /Keys\.onRightPressed: root\._expandOrDescend\(\)/);
-  assert.match(src, /Keys\.onLeftPressed: root\._collapseOrAscend\(\)/);
+  assert.match(src, /Keys\.onUpPressed: kb\._move\(-1\)/);
+  assert.match(src, /Keys\.onDownPressed: kb\._move\(1\)/);
+  assert.match(src, /Keys\.onRightPressed: kb\._expandOrDescend\(\)/);
+  assert.match(src, /Keys\.onLeftPressed: kb\._collapseOrAscend\(\)/);
   // Enter mirrors a click (toggle + commit); Space only toggles.
-  assert.match(src, /Keys\.onReturnPressed: \{ root\._toggleCurrent\(\); root\._emitCurrent\(\); \}/);
-  assert.match(src, /Keys\.onEnterPressed: \{ root\._toggleCurrent\(\); root\._emitCurrent\(\); \}/);
-  assert.match(src, /Keys\.onSpacePressed: root\._toggleCurrent\(\)/);
+  assert.match(src, /Keys\.onReturnPressed: \{ kb\._toggleCurrent\(\); kb\._emitCurrent\(\); \}/);
+  assert.match(src, /Keys\.onEnterPressed: \{ kb\._toggleCurrent\(\); kb\._emitCurrent\(\); \}/);
+  assert.match(src, /Keys\.onSpacePressed: kb\._toggleCurrent\(\)/);
   // Left on a leaf/collapsed row ascends to the parent path (path minus its last segment).
   assert.match(src, /r\.__p\.lastIndexOf\("\/"\)/);
 });
@@ -444,7 +446,8 @@ test("listview: <ListView data onSelect> → W.ListView with __listData + select
   assert.match(out, /W\.ListView \{/);
   assert.match(out, /__listData: \["a", "b"\]/);
   assert.match(out, /onSelected: \(item, index\) => \{ 0 \}/);
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/ListView.qml", import.meta.url)), "utf8");
+  // ListView is C++ now (widgets-to-cpp) — the snippet keeps the QML internals verbatim.
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/listview.cpp", import.meta.url)), "utf8");
   assert.match(src, /import QtQuick as QtQ/);
   assert.match(src, /QtQ\.ListView \{/);
   assert.match(src, /cssClass: \["list-item"\]/);
@@ -456,34 +459,35 @@ test("tableview: <TableView columns data onSelect> → W.TableView with __column
   assert.match(out, /__columns: \[\(\{ key: "n", label: "N" \}\)\]/);
   assert.match(out, /__rows: \[\(\{ n: 1 \}\)\]/);
   assert.match(out, /onSelected: \(row, index\) => \{ 0 \}/);
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TableView.qml", import.meta.url)), "utf8");
+  // TableView is C++ now (widgets-to-cpp) — the snippet keeps the QML internals verbatim.
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/tableview.cpp", import.meta.url)), "utf8");
   assert.match(src, /import QtQuick as QtQ/);
   assert.match(src, /cssClass: \["table-header"\]/);
   assert.match(src, /cssClass: \["table-cell"\]/);
 });
 
 test("tableview sort: header click toggles column sort (▲/▼, numeric + locale compare, squelched reset)", async () => {
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TableView.qml", import.meta.url)), "utf8");
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/tableview.cpp", import.meta.url)), "utf8");
   assert.match(src, /property int sortColumn: -1/);
   assert.match(src, /property bool sortAscending: true/);
-  assert.match(src, /onClicked: root\._toggleSort\(thCell\.colIndex\)/);
+  assert.match(src, /onClicked: host\._toggleSort\(thCell\.colIndex\)/);
   assert.match(src, /sortAscending \? " {2}▲" : " {2}▼"/); // trailing marker on the sorted header
   assert.match(src, /\(av - bv\) \* dir/); // numbers compare numerically
   assert.match(src, /localeCompare\("" \+ bv\) \* dir/); // everything else as strings
   // The model swap forces currentIndex=0 eagerly — squelch must be armed BEFORE the sort state flips.
-  assert.match(src, /lv\._squelch = true;\n\s*if \(root\.sortColumn === col\)/);
+  assert.match(src, /lv\._squelch = true;\n\s*if \(host\.sortColumn === col\)/);
   assert.match(src, /Qt\.callLater\(function \(\) \{ lv\.currentIndex = -1; lv\._squelch = false; \}\)/);
 });
 
 test("listview/tableview keyboard: inner ListView is the tab stop, arrows navigate, Enter re-commits, no mount emit", async () => {
-  for (const f of ["ListView.qml", "TableView.qml"]) {
-    const src = await readFile(fileURLToPath(new URL(`../../qml/solidqml/Widgets/${f}`, import.meta.url)), "utf8");
+  for (const f of ["listview.cpp", "tableview.cpp"]) {
+    const src = await readFile(fileURLToPath(new URL(`../../src/widgets/${f}`, import.meta.url)), "utf8");
     assert.match(src, /activeFocusOnTab: true/, f);
     assert.match(src, /keyNavigationEnabled: true/, f);
     // Keys is an attached type from the aliased QtQuick import — MUST be QtQ-qualified (bare Keys
     // is "Non-existent attached object" and kills the whole component).
-    assert.match(src, /QtQ\.Keys\.onReturnPressed: root\._emitCurrent\(\)/, f);
-    assert.match(src, /QtQ\.Keys\.onEnterPressed: root\._emitCurrent\(\)/, f);
+    assert.match(src, /QtQ\.Keys\.onReturnPressed: host\._emitCurrent\(\)/, f);
+    assert.match(src, /QtQ\.Keys\.onEnterPressed: host\._emitCurrent\(\)/, f);
     // QtQuick forces currentIndex=0 on model load; the squelch keeps mount from firing selected().
     assert.match(src, /property bool _squelch: true/, f);
     assert.match(src, /if \(_squelch\)\s*return;/, f);
