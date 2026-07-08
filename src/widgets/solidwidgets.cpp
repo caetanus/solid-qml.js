@@ -8,6 +8,7 @@
 #include "datefield.h"
 #include "focusring.h"
 #include "listview.h"
+#include "menuwidgets.h"
 #include "indicators.h"
 #include "sliders.h"
 #include "delaybutton.h"
@@ -18,6 +19,7 @@
 #include "splitview.h"
 #include "swipeview.h"
 #include "tabbar.h"
+#include "tabbutton.h"
 #include "tableview.h"
 #include "textinputs.h"
 #include "toolbar.h"
@@ -70,6 +72,10 @@ void registerTypes()
     qmlRegisterType<ListView>("solidqml.Widgets", 1, 0, "ListView");
     qmlRegisterType<TableView>("solidqml.Widgets", 1, 0, "TableView");
     qmlRegisterType<TreeView>("solidqml.Widgets", 1, 0, "TreeView");
+    qmlRegisterType<TabButton>("solidqml.Widgets", 1, 0, "TabButton");
+    qmlRegisterType<Menu>("solidqml.Widgets", 1, 0, "Menu");
+    qmlRegisterType<MenuItem>("solidqml.Widgets", 1, 0, "MenuItem");
+    qmlRegisterType<MenuSeparator>("solidqml.Widgets", 1, 0, "MenuSeparator");
 }
 
 } // namespace SolidWidgets

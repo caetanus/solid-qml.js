@@ -46,6 +46,11 @@ notify_args = qt6_dbus_dep.found() ? ['-DHAVE_QTDBUS'] : []
 # this reader is how Qt itself opens .odt content).
 qt6_core_private_dep = dependency('qt6', modules: ['Core'], private_headers: true)
 
+# TabButton/Menu/MenuItem/MenuSeparator: their containers (QQuickTabBar/QQuickMenu) manage the
+# children through qobject_cast to these PRIVATE Templates classes, so the C++ widgets must
+# subclass them (same private-header precedent as QZipReader; ABI follows the installed Qt).
+qt6_templates_private_dep = dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'QmlModels', 'Quick', 'QuickTemplates2'], private_headers: true)
+
 
 # No qresources: the generated app (App.generated.qml + its .js sidecar) and the stylesheet are
 # loaded from the filesystem at runtime, not baked into the binary. Release uses the AOT C++
@@ -62,6 +67,7 @@ solid_qml_loader_qt_sources = qt6.preprocess(
     'src/shims/richtext.h',
     'src/shims/codeeditor.h',
     'src/widgets/listview.h',
+    'src/widgets/menuwidgets.h',
     'src/widgets/monthgrid.h',
     'src/widgets/primitives.h',
     'src/widgets/focusring.h',
@@ -81,6 +87,7 @@ solid_qml_loader_qt_sources = qt6.preprocess(
     'src/widgets/splitview.h',
     'src/widgets/swipeview.h',
     'src/widgets/tabbar.h',
+    'src/widgets/tabbutton.h',
     'src/widgets/tableview.h',
     'src/widgets/textinputs.h',
     'src/widgets/toolbar.h',
@@ -109,6 +116,7 @@ executable(
     'src/widgets/indicators.cpp',
     'src/widgets/toggles.cpp',
     'src/widgets/listview.cpp',
+    'src/widgets/menuwidgets.cpp',
     'src/widgets/monthgrid.cpp',
     'src/widgets/select.cpp',
     'src/widgets/sliders.cpp',
@@ -123,6 +131,7 @@ executable(
     'src/widgets/splitview.cpp',
     'src/widgets/swipeview.cpp',
     'src/widgets/tabbar.cpp',
+    'src/widgets/tabbutton.cpp',
     'src/widgets/tableview.cpp',
     'src/widgets/textinputs.cpp',
     'src/widgets/toolbar.cpp',
@@ -133,6 +142,6 @@ executable(
   ),
   solid_qml_loader_qt_sources,
   cpp_args: notify_args,
-  dependencies: [qml_css_engine_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep, qt6_core_private_dep],
+  dependencies: [qml_css_engine_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep, qt6_core_private_dep, qt6_templates_private_dep],
   install: true,
 )

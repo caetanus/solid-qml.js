@@ -112,19 +112,21 @@ test("menus: window deactivation closes the native popup (Qt::Popup semantics)",
   assert.match(out, /Window\.onActiveChanged: if \(!Window\.active\) __menu0\.close\(\)/);
 });
 
-test("menus: Menu.qml hosts the T.Menu popup shell (implicit size, Popup.Item, cssAncestor slots)", async () => {
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Menu.qml", import.meta.url)), "utf8");
-  assert.match(src, /T\.Menu \{/);
-  assert.match(src, /popupType: T\.Popup\.Item/);
+test("menus: the C++ Menu hosts the popup shell (implicit size, Popup.Item, cssAncestor slots)", async () => {
+  // Menu subclasses the PRIVATE QQuickMenu (it manages rows via casts to QQuickMenuItem); the
+  // Css slot items ride as root-bound snippets.
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/menuwidgets.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/menuwidgets.h", import.meta.url)), "utf8");
+  assert.match(src, /class Menu : public QQuickMenu/);
+  assert.match(src, /setPopupType\(QQuickPopup::Item\)/);
   // Width floor on the POPUP itself — a background CssFill's implicitWidth is clobbered by the engine.
-  assert.match(src, /implicitWidth: Math\.max\(180, implicitContentWidth \+ leftPadding \+ rightPadding\)/);
-  assert.match(src, /implicitHeight: Math\.max\(implicitBackgroundHeight \+ topInset \+ bottomInset, implicitContentHeight \+ topPadding \+ bottomPadding\)/);
-  assert.match(src, /padding: 1/);
+  assert.match(src, /setImplicitWidth\(qMax<qreal>\(180\.0, implicitContentWidth\(\) \+ leftPadding\(\) \+ rightPadding\(\)\)\)/);
+  assert.match(src, /setPadding\(1\)/);
   // background .popup CssFill (author class merged) + contentItem ListView over contentModel; BOTH
   // re-anchor the CSS walk (sibling slots covering every descendant).
-  assert.match(src, /cssClass: ctl\.authorClass\.concat\(\["popup"\]\)/);
-  assert.match(src, /model: ctl\.contentModel/);
-  assert.equal((src.match(/property Item cssAncestor: ctl\.cssAncestor/g) ?? []).length, 2);
+  assert.match(src, /cssClass: \(root\.authorClass \|\| \[\]\)\.concat\(\["popup"\]\)/);
+  assert.match(src, /model: root\.contentModel/);
+  assert.equal((src.match(/property Item cssAncestor: root\.cssAncestor/g) ?? []).length, 2);
 });
 
 // ---------------------------------------------------------------------------
@@ -143,19 +145,20 @@ test("menus: each <MenuItem> emits W.MenuItem with onTriggered from onClick", as
   assert.doesNotMatch(out, /option-label/);
 });
 
-test("menus: MenuItem.qml hosts the .option slots, cursor and mnemonic underline", async () => {
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/MenuItem.qml", import.meta.url)), "utf8");
-  assert.match(src, /T\.MenuItem \{/);
+test("menus: the C++ MenuItem hosts the .option slots, cursor and mnemonic underline", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/menuwidgets.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/menuwidgets.h", import.meta.url)), "utf8");
+  assert.match(src, /class MenuItem : public QQuickMenuItem/);
   assert.match(src, /cssClass: \["option"\]/);
-  assert.match(src, /cssState: ctl\.highlighted \? \["hover"\] : \[\]/);
+  assert.match(src, /cssState: root\.highlighted \? \["hover"\] : \[\]/);
   assert.match(src, /cssClass: \["option-label"\]/);
   // The mnemonic marker renders as a real underline: `&N` → <u>N</u> via StyledText, with the
   // author text entity-escaped and `&&` as a literal ampersand.
   assert.match(src, /styledText: true/);
-  assert.match(src, /text: ctl\.__mnemonicMarkup\(ctl\.text\)/);
-  assert.match(src, /"<u>" \+ s\.charAt\(i\) \+ "<\/u>"/);
+  assert.match(src, /text: root\.__mnemonicMarkup\(root\.text\)/);
+  assert.match(src, /QLatin1String\("<u>"\) \+ s\.at\(i\) \+ QLatin1String\("<\/u>"\)/);
   // Pointing-hand cursor (desktop affordance).
-  assert.match(src, /HoverHandler \{ cursorShape: Qt\.PointingHandCursor \}/);
+  assert.match(src, /setCursor\(QCursor\(Qt::PointingHandCursor\)\)/);
 });
 
 // ---------------------------------------------------------------------------
@@ -183,10 +186,11 @@ test("menus: <Menu trigger> toggles itself with a __closedAt debounce, no extern
   assert.doesNotMatch(out, /onMenuClosed/);
 });
 
-test("menus: Menu.qml records __closedAt on close (debounce store) alongside menuClosed", async () => {
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Menu.qml", import.meta.url)), "utf8");
-  assert.match(src, /property double __closedAt: 0/);
-  assert.match(src, /onClosed: \{ __closedAt = Date\.now\(\); menuClosed\(\) \}/);
+test("menus: the C++ Menu records __closedAt on close (debounce store) alongside menuClosed", async () => {
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/menuwidgets.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/menuwidgets.h", import.meta.url)), "utf8");
+  assert.match(src, /Q_PROPERTY\(double __closedAt READ closedAt NOTIFY closedAtChanged\)/);
+  assert.match(src, /m_closedAt = static_cast<double>\(QDateTime::currentMSecsSinceEpoch\(\)\);[\s\S]*?emit menuClosed\(\);/);
 });
 
 test("menus: <Menu trigger> hosts the trigger in a Css box that joins the flex flow", async () => {
@@ -211,9 +215,9 @@ test("menus: <MenuSeparator> emits a bare W.MenuSeparator (internals in MenuSepa
   const out = await qml(MENU_SRC);
   assert.match(out, /W\.MenuSeparator \{ \}/);
   assert.doesNotMatch(out, /T\.MenuSeparator/);
-  const src = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/MenuSeparator.qml", import.meta.url)), "utf8");
-  assert.match(src, /T\.MenuSeparator \{/);
-  assert.match(src, /contentItem: Css\.CssRect \{/);
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/menuwidgets.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/menuwidgets.h", import.meta.url)), "utf8");
+  assert.match(src, /class MenuSeparator : public QQuickMenuSeparator/);
   assert.match(src, /cssClass: \["sep"\]/);
   assert.match(src, /implicitHeight: 1/);
 });

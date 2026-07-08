@@ -147,14 +147,17 @@ test("containers: the C++ TabBar + TabButton.qml host the control internals", as
     + await readFile(fileURLToPath(new URL("../../src/widgets/containerbase.cpp", import.meta.url)), "utf8");
   assert.match(base, /Q_CLASSINFO\("DefaultProperty", "slotChildren"\)/);
   assert.match(base, /QQmlListReference content\(m_control, "contentData"\)/);
-  const btn = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/TabButton.qml", import.meta.url)), "utf8");
-  assert.match(btn, /T\.TabButton \{/);
+  // TabButton subclasses the PRIVATE QQuickTabBar row type (QQuickTabBar casts to it); the Css
+  // slot items ride as root-bound snippets carrying the shared selected/hover state.
+  const btn = await readFile(fileURLToPath(new URL("../../src/widgets/tabbutton.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/tabbutton.h", import.meta.url)), "utf8");
+  assert.match(btn, /class TabButton : public QQuickTabButton/);
   assert.match(btn, /cssClass: \["tab"\]/);
   assert.match(btn, /cssClass: \["tab-label"\]/);
-  assert.match(btn, /cssState: \(ctl\.checked \? \["selected"\] : \[\]\)\.concat\(ctl\.hovered \? \["hover"\] : \[\]\)/);
+  assert.match(btn, /cssState: \(root\.checked \? \["selected"\] : \[\]\)\.concat\(root\.hovered \? \["hover"\] : \[\]\)/);
   // A clicked tab takes keyboard focus (QTabBar model) so arrows reach the bar's Keys handlers;
-  // ClickFocus only — StrongFocus would overwrite the activeFocusOnTab tab-chain binding.
-  assert.match(btn, /focusPolicy: Qt\.ClickFocus/);
+  // ClickFocus only — StrongFocus would overwrite the activeFocusOnTab tab-chain wiring.
+  assert.match(btn, /setFocusPolicy\(Qt::ClickFocus\)/);
 });
 
 test("containers: the C++ TabBar's snippet stretches tabs to a CSS-sized bar (web align-items: stretch)", async () => {

@@ -58,4 +58,26 @@ QObject *composeInternalPlain(QQuickItem *widget, const QString &key, const char
     return o;
 }
 
+QQuickItem *createBoundItem(QObject *owner, const QString &key, const char *qml)
+{
+    QQmlEngine *eng = qmlEngine(owner);
+    if (!eng)
+        return nullptr;
+    QQmlComponent *comp = QmlCss::cachedComponent(eng, key, qml);
+    auto *ctx = new QQmlContext(qmlContext(owner), owner);
+    ctx->setContextProperty(QStringLiteral("root"), owner);
+    QObject *o = comp->create(ctx);
+    if (!o) {
+        qWarning("SolidWidgets: snippet '%s' failed: %s", qPrintable(key), qPrintable(comp->errorString()));
+        return nullptr;
+    }
+    auto *item = qobject_cast<QQuickItem *>(o);
+    if (!item) {
+        delete o;
+        return nullptr;
+    }
+    item->setParent(owner);
+    return item;
+}
+
 } // namespace SolidWidgets

@@ -21,4 +21,9 @@ QQuickItem *composeInternal(QQuickItem *widget, QQmlListProperty<QObject> slot,
 // popupItem to the window Overlay) is QObject-parented only.
 QObject *composeInternalPlain(QQuickItem *widget, const QString &key, const char *qml);
 
+// Variant for control SLOT items (background/contentItem of a Templates subclass): created with
+// `root` bound but NOT parented visually — QQuickControl::setBackground/setContentItem reparent
+// the item into the control's own tree. `owner` may be any QObject (a QQuickPopup is not an Item).
+QQuickItem *createBoundItem(QObject *owner, const QString &key, const char *qml);
+
 } // namespace SolidWidgets
