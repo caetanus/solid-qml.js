@@ -194,8 +194,10 @@ test("native-inputs: <Tumbler options> instantiates W.Tumbler with the options m
   assert.doesNotMatch(out, /T\.Tumbler/);
 });
 
-test("native-inputs: Tumbler.qml holds the non-wrap ListView + displacement delegate", async () => {
-  const src = await readWidget("Tumbler");
+test("native-inputs: the C++ Tumbler's snippet holds the non-wrap ListView + displacement delegate", async () => {
+  // Tumbler is C++ now (widgets-to-cpp) — the snippet keeps the QML internals verbatim.
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/tumbler.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/tumbler.h", import.meta.url)), "utf8");
   assert.match(src, /T\.Tumbler \{/);
   assert.match(src, /wrap: false/);
   assert.match(src, /contentItem: ListView \{/);
@@ -209,8 +211,11 @@ test("native-inputs: Tumbler.qml holds the non-wrap ListView + displacement dele
   assert.match(src, /cssState: Math\.abs\(__disp\) < 0\.5 \? \["selected"\] : \[\]/);
   assert.match(src, /width: __ctl\.availableWidth/);
   assert.match(src, /height: __ctl\.availableHeight \/ __ctl\.visibleItemCount/);
-  assert.match(src, /property alias model: __ctl\.model/);
-  assert.match(src, /property alias currentIndex: __ctl\.currentIndex/);
+  // Controlled contract: model forwarded in, currentIndex RestoreNone in + mirrored out.
+  assert.match(src, /model: root\.model/);
+  assert.match(src, /Binding on currentIndex \{[\s\S]*?restoreMode: Binding\.RestoreNone/);
+  assert.match(src, /onCurrentIndexChanged: root\.currentIndex = currentIndex/);
+  assert.match(src, /Q_PROPERTY\(int currentIndex READ currentIndex WRITE setCurrentIndex NOTIFY currentIndexChanged\)/);
 });
 
 test("native-inputs: <Tumbler value> binds currentIndex via options.indexOf(value)", async () => {
@@ -265,14 +270,18 @@ test("native-inputs: <DelayButton onActivated> maps to onActivated", async () =>
   assert.match(out, /import solidqml\.Widgets 1\.0 as W/);
 });
 
-test("native-inputs: DelayButton.qml holds the pill background, progress overlay and state list", async () => {
-  const src = await readWidget("DelayButton");
+test("native-inputs: the C++ DelayButton's snippet holds the pill background, progress overlay and state list", async () => {
+  // DelayButton is C++ now (widgets-to-cpp) — the snippet keeps the QML internals verbatim;
+  // the state list moved into the wrapper's syncState (snippet pushes hovered/pressed/checked).
+  const src = await readFile(fileURLToPath(new URL("../../src/widgets/delaybutton.cpp", import.meta.url)), "utf8")
+    + await readFile(fileURLToPath(new URL("../../src/widgets/delaybutton.h", import.meta.url)), "utf8");
   assert.match(src, /T\.DelayButton \{/);
   assert.match(src, /cssClass: \["delay"\]/);
   assert.match(src, /cssClass: \["delay-fill"\]/);
   assert.match(src, /width: __ctl\.progress \* parent\.width/);
   assert.match(src, /contentItem: Css\.CssText \{/);
-  assert.match(src, /cssState: \(__ctl\.hovered \? \["hover"\] : \[\]\)\.concat\(__ctl\.pressed \? \["active"\] : \[\]\)\.concat\(__ctl\.checked \? \["checked"\] : \[\]\)/);
+  assert.match(src, /onHoveredChanged: root\.hovered = hovered/);
+  assert.match(src, /QStringLiteral\("hover"\)[\s\S]*?QStringLiteral\("active"\)[\s\S]*?QStringLiteral\("checked"\)/);
 });
 
 // ---------------------------------------------------------------------------

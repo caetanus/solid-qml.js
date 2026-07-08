@@ -5,8 +5,10 @@
 #include "focusring.h"
 #include "indicators.h"
 #include "sliders.h"
+#include "delaybutton.h"
 #include "spindial.h"
 #include "textinputs.h"
+#include "tumbler.h"
 #include "toggles.h"
 
 namespace SolidWidgets {
@@ -33,6 +35,8 @@ void registerTypes()
     qmlRegisterType<TextArea>("solidqml.Widgets", 1, 0, "TextArea");
     qmlRegisterType<SpinBox>("solidqml.Widgets", 1, 0, "SpinBox");
     qmlRegisterType<Dial>("solidqml.Widgets", 1, 0, "Dial");
+    qmlRegisterType<DelayButton>("solidqml.Widgets", 1, 0, "DelayButton");
+    qmlRegisterType<Tumbler>("solidqml.Widgets", 1, 0, "Tumbler");
 }
 
 } // namespace SolidWidgets
