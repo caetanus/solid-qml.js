@@ -4,6 +4,7 @@
 #include "button.h"
 #include "focusring.h"
 #include "indicators.h"
+#include "toggles.h"
 
 namespace SolidWidgets {
 
@@ -21,6 +22,8 @@ void registerTypes()
     qmlRegisterType<StackView>("solidqml.Widgets", 1, 0, "StackView");
     qmlRegisterType<Progress>("solidqml.Widgets", 1, 0, "Progress");
     qmlRegisterType<BusyIndicator>("solidqml.Widgets", 1, 0, "BusyIndicator");
+    qmlRegisterType<Checkbox>("solidqml.Widgets", 1, 0, "Checkbox");
+    qmlRegisterType<Toggle>("solidqml.Widgets", 1, 0, "Toggle");
 }
 
 } // namespace SolidWidgets

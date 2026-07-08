@@ -1,6 +1,5 @@
 module solidqml.Widgets
 Calendar 1.0 Calendar.qml
-Checkbox 1.0 Checkbox.qml
 DateField 1.0 DateField.qml
 Dialog 1.0 Dialog.qml
 DelayButton 1.0 DelayButton.qml
@@ -26,7 +25,6 @@ TableView 1.0 TableView.qml
 ToolBar 1.0 ToolBar.qml
 ToolButton 1.0 ToolButton.qml
 TextArea 1.0 TextArea.qml
-Toggle 1.0 Toggle.qml
 TextField 1.0 TextField.qml
 ToolSeparator 1.0 ToolSeparator.qml
 Tray 1.0 Tray.qml

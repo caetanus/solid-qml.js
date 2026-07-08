@@ -364,8 +364,9 @@ test("widgets: Templates import is NOT emitted for a button (no widget)", async 
 // Phase 3: <input type="checkbox"> — checkbox toggle
 // ---------------------------------------------------------------------------
 
-const CHECKBOX_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Checkbox.qml", import.meta.url)), "utf8");
-const TOGGLE_QML = await readFile(fileURLToPath(new URL("../../qml/solidqml/Widgets/Toggle.qml", import.meta.url)), "utf8");
+// Checkbox/Toggle are C++ now (widgets-to-cpp) — the snippets + state logic live in toggles.cpp/.h.
+const CHECKBOX_QML = await readFile(fileURLToPath(new URL("../../src/widgets/toggles.cpp", import.meta.url)), "utf8");
+const TOGGLE_QML = CHECKBOX_QML + await readFile(fileURLToPath(new URL("../../src/widgets/toggles.h", import.meta.url)), "utf8");
 
 test("widgets: <input type='checkbox'> instantiates the W.Checkbox component", async () => {
   const out = await qml(`export function F(){ return <input type="checkbox" />; }`);
@@ -374,19 +375,19 @@ test("widgets: <input type='checkbox'> instantiates the W.Checkbox component", a
   assert.doesNotMatch(out, /T\.CheckBox/);
 });
 
-test("widgets: Checkbox.qml has T.CheckBox with background/contentItem null and cssPrimitive 'input'", async () => {
-  assert.match(CHECKBOX_QML, /cssPrimitive: "input"/);
+test("widgets: the C++ Checkbox hosts T.CheckBox with background/contentItem null, primitive 'input'", async () => {
+  assert.match(CHECKBOX_QML, /QStringLiteral\("input"\)/);
   assert.match(CHECKBOX_QML, /T\.CheckBox \{/);
   assert.match(CHECKBOX_QML, /background: null/);
   assert.match(CHECKBOX_QML, /contentItem: null/);
 });
 
-test("widgets: Checkbox.qml cssState carries 'checked' and 'disabled' pseudo-classes", async () => {
-  assert.match(CHECKBOX_QML, /box\.checked \? \["checked"\] : \[\]/);
-  assert.match(CHECKBOX_QML, /!box\.enabled \? \["disabled"\] : \[\]/);
+test("widgets: the C++ toggles carry 'checked' and 'disabled' pseudo-classes", async () => {
+  assert.match(CHECKBOX_QML, /QStringLiteral\("checked"\)/);
+  assert.match(CHECKBOX_QML, /QStringLiteral\("disabled"\)/);
 });
 
-test("widgets: Checkbox.qml indicator CssFill has explicit width/height 20 + implicitWidth/Height 20", async () => {
+test("widgets: the Checkbox indicator CssFill keeps its 20×20 geometry", async () => {
   assert.match(CHECKBOX_QML, /cssClass: \["indicator"\]/);
   assert.match(CHECKBOX_QML, /width: 20/);
   assert.match(CHECKBOX_QML, /height: 20/);
@@ -394,7 +395,7 @@ test("widgets: Checkbox.qml indicator CssFill has explicit width/height 20 + imp
   assert.match(CHECKBOX_QML, /implicitHeight: 20/);
 });
 
-test("widgets: Checkbox.qml indicator contains a plain Text glyph (CssItem) visible when checked", async () => {
+test("widgets: the Checkbox indicator keeps its ✓ glyph (CssItem) visible when checked", async () => {
   assert.match(CHECKBOX_QML, /cssClass: \["indicator-glyph"\]/);
   assert.match(CHECKBOX_QML, /text: "✓"/);
   assert.match(CHECKBOX_QML, /visible: box\.checked/);
@@ -497,8 +498,10 @@ test("widgets: switch onChange wires onToggled with translated handler", async (
   assert.match(out, /onToggled: \{ sw = __input0\.checked \}/);
 });
 
-test("widgets: Toggle.qml cssState carries focus/checked/disabled", async () => {
-  assert.match(TOGGLE_QML, /\(sw\.activeFocus \? \["focus"\] : \[\]\)\.concat\(sw\.checked \? \["checked"\] : \[\]\)\.concat\(!sw\.enabled \? \["disabled"\] : \[\]\)/);
+test("widgets: the C++ toggles carry focus/checked/disabled in syncState", async () => {
+  assert.match(TOGGLE_QML, /QStringLiteral\("focus"\)/);
+  assert.match(TOGGLE_QML, /QStringLiteral\("checked"\)/);
+  assert.match(TOGGLE_QML, /QStringLiteral\("disabled"\)/);
 });
 
 // ---------------------------------------------------------------------------
@@ -1346,12 +1349,13 @@ test("calendar: MonthGrid.qml cells size declaratively (incubated creation misse
 // (setActiveFocusOnTab(true) + StrongFocus in its constructor), but without "focus"
 // in cssState there is no visual feedback and the tab stop looks dead. ---
 
-test("tabstop: Checkbox.qml cssState carries focus alongside checked/disabled", async () => {
-  assert.match(CHECKBOX_QML, /\(box\.activeFocus \? \["focus"\] : \[\]\)\.concat\(box\.checked \? \["checked"\] : \[\]\)\.concat\(!box\.enabled \? \["disabled"\] : \[\]\)/);
+test("tabstop: the C++ Checkbox mirrors control focus into cssState", async () => {
+  assert.match(CHECKBOX_QML, /activeFocusChanged\(bool\)/);
+  assert.match(CHECKBOX_QML, /hasActiveFocus\(\)/);
 });
 
-test("tabstop: Toggle.qml cssState carries focus", async () => {
-  assert.match(TOGGLE_QML, /\(sw\.activeFocus \? \["focus"\] : \[\]\)\.concat\(sw\.checked/);
+test("tabstop: the C++ Toggle keeps its control a tab stop (Space toggles there)", async () => {
+  assert.match(TOGGLE_QML, /activeFocusOnTab: solidTabstop\.enabled/);
 });
 
 test("tabstop: radio cssState carries focus", async () => {
