@@ -38,8 +38,10 @@
 
 /* box-sizing */
 .bs { width: 120px; height: 46px; padding: 20px; display: flex; align-items: center; color: #11111b; border-radius: 6px; }
-.border  { box-sizing: border-box;  background-color: #a6e3a1; }
-.content { box-sizing: content-box; background-color: #f9e2af; }
+/* Scoped under .bs: bare `.border`/`.content` leaked onto every widget-internal part class
+   (a Drawer's .content painted demo-beige). Generic names must never be global. */
+.bs.border  { box-sizing: border-box;  background-color: #a6e3a1; }
+.bs.content { box-sizing: content-box; background-color: #f9e2af; }
 
 /* grid-template-areas */
 .grid { display: grid; grid-template-columns: 120px 1fr; grid-template-rows: 30px 44px; grid-template-areas: "head head" "side main"; gap: 8px; }

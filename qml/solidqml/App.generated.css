@@ -632,8 +632,10 @@ button:hover {
 
 /* box-sizing */
 .bs { width: 120px; height: 46px; padding: 20px; display: flex; align-items: center; color: #11111b; border-radius: 6px; }
-.border  { box-sizing: border-box;  background-color: #a6e3a1; }
-.content { box-sizing: content-box; background-color: #f9e2af; }
+/* Scoped under .bs: bare `.border`/`.content` leaked onto every widget-internal part class
+   (a Drawer's .content painted demo-beige). Generic names must never be global. */
+.bs.border  { box-sizing: border-box;  background-color: #a6e3a1; }
+.bs.content { box-sizing: content-box; background-color: #f9e2af; }
 
 /* grid-template-areas */
 .grid { display: grid; grid-template-columns: 120px 1fr; grid-template-rows: 30px 44px; grid-template-areas: "head head" "side main"; gap: 8px; }
@@ -1029,7 +1031,8 @@ button:hover {
 .feed.tall .feed-row { padding: 11px 8px; border-bottom: 1px solid #f1f5f9; }
 
 /* --- analytics --------------------------------------------------------------------- */
-.panel {
+/* Scoped: a bare `.panel` leaked onto every widget-internal part class (the Drawer's panel). */
+.dash .panel {
   flex-shrink: 0;
   display: flex; flex-direction: column; gap: 10px;
   padding: 16px;
@@ -1037,7 +1040,7 @@ button:hover {
   border: 1px solid #e2e8f0;
   border-radius: 12px;
 }
-.panel-h { color: #17222c; font-size: 15px; font-weight: 700; }
+.dash .panel-h { color: #17222c; font-size: 15px; font-weight: 700; }
 
 .chart {
   display: flex; flex-direction: row; align-items: flex-end; gap: 14px;

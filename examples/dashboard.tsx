@@ -65,7 +65,7 @@ const DARK_CSS = `
 .feed-tag { background: #223140; }
 .feed-tag-t { color: #b9c7d4; }
 .feed-when { color: #4d6274; }
-.panel { background: #16212e; border: 1px solid #223140; }
+.dash .panel { background: #16212e; border: 1px solid #223140; }
 .panel-h { color: #e8eef5; }
 .prog-name { color: #b9c7d4; }
 .prog-track { background: #223140; }

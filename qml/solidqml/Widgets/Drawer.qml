@@ -39,6 +39,11 @@ Css.CssItem {
         id: ctl
         parent: T.Overlay.overlay
         edge: root.edge
+        // Keyboard model: a drawer is a modal panel — it takes focus when it opens (Tab stays
+        // inside; the first focusable child is reachable immediately) and Esc closes it
+        // (CloseOnEscape is in the default closePolicy, but only a focused popup sees the key).
+        modal: true
+        focus: true
         // Desktop semantics: no edge-swipe open (an interactive drag would fight the controlled Binding).
         dragMargin: 0
         width: parent ? (root.__horizontal ? parent.width * root.size : parent.width) : 0
