@@ -8,32 +8,40 @@ import SolidTerm 1.0 as QM_SolidTerm
 import solidqml.Widgets 1.0 as W
 W.Div {
     id: __self
-    property var uiFontFamily: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").fontFamily || "monospace"
-    property var uiFontSize: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").fontSize || 15
-    property var scheme: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").scheme || "system"
-    property var scrollback: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").scrollback || 8000
+    property var uiFontFamily: termConfig.getString("fontFamily", "monospace")
+    property var uiFontSize: termConfig.getInt("fontSize", 15)
+    property var scheme: termConfig.getString("scheme", "system")
+    property var scrollback: termConfig.getInt("scrollback", 8000)
     property var cfgOpen: false
     property var title: "solidterm"
-    readonly property var __const_SCHEMES: ({ midnight: ({ bg: "#161a21", fg: "#d4dae3", label: "Midnight" }), solarized: ({ bg: "#002b36", fg: "#93a1a1", label: "Solarized Dark" }), gruvbox: ({ bg: "#282828", fg: "#ebdbb2", label: "Gruvbox" }), paper: ({ bg: "#f7f2e9", fg: "#3a3532", label: "Paper (light)" }) })
+    property var kSplitRight: termConfig.getString("keys.splitRight", "Ctrl+Shift+E")
+    property var kSplitDown: termConfig.getString("keys.splitDown", "Ctrl+Shift+O")
+    property var kClosePane: termConfig.getString("keys.closePane", "Ctrl+Shift+W")
+    property var kFocusNext: termConfig.getString("keys.focusNext", "Alt+Right")
+    property var kFocusPrev: termConfig.getString("keys.focusPrev", "Alt+Left")
+    readonly property var __const_SCHEMES: ({ midnight: ({ bg: "#161a21", fg: "#d4dae3" }), solarized: ({ bg: "#002b36", fg: "#93a1a1" }), gruvbox: ({ bg: "#282828", fg: "#ebdbb2" }), paper: ({ bg: "#f7f2e9", fg: "#3a3532" }) })
+    readonly property var __const_ACTIONS: [({ key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" }), ({ key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" }), ({ key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" }), ({ key: "focusNext", label: "Focus next pane", def: "Alt+Right" }), ({ key: "focusPrev", label: "Focus previous pane", def: "Alt+Left" })]
+    function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : termConfig.getString("keys." + k, ""); }
+    function setKey(k, seq) { termConfig.set("keys." + k, seq); if (k === "splitRight") { kSplitRight = seq; } else { if (k === "splitDown") { kSplitDown = seq; } else { if (k === "closePane") { kClosePane = seq; } else { if (k === "focusNext") { kFocusNext = seq; } else { if (k === "focusPrev") { kFocusPrev = seq; } } } } } }
     cssClass: ["term-root"]
     Shortcut {
-        sequences: ["Ctrl+Shift+E"]
+        sequences: [kSplitRight]
         onActivated: { term.split(Qt.Horizontal) }
     }
     Shortcut {
-        sequences: ["Ctrl+Shift+O"]
+        sequences: [kSplitDown]
         onActivated: { term.split(Qt.Vertical) }
     }
     Shortcut {
-        sequences: ["Ctrl+Shift+W"]
+        sequences: [kClosePane]
         onActivated: { term.closeFocused() }
     }
     Shortcut {
-        sequences: ["Alt+Right"]
+        sequences: [kFocusNext]
         onActivated: { term.focusNext() }
     }
     Shortcut {
-        sequences: ["Alt+Left"]
+        sequences: [kFocusPrev]
         onActivated: { term.focusPrev() }
     }
     W.Div {
@@ -120,7 +128,7 @@ W.Div {
         }
         W.Text {
             cssClass: ["term-hint"]
-            text: "Ctrl+Shift+E/O split · Ctrl+Shift+W close · Alt+←/→ focus"
+            text: "right-click for actions · shortcuts in Preferences"
         }
     }
     W.Dialog {
@@ -145,7 +153,7 @@ W.Div {
                     W.TextField {
                         id: __input2
                         cssClass: ["cfg-in"]
-                        onTextEdited: { uiFontFamily = text; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
+                        onTextEdited: { uiFontFamily = text; termConfig.set("fontFamily", text); }
                         Binding {
                             target: __input2
                             property: "text"
@@ -164,17 +172,16 @@ W.Div {
                         cssClass: ["cfg-l"]
                         text: "Font size"
                     }
-                    W.SpinBox {
+                    W.Select {
                         id: __input3
-                        cssClass: ["cfg-num"]
-                        from: 8
-                        to: 32
-                        stepSize: 1
-                        onValueModified: { uiFontSize = __ev; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
+                        cssClass: ["cfg-sel"]
+                        model: ["11 px", "12 px", "13 px", "14 px", "15 px", "16 px", "18 px", "20 px", "24 px"]
+                        values: ["11", "12", "13", "14", "15", "16", "18", "20", "24"]
+                        onActivated: (index) => { uiFontSize = parseInt(__ev); termConfig.set("fontSize", parseInt(__ev)); }
                         Binding {
                             target: __input3
-                            property: "value"
-                            value: uiFontSize
+                            property: "currentIndex"
+                            value: __input3.values.indexOf("" + uiFontSize)
                             restoreMode: Binding.RestoreNone
                         }
                     }
@@ -194,7 +201,7 @@ W.Div {
                         cssClass: ["cfg-sel"]
                         model: ["System", "Midnight", "Solarized Dark", "Gruvbox", "Paper (light)"]
                         values: ["system", "midnight", "solarized", "gruvbox", "paper"]
-                        onActivated: (index) => { scheme = __ev; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
+                        onActivated: (index) => { scheme = __ev; termConfig.set("scheme", __ev); }
                         Binding {
                             target: __input4
                             property: "currentIndex"
@@ -214,23 +221,58 @@ W.Div {
                     cssClass: ["cfg-row"]
                     W.Text {
                         cssClass: ["cfg-l"]
-                        text: "Scrollback lines"
+                        text: "Scrollback"
                     }
-                    W.SpinBox {
+                    W.Select {
                         id: __input5
-                        cssClass: ["cfg-num"]
-                        from: 0
-                        to: 100000
-                        stepSize: 1000
-                        onValueModified: { scrollback = __ev; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
+                        cssClass: ["cfg-sel"]
+                        model: ["1000 lines", "5000 lines", "8000 lines", "20000 lines", "100000 lines"]
+                        values: ["1000", "5000", "8000", "20000", "100000"]
+                        onActivated: (index) => { scrollback = parseInt(__ev); termConfig.set("scrollback", parseInt(__ev)); }
                         Binding {
                             target: __input5
-                            property: "value"
-                            value: scrollback
+                            property: "currentIndex"
+                            value: __input5.values.indexOf("" + scrollback)
                             restoreMode: Binding.RestoreNone
                         }
                     }
                 }
+            }
+            W.Text {
+                cssClass: ["cfg-group"]
+                text: "Keyboard"
+            }
+            W.Div {
+                cssClass: ["cfg-card"]
+                Css.CssRepeater {
+                    model: __const_ACTIONS
+                    delegate: Component {
+                        W.Div {
+                            cssClass: ["cfg-krow"]
+                            W.Text {
+                                cssClass: ["cfg-l"]
+                                text: "" + (modelData.label)
+                            }
+                            Css.CssRect {
+                                cssPrimitive: "div"
+                                cssClass: ["cfg-rec"]
+                                QM_SolidTerm.KeyRecorder {
+                                    anchors.fill: parent
+                                    sequence: getKey(modelData.key)
+                                    background: sysTheme.base
+                                    foreground: sysTheme.text
+                                    accent: sysTheme.accent
+                                    border: sysTheme.window
+                                    onSequenceChanged: function(s) { return setKey(modelData.key, s) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            W.Text {
+                cssClass: ["cfg-path"]
+                text: "Saved to " + (termConfig.path)
             }
             W.Div {
                 cssClass: ["cfg-actions"]

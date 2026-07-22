@@ -135,6 +135,7 @@ QString SystemTheme::styleSheet() const
 .sep { background: %8; }
 .cfg { background: %1; color: %6; }
 .cfg-group { color: %7; }
+.cfg-path { color: %7; }
 .cfg-card { background: %4; border: 1px solid %8; }
 .cfg-l { color: %6; }
 .cfg-div { background: %8; }

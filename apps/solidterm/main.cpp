@@ -8,6 +8,8 @@
 // App dir resolution: $SOLIDTERM_DIR > <bindir>/../share/solidterm > the source tree (dev).
 #include "embed/solidqmlembed.h"
 #include "native/systemtheme.h"
+#include "native/keyrecorder.h"
+#include "native/termconfig.h"
 #include "native/terminalpanes.h"
 #include "native/terminalview.h"
 
@@ -43,6 +45,7 @@ int main(int argc, char **argv)
 
     qmlRegisterType<TerminalView>("SolidTerm", 1, 0, "TerminalView");
     qmlRegisterType<TerminalPanes>("SolidTerm", 1, 0, "TerminalPanes");
+    qmlRegisterType<KeyRecorder>("SolidTerm", 1, 0, "KeyRecorder");
 
     QQmlApplicationEngine engine;
     SolidQmlEmbed::init(&engine, appDir);
@@ -51,6 +54,8 @@ int main(int argc, char **argv)
     // from the platform/GTK theme) and re-apply it live if the desktop theme changes.
     auto *sysTheme = new SystemTheme(&engine);
     engine.rootContext()->setContextProperty(QStringLiteral("sysTheme"), sysTheme);
+    auto *config = new TermConfig(&engine); // ~/.config/solidterm/config.json
+    engine.rootContext()->setContextProperty(QStringLiteral("termConfig"), config);
     SolidQmlEmbed::loadCss(&engine, QUrl(QStringLiteral("App.generated.css"))); // structural
     SolidQmlEmbed::loadCssString(&engine, sysTheme->styleSheet());              // palette layer
     QObject::connect(sysTheme, &SystemTheme::changed, &engine, [&engine, sysTheme] {
