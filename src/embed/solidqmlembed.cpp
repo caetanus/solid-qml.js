@@ -105,6 +105,13 @@ void loadCss(QQmlEngine *engine, const QUrl &cssFile)
     rt->theme.load(resolved.isLocalFile() ? resolved.toLocalFile() : resolved.toString());
 }
 
+void loadCssString(QQmlEngine *engine, const QString &css)
+{
+    EngineRuntime *rt = runtimeFor(engine);
+    if (rt)
+        rt->theme.loadLayeredString(css);
+}
+
 void attachWindow(QQmlEngine *engine, QQuickWindow *window)
 {
     EngineRuntime *rt = runtimeFor(engine);

@@ -10,7 +10,7 @@ W.Div {
     id: __self
     property var uiFontFamily: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").fontFamily || "monospace"
     property var uiFontSize: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").fontSize || 15
-    property var scheme: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").scheme || "midnight"
+    property var scheme: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").scheme || "system"
     property var scrollback: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").scrollback || 8000
     property var cfgOpen: false
     property var state_: "live"
@@ -38,8 +38,8 @@ W.Div {
                 anchors.fill: parent
                 fontFamily: uiFontFamily
                 fontSize: uiFontSize
-                background: (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).bg
-                foreground: (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).fg
+                background: scheme === "system" ? sysTheme.base : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).bg
+                foreground: scheme === "system" ? sysTheme.text : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).fg
                 scrollbackLimit: scrollback
                 onSessionFinished: function() { return process.exit(0) }
             }
@@ -56,6 +56,7 @@ W.Div {
             W.Menu {
                 id: __menu0
                 cssAncestor: __menuHost0
+                authorClass: ["tmenu"]
                 W.MenuItem {
                     text: "&Copy"
                     onTriggered: { term.copySelection() }
@@ -90,82 +91,121 @@ W.Div {
     }
     W.Dialog {
         open: !!(cfgOpen)
-        title: "solidterm — preferences"
+        title: "Preferences"
         cssClass: ["cfg"]
         onDialogClosed: { cfgOpen = false }
         W.Div {
-            cssClass: ["cfg-grid"]
+            cssClass: ["cfg-body"]
             W.Text {
-                cssClass: ["cfg-l"]
-                text: "Font family"
+                cssClass: ["cfg-group"]
+                text: "Appearance"
             }
-            W.TextField {
-                id: __input2
-                onTextEdited: { uiFontFamily = text; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
-                Binding {
-                    target: __input2
-                    property: "text"
-                    value: uiFontFamily
-                    restoreMode: Binding.RestoreNone
+            W.Div {
+                cssClass: ["cfg-card"]
+                W.Div {
+                    cssClass: ["cfg-row"]
+                    W.Text {
+                        cssClass: ["cfg-l"]
+                        text: "Font family"
+                    }
+                    W.TextField {
+                        id: __input2
+                        cssClass: ["cfg-in"]
+                        onTextEdited: { uiFontFamily = text; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
+                        Binding {
+                            target: __input2
+                            property: "text"
+                            value: uiFontFamily
+                            restoreMode: Binding.RestoreNone
+                        }
+                    }
+                }
+                W.Div {
+                    cssClass: ["cfg-div"]
+                    cssPrimitive: "hr"
+                }
+                W.Div {
+                    cssClass: ["cfg-row"]
+                    W.Text {
+                        cssClass: ["cfg-l"]
+                        text: "Font size"
+                    }
+                    W.SpinBox {
+                        id: __input3
+                        cssClass: ["cfg-num"]
+                        from: 8
+                        to: 32
+                        stepSize: 1
+                        onValueModified: { uiFontSize = __ev; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
+                        Binding {
+                            target: __input3
+                            property: "value"
+                            value: uiFontSize
+                            restoreMode: Binding.RestoreNone
+                        }
+                    }
+                }
+                W.Div {
+                    cssClass: ["cfg-div"]
+                    cssPrimitive: "hr"
+                }
+                W.Div {
+                    cssClass: ["cfg-row"]
+                    W.Text {
+                        cssClass: ["cfg-l"]
+                        text: "Color scheme"
+                    }
+                    W.Select {
+                        id: __input4
+                        cssClass: ["cfg-sel"]
+                        model: ["System", "Midnight", "Solarized Dark", "Gruvbox", "Paper (light)"]
+                        values: ["system", "midnight", "solarized", "gruvbox", "paper"]
+                        onActivated: (index) => { scheme = __ev; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
+                        Binding {
+                            target: __input4
+                            property: "currentIndex"
+                            value: __input4.values.indexOf(scheme)
+                            restoreMode: Binding.RestoreNone
+                        }
+                    }
                 }
             }
             W.Text {
-                cssClass: ["cfg-l"]
-                text: "Font size"
+                cssClass: ["cfg-group"]
+                text: "Behavior"
             }
-            W.SpinBox {
-                id: __input3
-                from: 8
-                to: 32
-                stepSize: 1
-                onValueModified: { uiFontSize = __ev; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
-                Binding {
-                    target: __input3
-                    property: "value"
-                    value: uiFontSize
-                    restoreMode: Binding.RestoreNone
+            W.Div {
+                cssClass: ["cfg-card"]
+                W.Div {
+                    cssClass: ["cfg-row"]
+                    W.Text {
+                        cssClass: ["cfg-l"]
+                        text: "Scrollback lines"
+                    }
+                    W.SpinBox {
+                        id: __input5
+                        cssClass: ["cfg-num"]
+                        from: 0
+                        to: 100000
+                        stepSize: 1000
+                        onValueModified: { scrollback = __ev; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
+                        Binding {
+                            target: __input5
+                            property: "value"
+                            value: scrollback
+                            restoreMode: Binding.RestoreNone
+                        }
+                    }
                 }
             }
-            W.Text {
-                cssClass: ["cfg-l"]
-                text: "Theme"
-            }
-            W.Select {
-                id: __input4
-                model: ["Midnight", "Solarized Dark", "Gruvbox", "Paper (light)"]
-                values: ["midnight", "solarized", "gruvbox", "paper"]
-                onActivated: (index) => { scheme = __ev; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
-                Binding {
-                    target: __input4
-                    property: "currentIndex"
-                    value: __input4.values.indexOf(scheme)
-                    restoreMode: Binding.RestoreNone
+            W.Div {
+                cssClass: ["cfg-actions"]
+                W.Button {
+                    cssClass: ["cfg-close"]
+                    isDefault: true
+                    text: "Done"
+                    onClicked: cfgOpen = false
                 }
-            }
-            W.Text {
-                cssClass: ["cfg-l"]
-                text: "Scrollback lines"
-            }
-            W.SpinBox {
-                id: __input5
-                from: 0
-                to: 100000
-                stepSize: 1000
-                onValueModified: { scrollback = __ev; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
-                Binding {
-                    target: __input5
-                    property: "value"
-                    value: scrollback
-                    restoreMode: Binding.RestoreNone
-                }
-            }
-        }
-        W.Div {
-            cssClass: ["cfg-actions"]
-            W.Button {
-                isDefault: true
-                text: "Close"
-                onClicked: cfgOpen = false
             }
         }
     }

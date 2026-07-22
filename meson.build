@@ -238,7 +238,7 @@ custom_target(
 vterm_dep = dependency('vterm')
 util_dep = meson.get_compiler('cpp').find_library('util', required: false)
 solidterm_moc = qt6.preprocess(
-  moc_headers: files('apps/solidterm/native/ptysession.h', 'apps/solidterm/native/terminalview.h'),
+  moc_headers: files('apps/solidterm/native/ptysession.h', 'apps/solidterm/native/terminalview.h', 'apps/solidterm/native/systemtheme.h'),
 )
 executable(
   'solidterm',
@@ -246,6 +246,7 @@ executable(
     'apps/solidterm/main.cpp',
     'apps/solidterm/native/ptysession.cpp',
     'apps/solidterm/native/terminalview.cpp',
+    'apps/solidterm/native/systemtheme.cpp',
   ),
   solidterm_moc,
   cpp_args: notify_args + ['-DSOLIDTERM_DEV_DIR="' + meson.current_source_dir() + '/apps/solidterm/qml"'],

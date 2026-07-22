@@ -35,107 +35,43 @@ button {
 }
 
 
-/* solidterm — embossed dark chrome (owner: "com emboss"): raised bevels via paired light/dark
-   edges + soft gradients, tilix-flavored. */
+/* solidterm — STRUCTURE only (layout, radii, spacing, border widths). ALL colours come from the
+   palette layer the app generates from QPalette (SystemTheme), so solidterm obeys the local
+   desktop theme. Colours here are neutral fallbacks for a headless run without the layer. */
 
-.term-root {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  background: linear-gradient(180deg, #2b313b, #232830);
-  color: #d4dae3;
-}
+.term-root { display: flex; flex-direction: column; height: 100vh; background: #242424; color: #dedede; }
 
 .term-header {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 14px;
-  background: linear-gradient(180deg, #333a46, #2a303a);
-  border-bottom: 1px solid #14171c;   /* dark valley… */
-  box-shadow: inset 0 1px 0 #454e5c;  /* …under a raised light lip = emboss */
+  display: flex; flex-direction: row; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border-bottom: 1px solid #1a1a1a;
 }
+.term-title { font-size: 13px; font-weight: 600; }
+.term-gear { font-size: 15px; padding: 4px 9px; background: transparent; border: 1px solid transparent; border-radius: 7px; }
 
-.term-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #e8edf4;
-}
-
-.term-badge {
-  font-size: 11px;
-  color: #8b96a5;
-  padding: 3px 8px;
-  background: #1d2229;
-  border-radius: 9px;
-  border: 1px solid #14171c;
-  box-shadow: inset 0 1px 2px #101318, 0 1px 0 #3a4250; /* inset well */
-}
-
-.term-body {
-  flex: 1;
-  display: flex;
-  padding: 10px;
-}
-
-.term-pane {
-  flex: 1;
-  border-radius: 6px;
-  border: 1px solid #10131a;
-  box-shadow: inset 0 2px 6px #0c0f14, 0 1px 0 #3a4250; /* sunken screen, embossed rim */
-}
+.term-body { flex: 1; display: flex; padding: 8px; }
+.term-pane { flex: 1; border-radius: 6px; border: 1px solid #1a1a1a; }
 
 .term-status {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  padding: 5px 14px;
-  background: linear-gradient(180deg, #2e3540, #262c35);
-  border-top: 1px solid #454e5c;
-  box-shadow: inset 0 -1px 0 #14171c;
-  font-size: 11px;
+  display: flex; flex-direction: row; justify-content: space-between;
+  padding: 5px 12px; border-top: 1px solid #1a1a1a; font-size: 11px;
 }
 
-.term-status-t { color: #9fe6b0; }
-.term-hint { color: #77808e; }
+/* right-click menu — tilix/Adwaita popover geometry (flat, rounded; colours from palette) */
+.tmenu .popup { border-radius: 9px; padding: 5px; }
+.tmenu .option { border-radius: 6px; }
+.tmenu .option-label { font-size: 13px; }
+.tmenu .sep { margin: 4px 6px; }
 
-.term-gear {
-  font-size: 14px;
-  color: #aeb7c4;
-  padding: 3px 9px;
-  background: linear-gradient(180deg, #3a4250, #2c333e);
-  border: 1px solid #14171c;
-  border-radius: 6px;
-  box-shadow: 0 1px 0 #454e5c inset, 0 1px 2px #101318; /* raised emboss chip */
-}
-.term-gear:hover { background: linear-gradient(180deg, #434c5c, #333b47); }
-.term-gear:active { box-shadow: inset 0 2px 3px #0c0f14; }
-
-/* preferences dialog (a REAL window) */
-.cfg { padding: 16px; background: #262c35; color: #d4dae3; }
-.cfg-grid {
-  display: grid;
-  grid-template-columns: 130px 220px;
-  gap: 10px 12px;
-  align-items: center;
-}
-.cfg-l { font-size: 12px; color: #9aa4b2; }
-.cfg input, .cfg select {
-  background: #1a1f26;
-  color: #e2e8f0;
-  border: 1px solid #10131a;
-  border-radius: 5px;
-  box-shadow: inset 0 1px 3px #0c0f14, 0 1px 0 #3a4250;
-  padding: 5px 9px;
-  font-size: 13px;
-}
-.cfg-actions { display: flex; justify-content: flex-end; margin-top: 14px; }
-.cfg-actions button {
-  padding: 6px 18px;
-  background: linear-gradient(180deg, #2d6a7e, #1c505f);
-  color: #eaf4f8;
-  border: 1px solid #123842;
-  border-radius: 6px;
-  box-shadow: 0 1px 0 #3f8093 inset, 0 1px 2px #101318;
-}
+/* preferences window — GNOME Settings geometry (grouped cards of label→control rows) */
+.cfg-body { display: flex; flex-direction: column; padding: 20px 22px; width: 440px; }
+.cfg-group { font-size: 12px; font-weight: 700; margin: 6px 2px; }
+.cfg-card { display: flex; flex-direction: column; border-radius: 12px; margin-bottom: 16px; }
+.cfg-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 12px 14px; }
+.cfg-l { font-size: 13px; }
+.cfg-div { height: 1px; border: none; }
+.cfg-in, .cfg-num, .cfg-sel { border-radius: 7px; padding: 6px 10px; font-size: 13px; }
+.cfg-in { width: 190px; }
+.cfg-num { width: 90px; }
+.cfg-sel { width: 180px; }
+.cfg-actions { display: flex; justify-content: flex-end; margin-top: 4px; }
+.cfg-close { padding: 7px 22px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; }

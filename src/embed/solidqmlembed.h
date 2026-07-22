@@ -41,6 +41,7 @@ void init(QQmlEngine *engine, const QUrl &appDir = QUrl());
 // Full-app hosting (a standalone binary loading a generated Window root directly, no island):
 // load a stylesheet into the engine's shared cascade, and keep viewport units tracking a window.
 void loadCss(QQmlEngine *engine, const QUrl &cssFile);
+void loadCssString(QQmlEngine *engine, const QString &css);
 void attachWindow(QQmlEngine *engine, QQuickWindow *window);
 
 class SolidIsland : public QQuickItem {
