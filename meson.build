@@ -238,7 +238,7 @@ custom_target(
 vterm_dep = dependency('vterm')
 util_dep = meson.get_compiler('cpp').find_library('util', required: false)
 solidterm_moc = qt6.preprocess(
-  moc_headers: files('apps/solidterm/native/ptysession.h', 'apps/solidterm/native/terminalview.h', 'apps/solidterm/native/systemtheme.h'),
+  moc_headers: files('apps/solidterm/native/ptysession.h', 'apps/solidterm/native/terminalview.h', 'apps/solidterm/native/terminalpanes.h', 'apps/solidterm/native/systemtheme.h'),
 )
 executable(
   'solidterm',
@@ -246,11 +246,23 @@ executable(
     'apps/solidterm/main.cpp',
     'apps/solidterm/native/ptysession.cpp',
     'apps/solidterm/native/terminalview.cpp',
+    'apps/solidterm/native/terminalpanes.cpp',
     'apps/solidterm/native/systemtheme.cpp',
   ),
   solidterm_moc,
   cpp_args: notify_args + ['-DSOLIDTERM_DEV_DIR="' + meson.current_source_dir() + '/apps/solidterm/qml"'],
   include_directories: include_directories('src', 'apps/solidterm'),
   dependencies: [solidqml_dep, qt6_widgets_dep, vterm_dep, util_dep],
+  install_rpath: '$ORIGIN/../lib',
   install: true,
 )
+
+
+# solidterm install: the generated UI (qml + css + component .qml) lands in share/solidterm,
+# which main resolves as <bindir>/../share/solidterm; plus the .desktop entry and icon so the
+# terminal shows up in the launcher (owner: "a ideia é ser instalável").
+install_subdir('apps/solidterm/qml', install_dir: get_option('datadir') / 'solidterm', strip_directory: true)
+install_data('apps/solidterm/solidterm.desktop', install_dir: get_option('datadir') / 'applications')
+install_data('apps/solidterm/solidterm.svg',
+  install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
+  rename: 'solidterm.svg')

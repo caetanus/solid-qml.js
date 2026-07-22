@@ -8,6 +8,7 @@
 // App dir resolution: $SOLIDTERM_DIR > <bindir>/../share/solidterm > the source tree (dev).
 #include "embed/solidqmlembed.h"
 #include "native/systemtheme.h"
+#include "native/terminalpanes.h"
 #include "native/terminalview.h"
 
 #include <QApplication>
@@ -41,6 +42,7 @@ int main(int argc, char **argv)
     const QUrl appDir = QUrl::fromLocalFile(QDir(dir).absolutePath() + QLatin1Char('/'));
 
     qmlRegisterType<TerminalView>("SolidTerm", 1, 0, "TerminalView");
+    qmlRegisterType<TerminalPanes>("SolidTerm", 1, 0, "TerminalPanes");
 
     QQmlApplicationEngine engine;
     SolidQmlEmbed::init(&engine, appDir);

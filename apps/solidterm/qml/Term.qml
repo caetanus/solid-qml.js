@@ -13,14 +13,34 @@ W.Div {
     property var scheme: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").scheme || "system"
     property var scrollback: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").scrollback || 8000
     property var cfgOpen: false
-    property var state_: "live"
+    property var title: "solidterm"
     readonly property var __const_SCHEMES: ({ midnight: ({ bg: "#161a21", fg: "#d4dae3", label: "Midnight" }), solarized: ({ bg: "#002b36", fg: "#93a1a1", label: "Solarized Dark" }), gruvbox: ({ bg: "#282828", fg: "#ebdbb2", label: "Gruvbox" }), paper: ({ bg: "#f7f2e9", fg: "#3a3532", label: "Paper (light)" }) })
     cssClass: ["term-root"]
+    Shortcut {
+        sequences: ["Ctrl+Shift+E"]
+        onActivated: { term.split(Qt.Horizontal) }
+    }
+    Shortcut {
+        sequences: ["Ctrl+Shift+O"]
+        onActivated: { term.split(Qt.Vertical) }
+    }
+    Shortcut {
+        sequences: ["Ctrl+Shift+W"]
+        onActivated: { term.closeFocused() }
+    }
+    Shortcut {
+        sequences: ["Alt+Right"]
+        onActivated: { term.focusNext() }
+    }
+    Shortcut {
+        sequences: ["Alt+Left"]
+        onActivated: { term.focusPrev() }
+    }
     W.Div {
         cssClass: ["term-header"]
         W.Text {
             cssClass: ["term-title"]
-            text: "solidterm"
+            text: "" + (title)
         }
         W.Button {
             cssClass: ["term-gear"]
@@ -33,7 +53,7 @@ W.Div {
         Css.CssRect {
             cssPrimitive: "div"
             cssClass: ["term-pane"]
-            QM_SolidTerm.TerminalView {
+            QM_SolidTerm.TerminalPanes {
                 id: _ref_term
                 anchors.fill: parent
                 fontFamily: uiFontFamily
@@ -41,7 +61,9 @@ W.Div {
                 background: scheme === "system" ? sysTheme.base : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).bg
                 foreground: scheme === "system" ? sysTheme.text : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).fg
                 scrollbackLimit: scrollback
-                onSessionFinished: function() { return process.exit(0) }
+                handleColor: sysTheme.window
+                onTitleChanged: function(t) { return title = t }
+                onAllClosed: function() { return process.exit(0) }
             }
         }
         Item {
@@ -59,18 +81,30 @@ W.Div {
                 authorClass: ["tmenu"]
                 W.MenuItem {
                     text: "&Copy"
-                    onTriggered: { term.copySelection() }
+                    onTriggered: { term.copyFocused() }
                 }
                 W.MenuItem {
                     text: "&Paste"
-                    onTriggered: { term.pasteClipboard() }
+                    onTriggered: { term.pasteFocused() }
+                }
+                W.MenuSeparator { }
+                W.MenuItem {
+                    text: "Split &right"
+                    onTriggered: { term.split(Qt.Horizontal) }
+                }
+                W.MenuItem {
+                    text: "Split &down"
+                    onTriggered: { term.split(Qt.Vertical) }
+                }
+                W.MenuItem {
+                    text: "Close &pane"
+                    onTriggered: { term.closeFocused() }
                 }
                 W.MenuSeparator { }
                 W.MenuItem {
                     text: "Clear scrollback"
-                    onTriggered: { term.clearScrollback() }
+                    onTriggered: { term.clearFocused() }
                 }
-                W.MenuSeparator { }
                 W.MenuItem {
                     text: "Pre&ferences…"
                     onTriggered: { cfgOpen = true }
@@ -82,11 +116,11 @@ W.Div {
         cssClass: ["term-status"]
         W.Text {
             cssClass: ["term-status-t"]
-            text: "" + (state_)
+            text: "solidterm"
         }
         W.Text {
             cssClass: ["term-hint"]
-            text: "Ctrl+Shift+C/V copy/paste · wheel scrollback · right-click menu"
+            text: "Ctrl+Shift+E/O split · Ctrl+Shift+W close · Alt+←/→ focus"
         }
     }
     W.Dialog {

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=solidterm
+GenericName=Terminal
+Comment=A native tiling terminal (solid-qml)
+Exec=solidterm
+Icon=solidterm
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=terminal;shell;command;prompt;tiling;
+StartupNotify=true

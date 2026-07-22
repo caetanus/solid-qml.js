@@ -1,7 +1,8 @@
 // solidterm UI — pane + right-click menu + preferences dialog. The config persists in
 // localStorage (the shim's sqlite store) and applies live through TerminalView props.
 import { createSignal } from "solid-js";
-import { TerminalView } from "qml:SolidTerm";
+import { TerminalPanes } from "qml:SolidTerm";
+declare const Qt: any;
 declare const sysTheme: any;
 import "./term.css";
 
@@ -22,7 +23,7 @@ export function Term() {
   const [scheme, setScheme] = createSignal(JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").scheme || "system");
   const [scrollback, setScrollback] = createSignal(JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").scrollback || 8000);
   const [cfgOpen, setCfgOpen] = createSignal(false);
-  const [state, setState] = createSignal("live");
+  const [title, setTitle] = createSignal("solidterm");
   let term: any;
 
   const save = () =>
@@ -32,12 +33,17 @@ export function Term() {
 
   return (
     <div class="term-root">
+      <Shortcut keys="Ctrl+Shift+E" onActivated={() => term.split(Qt.Horizontal)} />
+      <Shortcut keys="Ctrl+Shift+O" onActivated={() => term.split(Qt.Vertical)} />
+      <Shortcut keys="Ctrl+Shift+W" onActivated={() => term.closeFocused()} />
+      <Shortcut keys="Alt+Right" onActivated={() => term.focusNext()} />
+      <Shortcut keys="Alt+Left" onActivated={() => term.focusPrev()} />
       <div class="term-header">
-        <text class="term-title">solidterm</text>
+        <text class="term-title">{title()}</text>
         <button class="term-gear" onClick={() => setCfgOpen(true)}>⚙</button>
       </div>
       <div class="term-body">
-        <TerminalView
+        <TerminalPanes
           ref={term}
           class="term-pane"
           fontFamily={uiFontFamily()}
@@ -45,20 +51,25 @@ export function Term() {
           background={scheme() === "system" ? sysTheme.base : (SCHEMES[scheme()] || SCHEMES.midnight).bg}
           foreground={scheme() === "system" ? sysTheme.text : (SCHEMES[scheme()] || SCHEMES.midnight).fg}
           scrollbackLimit={scrollback()}
-          onSessionFinished={() => process.exit(0)}
+          handleColor={sysTheme.window}
+          onTitleChanged={(t) => setTitle(t)}
+          onAllClosed={() => process.exit(0)}
         />
         <ContextMenu class="tmenu">
-          <MenuItem onClick={() => term.copySelection()}>&Copy</MenuItem>
-          <MenuItem onClick={() => term.pasteClipboard()}>&Paste</MenuItem>
+          <MenuItem onClick={() => term.copyFocused()}>&Copy</MenuItem>
+          <MenuItem onClick={() => term.pasteFocused()}>&Paste</MenuItem>
           <MenuSeparator />
-          <MenuItem onClick={() => term.clearScrollback()}>Clear scrollback</MenuItem>
+          <MenuItem onClick={() => term.split(Qt.Horizontal)}>Split &right</MenuItem>
+          <MenuItem onClick={() => term.split(Qt.Vertical)}>Split &down</MenuItem>
+          <MenuItem onClick={() => term.closeFocused()}>Close &pane</MenuItem>
           <MenuSeparator />
+          <MenuItem onClick={() => term.clearFocused()}>Clear scrollback</MenuItem>
           <MenuItem onClick={() => setCfgOpen(true)}>Pre&ferences…</MenuItem>
         </ContextMenu>
       </div>
       <div class="term-status">
-        <text class="term-status-t">{state()}</text>
-        <text class="term-hint">Ctrl+Shift+C/V copy/paste · wheel scrollback · right-click menu</text>
+        <text class="term-status-t">solidterm</text>
+        <text class="term-hint">Ctrl+Shift+E/O split · Ctrl+Shift+W close · Alt+←/→ focus</text>
       </div>
 
       <dialog open={cfgOpen()} title="Preferences" class="cfg" onClose={() => setCfgOpen(false)}>
