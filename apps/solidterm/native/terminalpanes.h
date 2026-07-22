@@ -4,6 +4,7 @@
 #include <QVector>
 
 class TerminalView;
+class PaneHeader;
 
 // The split container (owner: "split screen … parecido com tilix"). Splitting a terminal into
 // side-by-side / stacked panes is terminal-domain layout, and For→SplitView doesn't work through
@@ -70,9 +71,11 @@ protected:
 
 private:
     struct Handle;
-    TerminalView *makePane();
+    QQuickItem *makeCell(TerminalView **outView, PaneHeader **outHeader);
+    void wirePane(TerminalView *v, PaneHeader *header);
     void addPaneAfterFocused();
     void removePane(int index);
+    void reallyRemove(int index);
     void rebuildDividers();
     void relayout();
     void applyStyle(TerminalView *v);
@@ -82,7 +85,9 @@ private:
     QVector<TerminalView *> m_panes;
     QVector<qreal> m_fractions;     // per-pane share of the main axis (sums to 1)
     QVector<class PaneHeader *> m_headers;
+    QVector<QQuickItem *> m_cells;     // the CSS-engine pane boxes (animate via class)
     QVector<QQuickItem *> m_handles;
+    class QQmlComponent *m_cellComponent = nullptr;
     int m_orientation = Qt::Horizontal;
     int m_focused = 0;
 

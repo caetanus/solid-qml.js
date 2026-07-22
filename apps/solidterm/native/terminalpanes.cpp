@@ -5,8 +5,12 @@
 
 #include <QCursor>
 #include <QMouseEvent>
+#include <QQmlComponent>
+#include <QQmlContext>
+#include <QQmlEngine>
 #include <QQuickWindow>
 #include <QSGSimpleRectNode>
+#include <QTimer>
 #include <functional>
 
 struct TerminalPanes::Handle {
@@ -27,7 +31,7 @@ public:
     }
 
     QColor color;
-    std::function<void(qreal)> onDrag; // set per-rebuild; the item itself is persistent
+    std::function<void(qreal)> onDrag;
 
     QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override
     {
@@ -58,6 +62,33 @@ private:
 
 constexpr qreal kHeaderH = 24.0;
 constexpr qreal kDivider = 6.0;
+constexpr int kAnimMs = 190;
+
+// The pane cell: a CSS-engine box wrapping the header + terminal, so opening/closing a split is a
+// CSS animation (owner: "csszar e descsszar as coisas on the fly" is the whole point). It's
+// QML-composed (not `new`'d) so the engine's componentComplete resolves its class → the
+// @keyframes in term.css play. TerminalPanes positions the cell; the cell splits itself into
+// header + view internally.
+const char *kCellQml = R"(import QtQuick
+import qmlcss 1.0 as Css
+import SolidTerm 1.0
+
+Css.CssRect {
+    id: cell
+    property alias view: __tv
+    property alias header: __hdr
+    property int headerH: 24
+    cssPrimitive: "div"
+    cssClass: ["pane", "pane-enter"]
+    // A plain Item holds the header+view (anchored, so the engine's content pass never moves them);
+    // the CssRect's transform (_animScale from @keyframes) scales the whole cell — content and all.
+    Item {
+        anchors.fill: parent
+        PaneHeader { id: __hdr; x: 0; y: 0; width: parent.width; height: cell.headerH }
+        TerminalView { id: __tv; x: 0; y: cell.headerH; width: parent.width; height: Math.max(0, parent.height - cell.headerH) }
+    }
+}
+)";
 
 } // namespace
 
@@ -68,17 +99,35 @@ TerminalPanes::TerminalPanes(QQuickItem *parent)
     setActiveFocusOnTab(true);
 }
 
-TerminalView *TerminalPanes::makePane()
+QQuickItem *TerminalPanes::makeCell(TerminalView **outView, PaneHeader **outHeader)
 {
-    auto *v = new TerminalView(this);
+    QQmlEngine *eng = qmlEngine(this);
+    if (!eng)
+        return nullptr;
+    if (!m_cellComponent) {
+        m_cellComponent = new QQmlComponent(eng, this);
+        m_cellComponent->setData(QByteArray(kCellQml), QUrl(QStringLiteral("qrc:/solidterm/PaneCell.qml")));
+    }
+    auto *cell = qobject_cast<QQuickItem *>(m_cellComponent->create(qmlContext(this)));
+    if (!cell) {
+        qWarning("solidterm: pane cell failed: %s", qPrintable(m_cellComponent->errorString()));
+        return nullptr;
+    }
+    cell->setParent(this);
+    cell->setParentItem(this);
+    cell->setProperty("headerH", kHeaderH);
+    *outView = qobject_cast<TerminalView *>(cell->property("view").value<QQuickItem *>());
+    *outHeader = qobject_cast<PaneHeader *>(cell->property("header").value<QQuickItem *>());
+    return cell;
+}
+
+void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
+{
     applyStyle(v);
-    // Per-pane title header (owner: "cada split precisa de seu proprio title").
-    auto *header = new PaneHeader(this);
     header->setBackground(m_handleColor);
     header->setForeground(m_foreground);
     header->setAccent(QColor("#3584e4"));
     header->setTitle(v->title());
-    m_headers.append(header);
 
     connect(v, &TerminalView::titleChanged, this, [this, v, header] {
         header->setTitle(v->title());
@@ -102,17 +151,23 @@ TerminalView *TerminalPanes::makePane()
         for (int i = 0; i < m_panes.size(); ++i)
             m_headers[i]->setFocused(m_panes[i]->hasActiveFocus());
     });
-    return v;
 }
 
 void TerminalPanes::componentComplete()
 {
     QQuickItem::componentComplete();
-    m_panes.append(makePane());
+    TerminalView *v = nullptr;
+    PaneHeader *h = nullptr;
+    QQuickItem *cell = makeCell(&v, &h);
+    if (!cell)
+        return;
+    m_cells.append(cell);
+    m_panes.append(v);
+    m_headers.append(h);
     m_fractions.append(1.0);
+    wirePane(v, h);
     rebuildDividers();
     relayout();
-    m_panes[0]->ensureStarted();
     setFocusedIndex(0);
 }
 
@@ -125,19 +180,29 @@ void TerminalPanes::split(int orient)
 
 void TerminalPanes::addPaneAfterFocused()
 {
-    TerminalView *v = makePane();
+    TerminalView *v = nullptr;
+    PaneHeader *h = nullptr;
+    QQuickItem *cell = makeCell(&v, &h);
+    if (!cell)
+        return;
     const int at = qBound(0, m_focused + 1, m_panes.size());
+    m_cells.insert(at, cell);
     m_panes.insert(at, v);
-    m_headers.move(m_headers.size() - 1, at); // makePane appended the header; align its index
+    m_headers.insert(at, h);
+    wirePane(v, h);
 
+    const int n = m_panes.size();
     m_fractions.clear();
-    const qreal share = 1.0 / m_panes.size();
-    for (int i = 0; i < m_panes.size(); ++i)
-        m_fractions.append(share);
+    for (int i = 0; i < n; ++i)
+        m_fractions.append(1.0 / n);
     rebuildDividers();
     relayout();
-    v->ensureStarted();
     setFocusedIndex(at);
+    // The cell's initial class is ["pane","pane-enter"] → the @keyframes plays on compose; strip
+    // the trigger class after so a later re-resolve (theme change) doesn't replay it.
+    QTimer::singleShot(kAnimMs, cell, [cell] {
+        cell->setProperty("cssClass", QVariant::fromValue(QStringList{ QStringLiteral("pane") }));
+    });
     emit panesChanged();
 }
 
@@ -145,10 +210,30 @@ void TerminalPanes::removePane(int index)
 {
     if (index < 0 || index >= m_panes.size())
         return;
-    TerminalView *v = m_panes.takeAt(index);
-    PaneHeader *h = m_headers.takeAt(index);
-    v->deleteLater();
-    h->deleteLater();
+    if (m_panes.size() == 1) {
+        reallyRemove(index);
+        return;
+    }
+    // Add the leave class → the CSS @keyframes shrinks it out, then delete when it finishes.
+    QQuickItem *cell = m_cells.value(index);
+    if (cell)
+        cell->setProperty("cssClass", QVariant::fromValue(QStringList{ QStringLiteral("pane"), QStringLiteral("pane-leave") }));
+    TerminalView *v = m_panes.value(index);
+    QTimer::singleShot(kAnimMs, this, [this, v] {
+        const int i = m_panes.indexOf(v);
+        if (i >= 0)
+            reallyRemove(i);
+    });
+}
+
+void TerminalPanes::reallyRemove(int index)
+{
+    if (index < 0 || index >= m_panes.size())
+        return;
+    QQuickItem *cell = m_cells.takeAt(index);
+    m_panes.removeAt(index);
+    m_headers.removeAt(index);
+    cell->deleteLater(); // takes the view + header with it (they're its children)
     if (m_panes.isEmpty()) {
         emit allClosed();
         return;
@@ -163,8 +248,8 @@ void TerminalPanes::removePane(int index)
     emit panesChanged();
 }
 
-// Dividers are PERSISTENT items — recreated only when the pane COUNT changes, never mid-drag
-// (that was the resize bug: relayout() deleted the divider being dragged and lost the grab).
+// Dividers are PERSISTENT — recreated only when the pane COUNT changes, never mid-drag (that was
+// the resize bug: relayout() deleted the divider being dragged and lost the mouse grab).
 void TerminalPanes::rebuildDividers()
 {
     for (QQuickItem *h : std::as_const(m_handles))
@@ -185,7 +270,7 @@ void TerminalPanes::rebuildDividers()
             const qreal na = qBound(minF, a + delta, a + b - minF);
             b = a + b - na;
             a = na;
-            relayout(); // reposition only — dividers persist through the drag
+            relayout();
         };
         m_handles.append(div);
     }
@@ -204,15 +289,10 @@ void TerminalPanes::relayout()
     qreal pos = 0;
     for (int i = 0; i < n; ++i) {
         const qreal len = available * m_fractions.value(i, 1.0 / n);
-        TerminalView *v = m_panes[i];
-        PaneHeader *hdr = m_headers[i];
-        if (horiz) {
-            hdr->setX(pos); hdr->setY(0); hdr->setWidth(len); hdr->setHeight(kHeaderH);
-            v->setX(pos); v->setY(kHeaderH); v->setWidth(len); v->setHeight(qMax<qreal>(0, cross - kHeaderH));
-        } else {
-            hdr->setX(0); hdr->setY(pos); hdr->setWidth(cross); hdr->setHeight(kHeaderH);
-            v->setX(0); v->setY(pos + kHeaderH); v->setWidth(cross); v->setHeight(qMax<qreal>(0, len - kHeaderH));
-        }
+        QQuickItem *cell = m_cells[i];
+        // Position the CELL; its snippet splits itself into header + view internally.
+        if (horiz) { cell->setX(pos); cell->setY(0); cell->setWidth(len); cell->setHeight(cross); }
+        else { cell->setX(0); cell->setY(pos); cell->setWidth(cross); cell->setHeight(len); }
         pos += len;
         if (i < n - 1) {
             QQuickItem *div = m_handles.value(i);
