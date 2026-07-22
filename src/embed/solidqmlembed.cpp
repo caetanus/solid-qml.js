@@ -96,6 +96,27 @@ void init(QQmlEngine *engine, const QUrl &appDir)
         engine->addImportPath(QDir(base.toLocalFile()).absolutePath());
 }
 
+void loadCss(QQmlEngine *engine, const QUrl &cssFile)
+{
+    EngineRuntime *rt = runtimeFor(engine);
+    if (!rt)
+        return;
+    const QUrl resolved = rt->appBase.resolved(cssFile);
+    rt->theme.load(resolved.isLocalFile() ? resolved.toLocalFile() : resolved.toString());
+}
+
+void attachWindow(QQmlEngine *engine, QQuickWindow *window)
+{
+    EngineRuntime *rt = runtimeFor(engine);
+    if (!rt || !window || rt->viewportWindow == window)
+        return;
+    rt->viewportWindow = window;
+    rt->theme.setViewport(window->width(), window->height());
+    const auto sync = [rt, window] { rt->theme.setViewport(window->width(), window->height()); };
+    QObject::connect(window, &QQuickWindow::widthChanged, &rt->theme, sync);
+    QObject::connect(window, &QQuickWindow::heightChanged, &rt->theme, sync);
+}
+
 SolidIsland::SolidIsland(QQuickItem *parent)
     : QQuickItem(parent)
 {

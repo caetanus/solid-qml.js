@@ -229,3 +229,27 @@ custom_target(
   depends: acme_plugin,
   build_by_default: true,
 )
+
+
+# solidterm — the real, installable terminal app (owner 2026-07-22). Its own C++ (pty +
+# libvterm TerminalView) registered as the SolidTerm module, UI in solid TSX, hosted via the
+# embed surface. Dev app dir = apps/solidterm/qml (regenerate with:
+#   node --import tsx scripts/gen.mjs apps/solidterm/src/mainqml.tsx apps/solidterm/qml/App.generated.qml).
+vterm_dep = dependency('vterm')
+util_dep = meson.get_compiler('cpp').find_library('util', required: false)
+solidterm_moc = qt6.preprocess(
+  moc_headers: files('apps/solidterm/native/ptysession.h', 'apps/solidterm/native/terminalview.h'),
+)
+executable(
+  'solidterm',
+  files(
+    'apps/solidterm/main.cpp',
+    'apps/solidterm/native/ptysession.cpp',
+    'apps/solidterm/native/terminalview.cpp',
+  ),
+  solidterm_moc,
+  cpp_args: notify_args + ['-DSOLIDTERM_DEV_DIR="' + meson.current_source_dir() + '/apps/solidterm/qml"'],
+  include_directories: include_directories('src', 'apps/solidterm'),
+  dependencies: [solidqml_dep, qt6_widgets_dep, vterm_dep, util_dep],
+  install: true,
+)

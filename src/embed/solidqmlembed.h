@@ -38,6 +38,11 @@ namespace SolidQmlEmbed {
 // and Worker script URLs; defaults to the application directory.
 void init(QQmlEngine *engine, const QUrl &appDir = QUrl());
 
+// Full-app hosting (a standalone binary loading a generated Window root directly, no island):
+// load a stylesheet into the engine's shared cascade, and keep viewport units tracking a window.
+void loadCss(QQmlEngine *engine, const QUrl &cssFile);
+void attachWindow(QQmlEngine *engine, QQuickWindow *window);
+
 class SolidIsland : public QQuickItem {
     Q_OBJECT
     Q_PROPERTY(QUrl source READ source WRITE setSource NOTIFY sourceChanged)
