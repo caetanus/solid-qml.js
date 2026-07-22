@@ -225,7 +225,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   if (helpersMap.size > 0) {
     const helperScope: Scope = {
       table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, jsImports,
-      ...(moduleConstDecls.size > 0 ? { locals: { ...constAliases } } : {}),
+      ...((moduleConstDecls.size > 0 || Object.keys(refAliases).length > 0) ? { locals: { ...constAliases, ...refAliases } } : {}),
       ...(mutableLocals ? { mutableLocals } : {}),
       ...(helpers ? { helpers } : {}),
     };
@@ -261,7 +261,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
       )
     );
   });
-  const setupScope: Scope = { table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, locals: { ...constAliases, ...refLocals }, jsImports, ...(mutableLocals ? { mutableLocals } : {}) };
+  const setupScope: Scope = { table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, locals: { ...constAliases, ...refAliases, ...refLocals }, jsImports, ...(mutableLocals ? { mutableLocals } : {}) };
   const onCompletedBody: string[] = [
     // Hoisted module-level statements (already emitted in their own module's import scope):
     // import-time code runs before any component setup.

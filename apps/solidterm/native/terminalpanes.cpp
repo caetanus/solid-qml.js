@@ -170,7 +170,15 @@ void TerminalPanes::componentComplete()
     wirePane(v, h);
     rebuildDividers();
     relayout();
-    setFocusedIndex(0);
+    // Initial focus is taken on the first non-zero geometry (scene ready) — see geometryChange.
+}
+
+void TerminalPanes::focusInEvent(QFocusEvent *)
+{
+    // Focus reaching the container (Tab, click on chrome) forwards to the focused pane so keys —
+    // and reserved accelerators — always land on a terminal.
+    if (!m_panes.isEmpty())
+        m_panes[qBound(0, m_focused, m_panes.size() - 1)]->takeFocus();
 }
 
 void TerminalPanes::split(int orient)
@@ -310,8 +318,15 @@ void TerminalPanes::relayout()
 void TerminalPanes::geometryChange(const QRectF &n, const QRectF &o)
 {
     QQuickItem::geometryChange(n, o);
-    if (isComponentComplete())
-        relayout();
+    if (!isComponentComplete())
+        return;
+    relayout();
+    // Grab keyboard focus once, when the panes are first laid out (the scene is ready now) — so
+    // typing AND reserved accelerators work without a click to focus first.
+    if (!m_didInitialFocus && width() > 0 && height() > 0 && !m_panes.isEmpty()) {
+        m_didInitialFocus = true;
+        setFocusedIndex(qBound(0, m_focused, m_panes.size() - 1));
+    }
 }
 
 void TerminalPanes::setFocusedIndex(int i)

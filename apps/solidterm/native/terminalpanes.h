@@ -74,6 +74,7 @@ signals:
 protected:
     void componentComplete() override;
     void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
+    void focusInEvent(QFocusEvent *event) override;
 
 private:
     struct Handle;
@@ -96,6 +97,7 @@ private:
     class QQmlComponent *m_cellComponent = nullptr;
     int m_orientation = Qt::Horizontal;
     int m_focused = 0;
+    bool m_didInitialFocus = false;
 
     QString m_fontFamily = QStringLiteral("monospace");
     int m_fontSize = 15;
