@@ -151,6 +151,8 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
         for (int i = 0; i < m_panes.size(); ++i)
             m_headers[i]->setFocused(m_panes[i]->hasActiveFocus());
     });
+    v->setReservedSequences(m_reserved);
+    connect(v, &TerminalView::accelerator, this, &TerminalPanes::accelerator);
 }
 
 void TerminalPanes::componentComplete()
@@ -372,6 +374,16 @@ STYLE_SETTER(setBackground, m_background, const QColor &)
 STYLE_SETTER(setForeground, m_foreground, const QColor &)
 STYLE_SETTER(setScrollbackLimit, m_scrollbackLimit, int)
 #undef STYLE_SETTER
+
+void TerminalPanes::setReservedSequences(const QStringList &v)
+{
+    if (m_reserved == v)
+        return;
+    m_reserved = v;
+    emit reservedChanged();
+    for (TerminalView *p : std::as_const(m_panes))
+        p->setReservedSequences(v);
+}
 
 void TerminalPanes::setHandleColor(const QColor &v)
 {

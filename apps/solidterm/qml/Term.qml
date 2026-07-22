@@ -22,28 +22,9 @@ W.Div {
     readonly property var __const_SCHEMES: ({ midnight: ({ bg: "#161a21", fg: "#d4dae3" }), solarized: ({ bg: "#002b36", fg: "#93a1a1" }), gruvbox: ({ bg: "#282828", fg: "#ebdbb2" }), paper: ({ bg: "#f7f2e9", fg: "#3a3532" }) })
     readonly property var __const_ACTIONS: [({ key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" }), ({ key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" }), ({ key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" }), ({ key: "focusNext", label: "Focus next pane", def: "Alt+Right" }), ({ key: "focusPrev", label: "Focus previous pane", def: "Alt+Left" })]
     function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : termConfig.getString("keys." + k, ""); }
+    function onAccel(seq) { if (seq === kSplitRight) { term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { term.split(Qt.Vertical); } else { if (seq === kClosePane) { term.closeFocused(); } else { if (seq === kFocusNext) { term.focusNext(); } else { if (seq === kFocusPrev) { term.focusPrev(); } } } } } }
     function setKey(k, seq) { termConfig.set("keys." + k, seq); if (k === "splitRight") { kSplitRight = seq; } else { if (k === "splitDown") { kSplitDown = seq; } else { if (k === "closePane") { kClosePane = seq; } else { if (k === "focusNext") { kFocusNext = seq; } else { if (k === "focusPrev") { kFocusPrev = seq; } } } } } }
     cssClass: ["term-root"]
-    Shortcut {
-        sequences: [kSplitRight]
-        onActivated: { _ref_term.split(Qt.Horizontal) }
-    }
-    Shortcut {
-        sequences: [kSplitDown]
-        onActivated: { _ref_term.split(Qt.Vertical) }
-    }
-    Shortcut {
-        sequences: [kClosePane]
-        onActivated: { _ref_term.closeFocused() }
-    }
-    Shortcut {
-        sequences: [kFocusNext]
-        onActivated: { _ref_term.focusNext() }
-    }
-    Shortcut {
-        sequences: [kFocusPrev]
-        onActivated: { _ref_term.focusPrev() }
-    }
     W.Div {
         cssClass: ["term-header"]
         W.Text {
@@ -70,6 +51,8 @@ W.Div {
                 foreground: scheme === "system" ? sysTheme.text : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).fg
                 scrollbackLimit: scrollback
                 handleColor: sysTheme.window
+                reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev]
+                onAccelerator: function(seq) { return onAccel(seq) }
                 onTitleChanged: function(t) { return title = t }
                 onAllClosed: function() { return process.exit(0) }
             }

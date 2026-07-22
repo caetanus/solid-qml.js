@@ -46,6 +46,15 @@ export function Term() {
     k === "splitRight" ? kSplitRight() : k === "splitDown" ? kSplitDown() : k === "closePane" ? kClosePane()
     : k === "focusNext" ? kFocusNext() : k === "focusPrev" ? kFocusPrev()
     : termConfig.getString("keys." + k, "");
+  // Accelerators are consumed by the focused terminal (not Qt's ambiguous Shortcut map) and
+  // dispatched here by matching the pressed sequence to the configured binding.
+  const onAccel = (seq: string) => {
+    if (seq === kSplitRight()) term.split(Qt.Horizontal);
+    else if (seq === kSplitDown()) term.split(Qt.Vertical);
+    else if (seq === kClosePane()) term.closeFocused();
+    else if (seq === kFocusNext()) term.focusNext();
+    else if (seq === kFocusPrev()) term.focusPrev();
+  };
   const setKey = (k: string, seq: string) => {
     termConfig.set("keys." + k, seq);
     if (k === "splitRight") setKSplitRight(seq);
@@ -57,12 +66,6 @@ export function Term() {
 
   return (
     <div class="term-root">
-      <Shortcut keys={kSplitRight()} onActivated={() => term.split(Qt.Horizontal)} />
-      <Shortcut keys={kSplitDown()} onActivated={() => term.split(Qt.Vertical)} />
-      <Shortcut keys={kClosePane()} onActivated={() => term.closeFocused()} />
-      <Shortcut keys={kFocusNext()} onActivated={() => term.focusNext()} />
-      <Shortcut keys={kFocusPrev()} onActivated={() => term.focusPrev()} />
-
       <div class="term-header">
         <text class="term-title">{title()}</text>
         <button class="term-gear" onClick={() => setCfgOpen(true)}>⚙</button>
@@ -78,6 +81,8 @@ export function Term() {
           foreground={scheme() === "system" ? sysTheme.text : (SCHEMES[scheme()] || SCHEMES.midnight).fg}
           scrollbackLimit={scrollback()}
           handleColor={sysTheme.window}
+          reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev()]}
+          onAccelerator={(seq) => onAccel(seq)}
           onTitleChanged={(t) => setTitle(t)}
           onAllClosed={() => process.exit(0)}
         />

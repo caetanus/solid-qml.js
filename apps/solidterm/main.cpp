@@ -19,6 +19,8 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QKeyEvent>
+#include <QKeySequence>
 #include <QTimer>
 #include <QGuiApplication>
 
@@ -99,5 +101,28 @@ int main(int argc, char **argv)
             });
         });
     }
+    // Debug: SOLIDTERM_SENDKEYS="Alt+D@1500,Alt+Shift+D@2500" synthesises key chords to the window
+    // (real QKeyEvent press+release through delivery) — for testing accelerator conflicts headless.
+    const QString sendKeys = qEnvironmentVariable("SOLIDTERM_SENDKEYS");
+    if (!sendKeys.isEmpty() && window) {
+        for (const QString &spec : sendKeys.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+            const QStringList parts = spec.split(QLatin1Char('@'));
+            if (parts.size() != 2)
+                continue;
+            const QKeySequence seq(parts[0]);
+            const int delay = parts[1].toInt();
+            if (seq.isEmpty())
+                continue;
+            const QKeyCombination kc = seq[0];
+            QTimer::singleShot(delay, window, [window, kc] {
+                QKeyEvent press(QEvent::KeyPress, kc.key(), kc.keyboardModifiers());
+                QCoreApplication::sendEvent(window, &press);
+                QKeyEvent release(QEvent::KeyRelease, kc.key(), kc.keyboardModifiers());
+                QCoreApplication::sendEvent(window, &release);
+                qInfo().noquote() << "solidterm: sent" << QKeySequence(kc).toString();
+            });
+        }
+    }
+
     return app.exec();
 }

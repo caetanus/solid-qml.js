@@ -5,6 +5,7 @@
 #include <QColor>
 #include <QFont>
 #include <QQuickPaintedItem>
+#include <QStringList>
 #include <QVector>
 
 #include <vterm.h>
@@ -26,6 +27,10 @@ class TerminalView : public QQuickPaintedItem {
     // OSC 0/2 window title from the running program (prompt integration etc.).
     Q_PROPERTY(QString title READ title NOTIFY titleChanged)
     Q_PROPERTY(int scrollbackLimit READ scrollbackLimit WRITE setScrollbackLimit NOTIFY scrollbackLimitChanged)
+    // Accelerator sequences the terminal must CONSUME (not send to the pty) — terminal apps own
+    // their keybindings, and Qt's Shortcut map ambiguates overlapping combos (Alt+D vs Alt+Shift+D)
+    // and leaks the key. Set from the solid keybinding config; a match emits accelerator(seq).
+    Q_PROPERTY(QStringList reservedSequences READ reservedSequences WRITE setReservedSequences NOTIFY reservedSequencesChanged)
     Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY selectionChanged)
 
 public:
@@ -43,6 +48,8 @@ public:
     QString title() const { return m_title; }
     int scrollbackLimit() const { return m_scrollbackLimit; }
     void setScrollbackLimit(int v);
+    QStringList reservedSequences() const { return m_reserved; }
+    void setReservedSequences(const QStringList &v);
 
     // C++-created panes (TerminalPanes uses `new`, so componentComplete never fires) call this
     // once sized to boot the pty+vterm; idempotent (m_started guard).
@@ -65,6 +72,8 @@ signals:
     void bellRang();
     void sessionFinished();
     void selectionChanged();
+    void reservedSequencesChanged();
+    void accelerator(const QString &sequence); // a reserved chord was pressed (consumed)
 
 protected:
     void componentComplete() override;
@@ -108,6 +117,7 @@ private:
     bool m_cursorVisible = true;
     QVector<SbLine> m_scrollback;           // ring, newest at the back
     int m_scrollbackLimit = 8000;
+    QStringList m_reserved;
     int m_scrollOffset = 0;                 // lines scrolled back from live (0 = live)
     bool m_started = false;
 

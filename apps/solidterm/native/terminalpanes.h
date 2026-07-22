@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QQuickItem>
+#include <QStringList>
 #include <QVector>
 
 class TerminalView;
@@ -26,6 +27,7 @@ class TerminalPanes : public QQuickItem {
     Q_PROPERTY(QColor foreground READ foreground WRITE setForeground NOTIFY styleChanged)
     Q_PROPERTY(int scrollbackLimit READ scrollbackLimit WRITE setScrollbackLimit NOTIFY styleChanged)
     Q_PROPERTY(QColor handleColor READ handleColor WRITE setHandleColor NOTIFY styleChanged)
+    Q_PROPERTY(QStringList reservedSequences READ reservedSequences WRITE setReservedSequences NOTIFY reservedChanged)
 
 public:
     explicit TerminalPanes(QQuickItem *parent = nullptr);
@@ -46,6 +48,8 @@ public:
     void setScrollbackLimit(int v);
     QColor handleColor() const { return m_handleColor; }
     void setHandleColor(const QColor &v);
+    QStringList reservedSequences() const { return m_reserved; }
+    void setReservedSequences(const QStringList &v);
 
     // Split the FOCUSED pane along `orient` (Qt::Horizontal = side by side, Qt::Vertical =
     // stacked). The first split fixes the container orientation for v1.
@@ -64,6 +68,8 @@ signals:
     void styleChanged();
     void allClosed();           // last pane's shell exited → the app can quit/close the tab
     void titleChanged(const QString &title); // focused pane's OSC title
+    void reservedChanged();
+    void accelerator(const QString &sequence); // a reserved chord pressed in any pane
 
 protected:
     void componentComplete() override;
@@ -97,4 +103,5 @@ private:
     QColor m_foreground = QColor("#ffffff");
     int m_scrollbackLimit = 8000;
     QColor m_handleColor = QColor("#151515");
+    QStringList m_reserved;
 };

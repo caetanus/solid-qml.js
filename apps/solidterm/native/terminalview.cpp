@@ -3,6 +3,7 @@
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QPainter>
 
 TerminalView::TerminalView(QQuickItem *parent)
@@ -370,6 +371,16 @@ void TerminalView::keyPressEvent(QKeyEvent *event)
         QQuickPaintedItem::keyPressEvent(event);
         return;
     }
+    // Reserved accelerators (split/close/focus … from the solid config) are consumed HERE, before
+    // the pty — so they never leak to the shell and never hit Qt's ambiguous Shortcut map.
+    if (!m_reserved.isEmpty()) {
+        const QString seq = QKeySequence(event->keyCombination()).toString(QKeySequence::PortableText);
+        if (!seq.isEmpty() && m_reserved.contains(seq)) {
+            emit accelerator(seq);
+            event->accept();
+            return;
+        }
+    }
     // Copy/paste (Ctrl+Shift+C/V — the terminal convention; plain Ctrl+C/V belong to the shell).
     if ((event->modifiers() & Qt::ControlModifier) && (event->modifiers() & Qt::ShiftModifier)) {
         if (event->key() == Qt::Key_V) {
@@ -557,6 +568,14 @@ void TerminalView::setForeground(const QColor &c)
     m_foreground = c;
     emit colorsChanged();
     update();
+}
+
+void TerminalView::setReservedSequences(const QStringList &v)
+{
+    if (m_reserved == v)
+        return;
+    m_reserved = v;
+    emit reservedSequencesChanged();
 }
 
 void TerminalView::setScrollbackLimit(int v)
