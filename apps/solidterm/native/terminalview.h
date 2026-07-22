@@ -44,6 +44,10 @@ public:
     int scrollbackLimit() const { return m_scrollbackLimit; }
     void setScrollbackLimit(int v);
 
+    // C++-created panes (TerminalPanes uses `new`, so componentComplete never fires) call this
+    // once sized to boot the pty+vterm; idempotent (m_started guard).
+    Q_INVOKABLE void ensureStarted();
+
     Q_INVOKABLE void sendText(const QString &text);       // paste path
     Q_INVOKABLE void takeFocus() { forceActiveFocus(Qt::MouseFocusReason); }
     bool hasSelection() const { return m_selValid; }

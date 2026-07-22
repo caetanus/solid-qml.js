@@ -90,6 +90,7 @@ void TerminalPanes::componentComplete()
     m_panes.append(makePane());
     m_fractions.append(1.0);
     relayout();
+    m_panes[0]->ensureStarted();
     setFocusedIndex(0);
 }
 
@@ -112,6 +113,7 @@ void TerminalPanes::addPaneAfterFocused()
     for (int i = 0; i < m_panes.size(); ++i)
         m_fractions.append(share);
     relayout();
+    v->ensureStarted();
     setFocusedIndex(at);
     emit panesChanged();
 }

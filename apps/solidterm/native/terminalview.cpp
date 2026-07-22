@@ -138,6 +138,11 @@ void TerminalView::ensureSession()
 void TerminalView::componentComplete()
 {
     QQuickPaintedItem::componentComplete();
+    ensureStarted();
+}
+
+void TerminalView::ensureStarted()
+{
     applyGrid();
     ensureSession();
 }
