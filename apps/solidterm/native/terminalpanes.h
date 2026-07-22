@@ -73,6 +73,7 @@ private:
     TerminalView *makePane();
     void addPaneAfterFocused();
     void removePane(int index);
+    void rebuildDividers();
     void relayout();
     void applyStyle(TerminalView *v);
     void setFocusedIndex(int i);
@@ -80,6 +81,7 @@ private:
 
     QVector<TerminalView *> m_panes;
     QVector<qreal> m_fractions;     // per-pane share of the main axis (sums to 1)
+    QVector<class PaneHeader *> m_headers;
     QVector<QQuickItem *> m_handles;
     int m_orientation = Qt::Horizontal;
     int m_focused = 0;

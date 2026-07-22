@@ -9,6 +9,7 @@
 #include "embed/solidqmlembed.h"
 #include "native/systemtheme.h"
 #include "native/keyrecorder.h"
+#include "native/paneheader.h"
 #include "native/termconfig.h"
 #include "native/terminalpanes.h"
 #include "native/terminalview.h"
@@ -46,6 +47,7 @@ int main(int argc, char **argv)
     qmlRegisterType<TerminalView>("SolidTerm", 1, 0, "TerminalView");
     qmlRegisterType<TerminalPanes>("SolidTerm", 1, 0, "TerminalPanes");
     qmlRegisterType<KeyRecorder>("SolidTerm", 1, 0, "KeyRecorder");
+    qmlRegisterType<PaneHeader>("SolidTerm", 1, 0, "PaneHeader");
 
     QQmlApplicationEngine engine;
     SolidQmlEmbed::init(&engine, appDir);
