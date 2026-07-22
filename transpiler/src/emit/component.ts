@@ -72,10 +72,33 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   }
   const constAliases: Record<string, string> = {};
   for (const name of moduleConstDecls.keys()) constAliases[name] = `__const_${safeName(name)}`;
+
+  // Pre-collect ref variables (`ref={x}`) across the render tree. Refs are pushed to
+  // collectedRefs during emit (for the id line), but render-tree HANDLERS (a <Shortcut>/menu
+  // onActivated calling `x.method()`) are emitted before the ref element and need the
+  // substitution up front — otherwise `x` emits bare and QML throws "x is not defined".
+  const refAliases: Record<string, string> = {};
+  {
+    const walk = (node: t.Node | null | undefined): void => {
+      if (!node || typeof node !== "object") return;
+      if (t.isObjectExpression(node)) {
+        for (const pr of node.properties) {
+          if (t.isObjectProperty(pr) && !pr.computed && t.isIdentifier(pr.key, { name: "ref" }) && t.isIdentifier(pr.value))
+            refAliases[pr.value.name] = `_ref_${safeName(pr.value.name)}`;
+        }
+      }
+      for (const key of Object.keys(node)) {
+        const v = (node as any)[key];
+        if (Array.isArray(v)) v.forEach(walk);
+        else if (v && typeof v === "object" && typeof v.type === "string") walk(v);
+      }
+    };
+    walk(render);
+  }
   const scope: Scope = {
     table, mode: "binding", propsParam: props.param ?? undefined, propAliases, components, contexts, refs: collectedRefs, foreignQml, foreignImports,
     inputCounter, hoverCounter, usedWidgets, buttonGroups, resources: resources.map((r) => r.name), jsImports,
-    ...(moduleConstDecls.size > 0 ? { locals: { ...constAliases } } : {}),
+    ...((moduleConstDecls.size > 0 || Object.keys(refAliases).length > 0) ? { locals: { ...constAliases, ...refAliases } } : {}),
     ...(mutableLocals ? { mutableLocals } : {}),
     ...(helpers ? { helpers } : {}),
     ...(hasCtxBindings ? { ctxBindings, ctxValueShape: ctx?.ctxValueShape } : {}),

@@ -26,23 +26,23 @@ W.Div {
     cssClass: ["term-root"]
     Shortcut {
         sequences: [kSplitRight]
-        onActivated: { term.split(Qt.Horizontal) }
+        onActivated: { _ref_term.split(Qt.Horizontal) }
     }
     Shortcut {
         sequences: [kSplitDown]
-        onActivated: { term.split(Qt.Vertical) }
+        onActivated: { _ref_term.split(Qt.Vertical) }
     }
     Shortcut {
         sequences: [kClosePane]
-        onActivated: { term.closeFocused() }
+        onActivated: { _ref_term.closeFocused() }
     }
     Shortcut {
         sequences: [kFocusNext]
-        onActivated: { term.focusNext() }
+        onActivated: { _ref_term.focusNext() }
     }
     Shortcut {
         sequences: [kFocusPrev]
-        onActivated: { term.focusPrev() }
+        onActivated: { _ref_term.focusPrev() }
     }
     W.Div {
         cssClass: ["term-header"]
@@ -89,29 +89,29 @@ W.Div {
                 authorClass: ["tmenu"]
                 W.MenuItem {
                     text: "&Copy"
-                    onTriggered: { term.copyFocused() }
+                    onTriggered: { _ref_term.copyFocused() }
                 }
                 W.MenuItem {
                     text: "&Paste"
-                    onTriggered: { term.pasteFocused() }
+                    onTriggered: { _ref_term.pasteFocused() }
                 }
                 W.MenuSeparator { }
                 W.MenuItem {
                     text: "Split &right"
-                    onTriggered: { term.split(Qt.Horizontal) }
+                    onTriggered: { _ref_term.split(Qt.Horizontal) }
                 }
                 W.MenuItem {
                     text: "Split &down"
-                    onTriggered: { term.split(Qt.Vertical) }
+                    onTriggered: { _ref_term.split(Qt.Vertical) }
                 }
                 W.MenuItem {
                     text: "Close &pane"
-                    onTriggered: { term.closeFocused() }
+                    onTriggered: { _ref_term.closeFocused() }
                 }
                 W.MenuSeparator { }
                 W.MenuItem {
                     text: "Clear scrollback"
-                    onTriggered: { term.clearFocused() }
+                    onTriggered: { _ref_term.clearFocused() }
                 }
                 W.MenuItem {
                     text: "Pre&ferences…"
