@@ -88,6 +88,11 @@ QString NodeShims::solidQmlVersion() const
 #endif
 }
 
+void NodeShims::exitApp(int code)
+{
+    QCoreApplication::exit(code);
+}
+
 QStringList NodeShims::argv() const { return QCoreApplication::arguments(); }
 
 static QVariantMap fsError(const QString &code, const QString &message)
@@ -255,7 +260,7 @@ static const char *kNodeShim = R"JS(
         env: B.env(),
         cwd: function () { return B.cwd(); },
         nextTick: function (cb) { var a = Array.prototype.slice.call(arguments, 1); Promise.resolve().then(function () { cb.apply(null, a); }); },
-        exit: function () {},
+        exit: function (code) { B.exitApp(code === undefined ? 0 : Number(code)); },
         version: "v18.0.0-solidqml",
         // Electron idiom: `process.versions.solidQml` IS the native-runtime probe —
         // `typeof process !== "undefined" && !!process.versions?.solidQml`.

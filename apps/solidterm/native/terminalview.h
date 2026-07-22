@@ -26,6 +26,7 @@ class TerminalView : public QQuickPaintedItem {
     // OSC 0/2 window title from the running program (prompt integration etc.).
     Q_PROPERTY(QString title READ title NOTIFY titleChanged)
     Q_PROPERTY(int scrollbackLimit READ scrollbackLimit WRITE setScrollbackLimit NOTIFY scrollbackLimitChanged)
+    Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY selectionChanged)
 
 public:
     explicit TerminalView(QQuickItem *parent = nullptr);
@@ -45,6 +46,10 @@ public:
 
     Q_INVOKABLE void sendText(const QString &text);       // paste path
     Q_INVOKABLE void takeFocus() { forceActiveFocus(Qt::MouseFocusReason); }
+    bool hasSelection() const { return m_selValid; }
+    Q_INVOKABLE void copySelection();
+    Q_INVOKABLE void pasteClipboard();
+    Q_INVOKABLE void clearScrollback();
 
     void paint(QPainter *p) override;
 
@@ -55,12 +60,15 @@ signals:
     void scrollbackLimitChanged();
     void bellRang();
     void sessionFinished();
+    void selectionChanged();
 
 protected:
     void componentComplete() override;
     void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
     void keyPressEvent(QKeyEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
 
 public:
@@ -98,4 +106,17 @@ private:
     int m_scrollbackLimit = 8000;
     int m_scrollOffset = 0;                 // lines scrolled back from live (0 = live)
     bool m_started = false;
+
+    // Selection in ABSOLUTE line space (scrollback index; live rows continue past the ring), so
+    // it survives scrolling. Anchor = press point; end tracks the drag.
+    struct CellPos {
+        int absRow = 0;
+        int col = 0;
+    };
+    CellPos cellAt(const QPointF &p) const;
+    void selectedRange(CellPos &from, CellPos &to) const;
+    QString selectedText() const;
+    CellPos m_selAnchor, m_selEnd;
+    bool m_selValid = false;
+    bool m_selecting = false;
 };

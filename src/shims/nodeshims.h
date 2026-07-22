@@ -46,6 +46,9 @@ public:
     Q_INVOKABLE QString qtVersion() const;
     Q_INVOKABLE QString solidQmlVersion() const;
     Q_INVOKABLE QStringList argv() const;
+    // Real process.exit (Electron idiom — the owner's ambient-`process` directive): quits the
+    // app event loop with the code.
+    Q_INVOKABLE void exitApp(int code);
 
     // --- fs (synchronous) --- each returns a { ok, ... } map; the JS layer throws a Node-style error
     // when ok is false so callers see ENOENT/EEXIST etc. instead of silent failure.

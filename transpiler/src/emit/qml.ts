@@ -220,12 +220,19 @@ function emitInstance(name: string, propsArg: t.Node | undefined, children: t.No
     // component that sets implicitWidth/Height itself (e.g. a natural-size badge).
     const props = readProps(propsArg);
     const classLine = buildCssClassLine(props, scope, i(1));
-    const inner = [`${i(1)}${typeName} {`, `${i(2)}anchors.fill: parent`];
+    // ref={x} binds the FOREIGN instance itself (not the wrapper box) — handler calls like
+    // `term.copySelection()` land on the component.
+    const refLine: string[] = [];
+    if (props.ref) {
+      refLine.push(`${i(2)}id: _ref_${safeName(props.ref)}`);
+      if (scope.refs) scope.refs.push(props.ref);
+    }
+    const inner = [`${i(1)}${typeName} {`, ...refLine, `${i(2)}anchors.fill: parent`];
     if (propsArg && t.isObjectExpression(propsArg)) {
       for (const p of propsArg.properties) {
         if (!t.isObjectProperty(p) || !t.isIdentifier(p.key) || !t.isExpression(p.value)) continue;
         const k = p.key.name;
-        if (k === "children" || k === "class" || k === "classList") continue;
+        if (k === "children" || k === "class" || k === "classList" || k === "ref") continue;
         // width/height size the WRAPPER, not the item: route them to the foreign's implicit, which the
         // layout engine reads to size the box (the box then fills the item back via anchors.fill).
         const key = k === "width" ? "implicitWidth" : k === "height" ? "implicitHeight" : safeName(k);

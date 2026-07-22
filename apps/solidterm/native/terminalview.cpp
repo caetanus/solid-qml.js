@@ -11,7 +11,7 @@ TerminalView::TerminalView(QQuickItem *parent)
     m_font = QFont(QStringLiteral("monospace"));
     m_font.setPixelSize(15);
     m_font.setStyleHint(QFont::Monospace);
-    setAcceptedMouseButtons(Qt::AllButtons);
+    setAcceptedMouseButtons(Qt::LeftButton); // right passes to the solid <ContextMenu> above
     setActiveFocusOnTab(true);
     setOpaquePainting(true);
 
@@ -276,6 +276,22 @@ void TerminalView::paintCells(QPainter *p)
         }
     }
 
+    // Selection overlay: invert the selected spans (difference blend — no run replumbing).
+    if (m_selValid) {
+        CellPos from, to;
+        selectedRange(from, to);
+        p->setCompositionMode(QPainter::CompositionMode_Difference);
+        for (int row = 0; row < m_rows; ++row) {
+            const int absRow = int(m_scrollback.size()) - sbShown + row;
+            if (absRow < from.absRow || absRow > to.absRow)
+                continue;
+            const int c0 = absRow == from.absRow ? from.col : 0;
+            const int c1 = absRow == to.absRow ? to.col : m_cols - 1;
+            p->fillRect(QRectF(c0 * m_cellW, row * m_cellH, (c1 - c0 + 1) * m_cellW, m_cellH), Qt::white);
+        }
+        p->setCompositionMode(QPainter::CompositionMode_SourceOver);
+    }
+
     // Cursor (block; hollow when unfocused) — hidden while scrolled back.
     if (m_cursorVisible && sbShown == 0) {
         const QRectF r(m_cursor.col * m_cellW, m_cursor.row * m_cellH, m_cellW, m_cellH);
@@ -349,12 +365,18 @@ void TerminalView::keyPressEvent(QKeyEvent *event)
         QQuickPaintedItem::keyPressEvent(event);
         return;
     }
-    // Paste (Ctrl+Shift+V — the terminal convention; plain Ctrl+V belongs to the shell).
-    if ((event->modifiers() & Qt::ControlModifier) && (event->modifiers() & Qt::ShiftModifier)
-        && event->key() == Qt::Key_V) {
-        sendText(QGuiApplication::clipboard()->text());
-        event->accept();
-        return;
+    // Copy/paste (Ctrl+Shift+C/V — the terminal convention; plain Ctrl+C/V belong to the shell).
+    if ((event->modifiers() & Qt::ControlModifier) && (event->modifiers() & Qt::ShiftModifier)) {
+        if (event->key() == Qt::Key_V) {
+            pasteClipboard();
+            event->accept();
+            return;
+        }
+        if (event->key() == Qt::Key_C && m_selValid) {
+            copySelection();
+            event->accept();
+            return;
+        }
     }
     // Typing snaps back to live output.
     if (m_scrollOffset > 0) {
@@ -365,9 +387,120 @@ void TerminalView::keyPressEvent(QKeyEvent *event)
     event->accept();
 }
 
+TerminalView::CellPos TerminalView::cellAt(const QPointF &p) const
+{
+    CellPos c;
+    const int row = qBound(0, int(p.y() / m_cellH), m_rows - 1);
+    c.absRow = m_scrollback.size() - m_scrollOffset + row;
+    c.col = qBound(0, int(p.x() / m_cellW), m_cols - 1);
+    return c;
+}
+
+void TerminalView::selectedRange(CellPos &from, CellPos &to) const
+{
+    const bool fwd = m_selAnchor.absRow < m_selEnd.absRow
+        || (m_selAnchor.absRow == m_selEnd.absRow && m_selAnchor.col <= m_selEnd.col);
+    from = fwd ? m_selAnchor : m_selEnd;
+    to = fwd ? m_selEnd : m_selAnchor;
+}
+
+QString TerminalView::selectedText() const
+{
+    if (!m_selValid)
+        return QString();
+    CellPos from, to;
+    selectedRange(from, to);
+    QString out;
+    for (int absRow = from.absRow; absRow <= to.absRow; ++absRow) {
+        const int c0 = absRow == from.absRow ? from.col : 0;
+        const int c1 = absRow == to.absRow ? to.col : m_cols - 1;
+        QString line;
+        for (int col = c0; col <= c1; ++col) {
+            VTermScreenCell cell {};
+            if (absRow < m_scrollback.size()) {
+                const auto &cells = m_scrollback.at(absRow).cells;
+                if (col < cells.size())
+                    cell = cells.at(col);
+            } else {
+                const int liveRow = absRow - int(m_scrollback.size());
+                if (liveRow >= m_rows)
+                    break;
+                vterm_screen_get_cell(m_screen, VTermPos{ liveRow, col }, &cell);
+            }
+            if (cell.chars[0] == 0) {
+                line.append(QLatin1Char(' '));
+            } else {
+                for (int ci = 0; ci < VTERM_MAX_CHARS_PER_CELL && cell.chars[ci]; ++ci)
+                    line.append(QString::fromUcs4(&cell.chars[ci], 1));
+            }
+            if (cell.width > 1)
+                col += cell.width - 1;
+        }
+        while (line.endsWith(QLatin1Char(' ')))
+            line.chop(1);
+        out += line;
+        if (absRow != to.absRow)
+            out += QLatin1Char('\n');
+    }
+    return out;
+}
+
+void TerminalView::copySelection()
+{
+    const QString text = selectedText();
+    if (!text.isEmpty())
+        QGuiApplication::clipboard()->setText(text);
+}
+
+void TerminalView::pasteClipboard()
+{
+    sendText(QGuiApplication::clipboard()->text());
+}
+
+void TerminalView::clearScrollback()
+{
+    m_scrollback.clear();
+    m_scrollOffset = 0;
+    m_selValid = false;
+    emit selectionChanged();
+    update();
+}
+
 void TerminalView::mousePressEvent(QMouseEvent *event)
 {
     forceActiveFocus(Qt::MouseFocusReason);
+    if (event->button() == Qt::LeftButton) {
+        m_selAnchor = m_selEnd = cellAt(event->position());
+        m_selecting = true;
+        if (m_selValid) {
+            m_selValid = false;
+            emit selectionChanged();
+        }
+        update();
+    }
+    event->accept();
+}
+
+void TerminalView::mouseMoveEvent(QMouseEvent *event)
+{
+    if (!m_selecting)
+        return;
+    const CellPos p = cellAt(event->position());
+    if (p.absRow != m_selEnd.absRow || p.col != m_selEnd.col) {
+        m_selEnd = p;
+        const bool valid = m_selEnd.absRow != m_selAnchor.absRow || m_selEnd.col != m_selAnchor.col;
+        if (valid != m_selValid) {
+            m_selValid = valid;
+            emit selectionChanged();
+        }
+        update();
+    }
+    event->accept();
+}
+
+void TerminalView::mouseReleaseEvent(QMouseEvent *event)
+{
+    m_selecting = false;
     event->accept();
 }
 

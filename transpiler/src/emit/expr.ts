@@ -99,6 +99,17 @@ function cellRef(name: string, _scope: Scope): string {
 }
 
 /** Translate a Babel expression node to a QML-JS string, resolving names through the SymbolTable. */
+// An operand whose natural precedence is looser than member access / call needs grouping when it
+// becomes the OBJECT of `.`/`[]` or the CALLEE of `()`. (Identifiers, member/call chains, literals
+// and already-grouped primaries don't.)
+function parenObject(node: t.Node, emitted: string): string {
+  const loose = t.isLogicalExpression(node) || t.isBinaryExpression(node) || t.isConditionalExpression(node)
+    || t.isSequenceExpression(node) || t.isAssignmentExpression(node) || t.isArrowFunctionExpression(node)
+    || t.isFunctionExpression(node) || t.isUnaryExpression(node) || t.isAwaitExpression(node)
+    || t.isYieldExpression(node) || t.isObjectExpression(node);
+  return loose ? `(${emitted})` : emitted;
+}
+
 export function emitExpr(node: t.Node, scope: Scope): string {
   if (t.isParenthesizedExpression(node)) return `(${emitExpr(node.expression, scope)})`;
   if (t.isNumericLiteral(node)) return String(node.value);
@@ -196,7 +207,7 @@ export function emitExpr(node: t.Node, scope: Scope): string {
   }
 
   if (t.isCallExpression(node)) {
-    const callee = emitExpr(node.callee, scope);
+    const callee = parenObject(node.callee, emitExpr(node.callee, scope));
     const args = node.arguments.map((a) => emitExpr(a, scope)).join(", ");
     return `${callee}(${args})`;
   }
@@ -218,7 +229,11 @@ export function emitExpr(node: t.Node, scope: Scope): string {
       if (node.computed) return `(${ref} || ({}))[${emitExpr(node.property, scope)}]`;
       return `(${ref} || ({})).${(node.property as t.Identifier).name}`;
     }
-    const obj = emitExpr(node.object, scope);
+    // The object of a member access must be parenthesized when it binds LOOSER than `.`/`[]`
+    // (a Logical/Conditional/Binary/Sequence/… object): `(a || b).x` must NOT flatten to
+    // `a || b.x` (a precedence bug that silently changed the value — e.g. a scheme lookup
+    // returning the object instead of its colour, painting the terminal black).
+    const obj = parenObject(node.object, emitExpr(node.object, scope));
     if (node.computed) return `${obj}[${emitExpr(node.property, scope)}]`;
     return `${obj}.${(node.property as t.Identifier).name}`;
   }

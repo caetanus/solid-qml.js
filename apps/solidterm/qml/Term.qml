@@ -8,18 +8,24 @@ import SolidTerm 1.0 as QM_SolidTerm
 import solidqml.Widgets 1.0 as W
 W.Div {
     id: __self
-    property var title: "solidterm"
+    property var uiFontFamily: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").fontFamily || "monospace"
+    property var uiFontSize: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").fontSize || 15
+    property var scheme: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").scheme || "midnight"
+    property var scrollback: JSON.parse(localStorage.getItem("solidterm.cfg") || "{}").scrollback || 8000
+    property var cfgOpen: false
     property var state_: "live"
+    readonly property var __const_SCHEMES: ({ midnight: ({ bg: "#161a21", fg: "#d4dae3", label: "Midnight" }), solarized: ({ bg: "#002b36", fg: "#93a1a1", label: "Solarized Dark" }), gruvbox: ({ bg: "#282828", fg: "#ebdbb2", label: "Gruvbox" }), paper: ({ bg: "#f7f2e9", fg: "#3a3532", label: "Paper (light)" }) })
     cssClass: ["term-root"]
     W.Div {
         cssClass: ["term-header"]
         W.Text {
             cssClass: ["term-title"]
-            text: "" + (title)
+            text: "solidterm"
         }
-        W.Text {
-            cssClass: ["term-badge"]
-            text: "v0.1 — pane 1"
+        W.Button {
+            cssClass: ["term-gear"]
+            text: "⚙"
+            onClicked: cfgOpen = true
         }
     }
     W.Div {
@@ -28,9 +34,46 @@ W.Div {
             cssPrimitive: "div"
             cssClass: ["term-pane"]
             QM_SolidTerm.TerminalView {
+                id: _ref_term
                 anchors.fill: parent
-                onTitleChanged: function() { return 0 }
-                onSessionFinished: function() { return state_ = "shell exited" }
+                fontFamily: uiFontFamily
+                fontSize: uiFontSize
+                background: (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).bg
+                foreground: (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).fg
+                scrollbackLimit: scrollback
+                onSessionFinished: function() { return process.exit(0) }
+            }
+        }
+        Item {
+            id: __menuHost0
+            anchors.fill: parent
+            Window.onActiveChanged: if (!Window.active) __menu0.close()
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.RightButton
+                onClicked: function(mouse) { __menu0.popup(mouse.x, mouse.y) }
+            }
+            W.Menu {
+                id: __menu0
+                cssAncestor: __menuHost0
+                W.MenuItem {
+                    text: "&Copy"
+                    onTriggered: { term.copySelection() }
+                }
+                W.MenuItem {
+                    text: "&Paste"
+                    onTriggered: { term.pasteClipboard() }
+                }
+                W.MenuSeparator { }
+                W.MenuItem {
+                    text: "Clear scrollback"
+                    onTriggered: { term.clearScrollback() }
+                }
+                W.MenuSeparator { }
+                W.MenuItem {
+                    text: "Pre&ferences…"
+                    onTriggered: { cfgOpen = true }
+                }
             }
         }
     }
@@ -42,7 +85,88 @@ W.Div {
         }
         W.Text {
             cssClass: ["term-hint"]
-            text: "Ctrl+Shift+V paste · wheel scrollback"
+            text: "Ctrl+Shift+C/V copy/paste · wheel scrollback · right-click menu"
+        }
+    }
+    W.Dialog {
+        open: !!(cfgOpen)
+        title: "solidterm — preferences"
+        cssClass: ["cfg"]
+        onDialogClosed: { cfgOpen = false }
+        W.Div {
+            cssClass: ["cfg-grid"]
+            W.Text {
+                cssClass: ["cfg-l"]
+                text: "Font family"
+            }
+            W.TextField {
+                id: __input2
+                onTextEdited: { uiFontFamily = text; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
+                Binding {
+                    target: __input2
+                    property: "text"
+                    value: uiFontFamily
+                    restoreMode: Binding.RestoreNone
+                }
+            }
+            W.Text {
+                cssClass: ["cfg-l"]
+                text: "Font size"
+            }
+            W.SpinBox {
+                id: __input3
+                from: 8
+                to: 32
+                stepSize: 1
+                onValueModified: { uiFontSize = __ev; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
+                Binding {
+                    target: __input3
+                    property: "value"
+                    value: uiFontSize
+                    restoreMode: Binding.RestoreNone
+                }
+            }
+            W.Text {
+                cssClass: ["cfg-l"]
+                text: "Theme"
+            }
+            W.Select {
+                id: __input4
+                model: ["Midnight", "Solarized Dark", "Gruvbox", "Paper (light)"]
+                values: ["midnight", "solarized", "gruvbox", "paper"]
+                onActivated: (index) => { scheme = __ev; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
+                Binding {
+                    target: __input4
+                    property: "currentIndex"
+                    value: __input4.values.indexOf(scheme)
+                    restoreMode: Binding.RestoreNone
+                }
+            }
+            W.Text {
+                cssClass: ["cfg-l"]
+                text: "Scrollback lines"
+            }
+            W.SpinBox {
+                id: __input5
+                from: 0
+                to: 100000
+                stepSize: 1000
+                onValueModified: { scrollback = __ev; (localStorage.setItem("solidterm.cfg", JSON.stringify(({ fontFamily: uiFontFamily, fontSize: uiFontSize, scheme: scheme, scrollback: scrollback })))); }
+                Binding {
+                    target: __input5
+                    property: "value"
+                    value: scrollback
+                    restoreMode: Binding.RestoreNone
+                }
+            }
+        }
+        W.Div {
+            cssClass: ["cfg-actions"]
+            W.Button {
+                isDefault: true
+                text: "Close"
+                onClicked: cfgOpen = false
+            }
         }
     }
 }
