@@ -894,8 +894,12 @@ function translateValueHandler(fn: t.ArrowFunctionExpression | t.FunctionExpress
   } else {
     body = emitExpr(fn.body, inner);
   }
-  // Replace the DOM-style accessor with the QML equivalent expression.
-  return body.replace(/__ev\.(?:currentTarget|target)\.value/g, valueExpr);
+  // Replace the DOM-style accessor with the QML equivalent expression, then any BARE `__ev`
+  // (a handler that uses the value param directly, `(v) => setX(v)`, not `v.target.value`) —
+  // otherwise the param stays undefined and the write silently no-ops (settings not saved).
+  return body
+    .replace(/__ev\.(?:currentTarget|target)\.value/g, valueExpr)
+    .replace(/\b__ev\b/g, valueExpr);
 }
 
 /** <input type="range" min=… max=… step=… value={} onInput={} onChange={} />

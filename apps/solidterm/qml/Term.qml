@@ -177,7 +177,7 @@ W.Div {
                         cssClass: ["cfg-sel"]
                         model: ["11 px", "12 px", "13 px", "14 px", "15 px", "16 px", "18 px", "20 px", "24 px"]
                         values: ["11", "12", "13", "14", "15", "16", "18", "20", "24"]
-                        onActivated: (index) => { uiFontSize = parseInt(__ev); termConfig.set("fontSize", parseInt(__ev)); }
+                        onActivated: (index) => { uiFontSize = parseInt(__input3.values[index]); termConfig.set("fontSize", parseInt(__input3.values[index])); }
                         Binding {
                             target: __input3
                             property: "currentIndex"
@@ -201,7 +201,7 @@ W.Div {
                         cssClass: ["cfg-sel"]
                         model: ["System", "Midnight", "Solarized Dark", "Gruvbox", "Paper (light)"]
                         values: ["system", "midnight", "solarized", "gruvbox", "paper"]
-                        onActivated: (index) => { scheme = __ev; termConfig.set("scheme", __ev); }
+                        onActivated: (index) => { scheme = __input4.values[index]; termConfig.set("scheme", __input4.values[index]); }
                         Binding {
                             target: __input4
                             property: "currentIndex"
@@ -228,7 +228,7 @@ W.Div {
                         cssClass: ["cfg-sel"]
                         model: ["1000 lines", "5000 lines", "8000 lines", "20000 lines", "100000 lines"]
                         values: ["1000", "5000", "8000", "20000", "100000"]
-                        onActivated: (index) => { scrollback = parseInt(__ev); termConfig.set("scrollback", parseInt(__ev)); }
+                        onActivated: (index) => { scrollback = parseInt(__input5.values[index]); termConfig.set("scrollback", parseInt(__input5.values[index])); }
                         Binding {
                             target: __input5
                             property: "currentIndex"

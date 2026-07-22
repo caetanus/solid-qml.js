@@ -41,3 +41,21 @@ test("ref: a menu handler after the ref also resolves it", async () => {
   const app = await generate(src, "/tmp/t/app.tsx");
   assert.match(app.entry, /_ref_view\.copy\(\)/);
 });
+
+test("select: onChange with a bare value param resolves to the picked value (not undefined)", async () => {
+  const src = `
+    export function App() {
+      const [n, setN] = createSignal(1);
+      return (
+        <select value={"" + n()} onChange={(v) => setN(parseInt(v))}>
+          <option value="1">one</option>
+          <option value="2">two</option>
+        </select>
+      );
+    }
+  `;
+  const app = await generate(src, "/tmp/t/app.tsx");
+  // The bare param `v` must become the picked value, not the undefined `__ev`.
+  assert.match(app.entry, /onActivated: \(index\) => \{ n = parseInt\(__input0\.values\[index\]\) \}/);
+  assert.doesNotMatch(app.entry, /__ev/);
+});
