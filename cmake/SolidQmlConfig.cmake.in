@@ -1,0 +1,22 @@
+@PACKAGE_INIT@
+
+# SolidQml — the solid-qml embeddable runtime for pre-existing QtQuick apps.
+# Usage:
+#   find_package(SolidQml REQUIRED)
+#   target_link_libraries(myapp PRIVATE SolidQml::solidqml)
+# then in C++: #include <solidqml/solidqmlembed.h>; SolidQmlEmbed::init(&engine);
+
+include(CMakeFindDependencyMacro)
+find_dependency(Qt6 COMPONENTS Quick)
+
+if(NOT TARGET SolidQml::solidqml)
+    find_library(_solidqml_lib NAMES solidqml HINTS "@PACKAGE_CMAKE_INSTALL_LIBDIR@" PATH_SUFFIXES lib)
+    find_path(_solidqml_inc solidqml/solidqmlembed.h HINTS "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@" PATH_SUFFIXES include)
+    add_library(SolidQml::solidqml SHARED IMPORTED)
+    set_target_properties(SolidQml::solidqml PROPERTIES
+        IMPORTED_LOCATION "${_solidqml_lib}"
+        INTERFACE_INCLUDE_DIRECTORIES "${_solidqml_inc}"
+        INTERFACE_LINK_LIBRARIES "Qt6::Quick")
+endif()
+
+check_required_components(SolidQml)

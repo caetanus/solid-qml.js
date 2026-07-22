@@ -57,6 +57,7 @@ qt6_templates_private_dep = dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Q
 # back-end instead of qrc-embedded QML.
 solid_qml_loader_qt_sources = qt6.preprocess(
   moc_headers: files(
+    'src/embed/solidqmlembed.h',
     'src/shims/weblocalstorage.h',
     'src/shims/webfetch.h',
     'src/shims/webtimers.h',
@@ -100,10 +101,13 @@ solid_qml_loader_qt_sources = qt6.preprocess(
   ),
 )
 
-executable(
-  'solid-qml-loader',
+# ─── libsolidqml: the embeddable runtime (owner 2026-07-22: host pre-existing C++/QtQuick
+# apps). Everything except the loader main: widgets, shims, the embed surface. The loader links
+# it; external QtQuick apps consume it via pkg-config (`solidqml`) or CMake
+# (find_package(SolidQml)) and call SolidQmlEmbed::init(engine).
+solidqml_lib = shared_library(
+  'solidqml',
   files(
-    'src/loader.cpp',
     'src/shims/weblocalstorage.cpp',
     'src/shims/webfetch.cpp',
     'src/shims/webtimers.cpp',
@@ -145,9 +149,59 @@ executable(
     'src/widgets/treeview.cpp',
     'src/widgets/tumbler.cpp',
     'src/widgets/snippetwidget.cpp',
+    'src/embed/solidqmlembed.cpp',
   ),
   solid_qml_loader_qt_sources,
   cpp_args: notify_args,
+  include_directories: include_directories('src'),
   dependencies: [qml_css_engine_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep, qt6_core_private_dep, qt6_templates_private_dep],
+  version: '0.2.0',
   install: true,
+)
+
+solidqml_dep = declare_dependency(
+  link_with: solidqml_lib,
+  include_directories: include_directories('src'),
+  dependencies: [qml_css_engine_dep],
+)
+
+install_headers('src/embed/solidqmlembed.h', subdir: 'solidqml')
+
+pkg = import('pkgconfig')
+pkg.generate(
+  solidqml_lib,
+  name: 'solidqml',
+  description: 'solid-qml embeddable runtime (CSS engine, widgets, shims, SolidIsland)',
+  subdirs: 'solidqml',
+  requires: ['Qt6Quick'],
+)
+
+cmake = import('cmake')
+cmake.write_basic_package_version_file(name: 'SolidQml', version: '0.2.0')
+cmake.configure_package_config_file(
+  name: 'SolidQml',
+  input: 'cmake/SolidQmlConfig.cmake.in',
+  configuration: configuration_data(),
+)
+
+executable(
+  'solid-qml-loader',
+  files('src/loader.cpp'),
+  cpp_args: notify_args,
+  include_directories: include_directories('src'),
+  dependencies: [solidqml_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep, qt6_core_private_dep, qt6_templates_private_dep],
+  install: true,
+)
+
+
+# Demo: a vanilla QtQuick app hosting a solid-qml island (Direção A of the embed plan).
+executable(
+  'embed-host-demo',
+  files('examples/embed-host/main.cpp'),
+  cpp_args: notify_args + [
+    '-DSOLIDQML_APP_DIR="' + meson.current_source_dir() + '/qml/solidqml/"',
+    '-DEMBED_HOST_QML="' + meson.current_source_dir() + '/examples/embed-host/main.qml"',
+  ],
+  include_directories: include_directories('src'),
+  dependencies: [solidqml_dep, qt6_widgets_dep],
 )
