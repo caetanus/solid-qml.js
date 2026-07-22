@@ -1,24 +1,29 @@
 #pragma once
 
+#include "glyphcache.h"
 #include "ptysession.h"
 
 #include <QColor>
 #include <QFont>
-#include <QQuickPaintedItem>
+#include <QQuickItem>
 #include <QStringList>
 #include <QVector>
 
 #include <vterm.h>
 
+class QSGTexture;
+
 // The terminal pane: a QQuickItem hosting one shell session. libvterm does the VT/xterm
 // interpretation (escape parsing, screen model, damage) — the same core neovim embeds; this
-// item feeds it pty bytes, renders its screen (run-merged cells; scene-graph textured, so GL/RHI
-// accelerated like every Quick item), forwards keys, and keeps a scrollback ring.
+// item feeds it pty bytes and renders its screen straight on the scene graph (GPU): each glyph is
+// rasterised ONCE into a coverage atlas (GlyphCache) and the whole grid is drawn as textured quads
+// through a custom RHI material — no per-frame QPainter, "as fast as alacritty" (owner). Keeps a
+// scrollback ring, forwards keys, tracks selection.
 //
 // Registered by the app binary as `SolidTerm 1.0` and consumed from TSX via
 // `import { TerminalView } from "qml:SolidTerm"` — the app's OWN C++ entering the solid UI
 // through the standard qml-module door (Direção B).
-class TerminalView : public QQuickPaintedItem {
+class TerminalView : public QQuickItem {
     Q_OBJECT
     Q_PROPERTY(QString fontFamily READ fontFamily WRITE setFontFamily NOTIFY fontChanged)
     Q_PROPERTY(int fontSize READ fontSize WRITE setFontSize NOTIFY fontChanged)
@@ -62,7 +67,7 @@ public:
     Q_INVOKABLE void pasteClipboard();
     Q_INVOKABLE void clearScrollback();
 
-    void paint(QPainter *p) override;
+    QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) override;
 
 signals:
     void fontChanged();
@@ -100,7 +105,6 @@ private:
 
     void ensureSession();
     void applyGrid();                       // width/height/font → rows/cols → vterm + pty
-    void paintCells(QPainter *p);
     QColor toQColor(VTermColor c, bool isFg) const;
     void keyToVTerm(QKeyEvent *event);
 
@@ -108,6 +112,7 @@ private:
     VTermScreen *m_screen = nullptr;
     PtySession m_pty;
     QFont m_font;
+    GlyphCache m_glyphs;
     qreal m_cellW = 8, m_cellH = 16, m_cellAscent = 12;
     int m_rows = 24, m_cols = 80;
     QColor m_background = QColor("#161a21");

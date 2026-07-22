@@ -4,17 +4,105 @@
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QKeySequence>
-#include <QPainter>
+#include <QQuickWindow>
+#include <QSGGeometry>
+#include <QSGGeometryNode>
+#include <QSGMaterial>
+#include <QSGMaterialShader>
+#include <QSGTexture>
+#include <QSGVertexColorMaterial>
+
+#include <memory>
+#include <vector>
+
+// ─── GPU glyph material ───────────────────────────────────────────────────────────────────────────
+// Samples the coverage atlas (.r) and tints by the per-vertex foreground colour (premultiplied in
+// the fragment shader). One instance per TerminalView; its texture is the item's glyph atlas.
+namespace {
+
+struct GlyphVertex { float x, y, u, v, r, g, b, a; };
+
+const QSGGeometry::Attribute kGlyphAttrs[] = {
+    QSGGeometry::Attribute::create(0, 2, QSGGeometry::FloatType, true),  // pos
+    QSGGeometry::Attribute::create(1, 2, QSGGeometry::FloatType, false), // uv
+    QSGGeometry::Attribute::create(2, 4, QSGGeometry::FloatType, false), // color
+};
+const QSGGeometry::AttributeSet kGlyphAttrSet = { 3, sizeof(GlyphVertex), kGlyphAttrs };
+
+class GlyphMaterial : public QSGMaterial {
+public:
+    GlyphMaterial() { setFlag(Blending, true); }
+    QSGMaterialType *type() const override { static QSGMaterialType t; return &t; }
+    QSGMaterialShader *createShader(QSGRendererInterface::RenderMode) const override;
+    int compare(const QSGMaterial *o) const override {
+        const auto *m = static_cast<const GlyphMaterial *>(o);
+        if (texture == m->texture)
+            return 0;
+        const qint64 a = texture ? texture->comparisonKey() : 0;
+        const qint64 b = m->texture ? m->texture->comparisonKey() : 0;
+        return a < b ? -1 : 1;
+    }
+    // The material OWNS its atlas texture, so it's freed on the render thread when the node tree is
+    // torn down — never touched from the GUI thread. `texture` is the raw view the shader binds.
+    void setTexture(QSGTexture *t) { m_tex.reset(t); texture = t; }
+    QSGTexture *texture = nullptr;
+
+private:
+    std::unique_ptr<QSGTexture> m_tex;
+};
+
+class GlyphShader : public QSGMaterialShader {
+public:
+    GlyphShader()
+    {
+        setShaderFileName(VertexStage, QStringLiteral(":/solidterm/shaders/glyph.vert.qsb"));
+        setShaderFileName(FragmentStage, QStringLiteral(":/solidterm/shaders/glyph.frag.qsb"));
+    }
+    bool updateUniformData(RenderState &state, QSGMaterial *, QSGMaterial *) override
+    {
+        QByteArray *buf = state.uniformData();
+        bool changed = false;
+        if (state.isMatrixDirty()) {
+            const QMatrix4x4 m = state.combinedMatrix();
+            memcpy(buf->data(), m.constData(), 64);
+            changed = true;
+        }
+        if (state.isOpacityDirty()) {
+            const float o = state.opacity();
+            memcpy(buf->data() + 64, &o, 4);
+            changed = true;
+        }
+        return changed;
+    }
+    void updateSampledImage(RenderState &state, int binding, QSGTexture **texture,
+                            QSGMaterial *newMaterial, QSGMaterial *) override
+    {
+        if (binding != 1)
+            return;
+        auto *mat = static_cast<GlyphMaterial *>(newMaterial);
+        if (!mat->texture)
+            return;
+        mat->texture->commitTextureOperations(state.rhi(), state.resourceUpdateBatch());
+        *texture = mat->texture;
+    }
+};
+
+QSGMaterialShader *GlyphMaterial::createShader(QSGRendererInterface::RenderMode) const
+{
+    return new GlyphShader;
+}
+
+} // namespace
 
 TerminalView::TerminalView(QQuickItem *parent)
-    : QQuickPaintedItem(parent)
+    : QQuickItem(parent)
 {
     m_font = QFont(QStringLiteral("monospace"));
     m_font.setPixelSize(15);
     m_font.setStyleHint(QFont::Monospace);
     setAcceptedMouseButtons(Qt::LeftButton); // right passes to the solid <ContextMenu> above
     setActiveFocusOnTab(true);
-    setOpaquePainting(true);
+    setFlag(ItemHasContents, true);
 
     connect(&m_pty, &PtySession::bytesRead, this, [this](const QByteArray &bytes) {
         if (!m_vt)
@@ -138,7 +226,7 @@ void TerminalView::ensureSession()
 
 void TerminalView::componentComplete()
 {
-    QQuickPaintedItem::componentComplete();
+    QQuickItem::componentComplete();
     ensureStarted();
 }
 
@@ -150,10 +238,11 @@ void TerminalView::ensureStarted()
 
 void TerminalView::applyGrid()
 {
-    const QFontMetricsF fm(m_font);
-    m_cellW = fm.horizontalAdvance(QLatin1Char('M'));
-    m_cellH = fm.height();
-    m_cellAscent = fm.ascent();
+    // The grid uses the GlyphCache's (integer) cell metrics, so every cell lands exactly on an
+    // atlas tile — glyphs stay crisp (no fractional placement). setFont is a no-op when unchanged.
+    m_glyphs.setFont(m_font.family(), m_font.pixelSize());
+    m_cellW = m_glyphs.cellWidth();
+    m_cellH = m_glyphs.cellHeight();
     const int cols = qMax(2, int(width() / m_cellW));
     const int rows = qMax(2, int(height() / m_cellH));
     if (rows == m_rows && cols == m_cols)
@@ -170,7 +259,7 @@ void TerminalView::applyGrid()
 
 void TerminalView::geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry)
 {
-    QQuickPaintedItem::geometryChange(newGeometry, oldGeometry);
+    QQuickItem::geometryChange(newGeometry, oldGeometry);
     if (isComponentComplete())
         applyGrid();
 }
@@ -188,26 +277,68 @@ QColor TerminalView::toQColor(VTermColor c, bool isFg) const
     Q_UNUSED(isFg);
 }
 
-void TerminalView::paint(QPainter *p)
+// ─── scene-graph build ────────────────────────────────────────────────────────────────────────────
+// Runs on the render thread with the GUI thread blocked (the Quick sync point), so reading the
+// vterm screen here is safe. Builds three geometry nodes drawn back-to-front: cell backgrounds +
+// selection (vertex colour), glyphs (atlas material), cursor (vertex colour, on top).
+
+namespace {
+
+inline void pushBgQuad(std::vector<QSGGeometry::ColoredPoint2D> &v, qreal x, qreal y, qreal w,
+                       qreal h, const QColor &c)
 {
-    p->fillRect(boundingRect(), m_background);
-    if (!m_screen)
-        return;
-    p->setFont(m_font);
-    paintCells(p);
+    const uchar r = uchar(c.red()), g = uchar(c.green()), b = uchar(c.blue()), a = uchar(c.alpha());
+    const float x0 = float(x), y0 = float(y), x1 = float(x + w), y1 = float(y + h);
+    QSGGeometry::ColoredPoint2D tl, tr, bl, br;
+    tl.set(x0, y0, r, g, b, a);
+    tr.set(x1, y0, r, g, b, a);
+    bl.set(x0, y1, r, g, b, a);
+    br.set(x1, y1, r, g, b, a);
+    v.insert(v.end(), { tl, tr, bl, bl, tr, br }); // two triangles
 }
 
-void TerminalView::paintCells(QPainter *p)
+inline void pushGlyphQuad(std::vector<GlyphVertex> &v, qreal x, qreal y, qreal w, qreal h,
+                          const QRectF &uv, const QColor &c)
 {
+    const float r = float(c.redF()), g = float(c.greenF()), b = float(c.blueF()), a = 1.0f;
+    const float x0 = float(x), y0 = float(y), x1 = float(x + w), y1 = float(y + h);
+    const float u0 = float(uv.left()), v0 = float(uv.top());
+    const float u1 = float(uv.right()), v1 = float(uv.bottom());
+    const GlyphVertex tl{ x0, y0, u0, v0, r, g, b, a };
+    const GlyphVertex tr{ x1, y0, u1, v0, r, g, b, a };
+    const GlyphVertex bl{ x0, y1, u0, v1, r, g, b, a };
+    const GlyphVertex br{ x1, y1, u1, v1, r, g, b, a };
+    v.insert(v.end(), { tl, tr, bl, bl, tr, br });
+}
+
+QSGGeometryNode *takeChild(QSGNode *root, int index)
+{
+    return index < root->childCount() ? static_cast<QSGGeometryNode *>(root->childAtIndex(index)) : nullptr;
+}
+
+} // namespace
+
+QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
+{
+    if (!m_screen || width() <= 0 || height() <= 0) {
+        delete oldNode;
+        return nullptr;
+    }
+
+    std::vector<QSGGeometry::ColoredPoint2D> bg;
+    std::vector<GlyphVertex> glyphs;
+    std::vector<QSGGeometry::ColoredPoint2D> cursor;
+
+    // Base background fills the whole item (so gaps between cells and the last partial row are clean).
+    pushBgQuad(bg, 0, 0, width(), height(), m_background);
+
     const int sbShown = m_scrollOffset;
-    QString run;
-    // Rows: the top `sbShown` rows come from scrollback (when scrolled), the rest are live.
     for (int row = 0; row < m_rows; ++row) {
         const int liveRow = row - sbShown;
         const VTermScreenCell *sbCells = nullptr;
         int sbCols = 0;
         if (liveRow < 0) {
-            const int idx = m_scrollback.size() + liveRow; // liveRow is negative
+            const int idx = m_scrollback.size() + liveRow;
             if (idx < 0)
                 continue;
             sbCells = m_scrollback.at(idx).cells.constData();
@@ -225,91 +356,143 @@ void TerminalView::paintCells(QPainter *p)
                 vterm_screen_get_cell(m_screen, VTermPos{ liveRow, col }, &cell);
             }
             const int cw = cell.width > 0 ? cell.width : 1;
+            const qreal x = col * m_cellW;
+            const qreal w = cw * m_cellW;
 
             QColor fg = toQColor(cell.fg, true);
-            QColor bg = toQColor(cell.bg, false);
+            QColor bgc = toQColor(cell.bg, false);
             if (cell.attrs.reverse)
-                std::swap(fg, bg);
+                std::swap(fg, bgc);
+            if (bgc != m_background)
+                pushBgQuad(bg, x, y, w, m_cellH, bgc);
 
-            // Merge the run of consecutive cells with identical attrs into ONE fill + ONE text
-            // draw (the difference between 60fps and molasses on full-screen output).
-            run.clear();
-            const auto sameStyle = [&](const VTermScreenCell &o) {
-                QColor ofg = toQColor(o.fg, true), obg = toQColor(o.bg, false);
-                if (o.attrs.reverse)
-                    std::swap(ofg, obg);
-                return ofg == fg && obg == bg && o.attrs.bold == cell.attrs.bold
-                    && o.attrs.underline == cell.attrs.underline && o.attrs.italic == cell.attrs.italic;
-            };
-            int runStart = col;
-            while (col < m_cols) {
-                VTermScreenCell c2 {};
-                if (sbCells) {
-                    if (col < sbCols)
-                        c2 = sbCells[col];
-                } else {
-                    vterm_screen_get_cell(m_screen, VTermPos{ liveRow, col }, &c2);
-                }
-                if (col != runStart && !sameStyle(c2))
-                    break;
-                if (c2.chars[0] == 0) {
-                    run.append(QLatin1Char(' '));
-                } else {
-                    for (int ci = 0; ci < VTERM_MAX_CHARS_PER_CELL && c2.chars[ci]; ++ci)
-                        run.append(QString::fromUcs4(&c2.chars[ci], 1));
-                }
-                col += c2.width > 0 ? c2.width : 1;
+            // One textured quad per non-blank cell — the atlas makes per-cell quads cheap, so the
+            // old run-merge (a QPainter optimisation) is gone.
+            QString cluster;
+            for (int ci = 0; ci < VTERM_MAX_CHARS_PER_CELL && cell.chars[ci]; ++ci)
+                cluster.append(QString::fromUcs4(&cell.chars[ci], 1));
+            if (!cluster.isEmpty() && cluster != QLatin1String(" ")) {
+                const GlyphCache::Entry e = m_glyphs.glyph(cluster, cell.attrs.bold, cell.attrs.italic, cw);
+                if (e.valid)
+                    pushGlyphQuad(glyphs, x, y, w, m_cellH, e.uv, fg);
             }
+            if (cell.attrs.underline)
+                pushBgQuad(bg, x, y + m_cellH - 1, w, 1, fg);
 
-            const qreal x = runStart * m_cellW;
-            const qreal w = (col - runStart) * m_cellW;
-            if (bg != m_background)
-                p->fillRect(QRectF(x, y, w, m_cellH), bg);
-            if (!run.trimmed().isEmpty() || cell.attrs.underline) {
-                QFont f = m_font;
-                if (cell.attrs.bold)
-                    f.setBold(true);
-                if (cell.attrs.italic)
-                    f.setItalic(true);
-                if (cell.attrs.underline)
-                    f.setUnderline(true);
-                p->setFont(f);
-                p->setPen(fg);
-                p->drawText(QPointF(x, y + m_cellAscent), run);
-                p->setFont(m_font);
-            }
-            Q_UNUSED(cw);
+            col += cw;
         }
     }
 
-    // Selection overlay: invert the selected spans (difference blend — no run replumbing).
+    // Selection: a translucent highlight behind the text (drawn last in the bg node → over cell
+    // backgrounds, under glyphs).
     if (m_selValid) {
         CellPos from, to;
         selectedRange(from, to);
-        p->setCompositionMode(QPainter::CompositionMode_Difference);
+        QColor sel = m_foreground;
+        sel.setAlpha(64);
         for (int row = 0; row < m_rows; ++row) {
             const int absRow = int(m_scrollback.size()) - sbShown + row;
             if (absRow < from.absRow || absRow > to.absRow)
                 continue;
             const int c0 = absRow == from.absRow ? from.col : 0;
             const int c1 = absRow == to.absRow ? to.col : m_cols - 1;
-            p->fillRect(QRectF(c0 * m_cellW, row * m_cellH, (c1 - c0 + 1) * m_cellW, m_cellH), Qt::white);
+            pushBgQuad(bg, c0 * m_cellW, row * m_cellH, (c1 - c0 + 1) * m_cellW, m_cellH, sel);
         }
-        p->setCompositionMode(QPainter::CompositionMode_SourceOver);
     }
 
-    // Cursor (block; hollow when unfocused) — hidden while scrolled back.
+    // Cursor: a semi-transparent block (focused) so the glyph shows through, or an outline
+    // (unfocused). Hidden while scrolled back.
     if (m_cursorVisible && sbShown == 0) {
-        const QRectF r(m_cursor.col * m_cellW, m_cursor.row * m_cellH, m_cellW, m_cellH);
+        const qreal cx = m_cursor.col * m_cellW, cy = m_cursor.row * m_cellH;
         if (hasActiveFocus()) {
-            p->setCompositionMode(QPainter::CompositionMode_Difference);
-            p->fillRect(r, Qt::white);
-            p->setCompositionMode(QPainter::CompositionMode_SourceOver);
+            QColor cur = m_foreground;
+            cur.setAlpha(140);
+            pushBgQuad(cursor, cx, cy, m_cellW, m_cellH, cur);
         } else {
-            p->setPen(m_foreground);
-            p->drawRect(r.adjusted(0.5, 0.5, -0.5, -0.5));
+            pushBgQuad(cursor, cx, cy, m_cellW, 1, m_foreground);
+            pushBgQuad(cursor, cx, cy + m_cellH - 1, m_cellW, 1, m_foreground);
+            pushBgQuad(cursor, cx, cy, 1, m_cellH, m_foreground);
+            pushBgQuad(cursor, cx + m_cellW - 1, cy, 1, m_cellH, m_foreground);
         }
     }
+
+    // If the atlas overflowed mid-build (astronomically unlikely), reset it and ask the GUI thread
+    // (queued — we're on the render thread here) to re-render with a fresh atlas.
+    if (m_glyphs.overflowed()) {
+        m_glyphs.reset();
+        QMetaObject::invokeMethod(this, [this] { update(); }, Qt::QueuedConnection);
+    }
+
+    QSGNode *root = oldNode;
+    if (!root)
+        root = new QSGNode;
+
+    // Child 0: backgrounds + selection (vertex colour).
+    QSGGeometryNode *bgNode = takeChild(root, 0);
+    if (!bgNode) {
+        bgNode = new QSGGeometryNode;
+        auto *geo = new QSGGeometry(QSGGeometry::defaultAttributes_ColoredPoint2D(), 0);
+        geo->setDrawingMode(QSGGeometry::DrawTriangles);
+        bgNode->setGeometry(geo);
+        bgNode->setFlag(QSGNode::OwnsGeometry);
+        auto *mat = new QSGVertexColorMaterial;
+        bgNode->setMaterial(mat);
+        bgNode->setFlag(QSGNode::OwnsMaterial);
+        root->appendChildNode(bgNode);
+    }
+    {
+        QSGGeometry *geo = bgNode->geometry();
+        geo->allocate(int(bg.size()));
+        memcpy(geo->vertexData(), bg.data(), bg.size() * sizeof(QSGGeometry::ColoredPoint2D));
+        bgNode->markDirty(QSGNode::DirtyGeometry);
+    }
+
+    // Child 1: glyphs (atlas material). Rebuild the texture only when the atlas changed.
+    QSGGeometryNode *glyphNode = takeChild(root, 1);
+    if (!glyphNode) {
+        glyphNode = new QSGGeometryNode;
+        auto *geo = new QSGGeometry(kGlyphAttrSet, 0);
+        geo->setDrawingMode(QSGGeometry::DrawTriangles);
+        glyphNode->setGeometry(geo);
+        glyphNode->setFlag(QSGNode::OwnsGeometry);
+        auto *mat = new GlyphMaterial;
+        glyphNode->setMaterial(mat);
+        glyphNode->setFlag(QSGNode::OwnsMaterial);
+        root->appendChildNode(glyphNode);
+    }
+    auto *glyphMat = static_cast<GlyphMaterial *>(glyphNode->material());
+    if (m_glyphs.takeDirty())
+        glyphMat->setTexture(window()->createTextureFromImage(m_glyphs.atlas()));
+    {
+        QSGGeometry *geo = glyphNode->geometry();
+        geo->allocate(int(glyphs.size()));
+        if (!glyphs.empty())
+            memcpy(geo->vertexData(), glyphs.data(), glyphs.size() * sizeof(GlyphVertex));
+        glyphNode->markDirty(QSGNode::DirtyGeometry | QSGNode::DirtyMaterial);
+    }
+
+    // Child 2: cursor (vertex colour, on top).
+    QSGGeometryNode *cursorNode = takeChild(root, 2);
+    if (!cursorNode) {
+        cursorNode = new QSGGeometryNode;
+        auto *geo = new QSGGeometry(QSGGeometry::defaultAttributes_ColoredPoint2D(), 0);
+        geo->setDrawingMode(QSGGeometry::DrawTriangles);
+        cursorNode->setGeometry(geo);
+        cursorNode->setFlag(QSGNode::OwnsGeometry);
+        auto *mat = new QSGVertexColorMaterial;
+        cursorNode->setMaterial(mat);
+        cursorNode->setFlag(QSGNode::OwnsMaterial);
+        root->appendChildNode(cursorNode);
+    }
+    {
+        QSGGeometry *geo = cursorNode->geometry();
+        geo->allocate(int(cursor.size()));
+        if (!cursor.empty())
+            memcpy(geo->vertexData(), cursor.data(), cursor.size() * sizeof(QSGGeometry::ColoredPoint2D));
+        cursorNode->markDirty(QSGNode::DirtyGeometry);
+    }
+
+    return root;
 }
 
 // ─── input ──────────────────────────────────────────────────────────────────────────────────────
@@ -368,7 +551,7 @@ void TerminalView::keyToVTerm(QKeyEvent *event)
 void TerminalView::keyPressEvent(QKeyEvent *event)
 {
     if (!m_vt) {
-        QQuickPaintedItem::keyPressEvent(event);
+        QQuickItem::keyPressEvent(event);
         return;
     }
     // Reserved accelerators (split/close/focus … from the solid config) are consumed HERE, before

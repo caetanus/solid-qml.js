@@ -239,6 +239,7 @@ vterm_dep = dependency('vterm')
 util_dep = meson.get_compiler('cpp').find_library('util', required: false)
 solidterm_moc = qt6.preprocess(
   moc_headers: files('apps/solidterm/native/ptysession.h', 'apps/solidterm/native/terminalview.h', 'apps/solidterm/native/terminalpanes.h', 'apps/solidterm/native/systemtheme.h', 'apps/solidterm/native/keyrecorder.h', 'apps/solidterm/native/termconfig.h', 'apps/solidterm/native/paneheader.h'),
+  qresources: files('apps/solidterm/shaders.qrc'),
 )
 executable(
   'solidterm',
@@ -246,6 +247,7 @@ executable(
     'apps/solidterm/main.cpp',
     'apps/solidterm/native/ptysession.cpp',
     'apps/solidterm/native/terminalview.cpp',
+    'apps/solidterm/native/glyphcache.cpp',
     'apps/solidterm/native/terminalpanes.cpp',
     'apps/solidterm/native/systemtheme.cpp',
     'apps/solidterm/native/keyrecorder.cpp',

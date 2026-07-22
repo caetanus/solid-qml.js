@@ -1,0 +1,7 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/solidterm">
+    <file>shaders/glyph.vert.qsb</file>
+    <file>shaders/glyph.frag.qsb</file>
+  </qresource>
+</RCC>
