@@ -205,3 +205,27 @@ executable(
   include_directories: include_directories('src'),
   dependencies: [solidqml_dep, qt6_widgets_dep],
 )
+
+
+# Demo: "legacy" C++ shipped as a canonical QML extension plugin, consumed from TSX via
+# `import { AcmeGauge } from "qml:Acme"` + loader --import-path (Direção B of the embed plan).
+acme_qt_dep = dependency('qt6', modules: ['Quick'])
+acme_moc = qt6.preprocess(moc_sources: files('examples/legacy-plugin/acmeplugin.cpp'), dependencies: [acme_qt_dep])
+acme_plugin = shared_module(
+  'acmeplugin',
+  files('examples/legacy-plugin/acmeplugin.cpp'),
+  acme_moc,
+  dependencies: [acme_qt_dep],
+)
+custom_target(
+  'acme-qml-module',
+  input: ['examples/legacy-plugin/qmldir'],
+  output: 'acme-module-stamp',
+  command: [
+    'sh', '-c',
+    'mkdir -p @OUTDIR@/qmlmods/Acme && cp @INPUT0@ @OUTDIR@/qmlmods/Acme/ && cp ' +
+    meson.current_build_dir() + '/libacmeplugin.so @OUTDIR@/qmlmods/Acme/ && touch @OUTPUT@',
+  ],
+  depends: acme_plugin,
+  build_by_default: true,
+)

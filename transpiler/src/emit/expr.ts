@@ -16,6 +16,9 @@ export interface Scope {
   /** Emitted type names that are foreign hand-written `.qml` components (not Css roots): their
    *  instances are wrapped in a Css box so they participate in the CSS layout (escape hatch). */
   foreignQml?: Set<string>;
+  // Registered-module foreign types (`import { X } from "qml:Uri"`): typeName → import line the
+  // emitting component must carry (routed to usedWidgets.extraImports at instantiation).
+  foreignImports?: Map<string, string>;
   /** Root object id to qualify signal WRITES with (setter assignments only). Set when a handler
    *  runs INSIDE a Template control whose own properties (value/angle/position/…) would otherwise
    *  shadow a same-named component signal. Reads stay bare so QML's binding tracker still sees them. */

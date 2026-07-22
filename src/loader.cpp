@@ -141,6 +141,13 @@ int main(int argc, char **argv)
         QStringLiteral("png"),
     });
     parser.addOption({
+        QStringLiteral("import-path"),
+        QStringLiteral("Extra QML import path (repeatable) — where pre-existing C++ ships as "
+                       "QML modules (qmldir + plugin) consumed from TSX via `import { T } from "
+                       "\"qml:Uri\"`."),
+        QStringLiteral("dir"),
+    });
+    parser.addOption({
         QStringLiteral("click"),
         QStringLiteral("Synthesize a REAL mouse click (press+release through the window's event "
                        "delivery) at window coordinates after a delay: \"x,y,delayMs\". Repeatable; "
@@ -240,6 +247,8 @@ int main(int argc, char **argv)
         appRoot.cdUp();
         engine.addImportPath(appRoot.absolutePath());
     }
+    for (const QString &p : parser.values(QStringLiteral("import-path")))
+        engine.addImportPath(p);
     engine.rootContext()->setContextProperty(QStringLiteral("cssTheme"), &cssTheme);
     engine.rootContext()->setContextProperty(QStringLiteral("cssLayout"), &cssLayout);
     engine.rootContext()->setContextProperty(QStringLiteral("solidTabstop"), &solidTabstop);

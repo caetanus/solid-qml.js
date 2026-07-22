@@ -225,6 +225,7 @@ export async function generate(source: string, filename: string, opts: GenerateO
   // Custom `.qml` imports (the native escape hatch): copied VERBATIM to the output and
   // instantiated by type name. Keyed `qml:<abs>` in the edge graph; never transpiled.
   const qmlForeign = new Map<string, { typeName: string; source: string }>();
+  const qmlModuleForeign = new Map<string, { typeName: string; importLine: string }>();
 
   const visit = async (absPath: string, mod: Mod, declName: string): Promise<void> => {
     const key = keyOf(absPath, declName);
@@ -240,6 +241,25 @@ export async function generate(source: string, filename: string, opts: GenerateO
       // type name (QML resolves a sibling `<Base>.qml` file automatically, like our own emitted
       // components). NOT transpiled; not recursed. Deep local `.qml` deps are a follow-up —
       // for now import each helper `.qml` you reference, or keep the file self-contained.
+      // A `qml:` specifier imports a REGISTERED QML module type — the canonical packaging of
+      // pre-existing C++ (qmlRegisterType / QQmlExtensionPlugin). `import { Gauge } from
+      // "qml:Acme"` (or "qml:Acme@2.1") emits `import Acme 2.1 as QM_Acme` + instantiates
+      // `QM_Acme.Gauge` with the same Css-box wrap as a foreign `.qml` file. The module itself
+      // reaches the runtime via the loader's --import-path (dev) or direct linking (release).
+      if (imp.spec.startsWith("qml:")) {
+        const [uri, ver = "1.0"] = imp.spec.slice(4).split("@");
+        if (!/^[A-Za-z_][A-Za-z0-9_.]*$/.test(uri))
+          throw new Error(`qml: import needs a module URI (got "${imp.spec}")`);
+        const typeInModule = imp.imported === "default" ? tag : imp.imported;
+        if (!/^[A-Z][A-Za-z0-9_]*$/.test(typeInModule))
+          throw new Error(`qml: import needs a Capitalized QML type name (got "${typeInModule}")`);
+        const ns = "QM_" + uri.replace(/\./g, "_");
+        const qkey = `qmlmod:${uri}#${typeInModule}`;
+        if (!qmlModuleForeign.has(qkey))
+          qmlModuleForeign.set(qkey, { typeName: `${ns}.${typeInModule}`, importLine: `import ${uri} ${ver} as ${ns}` });
+        edges.set(tag, qkey);
+        continue;
+      }
       if (imp.spec.endsWith(".qml")) {
         const qabs = path.resolve(mod.dir, imp.spec);
         const base = path.basename(qabs, ".qml");
@@ -271,6 +291,7 @@ export async function generate(source: string, filename: string, opts: GenerateO
   }
   // Foreign `.qml` nodes carry their filename basename as the QML type name.
   for (const [qkey, { typeName: tn }] of qmlForeign) typeName.set(qkey, tn);
+  for (const [qkey, { typeName: tn }] of qmlModuleForeign) typeName.set(qkey, tn);
 
   // Phase 1b — context roles: classify each node as a provider (provides a ctx + value shape) and/or
   // a consumer (useContext bindings). Build the cross-graph ctx → value-shape table that consumers
@@ -316,7 +337,9 @@ export async function generate(source: string, filename: string, opts: GenerateO
     // Import-time module statements across the whole graph run once, at the entry's boot.
     const moduleInit = key === entryKey ? [...modules.values()].flatMap((m) => m.moduleInit) : undefined;
     const foreignQml = new Set([...qmlForeign.values()].map((q) => q.typeName));
-    const qml = [...headerFor(node.mod), ...emitComponentType(info.fn, info.render, typeMap, node.mod.contexts, role.provider, ctxWiring, node.mod.file, node.mod.jsImports, moduleInit, foreignQml), ""].join("\n");
+    for (const { typeName: tn } of qmlModuleForeign.values()) foreignQml.add(tn);
+    const foreignImports = new Map([...qmlModuleForeign.values()].map((q) => [q.typeName, q.importLine]));
+    const qml = [...headerFor(node.mod), ...emitComponentType(info.fn, info.render, typeMap, node.mod.contexts, role.provider, ctxWiring, node.mod.file, node.mod.jsImports, moduleInit, foreignQml, foreignImports), ""].join("\n");
     if (key === entryKey) entry = qml;
     else components[typeName.get(key)!] = qml;
   }

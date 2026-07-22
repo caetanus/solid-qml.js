@@ -2,7 +2,7 @@ import * as t from "@babel/types";
 import { emitExpr, type Scope } from "./expr.ts";
 import { safeName } from "../names/safe.ts";
 import { CONTROL_TAGS, hParts, isFragmentTag, isHCall } from "../ast/h.ts";
-import { nativeTags } from "./native/index.ts";
+import { nativeTags, requireImport } from "./native/index.ts";
 
 export const INDENT = "    ";
 const TEXT_TAGS = new Set(["text", "span", "h1", "h2", "h3", "h4", "h5", "h6", "p", "cite", "bio"]);
@@ -209,6 +209,10 @@ function emitInstance(name: string, propsArg: t.Node | undefined, children: t.No
   // child's implicit size and places it, so it participates in the parent's flex/grid.
   if (scope.foreignQml?.has(typeName)) {
     const i = (n: number) => INDENT.repeat(level + n);
+    // A registered-module type additionally pulls its `import <Uri> <ver> as QM_*` line into
+    // this component's header (same requireImport channel the opt-in viz modules use).
+    const importLine = scope.foreignImports?.get(typeName);
+    if (importLine) requireImport(scope, importLine);
     // Sizing contract (owner note 2026-07-04): a QML item has NO size unless given one. So the CSS
     // box acquires its size the normal way — from the parent's flex/flow, a `class` on the tag, or
     // width/height props — and imposes it DOWN onto the foreign via `anchors.fill: parent`. All three
