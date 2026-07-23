@@ -13,12 +13,8 @@
 #include <QTimer>
 #include <functional>
 
-struct TerminalPanes::Handle {
-};
-
-namespace {
-
 // A thin draggable divider: a coloured rect that drags along one axis and reports pixel deltas.
+// (Global scope — the header forward-declares it for Node::dividers.)
 class DividerItem : public QQuickItem {
 public:
     DividerItem(bool horizontal, QQuickItem *parent)
@@ -60,6 +56,8 @@ private:
     QPointF m_last;
 };
 
+namespace {
+
 constexpr qreal kHeaderH = 24.0;
 constexpr qreal kDivider = 6.0;
 constexpr int kAnimMs = 190;
@@ -99,7 +97,14 @@ TerminalPanes::TerminalPanes(QQuickItem *parent)
     setActiveFocusOnTab(true);
 }
 
-QQuickItem *TerminalPanes::makeCell(TerminalView **outView, PaneHeader **outHeader)
+TerminalPanes::~TerminalPanes()
+{
+    deleteSubtree(m_root);
+}
+
+// ─── tree construction ──────────────────────────────────────────────────────────────────────────
+
+TerminalPanes::Node *TerminalPanes::makeLeaf()
 {
     QQmlEngine *eng = qmlEngine(this);
     if (!eng)
@@ -116,9 +121,14 @@ QQuickItem *TerminalPanes::makeCell(TerminalView **outView, PaneHeader **outHead
     cell->setParent(this);
     cell->setParentItem(this);
     cell->setProperty("headerH", kHeaderH);
-    *outView = qobject_cast<TerminalView *>(cell->property("view").value<QQuickItem *>());
-    *outHeader = qobject_cast<PaneHeader *>(cell->property("header").value<QQuickItem *>());
-    return cell;
+
+    auto *node = new Node;
+    node->cell = cell;
+    node->view = qobject_cast<TerminalView *>(cell->property("view").value<QQuickItem *>());
+    node->header = qobject_cast<PaneHeader *>(cell->property("header").value<QQuickItem *>());
+    if (node->view && node->header)
+        wirePane(node->view, node->header);
+    return node;
 }
 
 void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
@@ -131,26 +141,19 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
 
     connect(v, &TerminalView::titleChanged, this, [this, v, header] {
         header->setTitle(v->title());
-        if (m_panes.value(m_focused) == v)
+        if (m_focused && m_focused->view == v)
             emit titleChanged(v->title());
     });
     connect(header, &PaneHeader::clicked, this, [this, v] {
-        const int i = m_panes.indexOf(v);
-        if (i >= 0) setFocusedIndex(i);
+        if (Node *leaf = leafOfView(v)) setFocused(leaf);
     });
     connect(header, &PaneHeader::closeRequested, this, [this, v] {
-        const int i = m_panes.indexOf(v);
-        if (i >= 0) removePane(i);
+        if (Node *leaf = leafOfView(v)) removeLeaf(leaf);
     });
     connect(v, &TerminalView::sessionFinished, this, [this, v] {
-        const int idx = m_panes.indexOf(v);
-        if (idx >= 0)
-            removePane(idx);
+        if (Node *leaf = leafOfView(v)) removeLeaf(leaf);
     });
-    connect(v, &QQuickItem::activeFocusChanged, this, [this] {
-        for (int i = 0; i < m_panes.size(); ++i)
-            m_headers[i]->setFocused(m_panes[i]->hasActiveFocus());
-    });
+    connect(v, &QQuickItem::activeFocusChanged, this, [this] { refreshHeaderFocus(); });
     v->setReservedSequences(m_reserved);
     connect(v, &TerminalView::accelerator, this, &TerminalPanes::accelerator);
 }
@@ -158,161 +161,244 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
 void TerminalPanes::componentComplete()
 {
     QQuickItem::componentComplete();
-    TerminalView *v = nullptr;
-    PaneHeader *h = nullptr;
-    QQuickItem *cell = makeCell(&v, &h);
-    if (!cell)
-        return;
-    m_cells.append(cell);
-    m_panes.append(v);
-    m_headers.append(h);
-    m_fractions.append(1.0);
-    wirePane(v, h);
-    rebuildDividers();
+    m_root = makeLeaf();
+    m_focused = m_root;
     relayout();
     // Initial focus is taken on the first non-zero geometry (scene ready) — see geometryChange.
 }
 
-void TerminalPanes::focusInEvent(QFocusEvent *)
+// ─── tree walks ─────────────────────────────────────────────────────────────────────────────────
+
+void TerminalPanes::collectLeaves(Node *node, QVector<Node *> &out) const
 {
-    // Focus reaching the container (Tab, click on chrome) forwards to the focused pane so keys —
-    // and reserved accelerators — always land on a terminal.
-    if (!m_panes.isEmpty())
-        m_panes[qBound(0, m_focused, m_panes.size() - 1)]->takeFocus();
+    if (!node)
+        return;
+    if (node->isLeaf()) {
+        out.append(node);
+        return;
+    }
+    for (Node *c : node->children)
+        collectLeaves(c, out);
 }
+
+int TerminalPanes::count() const
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    return leaves.size();
+}
+
+TerminalPanes::Node *TerminalPanes::leafOfView(TerminalView *v) const
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    for (Node *l : leaves)
+        if (l->view == v)
+            return l;
+    return nullptr;
+}
+
+void TerminalPanes::deleteSubtree(Node *node)
+{
+    if (!node)
+        return;
+    for (Node *c : node->children)
+        deleteSubtree(c);
+    for (DividerItem *d : node->dividers)
+        if (d) d->deleteLater();
+    if (node->cell)
+        node->cell->deleteLater();
+    delete node;
+}
+
+// ─── split / close ──────────────────────────────────────────────────────────────────────────────
 
 void TerminalPanes::split(int orient)
 {
-    if (m_panes.size() == 1)
-        setOrientation(orient);
-    addPaneAfterFocused();
-}
-
-void TerminalPanes::addPaneAfterFocused()
-{
-    TerminalView *v = nullptr;
-    PaneHeader *h = nullptr;
-    QQuickItem *cell = makeCell(&v, &h);
-    if (!cell)
+    if (!m_focused)
         return;
-    const int at = qBound(0, m_focused + 1, m_panes.size());
-    m_cells.insert(at, cell);
-    m_panes.insert(at, v);
-    m_headers.insert(at, h);
-    wirePane(v, h);
+    Node *leaf = m_focused;
+    Node *newLeaf = makeLeaf();
+    if (!newLeaf)
+        return;
 
-    const int n = m_panes.size();
-    m_fractions.clear();
-    for (int i = 0; i < n; ++i)
-        m_fractions.append(1.0 / n);
-    rebuildDividers();
+    Node *parent = leaf->parent;
+    if (parent && parent->orientation == orient) {
+        // Same-orientation split → add a sibling right after the focused leaf (tilix N-way).
+        const int idx = parent->children.indexOf(leaf);
+        const qreal share = parent->fractions.value(idx, 1.0) * 0.5;
+        parent->fractions[idx] = share;
+        parent->children.insert(idx + 1, newLeaf);
+        parent->fractions.insert(idx + 1, share);
+        newLeaf->parent = parent;
+        rebuildDividers(parent);
+    } else {
+        // Different orientation → wrap the focused leaf in a new split node in its place.
+        Node *sp = new Node;
+        sp->orientation = orient;
+        sp->parent = parent;
+        sp->children = { leaf, newLeaf };
+        sp->fractions = { 0.5, 0.5 };
+        leaf->parent = sp;
+        newLeaf->parent = sp;
+        if (!parent) {
+            m_root = sp;
+        } else {
+            const int idx = parent->children.indexOf(leaf);
+            parent->children[idx] = sp;
+        }
+        rebuildDividers(sp);
+    }
+
     relayout();
-    setFocusedIndex(at);
-    // The cell's initial class is ["pane","pane-enter"] → the @keyframes plays on compose; strip
-    // the trigger class after so a later re-resolve (theme change) doesn't replay it.
+    setFocused(newLeaf);
+    // The cell's initial class is ["pane","pane-enter"] → the @keyframes plays on compose; strip the
+    // trigger class after so a later re-resolve (theme change) doesn't replay it.
+    QQuickItem *cell = newLeaf->cell;
     QTimer::singleShot(kAnimMs, cell, [cell] {
         cell->setProperty("cssClass", QVariant::fromValue(QStringList{ QStringLiteral("pane") }));
     });
     emit panesChanged();
 }
 
-void TerminalPanes::removePane(int index)
+void TerminalPanes::removeLeaf(Node *leaf)
 {
-    if (index < 0 || index >= m_panes.size())
+    if (!leaf || !leaf->isLeaf())
         return;
-    if (m_panes.size() == 1) {
-        reallyRemove(index);
-        return;
-    }
-    // Add the leave class → the CSS @keyframes shrinks it out, then delete when it finishes.
-    QQuickItem *cell = m_cells.value(index);
-    if (cell)
-        cell->setProperty("cssClass", QVariant::fromValue(QStringList{ QStringLiteral("pane"), QStringLiteral("pane-leave") }));
-    TerminalView *v = m_panes.value(index);
-    QTimer::singleShot(kAnimMs, this, [this, v] {
-        const int i = m_panes.indexOf(v);
-        if (i >= 0)
-            reallyRemove(i);
-    });
-}
-
-void TerminalPanes::reallyRemove(int index)
-{
-    if (index < 0 || index >= m_panes.size())
-        return;
-    QQuickItem *cell = m_cells.takeAt(index);
-    m_panes.removeAt(index);
-    m_headers.removeAt(index);
-    cell->deleteLater(); // takes the view + header with it (they're its children)
-    if (m_panes.isEmpty()) {
+    // Root is the only pane → close the app.
+    if (leaf == m_root && leaf->children.isEmpty() && !leaf->parent) {
+        deleteSubtree(m_root);
+        m_root = nullptr;
+        m_focused = nullptr;
         emit allClosed();
         return;
     }
-    m_fractions.clear();
-    const qreal share = 1.0 / m_panes.size();
-    for (int i = 0; i < m_panes.size(); ++i)
-        m_fractions.append(share);
-    rebuildDividers();
-    relayout();
-    setFocusedIndex(qBound(0, index, m_panes.size() - 1));
-    emit panesChanged();
+    // Play the leave animation, then actually detach when it finishes.
+    if (leaf->cell)
+        leaf->cell->setProperty("cssClass", QVariant::fromValue(QStringList{ QStringLiteral("pane"), QStringLiteral("pane-leave") }));
+    TerminalView *v = leaf->view;
+    QTimer::singleShot(kAnimMs, this, [this, v] {
+        Node *l = leafOfView(v);
+        if (!l)
+            return;
+        Node *parent = l->parent;
+        // Detach the leaf from its parent split.
+        const int idx = parent->children.indexOf(l);
+        parent->children.removeAt(idx);
+        parent->fractions.removeAt(idx);
+        if (l->cell)
+            l->cell->deleteLater();
+        delete l;
+
+        // Renormalise the parent's remaining fractions.
+        qreal sum = 0;
+        for (qreal f : parent->fractions) sum += f;
+        if (sum > 0)
+            for (qreal &f : parent->fractions) f /= sum;
+
+        // A split with a single remaining child collapses: the child takes the parent's place.
+        if (parent->children.size() == 1) {
+            Node *only = parent->children.first();
+            Node *grand = parent->parent;
+            only->parent = grand;
+            if (!grand) {
+                m_root = only;
+            } else {
+                const int pidx = grand->children.indexOf(parent);
+                grand->children[pidx] = only;
+            }
+            for (DividerItem *d : parent->dividers) if (d) d->deleteLater();
+            delete parent;
+            parent = grand;
+        } else {
+            rebuildDividers(parent);
+        }
+
+        // Refocus a surviving leaf (prefer one under the same subtree, else the first).
+        QVector<Node *> leaves;
+        collectLeaves(m_root, leaves);
+        if (leaves.isEmpty()) {
+            m_focused = nullptr;
+            emit allClosed();
+            return;
+        }
+        relayout();
+        setFocused(leaves.first());
+        emit panesChanged();
+    });
 }
 
-// Dividers are PERSISTENT — recreated only when the pane COUNT changes, never mid-drag (that was
-// the resize bug: relayout() deleted the divider being dragged and lost the mouse grab).
-void TerminalPanes::rebuildDividers()
+// ─── dividers + layout ──────────────────────────────────────────────────────────────────────────
+
+void TerminalPanes::rebuildDividers(Node *splitNode)
 {
-    for (QQuickItem *h : std::as_const(m_handles))
-        h->deleteLater();
-    m_handles.clear();
-    const bool horiz = m_orientation == Qt::Horizontal;
-    for (int i = 0; i + 1 < m_panes.size(); ++i) {
+    if (!splitNode || splitNode->isLeaf())
+        return;
+    for (DividerItem *d : splitNode->dividers)
+        if (d) d->deleteLater();
+    splitNode->dividers.clear();
+    const bool horiz = splitNode->orientation == Qt::Horizontal;
+    for (int i = 0; i + 1 < splitNode->children.size(); ++i) {
         auto *div = new DividerItem(horiz, this);
         div->color = m_handleColor;
+        Node *node = splitNode;
         const int leftIdx = i;
-        div->onDrag = [this, leftIdx](qreal d) {
-            const bool h = m_orientation == Qt::Horizontal;
-            const qreal mainLen = qMax<qreal>(1, (h ? width() : height()) - kDivider * (m_panes.size() - 1));
-            const qreal delta = d / mainLen;
-            qreal &a = m_fractions[leftIdx];
-            qreal &b = m_fractions[leftIdx + 1];
+        div->onDrag = [this, node, leftIdx](qreal d) {
+            // Convert the pixel drag to a fraction of this split's main-axis extent, then move the
+            // share from one neighbour to the other (clamped so neither collapses).
+            const qreal delta = d / qMax<qreal>(1, node->lastAvail);
+            qreal &a = node->fractions[leftIdx];
+            qreal &b = node->fractions[leftIdx + 1];
             const qreal minF = 0.05;
             const qreal na = qBound(minF, a + delta, a + b - minF);
             b = a + b - na;
             a = na;
             relayout();
         };
-        m_handles.append(div);
+        splitNode->dividers.append(div);
+    }
+}
+
+void TerminalPanes::layoutNode(Node *node, qreal x, qreal y, qreal w, qreal h)
+{
+    if (!node)
+        return;
+    if (node->isLeaf()) {
+        if (QQuickItem *cell = node->cell) {
+            cell->setX(x); cell->setY(y);
+            cell->setWidth(qMax<qreal>(0, w)); cell->setHeight(qMax<qreal>(0, h));
+        }
+        return;
+    }
+    const bool horiz = node->orientation == Qt::Horizontal;
+    const int n = node->children.size();
+    const qreal main = horiz ? w : h;
+    const qreal available = qMax<qreal>(0, main - kDivider * (n - 1));
+    node->lastAvail = available;
+
+    qreal pos = horiz ? x : y;
+    for (int i = 0; i < n; ++i) {
+        const qreal len = available * node->fractions.value(i, 1.0 / n);
+        if (horiz)
+            layoutNode(node->children[i], pos, y, len, h);
+        else
+            layoutNode(node->children[i], x, pos, w, len);
+        pos += len;
+        if (i < n - 1) {
+            DividerItem *div = node->dividers.value(i);
+            if (div) {
+                if (horiz) { div->setX(pos); div->setY(y); div->setWidth(kDivider); div->setHeight(h); }
+                else { div->setX(x); div->setY(pos); div->setWidth(w); div->setHeight(kDivider); }
+            }
+            pos += kDivider;
+        }
     }
 }
 
 void TerminalPanes::relayout()
 {
-    const bool horiz = m_orientation == Qt::Horizontal;
-    const int n = m_panes.size();
-    if (n == 0)
-        return;
-    const qreal main = horiz ? width() : height();
-    const qreal cross = horiz ? height() : width();
-    const qreal available = qMax<qreal>(0, main - kDivider * (n - 1));
-
-    qreal pos = 0;
-    for (int i = 0; i < n; ++i) {
-        const qreal len = available * m_fractions.value(i, 1.0 / n);
-        QQuickItem *cell = m_cells[i];
-        // Position the CELL; its snippet splits itself into header + view internally.
-        if (horiz) { cell->setX(pos); cell->setY(0); cell->setWidth(len); cell->setHeight(cross); }
-        else { cell->setX(0); cell->setY(pos); cell->setWidth(cross); cell->setHeight(len); }
-        pos += len;
-        if (i < n - 1) {
-            QQuickItem *div = m_handles.value(i);
-            if (div) {
-                if (horiz) { div->setX(pos); div->setY(0); div->setWidth(kDivider); div->setHeight(cross); }
-                else { div->setX(0); div->setY(pos); div->setWidth(cross); div->setHeight(kDivider); }
-            }
-            pos += kDivider;
-        }
-    }
+    if (m_root)
+        layoutNode(m_root, 0, 0, width(), height());
 }
 
 void TerminalPanes::geometryChange(const QRectF &n, const QRectF &o)
@@ -323,38 +409,68 @@ void TerminalPanes::geometryChange(const QRectF &n, const QRectF &o)
     relayout();
     // Grab keyboard focus once, when the panes are first laid out (the scene is ready now) — so
     // typing AND reserved accelerators work without a click to focus first.
-    if (!m_didInitialFocus && width() > 0 && height() > 0 && !m_panes.isEmpty()) {
+    if (!m_didInitialFocus && width() > 0 && height() > 0 && m_focused) {
         m_didInitialFocus = true;
-        setFocusedIndex(qBound(0, m_focused, m_panes.size() - 1));
+        setFocused(m_focused);
     }
 }
 
-void TerminalPanes::setFocusedIndex(int i)
+// ─── focus ──────────────────────────────────────────────────────────────────────────────────────
+
+void TerminalPanes::focusInEvent(QFocusEvent *)
 {
-    if (i < 0 || i >= m_panes.size())
+    // Focus reaching the container (Tab, click on chrome) forwards to the focused pane so keys —
+    // and reserved accelerators — always land on a terminal.
+    if (m_focused && m_focused->view)
+        m_focused->view->takeFocus();
+}
+
+void TerminalPanes::setFocused(Node *leaf)
+{
+    if (!leaf || !leaf->isLeaf() || !leaf->view)
         return;
-    m_focused = i;
-    m_panes[i]->takeFocus();
-    for (int k = 0; k < m_headers.size(); ++k)
-        m_headers[k]->setFocused(k == i);
-    emit titleChanged(m_panes[i]->title());
+    m_focused = leaf;
+    leaf->view->takeFocus();
+    refreshHeaderFocus();
+    emit titleChanged(leaf->view->title());
 }
 
-int TerminalPanes::focusedIndex() const
+void TerminalPanes::refreshHeaderFocus()
 {
-    for (int i = 0; i < m_panes.size(); ++i)
-        if (m_panes[i]->hasActiveFocus())
-            return i;
-    return m_focused;
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    for (Node *l : leaves)
+        if (l->header && l->view)
+            l->header->setFocused(l->view->hasActiveFocus());
 }
 
-void TerminalPanes::closeFocused() { removePane(focusedIndex()); }
-void TerminalPanes::focusNext() { setFocusedIndex((focusedIndex() + 1) % qMax(1, m_panes.size())); }
-void TerminalPanes::focusPrev() { setFocusedIndex((focusedIndex() - 1 + m_panes.size()) % qMax(1, m_panes.size())); }
+void TerminalPanes::closeFocused() { if (m_focused) removeLeaf(m_focused); }
 
-void TerminalPanes::copyFocused() { if (auto *v = m_panes.value(focusedIndex())) v->copySelection(); }
-void TerminalPanes::pasteFocused() { if (auto *v = m_panes.value(focusedIndex())) v->pasteClipboard(); }
-void TerminalPanes::clearFocused() { if (auto *v = m_panes.value(focusedIndex())) v->clearScrollback(); }
+void TerminalPanes::focusNext()
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    if (leaves.isEmpty())
+        return;
+    int i = qMax(0, leaves.indexOf(m_focused));
+    setFocused(leaves[(i + 1) % leaves.size()]);
+}
+
+void TerminalPanes::focusPrev()
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    if (leaves.isEmpty())
+        return;
+    int i = qMax(0, leaves.indexOf(m_focused));
+    setFocused(leaves[(i - 1 + leaves.size()) % leaves.size()]);
+}
+
+void TerminalPanes::copyFocused() { if (m_focused && m_focused->view) m_focused->view->copySelection(); }
+void TerminalPanes::pasteFocused() { if (m_focused && m_focused->view) m_focused->view->pasteClipboard(); }
+void TerminalPanes::clearFocused() { if (m_focused && m_focused->view) m_focused->view->clearScrollback(); }
+
+// ─── style ──────────────────────────────────────────────────────────────────────────────────────
 
 void TerminalPanes::applyStyle(TerminalView *v)
 {
@@ -365,23 +481,12 @@ void TerminalPanes::applyStyle(TerminalView *v)
     v->setScrollbackLimit(m_scrollbackLimit);
 }
 
-void TerminalPanes::setOrientation(int v)
-{
-    if (m_orientation == v)
-        return;
-    m_orientation = v;
-    emit orientationChanged();
-    if (isComponentComplete()) {
-        rebuildDividers();
-        relayout();
-    }
-}
-
 #define STYLE_SETTER(Setter, Member, Type) \
     void TerminalPanes::Setter(Type v) { \
         if (Member == v) return; \
         Member = v; emit styleChanged(); \
-        for (TerminalView *p : std::as_const(m_panes)) applyStyle(p); \
+        QVector<Node *> leaves; collectLeaves(m_root, leaves); \
+        for (Node *l : std::as_const(leaves)) if (l->view) applyStyle(l->view); \
     }
 STYLE_SETTER(setFontFamily, m_fontFamily, const QString &)
 STYLE_SETTER(setFontSize, m_fontSize, int)
@@ -396,8 +501,11 @@ void TerminalPanes::setReservedSequences(const QStringList &v)
         return;
     m_reserved = v;
     emit reservedChanged();
-    for (TerminalView *p : std::as_const(m_panes))
-        p->setReservedSequences(v);
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    for (Node *l : std::as_const(leaves))
+        if (l->view)
+            l->view->setReservedSequences(v);
 }
 
 void TerminalPanes::setHandleColor(const QColor &v)
@@ -406,8 +514,15 @@ void TerminalPanes::setHandleColor(const QColor &v)
         return;
     m_handleColor = v;
     emit styleChanged();
-    for (QQuickItem *h : std::as_const(m_handles))
-        if (auto *d = static_cast<DividerItem *>(h)) { d->color = v; d->update(); }
-    for (PaneHeader *h : std::as_const(m_headers))
-        h->setBackground(v);
+    // Recolour every divider and header across the tree.
+    std::function<void(Node *)> walk = [&](Node *node) {
+        if (!node) return;
+        for (DividerItem *d : node->dividers)
+            if (d) { d->color = v; d->update(); }
+        if (node->header)
+            node->header->setBackground(v);
+        for (Node *c : node->children)
+            walk(c);
+    };
+    walk(m_root);
 }

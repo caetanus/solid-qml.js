@@ -124,5 +124,46 @@ int main(int argc, char **argv)
         }
     }
 
+    // Debug: SOLIDTERM_PLAINSHOT=<prefix> grabs every window after a settle WITHOUT poking anything
+    // (so focus state is real) — to check the fresh terminal grabs keyboard focus on launch.
+    const QString plainShot = qEnvironmentVariable("SOLIDTERM_PLAINSHOT");
+    if (!plainShot.isEmpty() && window) {
+        QTimer::singleShot(1800, qApp, [plainShot] {
+            int i = 0;
+            for (QWindow *w : QGuiApplication::topLevelWindows())
+                if (auto *qw = qobject_cast<QQuickWindow *>(w))
+                    qw->grabWindow().save(QStringLiteral("%1-%2.png").arg(plainShot).arg(i++));
+            QCoreApplication::quit();
+        });
+    }
+
+    // Debug: SOLIDTERM_AUTOSPLIT=<orient> splits the panes after a settle (1=horizontal, 2=vertical)
+    // to test multi-pane rendering without keyboard focus.
+    const QString autoSplit = qEnvironmentVariable("SOLIDTERM_AUTOSPLIT");
+    if (!autoSplit.isEmpty() && window) {
+        int t = 1400;
+        for (const QString &os : autoSplit.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+            const QString cmd = os;
+            QTimer::singleShot(t, window, [&engine, cmd] {
+                for (QObject *o : engine.rootObjects()) {
+                    if (auto *w = qobject_cast<QQuickWindow *>(o)) {
+                        QList<QQuickItem *> stack { w->contentItem() };
+                        while (!stack.isEmpty()) {
+                            QQuickItem *it = stack.takeLast();
+                            if (auto *panes = qobject_cast<TerminalPanes *>(it)) {
+                                if (cmd == QLatin1String("c")) panes->closeFocused();
+                                else if (cmd == QLatin1String("n")) panes->focusNext();
+                                else panes->split(cmd.toInt());
+                                return;
+                            }
+                            for (QQuickItem *k : it->childItems()) stack.append(k);
+                        }
+                    }
+                }
+            });
+            t += 500;
+        }
+    }
+
     return app.exec();
 }

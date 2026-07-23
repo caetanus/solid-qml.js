@@ -7,18 +7,19 @@
 class TerminalView;
 class PaneHeader;
 
-// The split container (owner: "split screen … parecido com tilix"). Splitting a terminal into
-// side-by-side / stacked panes is terminal-domain layout, and For→SplitView doesn't work through
-// the transpiler subset (our SplitView doesn't adopt Repeater items), so the pane management is
-// native C++ here — created/destroyed TerminalViews, fraction layout, draggable dividers, focus
-// cycling, auto-close on shell exit. Exposed to the solid TSX as `SolidTerm.TerminalPanes` and
-// driven by keyboard shortcuts (Ctrl+Shift+E/O split, Ctrl+Shift+W close, Alt+arrows focus).
+// The split container (owner: "split screen … parecido com tilix"). Splitting a terminal is
+// terminal-domain layout that For→SplitView can't express through the transpiler subset, so it's
+// native C++ here — a BINARY SPLIT TREE (like tilix): every internal node is a horizontal or
+// vertical split of its children, leaves are terminals. A leaf split H then V then H nests
+// arbitrarily, so Alt+D (split right) and Alt+Shift+D (split down) always do what they say,
+// regardless of what came before — unlike the old flat single-orientation list, where the first
+// split locked the orientation for the whole container.
 //
-// v1 is a single-level N-way split with one orientation (set by the first split); nested trees
-// (mixed h/v like tilix's arbitrary layout) are the follow-up.
+// Logical tree only: every leaf cell and every divider is still a direct child of this item,
+// positioned by a recursive layout walk — so the scene graph stays flat and animations/focus are
+// unchanged.
 class TerminalPanes : public QQuickItem {
     Q_OBJECT
-    Q_PROPERTY(int orientation READ orientation WRITE setOrientation NOTIFY orientationChanged)
     Q_PROPERTY(int count READ count NOTIFY panesChanged)
     // Forwarded to every pane so preferences apply live across splits.
     Q_PROPERTY(QString fontFamily READ fontFamily WRITE setFontFamily NOTIFY styleChanged)
@@ -31,10 +32,9 @@ class TerminalPanes : public QQuickItem {
 
 public:
     explicit TerminalPanes(QQuickItem *parent = nullptr);
+    ~TerminalPanes() override;
 
-    int orientation() const { return m_orientation; }
-    void setOrientation(int v);
-    int count() const { return m_panes.size(); }
+    int count() const;
 
     QString fontFamily() const { return m_fontFamily; }
     void setFontFamily(const QString &v);
@@ -51,8 +51,8 @@ public:
     QStringList reservedSequences() const { return m_reserved; }
     void setReservedSequences(const QStringList &v);
 
-    // Split the FOCUSED pane along `orient` (Qt::Horizontal = side by side, Qt::Vertical =
-    // stacked). The first split fixes the container orientation for v1.
+    // Split the FOCUSED pane along `orient` (Qt::Horizontal = side by side / "split right",
+    // Qt::Vertical = stacked / "split down"). Nests independently of prior splits.
     Q_INVOKABLE void split(int orient);
     Q_INVOKABLE void closeFocused();
     Q_INVOKABLE void focusNext();
@@ -63,7 +63,6 @@ public:
     Q_INVOKABLE void clearFocused();
 
 signals:
-    void orientationChanged();
     void panesChanged();
     void styleChanged();
     void allClosed();           // last pane's shell exited → the app can quit/close the tab
@@ -77,27 +76,40 @@ protected:
     void focusInEvent(QFocusEvent *event) override;
 
 private:
-    struct Handle;
-    QQuickItem *makeCell(TerminalView **outView, PaneHeader **outHeader);
-    void wirePane(TerminalView *v, PaneHeader *header);
-    void addPaneAfterFocused();
-    void removePane(int index);
-    void reallyRemove(int index);
-    void rebuildDividers();
-    void relayout();
-    void applyStyle(TerminalView *v);
-    void setFocusedIndex(int i);
-    int focusedIndex() const;
+    // A node in the split tree. Leaf: children empty, holds cell/view/header. Split: 2+ children
+    // laid out along `orientation` by `fractions`, with `dividers` between them.
+    struct Node {
+        Node *parent = nullptr;
+        int orientation = 1;            // Qt::Horizontal(1) / Qt::Vertical(2) for splits
+        QVector<Node *> children;
+        QVector<qreal> fractions;       // per-child share (sums to 1)
+        qreal lastAvail = 1;            // main-axis px length from last layout (for divider drag px→fraction)
+        QVector<class DividerItem *> dividers; // children.size()-1
+        // Leaf payload:
+        QQuickItem *cell = nullptr;
+        TerminalView *view = nullptr;
+        PaneHeader *header = nullptr;
+        bool isLeaf() const { return children.isEmpty(); }
+    };
 
-    QVector<TerminalView *> m_panes;
-    QVector<qreal> m_fractions;     // per-pane share of the main axis (sums to 1)
-    QVector<class PaneHeader *> m_headers;
-    QVector<QQuickItem *> m_cells;     // the CSS-engine pane boxes (animate via class)
-    QVector<QQuickItem *> m_handles;
-    class QQmlComponent *m_cellComponent = nullptr;
-    int m_orientation = Qt::Horizontal;
-    int m_focused = 0;
+    Node *makeLeaf();                   // compose a cell + wire it
+    void wirePane(TerminalView *v, PaneHeader *header);
+    void applyStyle(TerminalView *v);
+
+    void layoutNode(Node *node, qreal x, qreal y, qreal w, qreal h);
+    void rebuildDividers(Node *splitNode); // (re)create the divider items for a split node
+    void collectLeaves(Node *node, QVector<Node *> &out) const;
+    void removeLeaf(Node *leaf);
+    void deleteSubtree(Node *node);     // frees dividers + cells recursively
+    void setFocused(Node *leaf);
+    Node *leafOfView(TerminalView *v) const;
+    void refreshHeaderFocus();
+    void relayout();
+
+    Node *m_root = nullptr;
+    Node *m_focused = nullptr;          // focused LEAF
     bool m_didInitialFocus = false;
+    class QQmlComponent *m_cellComponent = nullptr;
 
     QString m_fontFamily = QStringLiteral("monospace");
     int m_fontSize = 15;
