@@ -2,107 +2,14 @@
 
 #include "terminalpanes.h"
 
-#include <QFontMetricsF>
-#include <QMouseEvent>
-#include <QPainter>
-#include <QPainterPath>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
-#include <QQuickPaintedItem>
-#include <functional>
 
-static constexpr qreal kBarH = 34.0;
+#include <utility>
 
-// The tab strip: painted tabs with an elided title + close ×, and a trailing + button. Callbacks
-// (std::function, like DividerItem) instead of signals → no moc for this class. Global scope so the
-// header can forward-declare it for TerminalTabs::m_bar.
-class TabBar : public QQuickPaintedItem {
-public:
-    explicit TabBar(QQuickItem *parent = nullptr) : QQuickPaintedItem(parent)
-    {
-        setAcceptedMouseButtons(Qt::LeftButton);
-    }
-
-    QStringList titles;
-    int active = 0;
-    QColor barBg{ "#151515" }, tabFg{ "#cfcfcf" }, activeBg{ "#1e1e1e" }, accent{ "#3584e4" };
-    std::function<void(int)> onTabClicked, onCloseClicked;
-    std::function<void()> onNewTab;
-
-    void setModel(const QStringList &t, int a) { titles = t; active = a; update(); }
-
-    void paint(QPainter *p) override
-    {
-        p->setRenderHint(QPainter::Antialiasing, true);
-        p->fillRect(boundingRect(), barBg);
-        const Layout L = layout();
-        const QFontMetricsF fm(p->font());
-        for (int i = 0; i < titles.size(); ++i) {
-            const QRectF r = L.tab[i];
-            const bool act = i == active;
-            QPainterPath path;
-            path.addRoundedRect(r.adjusted(0, 3, 0, 6), 7, 7); // round top, overshoot bottom
-            p->fillPath(path, act ? activeBg : QColor(0, 0, 0, 0));
-            if (act) {
-                p->fillRect(QRectF(r.left() + 6, r.top() + 2, r.width() - 12, 2), accent);
-            }
-            p->setPen(act ? tabFg : QColor(tabFg.red(), tabFg.green(), tabFg.blue(), 150));
-            const QRectF textR = r.adjusted(11, 0, -26, 0);
-            const QString t = fm.elidedText(titles[i].isEmpty() ? QStringLiteral("terminal") : titles[i],
-                                            Qt::ElideRight, textR.width());
-            p->drawText(textR, Qt::AlignVCenter | Qt::AlignLeft, t);
-            // close ×
-            const QRectF c = L.close[i];
-            p->setPen(QPen(QColor(tabFg.red(), tabFg.green(), tabFg.blue(), act ? 200 : 120), 1.4));
-            const qreal m = 4.5;
-            p->drawLine(c.left() + m, c.top() + m, c.right() - m, c.bottom() - m);
-            p->drawLine(c.right() - m, c.top() + m, c.left() + m, c.bottom() - m);
-        }
-        // + button
-        p->setPen(QPen(QColor(tabFg.red(), tabFg.green(), tabFg.blue(), 200), 1.6));
-        const QRectF pl = L.plus;
-        const QPointF ctr = pl.center();
-        p->drawLine(ctr.x() - 6, ctr.y(), ctr.x() + 6, ctr.y());
-        p->drawLine(ctr.x(), ctr.y() - 6, ctr.x(), ctr.y() + 6);
-    }
-
-protected:
-    void mousePressEvent(QMouseEvent *e) override
-    {
-        const Layout L = layout();
-        const QPointF pos = e->position();
-        for (int i = 0; i < titles.size(); ++i) {
-            if (L.close[i].contains(pos)) { if (onCloseClicked) onCloseClicked(i); e->accept(); return; }
-        }
-        for (int i = 0; i < titles.size(); ++i) {
-            if (L.tab[i].contains(pos)) { if (onTabClicked) onTabClicked(i); e->accept(); return; }
-        }
-        if (L.plus.contains(pos)) { if (onNewTab) onNewTab(); e->accept(); return; }
-        e->accept();
-    }
-
-private:
-    struct Layout { QVector<QRectF> tab, close; QRectF plus; };
-    Layout layout() const
-    {
-        Layout L;
-        const qreal h = height();
-        const int n = titles.size();
-        const qreal gap = 2, plusW = 34;
-        const qreal avail = qMax<qreal>(0, width() - plusW - 4);
-        const qreal tabW = n > 0 ? qMin<qreal>(190, avail / n - gap) : 0;
-        qreal x = 2;
-        for (int i = 0; i < n; ++i) {
-            const QRectF r(x, 0, tabW, h);
-            L.tab.append(r);
-            L.close.append(QRectF(r.right() - 22, r.center().y() - 9, 18, 18));
-            x += tabW + gap;
-        }
-        L.plus = QRectF(x + 2, (h - 26) / 2, 26, 26);
-        return L;
-    }
-};
+// The tab BAR lives in the TSX now; this class is headless — it only keeps the live panes and shows
+// one by index. The model (titles + active) is pushed to Solid via tabsChanged().
 
 TerminalTabs::TerminalTabs(QQuickItem *parent)
     : QQuickItem(parent)
@@ -116,6 +23,15 @@ TerminalTabs::~TerminalTabs() = default;
 TerminalPanes *TerminalTabs::active() const
 {
     return (m_active >= 0 && m_active < m_tabs.size()) ? m_tabs[m_active].panes : nullptr;
+}
+
+void TerminalTabs::emitModel()
+{
+    QStringList titles;
+    titles.reserve(m_tabs.size());
+    for (const Tab &t : m_tabs)
+        titles.append(t.title);
+    emit tabsChanged(titles, m_active);
 }
 
 TerminalPanes *TerminalTabs::makePanes()
@@ -142,7 +58,7 @@ TerminalPanes *TerminalTabs::makePanes()
         if (i < 0)
             return;
         m_tabs[i].title = t;
-        syncBar();
+        emitModel();
         if (i == m_active)
             emit titleChanged(t);
     });
@@ -156,11 +72,6 @@ TerminalPanes *TerminalTabs::makePanes()
 void TerminalTabs::componentComplete()
 {
     QQuickItem::componentComplete();
-    m_bar = new TabBar(this);
-    auto *bar = static_cast<TabBar *>(m_bar);
-    bar->onTabClicked = [this](int i) { selectTab(i); };
-    bar->onCloseClicked = [this](int i) { closeTab(i); };
-    bar->onNewTab = [this] { newTab(); };
     newTab(); // the first tab
 }
 
@@ -171,7 +82,6 @@ void TerminalTabs::newTab()
         return;
     m_tabs.append({ panes, QString() });
     selectTab(m_tabs.size() - 1);
-    emit tabsChanged();
 }
 
 void TerminalTabs::closeTab(int index)
@@ -191,7 +101,6 @@ void TerminalTabs::closeTab(int index)
     else if (index < m_active)
         --m_active;
     selectTab(m_active);
-    emit tabsChanged();
 }
 
 void TerminalTabs::selectTab(int index)
@@ -202,39 +111,18 @@ void TerminalTabs::selectTab(int index)
     for (int k = 0; k < m_tabs.size(); ++k)
         m_tabs[k].panes->setVisible(k == index);
     relayout();
-    syncBar();
+    emitModel();
     if (auto *p = active()) {
         QMetaObject::invokeMethod(p, "refocus", Qt::QueuedConnection); // keyboard focus → its pane
         emit titleChanged(m_tabs[index].title);
     }
 }
 
-void TerminalTabs::syncBar()
-{
-    if (!m_bar)
-        return;
-    auto *bar = static_cast<TabBar *>(m_bar);
-    QStringList titles;
-    for (const Tab &t : m_tabs)
-        titles.append(t.title);
-    bar->barBg = m_handleColor;
-    bar->tabFg = m_foreground;
-    bar->activeBg = m_background;
-    bar->setModel(titles, m_active);
-    bar->setVisible(m_tabs.size() > 1); // a lone tab needs no strip
-}
-
 void TerminalTabs::relayout()
 {
-    const bool showBar = m_tabs.size() > 1;
-    const qreal barH = showBar ? kBarH : 0;
-    if (m_bar) {
-        m_bar->setX(0); m_bar->setY(0);
-        m_bar->setWidth(width()); m_bar->setHeight(kBarH);
-    }
     for (const Tab &t : m_tabs) {
-        t.panes->setX(0); t.panes->setY(barH);
-        t.panes->setWidth(width()); t.panes->setHeight(qMax<qreal>(0, height() - barH));
+        t.panes->setX(0); t.panes->setY(0);
+        t.panes->setWidth(width()); t.panes->setHeight(height());
     }
 }
 
@@ -287,7 +175,6 @@ void TerminalTabs::applyStyle(TerminalPanes *p)
         if (Member == v) return; \
         Member = v; \
         for (const Tab &t : std::as_const(m_tabs)) t.panes->PaneSetter(v); \
-        syncBar(); \
         emit styleChanged(); \
     }
 TABS_STYLE_SETTER(setFontFamily, m_fontFamily, const QString &, setFontFamily)

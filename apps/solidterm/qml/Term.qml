@@ -17,17 +17,22 @@ W.Div {
     property var emboss: termConfig.getInt("emboss", 0)
     property var cfgOpen: false
     property var title: "solidterm"
+    property var tabTitles: ["terminal"]
+    property var activeTab: 0
     property var kSplitRight: termConfig.getString("keys.splitRight", "Ctrl+Shift+E")
     property var kSplitDown: termConfig.getString("keys.splitDown", "Ctrl+Shift+O")
     property var kClosePane: termConfig.getString("keys.closePane", "Ctrl+Shift+W")
     property var kFocusNext: termConfig.getString("keys.focusNext", "Alt+Right")
     property var kFocusPrev: termConfig.getString("keys.focusPrev", "Alt+Left")
     property var kNewTab: termConfig.getString("keys.newTab", "Ctrl+Shift+T")
+    property var kNextTab: termConfig.getString("keys.nextTab", "Ctrl+PgDown")
+    property var kPrevTab: termConfig.getString("keys.prevTab", "Ctrl+PgUp")
     readonly property var __const_SCHEMES: ({ midnight: ({ bg: "#161a21", fg: "#d4dae3" }), solarized: ({ bg: "#002b36", fg: "#93a1a1" }), gruvbox: ({ bg: "#282828", fg: "#ebdbb2" }), paper: ({ bg: "#f7f2e9", fg: "#3a3532" }) })
-    readonly property var __const_ACTIONS: [({ key: "newTab", label: "New tab", def: "Ctrl+Shift+T" }), ({ key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" }), ({ key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" }), ({ key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" }), ({ key: "focusNext", label: "Focus next pane", def: "Alt+Right" }), ({ key: "focusPrev", label: "Focus previous pane", def: "Alt+Left" })]
-    function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : k === "newTab" ? kNewTab : termConfig.getString("keys." + k, ""); }
-    function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } } } } } } }
-    function setKey(k, seq) { termConfig.set("keys." + k, seq); if (k === "splitRight") { kSplitRight = seq; } else { if (k === "splitDown") { kSplitDown = seq; } else { if (k === "closePane") { kClosePane = seq; } else { if (k === "focusNext") { kFocusNext = seq; } else { if (k === "focusPrev") { kFocusPrev = seq; } else { if (k === "newTab") { kNewTab = seq; } } } } } } }
+    readonly property var __const_ACTIONS: [({ key: "newTab", label: "New tab", def: "Ctrl+Shift+T" }), ({ key: "nextTab", label: "Next tab", def: "Ctrl+PgDown" }), ({ key: "prevTab", label: "Previous tab", def: "Ctrl+PgUp" }), ({ key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" }), ({ key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" }), ({ key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" }), ({ key: "focusNext", label: "Focus next pane", def: "Alt+Right" }), ({ key: "focusPrev", label: "Focus previous pane", def: "Alt+Left" })]
+    function tabLabel(t) { if (!t) { return "terminal"; } var s = t; if (s.endsWith("/")) { s = s.slice(0, -1); } var slash = s.lastIndexOf("/"); return slash >= 0 ? s.slice(slash + 1) : s; }
+    function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : k === "newTab" ? kNewTab : k === "nextTab" ? kNextTab : k === "prevTab" ? kPrevTab : termConfig.getString("keys." + k, ""); }
+    function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } } } } } } } } }
+    function setKey(k, seq) { termConfig.set("keys." + k, seq); if (k === "splitRight") { kSplitRight = seq; } else { if (k === "splitDown") { kSplitDown = seq; } else { if (k === "closePane") { kClosePane = seq; } else { if (k === "focusNext") { kFocusNext = seq; } else { if (k === "focusPrev") { kFocusPrev = seq; } else { if (k === "newTab") { kNewTab = seq; } else { if (k === "nextTab") { kNextTab = seq; } else { if (k === "prevTab") { kPrevTab = seq; } } } } } } } } }
     property var __cleanups: []
     Component.onCompleted: { sysTheme.setUiOpacity(opacity_ / 100); }
     Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
@@ -45,6 +50,38 @@ W.Div {
         }
     }
     W.Div {
+        cssClass: ["tabbar"]
+        visible: !!(tabTitles.length > 1)
+        Repeater {
+            model: tabTitles
+            W.Div {
+                cssClass: ["tab"].concat(index === activeTab ? ["tab-active"] : [])
+                cssState: __hover0.containsMouse ? ["hover"] : []
+                W.Text {
+                    cssClass: ["tab-label"]
+                    text: "" + (tabLabel(modelData))
+                }
+                W.Button {
+                    cssClass: ["tab-x"]
+                    text: "✕"
+                    onClicked: _ref_term.closeTab(index)
+                }
+                MouseArea {
+                    id: __hover0
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: _ref_term.selectTab(index)
+                }
+            }
+        }
+        W.Button {
+            cssClass: ["tab-new"]
+            text: "＋"
+            onClicked: _ref_term.newTab()
+        }
+    }
+    W.Div {
         cssClass: ["term-body"]
         Css.CssRect {
             cssPrimitive: "div"
@@ -52,6 +89,7 @@ W.Div {
             QM_SolidTerm.TerminalTabs {
                 id: _ref_term
                 anchors.fill: parent
+                onTabsChanged: function(titles, active) { tabTitles = titles; activeTab = active; }
                 fontFamily: uiFontFamily
                 fontSize: uiFontSize
                 background: scheme === "system" ? sysTheme.base : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).bg
@@ -61,7 +99,7 @@ W.Div {
                 backgroundOpacity: opacity_ / 100
                 emboss: emboss !== 0
                 handleColor: sysTheme.window
-                reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab]
+                reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab]
                 onAccelerator: function(seq) { return onAccel(seq) }
                 onTitleChanged: function(t) { return title = t }
                 onAllClosed: function() { return process.exit(0) }

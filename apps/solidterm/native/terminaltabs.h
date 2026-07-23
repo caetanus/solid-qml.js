@@ -7,14 +7,15 @@
 
 class TerminalPanes;
 
-// Tabs (owner's queue: "TABS … manter panes vivos por tab"). Each tab is a full split tree
-// (TerminalPanes). Switching tabs must NOT destroy the others' ptys, so tabs are kept alive
-// natively here (a reactive <For> in the TSX would recreate — and kill — them). This item owns a
-// native tab strip on top and a stack of TerminalPanes below; only the active tab is visible.
+// The session/tab stack (owner's queue: "TABS … manter panes vivos por tab"; + directive: chrome
+// in Solid, native only for the terminal). Each tab is a full split tree (TerminalPanes). Switching
+// tabs must NOT destroy the others' ptys, so tabs are kept alive HERE — a reactive <For> in the TSX
+// would recreate and kill them. This item is HEADLESS: it owns the live panes and shows one by
+// index, but paints nothing; the tab BAR is rendered in the TSX from the model this exposes.
 //
-// It presents the SAME surface as TerminalPanes (style props, reservedSequences, split/close/focus,
-// accelerator) proxied to the active tab, so the TSX swaps <TerminalPanes> for <TerminalTabs> with
-// no other change; plus newTab/closeTab and a Ctrl+Shift+T accelerator.
+// Bridge: the TSX drives newTab/closeTab/selectTab and mirrors the model from tabsChanged(titles,
+// active) (emitted on any add/close/select/title change). It presents the SAME surface as
+// TerminalPanes (style, reservedSequences, split/close/focus, accelerator) proxied to the active tab.
 class TerminalTabs : public QQuickItem {
     Q_OBJECT
     Q_PROPERTY(QString fontFamily READ fontFamily WRITE setFontFamily NOTIFY styleChanged)
@@ -70,7 +71,9 @@ public:
 signals:
     void styleChanged();
     void reservedChanged();
-    void tabsChanged();
+    // The full tab model for the TSX to mirror (titles per tab + the active index). Emitted on any
+    // add / close / select / OSC-title change.
+    void tabsChanged(const QStringList &titles, int active);
     void allClosed();                          // last tab closed → the app can quit
     void titleChanged(const QString &title);   // active tab's focused-pane title → window
     void accelerator(const QString &sequence); // a reserved chord from the active tab
@@ -89,14 +92,13 @@ private:
     TerminalPanes *makePanes();
     void applyStyle(TerminalPanes *p);
     void relayout();
-    void syncBar();
+    void emitModel();          // push (titles, active) to the TSX
     TerminalPanes *active() const;
 
     QVector<Tab> m_tabs;
     int m_active = 0;
     bool m_didInitialFocus = false;
     class QQmlComponent *m_panesComponent = nullptr;
-    class TabBar *m_bar = nullptr;
 
     QString m_fontFamily = QStringLiteral("monospace");
     int m_fontSize = 15;

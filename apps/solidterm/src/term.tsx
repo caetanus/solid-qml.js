@@ -1,7 +1,7 @@
 // solidterm UI — tiling panes + right-click menu + a GNOME-style preferences window with a
 // user-rebindable Keyboard section. All config (prefs AND keybindings) persists to
 // ~/.config/solidterm/config.json through the native `termConfig` store.
-import { createSignal, For } from "solid-js";
+import { createSignal, For, Index, Show } from "solid-js";
 import { TerminalTabs, KeyRecorder } from "qml:SolidTerm";
 import "./term.css";
 
@@ -20,6 +20,8 @@ const SCHEMES: Record<string, { bg: string; fg: string }> = {
 // Actions the user can rebind. `def` is the tilix-flavoured default.
 const ACTIONS = [
   { key: "newTab", label: "New tab", def: "Ctrl+Shift+T" },
+  { key: "nextTab", label: "Next tab", def: "Ctrl+PgDown" },
+  { key: "prevTab", label: "Previous tab", def: "Ctrl+PgUp" },
   { key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" },
   { key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" },
   { key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" },
@@ -39,6 +41,17 @@ export function Term() {
   sysTheme.setUiOpacity(opacity() / 100); // apply saved translucency to the chrome at startup
   const [cfgOpen, setCfgOpen] = createSignal(false);
   const [title, setTitle] = createSignal("solidterm");
+  // Tab model mirrored from the native (headless) stack: one title per tab + the active index. The
+  // bar is rendered here in Solid; the native side just keeps the ptys alive and shows one by index.
+  const [tabTitles, setTabTitles] = createSignal(["terminal"]);
+  const [activeTab, setActiveTab] = createSignal(0);
+  const tabLabel = (t: string) => {
+    if (!t) return "terminal";
+    let s = t;
+    if (s.endsWith("/")) s = s.slice(0, -1); // drop a trailing slash
+    const slash = s.lastIndexOf("/");         // show the last path segment
+    return slash >= 0 ? s.slice(slash + 1) : s;
+  };
   let term: any;
 
   // Keybindings: one signal per accelerator action, seeded from config (default when unset). The
@@ -49,9 +62,12 @@ export function Term() {
   const [kFocusNext, setKFocusNext] = createSignal(termConfig.getString("keys.focusNext", "Alt+Right"));
   const [kFocusPrev, setKFocusPrev] = createSignal(termConfig.getString("keys.focusPrev", "Alt+Left"));
   const [kNewTab, setKNewTab] = createSignal(termConfig.getString("keys.newTab", "Ctrl+Shift+T"));
+  const [kNextTab, setKNextTab] = createSignal(termConfig.getString("keys.nextTab", "Ctrl+PgDown"));
+  const [kPrevTab, setKPrevTab] = createSignal(termConfig.getString("keys.prevTab", "Ctrl+PgUp"));
   const getKey = (k: string) =>
     k === "splitRight" ? kSplitRight() : k === "splitDown" ? kSplitDown() : k === "closePane" ? kClosePane()
     : k === "focusNext" ? kFocusNext() : k === "focusPrev" ? kFocusPrev() : k === "newTab" ? kNewTab()
+    : k === "nextTab" ? kNextTab() : k === "prevTab" ? kPrevTab()
     : termConfig.getString("keys." + k, "");
   // Accelerators are consumed by the focused terminal (not Qt's ambiguous Shortcut map) and
   // dispatched here by matching the pressed sequence to the configured binding.
@@ -62,6 +78,8 @@ export function Term() {
     else if (seq === kFocusNext()) term.focusNext();
     else if (seq === kFocusPrev()) term.focusPrev();
     else if (seq === kNewTab()) term.newTab();
+    else if (seq === kNextTab()) { const n = tabTitles().length; if (n > 1) term.selectTab((activeTab() + 1) % n); }
+    else if (seq === kPrevTab()) { const n = tabTitles().length; if (n > 1) term.selectTab((activeTab() - 1 + n) % n); }
   };
   const setKey = (k: string, seq: string) => {
     termConfig.set("keys." + k, seq);
@@ -71,6 +89,8 @@ export function Term() {
     else if (k === "focusNext") setKFocusNext(seq);
     else if (k === "focusPrev") setKFocusPrev(seq);
     else if (k === "newTab") setKNewTab(seq);
+    else if (k === "nextTab") setKNextTab(seq);
+    else if (k === "prevTab") setKPrevTab(seq);
   };
 
   return (
@@ -80,10 +100,23 @@ export function Term() {
         <button class="term-gear" onClick={() => setCfgOpen(true)}>⚙</button>
       </div>
 
+      <Show when={tabTitles().length > 1}>
+        <div class="tabbar">
+          <Index each={tabTitles()}>{(t, i) =>
+            <div class="tab" classList={{ "tab-active": i === activeTab() }} onClick={() => term.selectTab(i)}>
+              <text class="tab-label">{tabLabel(t())}</text>
+              <button class="tab-x" onClick={() => term.closeTab(i)}>✕</button>
+            </div>
+          }</Index>
+          <button class="tab-new" onClick={() => term.newTab()}>＋</button>
+        </div>
+      </Show>
+
       <div class="term-body">
         <TerminalTabs
           ref={term}
           class="term-pane"
+          onTabsChanged={(titles, active) => { setTabTitles(titles); setActiveTab(active); }}
           fontFamily={uiFontFamily()}
           fontSize={uiFontSize()}
           background={scheme() === "system" ? sysTheme.base : (SCHEMES[scheme()] || SCHEMES.midnight).bg}
@@ -93,7 +126,7 @@ export function Term() {
           backgroundOpacity={opacity() / 100}
           emboss={emboss() !== 0}
           handleColor={sysTheme.window}
-          reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab()]}
+          reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab()]}
           onAccelerator={(seq) => onAccel(seq)}
           onTitleChanged={(t) => setTitle(t)}
           onAllClosed={() => process.exit(0)}

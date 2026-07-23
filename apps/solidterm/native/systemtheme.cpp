@@ -138,6 +138,15 @@ QString SystemTheme::styleSheet() const
 .term-gear:hover { background: %4; }
 .term-gear:active { background: %5; }
 .term-pane { border: 1px solid %8; }
+.tabbar { background: %3; }
+.tab { background: %1; }
+.tab-label { color: %7; }
+.tab-active { background: %2; border-top: 2px solid %9; }
+.tab-active .tab-label { color: %6; }
+.tab-x { color: %7; }
+.tab-x:hover { background: %5; }
+.tab-new { color: %7; }
+.tab-new:hover { background: %4; }
 .term-status { background: %3; border-top: 1px solid %8; }
 .term-status-t { color: %9; }
 .term-hint { color: %7; }
