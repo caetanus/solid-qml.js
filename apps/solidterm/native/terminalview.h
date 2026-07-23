@@ -77,7 +77,8 @@ public:
     Q_INVOKABLE void takeFocus() { forceActiveFocus(Qt::MouseFocusReason); }
     bool hasSelection() const { return m_selValid; }
     Q_INVOKABLE void copySelection();
-    Q_INVOKABLE void pasteClipboard();
+    Q_INVOKABLE void pasteClipboard();      // paste the clipboard (guarded: multiline → confirm)
+    Q_INVOKABLE void pasteText(const QString &text); // send text verbatim (post-confirm path)
     Q_INVOKABLE void clearScrollback();
     // Search the scrollback + screen (case-insensitive). Highlights matches, jumps to one, and
     // emits searchChanged(index, count) for the Solid search bar. next/prev cycle; clear removes.
@@ -100,6 +101,7 @@ signals:
     void reservedSequencesChanged();
     void accelerator(const QString &sequence); // a reserved chord was pressed (consumed)
     void searchChanged(int index, int count);  // current match (1-based; 0 = none) + total
+    void unsafePasteRequested(const QString &text); // multiline paste → confirm in the Solid dialog
 
 protected:
     void componentComplete() override;

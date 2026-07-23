@@ -106,7 +106,7 @@ TerminalView::TerminalView(QQuickItem *parent)
     m_font = QFont(QStringLiteral("monospace"));
     m_font.setPixelSize(15);
     m_font.setStyleHint(QFont::Monospace);
-    setAcceptedMouseButtons(Qt::LeftButton); // right passes to the solid <ContextMenu> above
+    setAcceptedMouseButtons(Qt::LeftButton | Qt::MiddleButton); // right passes to the solid <ContextMenu>
     setActiveFocusOnTab(true);
     setAcceptHoverEvents(true);               // hover to detect/underline links
     setFlag(ItemHasContents, true);
@@ -649,6 +649,12 @@ void TerminalView::keyPressEvent(QKeyEvent *event)
             return;
         }
     }
+    // Shift+Insert pastes the clipboard (the other terminal convention).
+    if ((event->modifiers() & Qt::ShiftModifier) && event->key() == Qt::Key_Insert) {
+        pasteClipboard();
+        event->accept();
+        return;
+    }
     // Typing snaps back to live output.
     if (m_scrollOffset > 0) {
         m_scrollOffset = 0;
@@ -726,7 +732,20 @@ void TerminalView::copySelection()
 
 void TerminalView::pasteClipboard()
 {
-    sendText(QGuiApplication::clipboard()->text());
+    const QString text = QGuiApplication::clipboard()->text();
+    if (text.isEmpty())
+        return;
+    // Bracketed-paste-worthy safety: multiline text (a stray newline runs the command) → confirm
+    // in the Solid dialog first; single-line pastes go straight through.
+    if (text.contains(QLatin1Char('\n')) || text.contains(QLatin1Char('\r')))
+        emit unsafePasteRequested(text);
+    else
+        sendText(text);
+}
+
+void TerminalView::pasteText(const QString &text)
+{
+    sendText(text); // confirmed (or explicitly-chosen) paste — no re-prompt
 }
 
 void TerminalView::clearScrollback()
@@ -961,6 +980,18 @@ void TerminalView::mouseDoubleClickEvent(QMouseEvent *event)
 void TerminalView::mousePressEvent(QMouseEvent *event)
 {
     forceActiveFocus(Qt::MouseFocusReason);
+    // Middle-click pastes the PRIMARY selection (X11/Wayland convention).
+    if (event->button() == Qt::MiddleButton) {
+        const QString sel = QGuiApplication::clipboard()->text(QClipboard::Selection);
+        if (!sel.isEmpty()) {
+            if (sel.contains(QLatin1Char('\n')) || sel.contains(QLatin1Char('\r')))
+                emit unsafePasteRequested(sel);
+            else
+                sendText(sel);
+        }
+        event->accept();
+        return;
+    }
     // Triple-click (a press shortly after a double-click) → select the whole line.
     if (event->button() == Qt::LeftButton && event->timestamp() - m_lastDblTime < 500) {
         m_lastDblTime = 0;
@@ -1009,6 +1040,12 @@ void TerminalView::mouseMoveEvent(QMouseEvent *event)
 void TerminalView::mouseReleaseEvent(QMouseEvent *event)
 {
     m_selecting = false;
+    // Copy-on-select to the PRIMARY selection (middle-click paste; doesn't clobber the clipboard).
+    if (m_selValid) {
+        const QString text = selectedText();
+        if (!text.isEmpty())
+            QGuiApplication::clipboard()->setText(text, QClipboard::Selection);
+    }
     event->accept();
 }
 

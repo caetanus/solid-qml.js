@@ -50,6 +50,10 @@ export function Term() {
   let searchInput: any;
   const openSearch = () => { setSearchOpen(true); if (searchInput) searchInput.forceActiveFocus(); };
   const closeSearch = () => { setSearchOpen(false); term.clearSearch(); term.refocus(); };
+  // Multiline-paste confirmation (a stray newline would run the command).
+  const [pastePrompt, setPastePrompt] = createSignal("");
+  const pasteLineCount = () => { const p = pastePrompt(); return p ? p.split("\n").length : 0; };
+  const confirmPaste = () => { term.pasteTextFocused(pastePrompt()); setPastePrompt(""); };
   // Tab model mirrored from the native (headless) stack: one title per tab + the active index. The
   // bar is rendered here in Solid; the native side just keeps the ptys alive and shows one by index.
   const [tabTitles, setTabTitles] = createSignal(["terminal"]);
@@ -141,6 +145,7 @@ export function Term() {
           class="term-pane"
           onTabsChanged={(titles, active) => { setTabTitles(titles); setActiveTab(active); }}
           onSearchChanged={(idx, count) => { setSearchIdx(idx); setSearchCount(count); }}
+          onUnsafePasteRequested={(text) => setPastePrompt(text)}
           fontFamily={uiFontFamily()}
           fontSize={uiFontSize()}
           background={scheme() === "system" ? sysTheme.base : (SCHEMES[scheme()] || SCHEMES.midnight).bg}
@@ -280,6 +285,17 @@ export function Term() {
 
           <div class="cfg-actions">
             <button class="cfg-close" type="submit" onClick={() => setCfgOpen(false)}>Done</button>
+          </div>
+        </div>
+      </dialog>
+
+      <dialog open={pastePrompt() !== ""} title="Paste" class="cfg" onClose={() => setPastePrompt("")}>
+        <div class="cfg-body paste-body">
+          <text class="paste-warn">Paste {pasteLineCount()} lines into the terminal?</text>
+          <text class="paste-hint">Multi-line paste can run commands. Review before confirming.</text>
+          <div class="cfg-actions paste-actions">
+            <button class="paste-cancel" onClick={() => setPastePrompt("")}>Cancel</button>
+            <button class="cfg-close" type="submit" onClick={() => confirmPaste()}>Paste</button>
           </div>
         </div>
       </dialog>

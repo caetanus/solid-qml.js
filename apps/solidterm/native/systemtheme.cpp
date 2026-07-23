@@ -171,6 +171,8 @@ QString SystemTheme::styleSheet() const
 .cfg-in:focus, .cfg-num:focus, .cfg-sel:focus { border: 1px solid %9; }
 .cfg-close { background: %9; color: %10; }
 .cfg-close:hover { background: %9; }
+.paste-hint { color: %7; }
+.paste-cancel { background: %4; color: %6; }
 )")
         .arg(h(p.window), h(p.view), h(p.header), h(p.card), h(p.popover),
              h(p.text), h(p.dim), h(p.border), h(p.accent), h(p.accentText))

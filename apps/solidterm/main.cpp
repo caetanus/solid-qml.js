@@ -24,6 +24,7 @@
 #include <QKeySequence>
 #include <QTimer>
 #include <QGuiApplication>
+#include <QClipboard>
 #include <QSurfaceFormat>
 
 int main(int argc, char **argv)
@@ -172,7 +173,10 @@ int main(int argc, char **argv)
                                 if (cmd == QLatin1String("c")) tabs->closeFocused();
                                 else if (cmd == QLatin1String("n")) tabs->focusNext();
                                 else if (cmd == QLatin1String("t")) tabs->newTab();
-                                else if (cmd.startsWith(QLatin1Char('s'))) tabs->selectTab(cmd.mid(1).toInt());
+                                else if (cmd == QLatin1String("upaste")) {
+                                    QGuiApplication::clipboard()->setText(QStringLiteral("line one\nline two\nline three"));
+                                    tabs->pasteFocused();
+                                } else if (cmd.startsWith(QLatin1Char('s'))) tabs->selectTab(cmd.mid(1).toInt());
                                 else tabs->split(cmd.toInt());
                                 return;
                             }

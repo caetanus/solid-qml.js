@@ -71,6 +71,7 @@ public:
     // Paste/copy proxied to the focused pane (menu actions).
     Q_INVOKABLE void copyFocused();
     Q_INVOKABLE void pasteFocused();
+    Q_INVOKABLE void pasteTextFocused(const QString &text); // confirmed paste → focused pane
     Q_INVOKABLE void clearFocused();
     // Search proxied to the focused pane.
     Q_INVOKABLE void searchFocused(const QString &query);
@@ -81,6 +82,7 @@ public:
 signals:
     void panesChanged();
     void searchChanged(int index, int count);
+    void unsafePasteRequested(const QString &text);
     void styleChanged();
     void allClosed();           // last pane's shell exited → the app can quit/close the tab
     void titleChanged(const QString &title); // focused pane's OSC title

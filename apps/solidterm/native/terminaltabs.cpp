@@ -57,6 +57,7 @@ TerminalPanes *TerminalTabs::makePanes()
         if (active() == panes)
             emit searchChanged(idx, count);
     });
+    connect(panes, &TerminalPanes::unsafePasteRequested, this, &TerminalTabs::unsafePasteRequested);
     connect(panes, &TerminalPanes::titleChanged, this, [this, panes](const QString &t) {
         const int i = [&] { for (int k = 0; k < m_tabs.size(); ++k) if (m_tabs[k].panes == panes) return k; return -1; }();
         if (i < 0)
@@ -157,6 +158,7 @@ void TerminalTabs::focusPrev() { if (auto *p = active()) p->focusPrev(); }
 void TerminalTabs::refocus() { if (auto *p = active()) p->refocus(); }
 void TerminalTabs::copyFocused() { if (auto *p = active()) p->copyFocused(); }
 void TerminalTabs::pasteFocused() { if (auto *p = active()) p->pasteFocused(); }
+void TerminalTabs::pasteTextFocused(const QString &t) { if (auto *p = active()) p->pasteTextFocused(t); }
 void TerminalTabs::clearFocused() { if (auto *p = active()) p->clearFocused(); }
 void TerminalTabs::searchFocused(const QString &q) { if (auto *p = active()) p->searchFocused(q); }
 void TerminalTabs::searchNext() { if (auto *p = active()) p->searchNext(); }

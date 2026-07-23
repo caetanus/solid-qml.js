@@ -21,6 +21,7 @@ W.Div {
     property var searchQuery: ""
     property var searchIdx: 0
     property var searchCount: 0
+    property var pastePrompt: ""
     property var tabTitles: ["terminal"]
     property var activeTab: 0
     property var kSplitRight: termConfig.getString("keys.splitRight", "Ctrl+Shift+E")
@@ -36,6 +37,8 @@ W.Div {
     readonly property var __const_ACTIONS: [({ key: "newTab", label: "New tab", def: "Ctrl+Shift+T" }), ({ key: "nextTab", label: "Next tab", def: "Ctrl+PgDown" }), ({ key: "prevTab", label: "Previous tab", def: "Ctrl+PgUp" }), ({ key: "search", label: "Find", def: "Ctrl+Shift+F" }), ({ key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" }), ({ key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" }), ({ key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" }), ({ key: "focusNext", label: "Focus next pane", def: "Alt+Right" }), ({ key: "focusPrev", label: "Focus previous pane", def: "Alt+Left" })]
     function openSearch() { searchOpen = true; if (_ref_searchInput) { _ref_searchInput.forceActiveFocus(); } }
     function closeSearch() { searchOpen = false; _ref_term.clearSearch(); _ref_term.refocus(); }
+    function pasteLineCount() { var p = pastePrompt; return p ? p.split("\n").length : 0; }
+    function confirmPaste() { _ref_term.pasteTextFocused(pastePrompt); pastePrompt = ""; }
     function tabLabel(t) { if (!t) { return "terminal"; } var s = t; if (s.endsWith("/")) { s = s.slice(0, -1); } var slash = s.lastIndexOf("/"); return slash >= 0 ? s.slice(slash + 1) : s; }
     function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : k === "newTab" ? kNewTab : k === "nextTab" ? kNextTab : k === "prevTab" ? kPrevTab : k === "search" ? kSearch : termConfig.getString("keys." + k, ""); }
     function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } else { if (seq === kSearch) { openSearch(); } } } } } } } } } }
@@ -133,6 +136,7 @@ W.Div {
                 anchors.fill: parent
                 onTabsChanged: function(titles, active) { tabTitles = titles; activeTab = active; }
                 onSearchChanged: function(idx, count) { searchIdx = idx; searchCount = count; }
+                onUnsafePasteRequested: function(text) { return pastePrompt = text }
                 fontFamily: uiFontFamily
                 fontSize: uiFontSize
                 background: scheme === "system" ? sysTheme.base : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).bg
@@ -430,6 +434,37 @@ W.Div {
                     isDefault: true
                     text: "Done"
                     onClicked: cfgOpen = false
+                }
+            }
+        }
+    }
+    W.Dialog {
+        open: !!(pastePrompt !== "")
+        title: "Paste"
+        cssClass: ["cfg"]
+        onDialogClosed: { pastePrompt = "" }
+        W.Div {
+            cssClass: ["cfg-body", "paste-body"]
+            W.Text {
+                cssClass: ["paste-warn"]
+                text: "Paste " + (pasteLineCount()) + " lines into the terminal?"
+            }
+            W.Text {
+                cssClass: ["paste-hint"]
+                text: "Multi-line paste can run commands. Review before confirming."
+            }
+            W.Div {
+                cssClass: ["cfg-actions", "paste-actions"]
+                W.Button {
+                    cssClass: ["paste-cancel"]
+                    text: "Cancel"
+                    onClicked: pastePrompt = ""
+                }
+                W.Button {
+                    cssClass: ["cfg-close"]
+                    isDefault: true
+                    text: "Paste"
+                    onClicked: confirmPaste()
                 }
             }
         }
