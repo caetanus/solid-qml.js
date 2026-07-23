@@ -80,6 +80,7 @@ public:
     Q_INVOKABLE void pasteClipboard();      // paste the clipboard (guarded: multiline → confirm)
     Q_INVOKABLE void pasteText(const QString &text); // send text verbatim (post-confirm path)
     Q_INVOKABLE void clearScrollback();
+    Q_INVOKABLE void resetTerminal();       // soft reset (attrs/cursor/modes back to defaults)
     // Search the scrollback + screen (case-insensitive). Highlights matches, jumps to one, and
     // emits searchChanged(index, count) for the Solid search bar. next/prev cycle; clear removes.
     Q_INVOKABLE void search(const QString &query);

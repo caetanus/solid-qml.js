@@ -95,6 +95,15 @@ export function Term() {
     else if (seq === kNextTab()) { const n = tabTitles().length; if (n > 1) term.selectTab((activeTab() + 1) % n); }
     else if (seq === kPrevTab()) { const n = tabTitles().length; if (n > 1) term.selectTab((activeTab() - 1 + n) % n); }
     else if (seq === kSearch()) openSearch();
+    else if (seq === "Ctrl+=" || seq === "Ctrl++") zoomFont(1);
+    else if (seq === "Ctrl+-") zoomFont(-1);
+    else if (seq === "Ctrl+0") zoomFont(0);
+  };
+  // Font zoom (Ctrl +/−/0). 0 resets to the default.
+  const zoomFont = (d: number) => {
+    const n = d === 0 ? 15 : Math.max(6, Math.min(40, uiFontSize() + d));
+    setUiFontSize(n);
+    termConfig.set("fontSize", n);
   };
   const setKey = (k: string, seq: string) => {
     termConfig.set("keys." + k, seq);
@@ -155,7 +164,7 @@ export function Term() {
           backgroundOpacity={opacity() / 100}
           emboss={emboss() !== 0}
           handleColor={sysTheme.window}
-          reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab()]}
+          reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0"]}
           onAccelerator={(seq) => onAccel(seq)}
           onTitleChanged={(t) => setTitle(t)}
           onAllClosed={() => process.exit(0)}
@@ -169,7 +178,9 @@ export function Term() {
           <MenuItem onClick={() => term.split(Qt.Vertical)}>Split &down</MenuItem>
           <MenuItem onClick={() => term.closeFocused()}>Close &pane</MenuItem>
           <MenuSeparator />
+          <MenuItem onClick={() => openSearch()}>&Find…</MenuItem>
           <MenuItem onClick={() => term.clearFocused()}>Clear scrollback</MenuItem>
+          <MenuItem onClick={() => term.resetFocused()}>&Reset</MenuItem>
           <MenuItem onClick={() => setCfgOpen(true)}>Pre&ferences…</MenuItem>
         </ContextMenu>
       </div>

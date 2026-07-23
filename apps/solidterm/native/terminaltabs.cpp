@@ -160,6 +160,7 @@ void TerminalTabs::copyFocused() { if (auto *p = active()) p->copyFocused(); }
 void TerminalTabs::pasteFocused() { if (auto *p = active()) p->pasteFocused(); }
 void TerminalTabs::pasteTextFocused(const QString &t) { if (auto *p = active()) p->pasteTextFocused(t); }
 void TerminalTabs::clearFocused() { if (auto *p = active()) p->clearFocused(); }
+void TerminalTabs::resetFocused() { if (auto *p = active()) p->resetFocused(); }
 void TerminalTabs::searchFocused(const QString &q) { if (auto *p = active()) p->searchFocused(q); }
 void TerminalTabs::searchNext() { if (auto *p = active()) p->searchNext(); }
 void TerminalTabs::searchPrev() { if (auto *p = active()) p->searchPrev(); }

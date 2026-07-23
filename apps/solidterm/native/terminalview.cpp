@@ -757,6 +757,14 @@ void TerminalView::clearScrollback()
     update();
 }
 
+void TerminalView::resetTerminal()
+{
+    if (m_screen)
+        vterm_screen_reset(m_screen, 1); // hard reset: clears attrs, modes, cursor, alt-screen
+    m_scrollOffset = 0;
+    update();
+}
+
 void TerminalView::resetBlink()
 {
     m_blinkOn = true;

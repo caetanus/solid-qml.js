@@ -73,6 +73,7 @@ public:
     Q_INVOKABLE void pasteFocused();
     Q_INVOKABLE void pasteTextFocused(const QString &text); // confirmed paste → focused pane
     Q_INVOKABLE void clearFocused();
+    Q_INVOKABLE void resetFocused();
     // Search proxied to the focused pane.
     Q_INVOKABLE void searchFocused(const QString &query);
     Q_INVOKABLE void searchNext();
