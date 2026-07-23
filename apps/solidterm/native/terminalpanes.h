@@ -67,6 +67,7 @@ public:
     Q_INVOKABLE void closeFocused();
     Q_INVOKABLE void focusNext();
     Q_INVOKABLE void focusPrev();
+    Q_INVOKABLE void refocus(); // re-take keyboard focus on the current pane (tab switch)
     // Paste/copy proxied to the focused pane (menu actions).
     Q_INVOKABLE void copyFocused();
     Q_INVOKABLE void pasteFocused();

@@ -444,6 +444,18 @@ void TerminalPanes::refreshHeaderFocus()
             l->header->setFocused(l->view->hasActiveFocus());
 }
 
+void TerminalPanes::refocus()
+{
+    if (m_focused)
+        setFocused(m_focused);
+    else {
+        QVector<Node *> leaves;
+        collectLeaves(m_root, leaves);
+        if (!leaves.isEmpty())
+            setFocused(leaves.first());
+    }
+}
+
 void TerminalPanes::closeFocused() { if (m_focused) removeLeaf(m_focused); }
 
 void TerminalPanes::focusNext()

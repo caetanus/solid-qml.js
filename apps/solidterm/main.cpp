@@ -12,6 +12,7 @@
 #include "native/paneheader.h"
 #include "native/termconfig.h"
 #include "native/terminalpanes.h"
+#include "native/terminaltabs.h"
 #include "native/terminalview.h"
 
 #include <QApplication>
@@ -56,6 +57,7 @@ int main(int argc, char **argv)
 
     qmlRegisterType<TerminalView>("SolidTerm", 1, 0, "TerminalView");
     qmlRegisterType<TerminalPanes>("SolidTerm", 1, 0, "TerminalPanes");
+    qmlRegisterType<TerminalTabs>("SolidTerm", 1, 0, "TerminalTabs");
     qmlRegisterType<KeyRecorder>("SolidTerm", 1, 0, "KeyRecorder");
     qmlRegisterType<PaneHeader>("SolidTerm", 1, 0, "PaneHeader");
 
@@ -166,10 +168,12 @@ int main(int argc, char **argv)
                         QList<QQuickItem *> stack { w->contentItem() };
                         while (!stack.isEmpty()) {
                             QQuickItem *it = stack.takeLast();
-                            if (auto *panes = qobject_cast<TerminalPanes *>(it)) {
-                                if (cmd == QLatin1String("c")) panes->closeFocused();
-                                else if (cmd == QLatin1String("n")) panes->focusNext();
-                                else panes->split(cmd.toInt());
+                            if (auto *tabs = qobject_cast<TerminalTabs *>(it)) {
+                                if (cmd == QLatin1String("c")) tabs->closeFocused();
+                                else if (cmd == QLatin1String("n")) tabs->focusNext();
+                                else if (cmd == QLatin1String("t")) tabs->newTab();
+                                else if (cmd.startsWith(QLatin1Char('s'))) tabs->selectTab(cmd.mid(1).toInt());
+                                else tabs->split(cmd.toInt());
                                 return;
                             }
                             for (QQuickItem *k : it->childItems()) stack.append(k);

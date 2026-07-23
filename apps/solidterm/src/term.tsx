@@ -2,7 +2,7 @@
 // user-rebindable Keyboard section. All config (prefs AND keybindings) persists to
 // ~/.config/solidterm/config.json through the native `termConfig` store.
 import { createSignal, For } from "solid-js";
-import { TerminalPanes, KeyRecorder } from "qml:SolidTerm";
+import { TerminalTabs, KeyRecorder } from "qml:SolidTerm";
 import "./term.css";
 
 declare const sysTheme: any;
@@ -19,6 +19,7 @@ const SCHEMES: Record<string, { bg: string; fg: string }> = {
 
 // Actions the user can rebind. `def` is the tilix-flavoured default.
 const ACTIONS = [
+  { key: "newTab", label: "New tab", def: "Ctrl+Shift+T" },
   { key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" },
   { key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" },
   { key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" },
@@ -47,9 +48,10 @@ export function Term() {
   const [kClosePane, setKClosePane] = createSignal(termConfig.getString("keys.closePane", "Ctrl+Shift+W"));
   const [kFocusNext, setKFocusNext] = createSignal(termConfig.getString("keys.focusNext", "Alt+Right"));
   const [kFocusPrev, setKFocusPrev] = createSignal(termConfig.getString("keys.focusPrev", "Alt+Left"));
+  const [kNewTab, setKNewTab] = createSignal(termConfig.getString("keys.newTab", "Ctrl+Shift+T"));
   const getKey = (k: string) =>
     k === "splitRight" ? kSplitRight() : k === "splitDown" ? kSplitDown() : k === "closePane" ? kClosePane()
-    : k === "focusNext" ? kFocusNext() : k === "focusPrev" ? kFocusPrev()
+    : k === "focusNext" ? kFocusNext() : k === "focusPrev" ? kFocusPrev() : k === "newTab" ? kNewTab()
     : termConfig.getString("keys." + k, "");
   // Accelerators are consumed by the focused terminal (not Qt's ambiguous Shortcut map) and
   // dispatched here by matching the pressed sequence to the configured binding.
@@ -59,6 +61,7 @@ export function Term() {
     else if (seq === kClosePane()) term.closeFocused();
     else if (seq === kFocusNext()) term.focusNext();
     else if (seq === kFocusPrev()) term.focusPrev();
+    else if (seq === kNewTab()) term.newTab();
   };
   const setKey = (k: string, seq: string) => {
     termConfig.set("keys." + k, seq);
@@ -67,6 +70,7 @@ export function Term() {
     else if (k === "closePane") setKClosePane(seq);
     else if (k === "focusNext") setKFocusNext(seq);
     else if (k === "focusPrev") setKFocusPrev(seq);
+    else if (k === "newTab") setKNewTab(seq);
   };
 
   return (
@@ -77,7 +81,7 @@ export function Term() {
       </div>
 
       <div class="term-body">
-        <TerminalPanes
+        <TerminalTabs
           ref={term}
           class="term-pane"
           fontFamily={uiFontFamily()}
@@ -89,7 +93,7 @@ export function Term() {
           backgroundOpacity={opacity() / 100}
           emboss={emboss() !== 0}
           handleColor={sysTheme.window}
-          reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev()]}
+          reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab()]}
           onAccelerator={(seq) => onAccel(seq)}
           onTitleChanged={(t) => setTitle(t)}
           onAllClosed={() => process.exit(0)}
@@ -98,6 +102,7 @@ export function Term() {
           <MenuItem onClick={() => term.copyFocused()}>&Copy</MenuItem>
           <MenuItem onClick={() => term.pasteFocused()}>&Paste</MenuItem>
           <MenuSeparator />
+          <MenuItem onClick={() => term.newTab()}>New &tab</MenuItem>
           <MenuItem onClick={() => term.split(Qt.Horizontal)}>Split &right</MenuItem>
           <MenuItem onClick={() => term.split(Qt.Vertical)}>Split &down</MenuItem>
           <MenuItem onClick={() => term.closeFocused()}>Close &pane</MenuItem>
