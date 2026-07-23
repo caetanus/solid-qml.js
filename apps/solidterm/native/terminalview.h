@@ -106,6 +106,7 @@ protected:
     void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
     void keyPressEvent(QKeyEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
@@ -173,6 +174,9 @@ private:
     QString m_title;
     VTermPos m_cursor = { 0, 0 };
     bool m_cursorVisible = true;
+    class QTimer *m_blinkTimer = nullptr;   // blinks the focused cursor
+    bool m_blinkOn = true;
+    void resetBlink();                      // solid cursor on activity, restart the blink phase
     QVector<SbLine> m_scrollback;           // ring, newest at the back
     int m_scrollbackLimit = 8000;
     QStringList m_reserved;
@@ -191,4 +195,7 @@ private:
     CellPos m_selAnchor, m_selEnd;
     bool m_selValid = false;
     bool m_selecting = false;
+    quint64 m_lastDblTime = 0;               // for triple-click (line select) detection
+    void selectWordAt(const CellPos &c);
+    void selectLineAt(const CellPos &c);
 };

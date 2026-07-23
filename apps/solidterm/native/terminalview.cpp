@@ -7,6 +7,7 @@
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QRegularExpression>
+#include <QTimer>
 #include <QQuickWindow>
 #include <QSGGeometry>
 #include <QSGGeometryNode>
@@ -110,6 +111,17 @@ TerminalView::TerminalView(QQuickItem *parent)
     setAcceptHoverEvents(true);               // hover to detect/underline links
     setFlag(ItemHasContents, true);
 
+    m_blinkTimer = new QTimer(this);
+    m_blinkTimer->setInterval(530);
+    connect(m_blinkTimer, &QTimer::timeout, this, [this] {
+        if (!hasActiveFocus() || !m_cursorVisible || m_scrollOffset > 0)
+            return;
+        m_blinkOn = !m_blinkOn;
+        update();
+    });
+    m_blinkTimer->start();
+    connect(this, &QQuickItem::activeFocusChanged, this, [this] { resetBlink(); });
+
     connect(&m_pty, &PtySession::bytesRead, this, [this](const QByteArray &bytes) {
         if (!m_vt)
             return;
@@ -142,7 +154,7 @@ int TerminalView::cbMoveCursor(VTermPos pos, VTermPos, int visible, void *user)
     auto *self = static_cast<TerminalView *>(user);
     self->m_cursor = pos;
     self->m_cursorVisible = visible != 0;
-    self->update();
+    self->resetBlink();
     return 1;
 }
 
@@ -420,9 +432,11 @@ QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
     if (m_cursorVisible && sbShown == 0) {
         const qreal cx = m_cursor.col * m_cellW, cy = m_cursor.row * m_cellH;
         if (hasActiveFocus()) {
-            QColor cur = m_foreground;
-            cur.setAlpha(140);
-            pushBgQuad(cursor, cx, cy, m_cellW, m_cellH, cur);
+            if (m_blinkOn) {
+                QColor cur = m_foreground;
+                cur.setAlpha(140);
+                pushBgQuad(cursor, cx, cy, m_cellW, m_cellH, cur);
+            }
         } else {
             pushBgQuad(cursor, cx, cy, m_cellW, 1, m_foreground);
             pushBgQuad(cursor, cx, cy + m_cellH - 1, m_cellW, 1, m_foreground);
@@ -640,6 +654,7 @@ void TerminalView::keyPressEvent(QKeyEvent *event)
         m_scrollOffset = 0;
         update();
     }
+    resetBlink();
     keyToVTerm(event);
     event->accept();
 }
@@ -720,6 +735,14 @@ void TerminalView::clearScrollback()
     m_scrollOffset = 0;
     m_selValid = false;
     emit selectionChanged();
+    update();
+}
+
+void TerminalView::resetBlink()
+{
+    m_blinkOn = true;
+    if (m_blinkTimer)
+        m_blinkTimer->start(); // restart the phase so the cursor stays solid right after activity
     update();
 }
 
@@ -897,9 +920,54 @@ void TerminalView::hoverLeaveEvent(QHoverEvent *)
 
 // ─── mouse ────────────────────────────────────────────────────────────────────────────────────
 
+void TerminalView::selectWordAt(const CellPos &c)
+{
+    const QString line = rowText(c.absRow);
+    const auto isWord = [](QChar ch) {
+        return ch.isLetterOrNumber() || QStringLiteral("._-~/:@%+=").contains(ch);
+    };
+    if (c.col >= line.size() || !isWord(line[c.col]))
+        return;
+    int a = c.col, b = c.col;
+    while (a > 0 && isWord(line[a - 1])) --a;
+    while (b + 1 < line.size() && isWord(line[b + 1])) ++b;
+    m_selAnchor = { c.absRow, a };
+    m_selEnd = { c.absRow, b };
+    m_selValid = true;
+    emit selectionChanged();
+    update();
+}
+
+void TerminalView::selectLineAt(const CellPos &c)
+{
+    QString line = rowText(c.absRow);
+    int end = line.size() - 1;
+    while (end > 0 && line[end] == QLatin1Char(' ')) --end;
+    m_selAnchor = { c.absRow, 0 };
+    m_selEnd = { c.absRow, qMax(0, end) };
+    m_selValid = true;
+    emit selectionChanged();
+    update();
+}
+
+void TerminalView::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    selectWordAt(cellAt(event->position())); // double-click → select the word
+    m_lastDblTime = event->timestamp();
+    m_selecting = false;
+    event->accept();
+}
+
 void TerminalView::mousePressEvent(QMouseEvent *event)
 {
     forceActiveFocus(Qt::MouseFocusReason);
+    // Triple-click (a press shortly after a double-click) → select the whole line.
+    if (event->button() == Qt::LeftButton && event->timestamp() - m_lastDblTime < 500) {
+        m_lastDblTime = 0;
+        selectLineAt(cellAt(event->position()));
+        event->accept();
+        return;
+    }
     // Ctrl+click on an auto-detected link opens it (before starting a selection).
     if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
         const LinkSpan link = linkAt(event->position());
