@@ -102,6 +102,8 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
+    void hoverMoveEvent(QHoverEvent *event) override;
+    void hoverLeaveEvent(QHoverEvent *event) override;
 
 public:
     // libvterm callbacks (static thunks → the view; public for the file-static callback table).
@@ -121,6 +123,17 @@ private:
     void applyGrid();                       // width/height/font → rows/cols → vterm + pty
     QColor toQColor(VTermColor c, bool isFg) const;
     void keyToVTerm(QKeyEvent *event);
+
+    // Auto-detected hyperlink (URL) under the mouse: absolute row + col span + the URL. Hovering
+    // underlines it; Ctrl+click opens it. Detected by regex over the row text.
+    struct LinkSpan {
+        int absRow = 0;
+        int c0 = 0, c1 = -1;   // inclusive column range
+        QString url;
+        bool valid = false;
+    };
+    LinkSpan linkAt(const QPointF &pos) const;
+    LinkSpan m_hoverLink;
 
     VTerm *m_vt = nullptr;
     VTermScreen *m_screen = nullptr;

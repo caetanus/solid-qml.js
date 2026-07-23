@@ -1,9 +1,12 @@
 #include "terminalview.h"
 
 #include <QClipboard>
+#include <QDesktopServices>
 #include <QGuiApplication>
+#include <QHoverEvent>
 #include <QKeyEvent>
 #include <QKeySequence>
+#include <QRegularExpression>
 #include <QQuickWindow>
 #include <QSGGeometry>
 #include <QSGGeometryNode>
@@ -104,6 +107,7 @@ TerminalView::TerminalView(QQuickItem *parent)
     m_font.setStyleHint(QFont::Monospace);
     setAcceptedMouseButtons(Qt::LeftButton); // right passes to the solid <ContextMenu> above
     setActiveFocusOnTab(true);
+    setAcceptHoverEvents(true);               // hover to detect/underline links
     setFlag(ItemHasContents, true);
 
     connect(&m_pty, &PtySession::bytesRead, this, [this](const QByteArray &bytes) {
@@ -427,6 +431,15 @@ QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
         }
     }
 
+    // Hovered hyperlink: underline it across its span (drawn in the bg layer, at the cell baseline).
+    if (m_hoverLink.valid) {
+        const int row = m_hoverLink.absRow - (int(m_scrollback.size()) - sbShown);
+        if (row >= 0 && row < m_rows) {
+            pushBgQuad(bg, m_hoverLink.c0 * m_cellW, row * m_cellH + m_cellH - 1,
+                       (m_hoverLink.c1 - m_hoverLink.c0 + 1) * m_cellW, 1, m_foreground);
+        }
+    }
+
     // If the atlas overflowed mid-build (astronomically unlikely), reset it and ask the GUI thread
     // (queued — we're on the render thread here) to re-render with a fresh atlas.
     if (m_glyphs.overflowed()) {
@@ -697,9 +710,98 @@ void TerminalView::clearScrollback()
     update();
 }
 
+// ─── hyperlinks ───────────────────────────────────────────────────────────────────────────────
+
+TerminalView::LinkSpan TerminalView::linkAt(const QPointF &p) const
+{
+    if (!m_screen)
+        return {};
+    const int row = int(p.y() / m_cellH);
+    const int col = int(p.x() / m_cellW);
+    if (row < 0 || row >= m_rows || col < 0 || col >= m_cols)
+        return {};
+
+    // Reconstruct the row as a col-indexed string (URLs are ASCII, so the first char per cell is
+    // enough), from the same source the renderer uses (scrollback when scrolled, else live).
+    const int sbShown = m_scrollOffset;
+    const int liveRow = row - sbShown;
+    const VTermScreenCell *sbCells = nullptr;
+    int sbCols = 0;
+    if (liveRow < 0) {
+        const int idx = m_scrollback.size() + liveRow;
+        if (idx < 0)
+            return {};
+        sbCells = m_scrollback.at(idx).cells.constData();
+        sbCols = int(m_scrollback.at(idx).cells.size());
+    }
+    QString line(m_cols, QLatin1Char(' '));
+    for (int c = 0; c < m_cols; ++c) {
+        VTermScreenCell cell {};
+        if (sbCells) { if (c < sbCols) cell = sbCells[c]; }
+        else vterm_screen_get_cell(m_screen, VTermPos{ liveRow, c }, &cell);
+        if (cell.chars[0])
+            line[c] = QChar(char32_t(cell.chars[0]));
+    }
+
+    static const QRegularExpression re(
+        QStringLiteral(R"((?:https?|ftp|file)://[^\s]+|www\.[^\s]+)"));
+    auto it = re.globalMatch(line);
+    while (it.hasNext()) {
+        const auto m = it.next();
+        int start = m.capturedStart();
+        int end = m.capturedEnd(); // exclusive
+        while (end > start && QStringLiteral(").,;:!?\"'>").contains(line[end - 1]))
+            --end; // trailing punctuation isn't part of the URL
+        if (col >= start && col < end) {
+            LinkSpan s;
+            s.absRow = int(m_scrollback.size()) - sbShown + row;
+            s.c0 = start;
+            s.c1 = end - 1;
+            s.url = line.mid(start, end - start);
+            if (s.url.startsWith(QLatin1String("www.")))
+                s.url.prepend(QLatin1String("http://"));
+            s.valid = true;
+            return s;
+        }
+    }
+    return {};
+}
+
+void TerminalView::hoverMoveEvent(QHoverEvent *event)
+{
+    const LinkSpan link = linkAt(event->position());
+    const bool ctrl = event->modifiers() & Qt::ControlModifier;
+    setCursor(link.valid && ctrl ? Qt::PointingHandCursor : Qt::IBeamCursor);
+    if (link.valid != m_hoverLink.valid || link.absRow != m_hoverLink.absRow
+        || link.c0 != m_hoverLink.c0 || link.c1 != m_hoverLink.c1) {
+        m_hoverLink = link;
+        update();
+    }
+}
+
+void TerminalView::hoverLeaveEvent(QHoverEvent *)
+{
+    unsetCursor();
+    if (m_hoverLink.valid) {
+        m_hoverLink = {};
+        update();
+    }
+}
+
+// ─── mouse ────────────────────────────────────────────────────────────────────────────────────
+
 void TerminalView::mousePressEvent(QMouseEvent *event)
 {
     forceActiveFocus(Qt::MouseFocusReason);
+    // Ctrl+click on an auto-detected link opens it (before starting a selection).
+    if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
+        const LinkSpan link = linkAt(event->position());
+        if (link.valid) {
+            QDesktopServices::openUrl(QUrl::fromUserInput(link.url));
+            event->accept();
+            return;
+        }
+    }
     if (event->button() == Qt::LeftButton) {
         m_selAnchor = m_selEnd = cellAt(event->position());
         m_selecting = true;
