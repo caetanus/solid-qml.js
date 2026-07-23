@@ -49,6 +49,34 @@ QString TerminalTabs::tabTitle(int index) const
     return (index >= 0 && index < m_tabs.size()) ? m_tabs[index].effective() : QString();
 }
 
+QVariantList TerminalTabs::overview() const
+{
+    QVariantList out;
+    for (int t = 0; t < m_tabs.size(); ++t) {
+        const QStringList titles = m_tabs[t].panes->paneTitles();
+        const int focused = m_tabs[t].panes->focusedPaneIndex();
+        for (int p = 0; p < titles.size(); ++p) {
+            QVariantMap row;
+            row["tab"] = t;
+            row["pane"] = p;
+            row["panes"] = titles.size();
+            row["tabTitle"] = m_tabs[t].effective();
+            row["title"] = titles[p];
+            row["active"] = (t == m_active && p == focused);
+            out.append(row);
+        }
+    }
+    return out;
+}
+
+void TerminalTabs::focusPane(int tab, int pane)
+{
+    if (tab < 0 || tab >= m_tabs.size())
+        return;
+    selectTab(tab);
+    m_tabs[tab].panes->focusLeafByIndex(pane);
+}
+
 TerminalPanes *TerminalTabs::makePanes()
 {
     QQmlEngine *eng = qmlEngine(this);

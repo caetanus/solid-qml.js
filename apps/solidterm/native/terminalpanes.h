@@ -71,6 +71,9 @@ public:
     Q_INVOKABLE void focusPrev();
     Q_INVOKABLE void refocus(); // re-take keyboard focus on the current pane (tab switch)
     Q_INVOKABLE void toggleZoom(); // maximise the focused pane to fill the session; again restores
+    QStringList paneTitles() const;         // leaf titles in order (for the F12 overview)
+    int focusedPaneIndex() const;           // index of the focused leaf
+    Q_INVOKABLE void focusLeafByIndex(int i);
     // Paste/copy proxied to the focused pane (menu actions).
     Q_INVOKABLE void copyFocused();
     Q_INVOKABLE void pasteFocused();

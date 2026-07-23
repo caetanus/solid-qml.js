@@ -3,6 +3,7 @@
 #include <QColor>
 #include <QQuickItem>
 #include <QStringList>
+#include <QVariantList>
 #include <QVector>
 
 class TerminalPanes;
@@ -62,6 +63,9 @@ public:
     Q_INVOKABLE void newTab();
     Q_INVOKABLE void closeTab(int index);
     Q_INVOKABLE void selectTab(int index);
+    // F12 overview: flat list of every pane across every tab ({tab,pane,tabTitle,title,active}).
+    Q_INVOKABLE QVariantList overview() const;
+    Q_INVOKABLE void focusPane(int tab, int pane); // select the tab + focus that pane
     Q_INVOKABLE void setTabTitle(int index, const QString &title); // custom title (empty = back to OSC)
     Q_INVOKABLE QString tabTitle(int index) const;                 // the effective (custom or OSC) title
     // Proxied to the ACTIVE tab's panes (same names as TerminalPanes, so the TSX is unchanged).

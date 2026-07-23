@@ -29,6 +29,7 @@ W.Div {
     property var paneMenuX: 0
     property var paneMenuY: 0
     property var paneReadOnly: false
+    property var overviewOpen: false
     property var renameOpen: false
     property var renameValue: ""
     property var tabTitles: ["terminal"]
@@ -55,11 +56,14 @@ W.Div {
     function closeCfg() { cfgOpen = false; _ref_term.refocus(); }
     function openPaneMenu(x_, y_, ro) { paneMenuX = x_; paneMenuY = y_; paneReadOnly = ro; paneMenuOpen = true; }
     function paneToggleReadOnly() { var nv = !paneReadOnly; _ref_term.setReadOnlyFocused(nv); paneReadOnly = nv; }
+    function closeOverview() { overviewOpen = false; _ref_term.refocus(); }
+    function toggleOverview() { if (overviewOpen) { closeOverview(); } else { overviewOpen = true; } }
+    function pickOverview(r) { _ref_term.focusPane(r.tab, r.pane); closeOverview(); }
     function openRename() { renameValue = _ref_term.tabTitle(activeTab) || ""; renameOpen = true; }
     function applyRename() { _ref_term.setTabTitle(activeTab, renameValue); renameOpen = false; _ref_term.refocus(); }
     function tabLabel(t) { if (!t) { return "terminal"; } var s = t; if (s.endsWith("/")) { s = s.slice(0, -1); } var slash = s.lastIndexOf("/"); return slash >= 0 ? s.slice(slash + 1) : s; }
     function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : k === "newTab" ? kNewTab : k === "nextTab" ? kNextTab : k === "prevTab" ? kPrevTab : k === "search" ? kSearch : k === "zoomPane" ? kZoomPane : termConfig.getString("keys." + k, ""); }
-    function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } else { if (seq === kSearch) { openSearch(); } else { if (seq === "Ctrl+=" || seq === "Ctrl++") { zoomFont(1); } else { if (seq === "Ctrl+-") { zoomFont(-1); } else { if (seq === "Ctrl+0") { zoomFont(0); } else { if (seq === "Ctrl+,") { cfgOpen = true; } else { if (seq === kZoomPane) { _ref_term.toggleZoom(); } } } } } } } } } } } } } } }
+    function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } else { if (seq === kSearch) { openSearch(); } else { if (seq === "Ctrl+=" || seq === "Ctrl++") { zoomFont(1); } else { if (seq === "Ctrl+-") { zoomFont(-1); } else { if (seq === "Ctrl+0") { zoomFont(0); } else { if (seq === "Ctrl+,") { cfgOpen = true; } else { if (seq === kZoomPane) { _ref_term.toggleZoom(); } else { if (seq === "F12") { toggleOverview(); } } } } } } } } } } } } } } } }
     function zoomFont(d) { var n = d === 0 ? 15 : Math.max(6, Math.min(40, uiFontSize + d)); uiFontSize = n; termConfig.set("fontSize", n); }
     function setKey(k, seq) { termConfig.set("keys." + k, seq); if (k === "splitRight") { kSplitRight = seq; } else { if (k === "splitDown") { kSplitDown = seq; } else { if (k === "closePane") { kClosePane = seq; } else { if (k === "focusNext") { kFocusNext = seq; } else { if (k === "focusPrev") { kFocusPrev = seq; } else { if (k === "newTab") { kNewTab = seq; } else { if (k === "nextTab") { kNextTab = seq; } else { if (k === "prevTab") { kPrevTab = seq; } else { if (k === "search") { kSearch = seq; } else { if (k === "zoomPane") { kZoomPane = seq; } } } } } } } } } } }
     property var __cleanups: []
@@ -227,7 +231,7 @@ W.Div {
                 emboss: emboss !== 0
                 animateSplits: animSplits !== 0
                 handleColor: sysTheme.window
-                reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, kZoomPane, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,"]
+                reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, kZoomPane, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]
                 onAccelerator: function(seq) { return onAccel(seq) }
                 onTitleChanged: function(t) { return title = t }
                 onAllClosed: function() { return process.exit(0) }
@@ -618,6 +622,37 @@ W.Div {
         }
     }
     W.Dialog {
+        open: !!(overviewOpen)
+        title: "Panes & tabs"
+        cssClass: ["cfg"]
+        onDialogClosed: { overviewOpen = false }
+        W.Div {
+            cssClass: ["ov-body"]
+            Repeater {
+                model: overviewOpen ? _ref_term.overview() : []
+                W.Div {
+                    cssClass: ["ov-row"].concat(modelData.active ? ["ov-active"] : [])
+                    cssState: __hover1.containsMouse ? ["hover"] : []
+                    W.Text {
+                        cssClass: ["ov-tab"]
+                        text: "Tab " + (modelData.tab + 1)
+                    }
+                    W.Text {
+                        cssClass: ["ov-title"]
+                        text: "" + ((modelData.panes > 1 ? modelData.pane + 1 + ": " : "") + (modelData.title || "terminal"))
+                    }
+                    MouseArea {
+                        id: __hover1
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: pickOverview(modelData)
+                    }
+                }
+            }
+        }
+    }
+    W.Dialog {
         open: !!(renameOpen)
         title: "Rename tab"
         cssClass: ["cfg"]
@@ -629,12 +664,12 @@ W.Div {
                 text: "Tab title"
             }
             W.TextField {
-                id: __input15
+                id: __input16
                 cssClass: ["cfg-in", "rename-in"]
                 placeholder: "(empty = automatic)"
                 onTextEdited: { renameValue = text }
                 Binding {
-                    target: __input15
+                    target: __input16
                     property: "text"
                     value: renameValue
                     restoreMode: Binding.RestoreNone

@@ -516,6 +516,32 @@ void TerminalPanes::refreshHeaderFocus()
         }
 }
 
+QStringList TerminalPanes::paneTitles() const
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    QStringList out;
+    out.reserve(leaves.size());
+    for (Node *l : leaves)
+        out.append(l->view ? l->view->title() : QString());
+    return out;
+}
+
+int TerminalPanes::focusedPaneIndex() const
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    return leaves.indexOf(m_focused);
+}
+
+void TerminalPanes::focusLeafByIndex(int i)
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    if (i >= 0 && i < leaves.size())
+        setFocused(leaves[i]);
+}
+
 void TerminalPanes::refocus()
 {
     if (m_focused)

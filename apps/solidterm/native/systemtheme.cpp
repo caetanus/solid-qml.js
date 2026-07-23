@@ -174,6 +174,12 @@ QString SystemTheme::styleSheet() const
 .cfg-close:hover { background: %9; }
 .paste-hint { color: %7; }
 .paste-cancel { background: %4; color: %6; }
+.ov-tab { color: %7; }
+.ov-title { color: %6; }
+.ov-row:hover { background: %4; }
+.ov-active { background: %9; }
+.ov-active .ov-title { color: %10; }
+.ov-active .ov-tab { color: %10; }
 )")
         .arg(h(p.window), h(p.view), h(p.header), h(p.card), h(p.popover),
              h(p.text), h(p.dim), h(p.border), h(p.accent), h(p.accentText))

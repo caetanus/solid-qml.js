@@ -72,6 +72,11 @@ export function Term() {
   };
   const paneFind = () => openSearch();
   const paneToggleReadOnly = () => { const nv = !paneReadOnly(); term.setReadOnlyFocused(nv); setPaneReadOnly(nv); };
+  // F12 overview: a list of every pane across every tab.
+  const [overviewOpen, setOverviewOpen] = createSignal(false);
+  const closeOverview = () => { setOverviewOpen(false); term.refocus(); };
+  const toggleOverview = () => { if (overviewOpen()) closeOverview(); else setOverviewOpen(true); };
+  const pickOverview = (r: any) => { term.focusPane(r.tab, r.pane); closeOverview(); };
   // Editable tab title (overrides the OSC title; empty reverts to automatic).
   const [renameOpen, setRenameOpen] = createSignal(false);
   const [renameValue, setRenameValue] = createSignal("");
@@ -124,6 +129,7 @@ export function Term() {
     else if (seq === "Ctrl+0") zoomFont(0);
     else if (seq === "Ctrl+,") setCfgOpen(true);
     else if (seq === kZoomPane()) term.toggleZoom();
+    else if (seq === "F12") toggleOverview();
   };
   // Font zoom (Ctrl +/−/0). 0 resets to the default.
   const zoomFont = (d: number) => {
@@ -210,7 +216,7 @@ export function Term() {
           emboss={emboss() !== 0}
           animateSplits={animSplits() !== 0}
           handleColor={sysTheme.window}
-          reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), kZoomPane(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,"]}
+          reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), kZoomPane(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]}
           onAccelerator={(seq) => onAccel(seq)}
           onTitleChanged={(t) => setTitle(t)}
           onAllClosed={() => process.exit(0)}
@@ -377,6 +383,17 @@ export function Term() {
           <div class="cfg-actions">
             <button class="cfg-close" type="submit" onClick={() => closeCfg()}>Done</button>
           </div>
+        </div>
+      </dialog>
+
+      <dialog open={overviewOpen()} title="Panes & tabs" class="cfg" onClose={() => setOverviewOpen(false)}>
+        <div class="ov-body">
+          <Index each={overviewOpen() ? term.overview() : []}>{(row) =>
+            <div class={"ov-row"} classList={{ "ov-active": row().active }} onClick={() => pickOverview(row())}>
+              <text class="ov-tab">Tab {row().tab + 1}</text>
+              <text class="ov-title">{(row().panes > 1 ? (row().pane + 1) + ": " : "") + (row().title || "terminal")}</text>
+            </div>
+          }</Index>
         </div>
       </dialog>
 

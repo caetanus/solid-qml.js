@@ -105,6 +105,12 @@ button {
 .paste-cancel { padding: 7px 22px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; }
 .rename-in { width: 300px; margin-bottom: 16px; }
 
+/* F12 overview: list of every pane across every tab */
+.ov-body { display: flex; flex-direction: column; width: 460px; padding: 6px; }
+.ov-row { display: flex; flex-direction: row; align-items: center; padding: 8px 12px; border-radius: 7px; }
+.ov-tab { width: 74px; font-size: 12px; }
+.ov-title { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* keyboard shortcut rows */
 .cfg-krow { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 9px 14px; }
 .cfg-rec { width: 200px; height: 30px; }

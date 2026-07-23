@@ -214,6 +214,21 @@ int main(int argc, char **argv)
         }
     }
 
+    // Debug: SOLIDTERM_OVERVIEW=1 opens the F12 overview after a settle (use with AUTOSPLIT).
+    if (qEnvironmentVariableIsSet("SOLIDTERM_OVERVIEW") && window) {
+        QTimer::singleShot(3200, window, [&engine] {
+            for (QObject *o : engine.rootObjects())
+                if (auto *w = qobject_cast<QQuickWindow *>(o)) {
+                    QList<QQuickItem *> stack { w->contentItem() };
+                    while (!stack.isEmpty()) {
+                        QQuickItem *it = stack.takeLast();
+                        if (it->property("overviewOpen").isValid()) it->setProperty("overviewOpen", true);
+                        for (QQuickItem *k : it->childItems()) stack.append(k);
+                    }
+                }
+        });
+    }
+
     // Debug: SOLIDTERM_PANEMENU=1 opens the pane header dropdown after a settle.
     if (qEnvironmentVariableIsSet("SOLIDTERM_PANEMENU") && window) {
         QTimer::singleShot(1600, window, [&engine] {
