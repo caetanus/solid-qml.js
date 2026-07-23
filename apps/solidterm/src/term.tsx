@@ -41,7 +41,10 @@ export function Term() {
   const browseBg = () => { const p = termConfig.pickImage(); if (p) { setBgImage(p); termConfig.set("bgImage", p); } };
   const clearBg = () => { setBgImage(""); termConfig.set("bgImage", ""); };
   const [opacity, setOpacity] = createSignal(termConfig.getInt("opacity", 100));
-  const [emboss, setEmboss] = createSignal(termConfig.getInt("emboss", 0));
+  // NB: name it uiEmboss, NOT emboss — a bare `emboss` collides with TerminalTabs' own `emboss`
+  // property, so QML resolves the binding RHS to the local prop → self-referential binding loop
+  // (emboss stuck ON, config ignored). Same ui*/*_ disambiguation the other style signals use.
+  const [uiEmboss, setUiEmboss] = createSignal(termConfig.getInt("emboss", 0));
   const [showHeader, setShowHeader] = createSignal(termConfig.getInt("showHeader", 1));
   const [showStatus, setShowStatus] = createSignal(termConfig.getInt("showStatus", 1));
   const [animSplits, setAnimSplits] = createSignal(termConfig.getInt("animSplits", 1));
@@ -124,19 +127,15 @@ export function Term() {
     else if (seq === kNextTab()) { const n = tabTitles().length; if (n > 1) term.selectTab((activeTab() + 1) % n); }
     else if (seq === kPrevTab()) { const n = tabTitles().length; if (n > 1) term.selectTab((activeTab() - 1 + n) % n); }
     else if (seq === kSearch()) openSearch();
-    else if (seq === "Ctrl+=" || seq === "Ctrl++") zoomFont(1);
-    else if (seq === "Ctrl+-") zoomFont(-1);
-    else if (seq === "Ctrl+0") zoomFont(0);
+    else if (seq === "Ctrl+=" || seq === "Ctrl++") term.zoomFocused(1);
+    else if (seq === "Ctrl+-") term.zoomFocused(-1);
+    else if (seq === "Ctrl+0") term.zoomFocused(0);
     else if (seq === "Ctrl+,") setCfgOpen(true);
     else if (seq === kZoomPane()) term.toggleZoom();
     else if (seq === "F12") toggleOverview();
   };
-  // Font zoom (Ctrl +/−/0). 0 resets to the default.
-  const zoomFont = (d: number) => {
-    const n = d === 0 ? 15 : Math.max(6, Math.min(40, uiFontSize() + d));
-    setUiFontSize(n);
-    termConfig.set("fontSize", n);
-  };
+  // Font zoom (Ctrl +/−/0 and Ctrl+wheel) is PER-PANE now → term.zoomFocused(); the pref font size
+  // (below) remains the shared default for all panes.
   const setKey = (k: string, seq: string) => {
     termConfig.set("keys." + k, seq);
     if (k === "splitRight") setKSplitRight(seq);
@@ -204,7 +203,7 @@ export function Term() {
           onTabsChanged={(titles, active) => { setTabTitles(titles); setActiveTab(active); }}
           onSearchChanged={(idx, count) => { setSearchIdx(idx); setSearchCount(count); }}
           onUnsafePasteRequested={(text) => setPastePrompt(text)}
-          onZoomRequested={(d) => zoomFont(d)}
+          onZoomRequested={(d) => term.zoomFocused(d)}
           onPaneMenuRequested={(x, y, ro) => openPaneMenu(x, y, ro)}
           fontFamily={uiFontFamily()}
           fontSize={uiFontSize()}
@@ -213,7 +212,7 @@ export function Term() {
           scrollbackLimit={scrollback()}
           backgroundImage={bgImage()}
           backgroundOpacity={opacity() / 100}
-          emboss={emboss() !== 0}
+          emboss={uiEmboss() !== 0}
           animateSplits={animSplits() !== 0}
           handleColor={sysTheme.window}
           reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), kZoomPane(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]}
@@ -309,8 +308,8 @@ export function Term() {
             <hr class="cfg-div" />
             <div class="cfg-row">
               <text class="cfg-l">Emboss text</text>
-              <select class="cfg-sel" value={"" + emboss()}
-                      onChange={(v) => { setEmboss(parseInt(v)); termConfig.set("emboss", parseInt(v)); }}>
+              <select class="cfg-sel" value={"" + uiEmboss()}
+                      onChange={(v) => { setUiEmboss(parseInt(v)); termConfig.set("emboss", parseInt(v)); }}>
                 <option value="0">Off</option>
                 <option value="1">On</option>
               </select>

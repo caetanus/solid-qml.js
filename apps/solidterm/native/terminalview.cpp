@@ -123,6 +123,19 @@ TerminalView::TerminalView(QQuickItem *parent)
     m_blinkTimer->start();
     connect(this, &QQuickItem::activeFocusChanged, this, [this] { resetBlink(); });
 
+    // Visual bell: BEL raises a brief bright wash, cleared ~130ms later. bellRang is emitted from the
+    // vterm callback on the GUI thread, so this runs synchronously here (update() is safe).
+    connect(this, &TerminalView::bellRang, this, [this] {
+        m_bellActive = true;
+        update();
+        QTimer::singleShot(130, this, [this] { m_bellActive = false; update(); });
+        // Urgency hint: when the window isn't focused, ask the WM for attention (taskbar flash / X11
+        // urgency / wlr activation) so a bell in a background terminal is noticed. alert(0) stays until
+        // the window is activated again.
+        if (QWindow *w = window(); w && !w->isActive())
+            w->alert(0);
+    });
+
     connect(&m_pty, &PtySession::bytesRead, this, [this](const QByteArray &bytes) {
         if (!m_vt)
             return;
@@ -452,6 +465,17 @@ QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
     if (m_dimmed)
         pushBgQuad(cursor, 0, 0, width(), height(), QColor(0, 0, 0, 66));
 
+    // Visual bell: a brief bright wash over the pane (audible bells are jarring; tilix defaults to a
+    // visual flash). m_bellActive is raised on BEL and cleared by a short timer (see the ctor).
+    // The cursor node's material blends PREMULTIPLIED, so premultiply the fg tint by its alpha here —
+    // otherwise a partial-alpha white washes out to fully opaque.
+    if (m_bellActive) {
+        const qreal fa = 0.30;
+        pushBgQuad(cursor, 0, 0, width(), height(),
+                   QColor(int(m_foreground.red() * fa), int(m_foreground.green() * fa),
+                          int(m_foreground.blue() * fa), int(255 * fa)));
+    }
+
     // Search highlights: every match on a visible row (current match brighter).
     if (!m_matches.isEmpty()) {
         const int top = int(m_scrollback.size()) - sbShown;
@@ -636,6 +660,23 @@ void TerminalView::keyPressEvent(QKeyEvent *event)
     // Reserved accelerators (split/close/focus … from the solid config) are consumed HERE, before
     // the pty — so they never leak to the shell and never hit Qt's ambiguous Shortcut map.
     if (!m_reserved.isEmpty()) {
+        // Font-zoom chords by KEY CODE, not character: pressing Ctrl+'+' is really Ctrl+Shift+'=' (and
+        // on non-US layouts the '='/'−'/'0' characters shift around), so a PortableText match misses
+        // them. Normalise Ctrl+(Plus|Equal)→"Ctrl+=", Ctrl+(Minus|Underscore)→"Ctrl+-", Ctrl+0→"Ctrl+0"
+        // regardless of Shift/layout, then dispatch through the same reserved-accelerator path.
+        if (event->modifiers() & Qt::ControlModifier) {
+            QString norm;
+            switch (event->key()) {
+            case Qt::Key_Plus: case Qt::Key_Equal:       norm = QStringLiteral("Ctrl+="); break;
+            case Qt::Key_Minus: case Qt::Key_Underscore: norm = QStringLiteral("Ctrl+-"); break;
+            case Qt::Key_0:                              norm = QStringLiteral("Ctrl+0"); break;
+            }
+            if (!norm.isEmpty() && m_reserved.contains(norm)) {
+                emit accelerator(norm);
+                event->accept();
+                return;
+            }
+        }
         const QString seq = QKeySequence(event->keyCombination()).toString(QKeySequence::PortableText);
         if (!seq.isEmpty() && m_reserved.contains(seq)) {
             emit accelerator(seq);
@@ -1015,6 +1056,7 @@ void TerminalView::mouseDoubleClickEvent(QMouseEvent *event)
 void TerminalView::mousePressEvent(QMouseEvent *event)
 {
     forceActiveFocus(Qt::MouseFocusReason);
+    emit focusRequested(); // user intent: this pane is now the focused one (TerminalPanes updates m_focused)
     // Middle-click pastes the PRIMARY selection (X11/Wayland convention).
     if (event->button() == Qt::MiddleButton) {
         const QString sel = QGuiApplication::clipboard()->text(QClipboard::Selection);

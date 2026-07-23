@@ -75,6 +75,7 @@ public:
     Q_INVOKABLE void focusPrev();
     Q_INVOKABLE void refocus(); // keyboard focus back to the active pane (e.g. closing the search bar)
     Q_INVOKABLE void toggleZoom();
+    Q_INVOKABLE void zoomFocused(int delta);
     Q_INVOKABLE void copyFocused();
     Q_INVOKABLE void pasteFocused();
     Q_INVOKABLE void pasteTextFocused(const QString &text);

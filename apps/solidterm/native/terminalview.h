@@ -109,6 +109,7 @@ signals:
     void searchChanged(int index, int count);  // current match (1-based; 0 = none) + total
     void unsafePasteRequested(const QString &text); // multiline paste → confirm in the Solid dialog
     void zoomRequested(int delta);          // Ctrl+wheel → font zoom (+1 in / −1 out)
+    void focusRequested();                  // user clicked in the body → make this the focused pane
 
 protected:
     void componentComplete() override;
@@ -175,6 +176,7 @@ private:
     qreal m_bgOpacity = 1.0;                // terminal background alpha (1 = solid, 0 = fully see-through)
     bool m_emboss = false;                  // engraved glyphs
     bool m_dimmed = false;                  // dark overlay for an unfocused split pane
+    bool m_bellActive = false;              // visual bell flash in progress (short-timer cleared)
     bool m_readOnly = false;                // block keyboard + paste to the pty
     // Scene-graph nodes (owned by the returned root), kept so the optional image layer can slot in
     // below the others without index juggling. Nulled when the node tree is dropped (0-size).

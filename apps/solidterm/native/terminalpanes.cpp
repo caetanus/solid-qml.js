@@ -73,20 +73,30 @@ import SolidTerm 1.0
 
 Css.CssRect {
     id: cell
-    property alias view: __tv
     property alias header: __hdr
+    property alias viewHost: __content
     property int headerH: 24
     cssPrimitive: "div"
     cssClass: ["pane", "pane-enter"]
-    // A plain Item holds the header+view (anchored, so the engine's content pass never moves them);
-    // the CssRect's transform (_animScale from @keyframes) scales the whole cell — content and all.
+    // A plain Item holds the header + a content area (anchored, so the engine's content pass never
+    // moves them). The TerminalView is created SEPARATELY and parented into `content`, so a pane can
+    // be MOVED (drag/detach) by reparenting its live view into another cell — the pty rides along.
     Item {
         anchors.fill: parent
         PaneHeader { id: __hdr; x: 0; y: 0; width: parent.width; height: cell.headerH }
-        TerminalView { id: __tv; x: 0; y: cell.headerH; width: parent.width; height: Math.max(0, parent.height - cell.headerH) }
+        Item { id: __content; x: 0; y: cell.headerH; width: parent.width; height: Math.max(0, parent.height - cell.headerH) }
     }
 }
 )";
+
+// The pane's terminal — created on its own so it can be reparented between cells/windows.
+const char *kViewQml = "import SolidTerm 1.0\nTerminalView { anchors.fill: parent }";
+
+// The drag drop-zone highlight — a translucent accent rectangle we move over the hovered zone while
+// dragging a pane header (tilix shows this blue overlay on the half of the pane you'd split into).
+const char *kDropQml =
+    "import QtQuick\n"
+    "Rectangle { visible: false; z: 99999; color: \"#403584e4\"; border.color: \"#3584e4\"; border.width: 2; radius: 4 }";
 
 } // namespace
 
@@ -104,7 +114,7 @@ TerminalPanes::~TerminalPanes()
 
 // ─── tree construction ──────────────────────────────────────────────────────────────────────────
 
-TerminalPanes::Node *TerminalPanes::makeLeaf()
+TerminalPanes::Node *TerminalPanes::makeLeaf(TerminalView *adopt)
 {
     QQmlEngine *eng = qmlEngine(this);
     if (!eng)
@@ -112,6 +122,8 @@ TerminalPanes::Node *TerminalPanes::makeLeaf()
     if (!m_cellComponent) {
         m_cellComponent = new QQmlComponent(eng, this);
         m_cellComponent->setData(QByteArray(kCellQml), QUrl(QStringLiteral("qrc:/solidterm/PaneCell.qml")));
+        m_viewComponent = new QQmlComponent(eng, this);
+        m_viewComponent->setData(QByteArray(kViewQml), QUrl(QStringLiteral("qrc:/solidterm/PaneView.qml")));
     }
     auto *cell = qobject_cast<QQuickItem *>(m_cellComponent->create(qmlContext(this)));
     if (!cell) {
@@ -121,10 +133,24 @@ TerminalPanes::Node *TerminalPanes::makeLeaf()
     cell->setParent(this);
     cell->setParentItem(this);
     cell->setProperty("headerH", kHeaderH);
+    auto *content = cell->property("viewHost").value<QQuickItem *>();
+
+    // Adopt an existing view (a moved pane — pty rides along) or create a fresh one.
+    TerminalView *view = adopt;
+    if (!view) {
+        view = qobject_cast<TerminalView *>(m_viewComponent->create(qmlContext(this)));
+        if (!view) {
+            qWarning("solidterm: pane view failed: %s", qPrintable(m_viewComponent->errorString()));
+            cell->deleteLater();
+            return nullptr;
+        }
+        view->setParent(this);
+    }
+    view->setParentItem(content); // anchors.fill re-targets the new content area
 
     auto *node = new Node;
     node->cell = cell;
-    node->view = qobject_cast<TerminalView *>(cell->property("view").value<QQuickItem *>());
+    node->view = view;
     node->header = qobject_cast<PaneHeader *>(cell->property("header").value<QQuickItem *>());
     if (node->view && node->header)
         wirePane(node->view, node->header);
@@ -157,10 +183,19 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
         if (Node *leaf = leafOfView(v)) setFocused(leaf);
         emit paneMenuRequested(x, y, v->readOnly());
     });
+    connect(header, &PaneHeader::dragStarted, this, [this, v] { beginPaneDrag(v); });
+    connect(header, &PaneHeader::dragMoved, this, [this](qreal gx, qreal gy) { updatePaneDrag(QPointF(gx, gy)); });
+    connect(header, &PaneHeader::dragEnded, this, [this](qreal gx, qreal gy) { endPaneDrag(QPointF(gx, gy)); });
     connect(v, &TerminalView::readOnlyChanged, this, [v, header] { header->setReadOnly(v->readOnly()); });
     connect(v, &TerminalView::sessionFinished, this, [this, v] {
         if (Node *leaf = leafOfView(v)) removeLeaf(leaf);
     });
+    // A click in the body is explicit user intent to focus this pane → authoritative m_focused update.
+    connect(v, &TerminalView::focusRequested, this, [this, v] {
+        if (Node *l = leafOfView(v)) setFocused(l);
+    });
+    // Keyboard-focus churn (reparent, window (de)activation) only repaints — it must NOT move the
+    // logical focused pane, or a drag-move would snap the accent back to whatever grabbed focus.
     connect(v, &QQuickItem::activeFocusChanged, this, [this] { refreshHeaderFocus(); });
     connect(v, &TerminalView::searchChanged, this, [this, v](int idx, int count) {
         if (m_focused && m_focused->view == v)
@@ -220,12 +255,82 @@ void TerminalPanes::deleteSubtree(Node *node)
         deleteSubtree(c);
     for (DividerItem *d : node->dividers)
         if (d) d->deleteLater();
+    if (node->view)               // the view is a separate object now (not owned by the cell)
+        node->view->deleteLater();
     if (node->cell)
         node->cell->deleteLater();
     delete node;
 }
 
 // ─── split / close ──────────────────────────────────────────────────────────────────────────────
+
+// Splice `fresh` next to `anchor` along `orient`. If the anchor's parent already splits that way we
+// add a sibling (tilix N-way); otherwise we wrap the anchor in a new split node in its place. `before`
+// puts fresh on the near side (left/top) vs far side (right/bottom). Shared by split() and moveLeaf().
+void TerminalPanes::insertLeafBeside(Node *anchor, Node *fresh, int orient, bool before)
+{
+    Node *parent = anchor->parent;
+    if (parent && parent->orientation == orient) {
+        const int idx = parent->children.indexOf(anchor);
+        const qreal share = parent->fractions.value(idx, 1.0) * 0.5;
+        parent->fractions[idx] = share;
+        const int at = before ? idx : idx + 1;
+        parent->children.insert(at, fresh);
+        parent->fractions.insert(at, share);
+        fresh->parent = parent;
+        rebuildDividers(parent);
+    } else {
+        Node *sp = new Node;
+        sp->orientation = orient;
+        sp->parent = parent;
+        sp->children = before ? QVector<Node *>{ fresh, anchor } : QVector<Node *>{ anchor, fresh };
+        sp->fractions = { 0.5, 0.5 };
+        anchor->parent = sp;
+        fresh->parent = sp;
+        if (!parent) {
+            m_root = sp;
+        } else {
+            const int idx = parent->children.indexOf(anchor);
+            parent->children[idx] = sp;
+        }
+        rebuildDividers(sp);
+    }
+}
+
+// Detach `leaf` from its parent split, renormalise the remaining shares, and collapse a split that's
+// left with a single child (that child takes the split's place). The leaf NODE is left intact — the
+// caller either deletes it (close) or recycles its live view (move). Assumes leaf->parent != null.
+void TerminalPanes::unlinkLeaf(Node *leaf)
+{
+    Node *parent = leaf->parent;
+    if (!parent)
+        return;
+    const int idx = parent->children.indexOf(leaf);
+    parent->children.removeAt(idx);
+    parent->fractions.removeAt(idx);
+    leaf->parent = nullptr;
+
+    qreal sum = 0;
+    for (qreal f : parent->fractions) sum += f;
+    if (sum > 0)
+        for (qreal &f : parent->fractions) f /= sum;
+
+    if (parent->children.size() == 1) {
+        Node *only = parent->children.first();
+        Node *grand = parent->parent;
+        only->parent = grand;
+        if (!grand) {
+            m_root = only;
+        } else {
+            const int pidx = grand->children.indexOf(parent);
+            grand->children[pidx] = only;
+        }
+        for (DividerItem *d : parent->dividers) if (d) d->deleteLater();
+        delete parent;
+    } else {
+        rebuildDividers(parent);
+    }
+}
 
 void TerminalPanes::split(int orient)
 {
@@ -237,33 +342,7 @@ void TerminalPanes::split(int orient)
     if (!newLeaf)
         return;
 
-    Node *parent = leaf->parent;
-    if (parent && parent->orientation == orient) {
-        // Same-orientation split → add a sibling right after the focused leaf (tilix N-way).
-        const int idx = parent->children.indexOf(leaf);
-        const qreal share = parent->fractions.value(idx, 1.0) * 0.5;
-        parent->fractions[idx] = share;
-        parent->children.insert(idx + 1, newLeaf);
-        parent->fractions.insert(idx + 1, share);
-        newLeaf->parent = parent;
-        rebuildDividers(parent);
-    } else {
-        // Different orientation → wrap the focused leaf in a new split node in its place.
-        Node *sp = new Node;
-        sp->orientation = orient;
-        sp->parent = parent;
-        sp->children = { leaf, newLeaf };
-        sp->fractions = { 0.5, 0.5 };
-        leaf->parent = sp;
-        newLeaf->parent = sp;
-        if (!parent) {
-            m_root = sp;
-        } else {
-            const int idx = parent->children.indexOf(leaf);
-            parent->children[idx] = sp;
-        }
-        rebuildDividers(sp);
-    }
+    insertLeafBeside(leaf, newLeaf, orient, /*before=*/false);
 
     relayout();
     setFocused(newLeaf);
@@ -303,38 +382,12 @@ void TerminalPanes::removeLeaf(Node *leaf)
         Node *l = leafOfView(v);
         if (!l)
             return;
-        Node *parent = l->parent;
-        // Detach the leaf from its parent split.
-        const int idx = parent->children.indexOf(l);
-        parent->children.removeAt(idx);
-        parent->fractions.removeAt(idx);
+        unlinkLeaf(l);
+        if (l->view)
+            l->view->deleteLater(); // view is a separate object now (setParent(this)), not owned by the cell
         if (l->cell)
             l->cell->deleteLater();
         delete l;
-
-        // Renormalise the parent's remaining fractions.
-        qreal sum = 0;
-        for (qreal f : parent->fractions) sum += f;
-        if (sum > 0)
-            for (qreal &f : parent->fractions) f /= sum;
-
-        // A split with a single remaining child collapses: the child takes the parent's place.
-        if (parent->children.size() == 1) {
-            Node *only = parent->children.first();
-            Node *grand = parent->parent;
-            only->parent = grand;
-            if (!grand) {
-                m_root = only;
-            } else {
-                const int pidx = grand->children.indexOf(parent);
-                grand->children[pidx] = only;
-            }
-            for (DividerItem *d : parent->dividers) if (d) d->deleteLater();
-            delete parent;
-            parent = grand;
-        } else {
-            rebuildDividers(parent);
-        }
 
         // Refocus a surviving leaf (prefer one under the same subtree, else the first).
         QVector<Node *> leaves;
@@ -348,6 +401,178 @@ void TerminalPanes::removeLeaf(Node *leaf)
         setFocused(leaves.first());
         emit panesChanged();
     });
+}
+
+// ─── header-drag rearrange ────────────────────────────────────────────────────────────────────────
+
+TerminalPanes::Node *TerminalPanes::leafAtLocal(const QPointF &p) const
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    for (Node *l : leaves) {
+        if (!l->cell)
+            continue;
+        const QRectF r(l->cell->x(), l->cell->y(), l->cell->width(), l->cell->height());
+        if (r.contains(p))
+            return l;
+    }
+    return nullptr;
+}
+
+// Which zone of a cell (w×h) a local point falls in: a centre square (swap) surrounded by four
+// triangular edge zones (split). The dominant axis decides left/right vs top/bottom.
+int TerminalPanes::zoneAt(const QPointF &inCell, qreal w, qreal h) const
+{
+    if (w <= 0 || h <= 0)
+        return ZoneNone;
+    const qreal nx = inCell.x() / w - 0.5; // [-0.5, 0.5]
+    const qreal ny = inCell.y() / h - 0.5;
+    if (qAbs(nx) < 0.18 && qAbs(ny) < 0.18)
+        return ZoneCenter;
+    if (qAbs(nx) > qAbs(ny))
+        return nx < 0 ? ZoneLeft : ZoneRight;
+    return ny < 0 ? ZoneTop : ZoneBottom;
+}
+
+QRectF TerminalPanes::zoneRect(Node *leaf, int zone) const
+{
+    if (!leaf || !leaf->cell)
+        return {};
+    const qreal x = leaf->cell->x(), y = leaf->cell->y();
+    const qreal w = leaf->cell->width(), h = leaf->cell->height();
+    switch (zone) {
+    case ZoneLeft:   return QRectF(x, y, w / 2, h);
+    case ZoneRight:  return QRectF(x + w / 2, y, w / 2, h);
+    case ZoneTop:    return QRectF(x, y, w, h / 2);
+    case ZoneBottom: return QRectF(x, y + h / 2, w, h / 2);
+    case ZoneCenter: return QRectF(x + 6, y + 6, w - 12, h - 12);
+    default:         return {};
+    }
+}
+
+void TerminalPanes::beginPaneDrag(TerminalView *v)
+{
+    m_dragView = v;
+    if (!m_dropOverlay) {
+        if (QQmlEngine *eng = qmlEngine(this)) {
+            QQmlComponent c(eng);
+            c.setData(QByteArray(kDropQml), QUrl(QStringLiteral("qrc:/solidterm/DropZone.qml")));
+            m_dropOverlay = qobject_cast<QQuickItem *>(c.create(qmlContext(this)));
+            if (m_dropOverlay) {
+                m_dropOverlay->setParent(this);
+                m_dropOverlay->setParentItem(this);
+            }
+        }
+    }
+}
+
+void TerminalPanes::updatePaneDrag(const QPointF &globalPos)
+{
+    if (!m_dragView)
+        return;
+    const QPointF local = mapFromGlobal(globalPos);
+    Node *t = leafAtLocal(local);
+    if (!t) {
+        m_dropTarget = nullptr;
+        m_dropZone = ZoneNone;
+        if (m_dropOverlay) m_dropOverlay->setVisible(false);
+        return;
+    }
+    const QPointF inCell(local.x() - t->cell->x(), local.y() - t->cell->y());
+    int zone = zoneAt(inCell, t->cell->width(), t->cell->height());
+    // Dropping a pane onto its own centre is a no-op → don't highlight it.
+    Node *src = leafOfView(m_dragView);
+    if (t == src && zone == ZoneCenter)
+        zone = ZoneNone;
+    m_dropTarget = t;
+    m_dropZone = zone;
+    if (m_dropOverlay) {
+        if (zone == ZoneNone) {
+            m_dropOverlay->setVisible(false);
+        } else {
+            const QRectF r = zoneRect(t, zone);
+            m_dropOverlay->setX(r.x());
+            m_dropOverlay->setY(r.y());
+            m_dropOverlay->setWidth(r.width());
+            m_dropOverlay->setHeight(r.height());
+            m_dropOverlay->setParentItem(this); // keep on top of freshly-added cells
+            m_dropOverlay->setVisible(true);
+        }
+    }
+}
+
+void TerminalPanes::endPaneDrag(const QPointF &globalPos)
+{
+    updatePaneDrag(globalPos); // settle target/zone on the final position
+    TerminalView *v = m_dragView;
+    Node *t = m_dropTarget;
+    const int zone = m_dropZone;
+    m_dragView = nullptr;
+    m_dropTarget = nullptr;
+    m_dropZone = ZoneNone;
+    if (m_dropOverlay)
+        m_dropOverlay->setVisible(false);
+
+    if (!v || !t || zone == ZoneNone)
+        return; // dropped on nothing / on itself → keep the layout (detach handled in a later step)
+    Node *src = leafOfView(v);
+    if (!src || src == t)
+        return;
+    if (zone == ZoneCenter)
+        swapLeaves(v, t);
+    else
+        moveLeaf(v, t, zone);
+}
+
+void TerminalPanes::moveLeaf(TerminalView *v, Node *target, int side)
+{
+    Node *src = leafOfView(v);
+    if (!src || !target || src == target || !src->isLeaf() || !target->isLeaf())
+        return;
+    m_zoomed = false; m_zoomLeaf = nullptr;
+
+    // Drop the old cell + node, but DON'T null-parent the view first: makeLeaf() reparents it straight
+    // from the old cell into the new one, so it never leaves the scene — and thus keeps its keyboard
+    // focus (a null-parent gap would hand focus to a sibling and the reparented view can't reclaim it).
+    QQuickItem *oldCell = src->cell;
+    src->cell = nullptr;
+    src->view = nullptr;
+    src->header = nullptr;
+    unlinkLeaf(src);
+    if (m_focused == src)
+        m_focused = nullptr; // never leave m_focused dangling — it's re-set to `moved` below
+    delete src;
+    if (oldCell)
+        oldCell->deleteLater();
+
+    // A fresh cell adopting the live view, spliced beside the target.
+    Node *moved = makeLeaf(v);
+    if (!moved)
+        return;
+    const int orient = (side == ZoneLeft || side == ZoneRight) ? Qt::Horizontal : Qt::Vertical;
+    const bool before = (side == ZoneLeft || side == ZoneTop);
+    insertLeafBeside(target, moved, orient, before);
+    if (moved->cell) // a move isn't a fresh spawn → don't play the enter keyframes
+        moved->cell->setProperty("cssClass", QVariant::fromValue(QStringList{ QStringLiteral("pane") }));
+
+    relayout();
+    setFocused(moved); // accent follows m_focused synchronously; keyboard focus re-affirms on the next tick
+    emit panesChanged();
+}
+
+void TerminalPanes::swapLeaves(TerminalView *v, Node *target)
+{
+    Node *src = leafOfView(v);
+    if (!src || !target || src == target)
+        return;
+    // Swap the whole payload (cell+view+header travel together); layout repositions each cell to its
+    // node's new rect, so the two panes trade places. leafOfView scans by view pointer so wiring holds.
+    std::swap(src->cell, target->cell);
+    std::swap(src->view, target->view);
+    std::swap(src->header, target->header);
+    relayout();
+    setFocused(leafOfView(v));
+    emit panesChanged();
 }
 
 // ─── dividers + layout ──────────────────────────────────────────────────────────────────────────
@@ -510,7 +735,9 @@ void TerminalPanes::refreshHeaderFocus()
     const bool multi = leaves.size() > 1;
     for (Node *l : leaves)
         if (l->header && l->view) {
-            const bool focused = l->view->hasActiveFocus();
+            // Accent/dim track the LOGICAL focused pane (m_focused), not the async activeFocus — the
+            // latter is stale right after a reparent (drag move) and drops when the window is unfocused.
+            const bool focused = (l == m_focused);
             l->header->setFocused(focused);
             l->view->setDimmed(multi && !focused); // dim inactive panes when split
         }
@@ -540,6 +767,27 @@ void TerminalPanes::focusLeafByIndex(int i)
     collectLeaves(m_root, leaves);
     if (i >= 0 && i < leaves.size())
         setFocused(leaves[i]);
+}
+
+void TerminalPanes::debugDragLeaf(int srcIdx, int dstIdx, int zone)
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    if (srcIdx < 0 || srcIdx >= leaves.size() || dstIdx < 0 || dstIdx >= leaves.size())
+        return;
+    Node *src = leaves[srcIdx];
+    Node *dst = leaves[dstIdx];
+    if (!src->view || !dst->cell)
+        return;
+    // Aim at the centre of the requested zone so zoneAt() classifies it the same way a real drop would.
+    const QRectF r = zoneRect(dst, zone); // zone ints line up with DropZone (1=L 2=R 3=T 4=B 5=C)
+    const QPointF center = r.isEmpty()
+        ? QPointF(dst->cell->x() + dst->cell->width() / 2, dst->cell->y() + dst->cell->height() / 2)
+        : r.center();
+    const QPointF g = mapToGlobal(center);
+    beginPaneDrag(src->view);
+    updatePaneDrag(g);
+    endPaneDrag(g);
 }
 
 void TerminalPanes::refocus()
@@ -579,6 +827,15 @@ void TerminalPanes::focusPrev()
 void TerminalPanes::copyFocused() { if (m_focused && m_focused->view) m_focused->view->copySelection(); }
 void TerminalPanes::pasteFocused() { if (m_focused && m_focused->view) m_focused->view->pasteClipboard(); }
 void TerminalPanes::pasteTextFocused(const QString &t) { if (m_focused && m_focused->view) m_focused->view->pasteText(t); }
+void TerminalPanes::zoomFocused(int delta)
+{
+    if (!m_focused || !m_focused->view)
+        return;
+    // Per-pane: change ONLY the focused view's font size (delta 0 resets to the shared/pref size).
+    // We deliberately don't touch m_fontSize, so the other panes and the saved pref are unaffected.
+    TerminalView *v = m_focused->view;
+    v->setFontSize(delta == 0 ? m_fontSize : qBound(6, v->fontSize() + delta, 40));
+}
 void TerminalPanes::clearFocused() { if (m_focused && m_focused->view) m_focused->view->clearScrollback(); }
 void TerminalPanes::resetFocused() { if (m_focused && m_focused->view) m_focused->view->resetTerminal(); }
 void TerminalPanes::setReadOnlyFocused(bool v) { if (m_focused && m_focused->view) m_focused->view->setReadOnly(v); }

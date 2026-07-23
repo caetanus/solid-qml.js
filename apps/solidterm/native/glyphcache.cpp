@@ -8,6 +8,123 @@ size_t qHash(const GlyphCache::Key &k, size_t seed)
     return qHashMulti(seed, k.cluster, k.style, k.widthCells);
 }
 
+// ─── procedural cell graphics (box-drawing + block elements) ────────────────────────────────────
+// Fonts rasterise U+2500-259F glyphs to their own ink box, which rarely matches the terminal cell —
+// so blocks leave seams and box lines don't connect across cells. Like kitty/alacritty/wezterm, we
+// DRAW these shapes ourselves at the exact cell rect [x0..x0+w]×[y0..y0+h], so neighbours tile with
+// zero seam and lines join. White coverage (tinted by fg later); hard-edged (no AA) so edges meet.
+namespace {
+
+inline void fillR(QPainter *p, qreal x, qreal y, qreal w, qreal h)
+{
+    p->fillRect(QRectF(x, y, w, h), Qt::white);
+}
+
+// Box-drawing arms: weight per direction (0 none, 1 light, 2 heavy). Light/heavy table for
+// U+2500..254B in {up,right,down,left} order. Dashed variants (2504-250B) render as solid — the
+// seam-free join is what matters, not the dash pattern.
+const quint8 kBoxArms[0x4C][4] = {
+    /*2500*/{0,1,0,1},/*2501*/{0,2,0,2},/*2502*/{1,0,1,0},/*2503*/{2,0,2,0},
+    /*2504*/{0,1,0,1},/*2505*/{0,2,0,2},/*2506*/{1,0,1,0},/*2507*/{2,0,2,0},
+    /*2508*/{0,1,0,1},/*2509*/{0,2,0,2},/*250A*/{1,0,1,0},/*250B*/{2,0,2,0},
+    /*250C*/{0,1,1,0},/*250D*/{0,2,1,0},/*250E*/{0,1,2,0},/*250F*/{0,2,2,0},
+    /*2510*/{0,0,1,1},/*2511*/{0,0,1,2},/*2512*/{0,0,2,1},/*2513*/{0,0,2,2},
+    /*2514*/{1,1,0,0},/*2515*/{1,2,0,0},/*2516*/{2,1,0,0},/*2517*/{2,2,0,0},
+    /*2518*/{1,0,0,1},/*2519*/{1,0,0,2},/*251A*/{2,0,0,1},/*251B*/{2,0,0,2},
+    /*251C*/{1,1,1,0},/*251D*/{1,2,1,0},/*251E*/{2,1,1,0},/*251F*/{1,1,2,0},
+    /*2520*/{2,1,2,0},/*2521*/{2,2,1,0},/*2522*/{1,2,2,0},/*2523*/{2,2,2,0},
+    /*2524*/{1,0,1,1},/*2525*/{1,0,1,2},/*2526*/{2,0,1,1},/*2527*/{1,0,2,1},
+    /*2528*/{2,0,2,1},/*2529*/{2,0,1,2},/*252A*/{1,0,2,2},/*252B*/{2,0,2,2},
+    /*252C*/{0,1,1,1},/*252D*/{0,1,1,2},/*252E*/{0,2,1,1},/*252F*/{0,2,1,2},
+    /*2530*/{0,1,2,1},/*2531*/{0,1,2,2},/*2532*/{0,2,2,1},/*2533*/{0,2,2,2},
+    /*2534*/{1,1,0,1},/*2535*/{1,1,0,2},/*2536*/{1,2,0,1},/*2537*/{1,2,0,2},
+    /*2538*/{2,1,0,1},/*2539*/{2,1,0,2},/*253A*/{2,2,0,1},/*253B*/{2,2,0,2},
+    /*253C*/{1,1,1,1},/*253D*/{1,1,1,2},/*253E*/{1,2,1,1},/*253F*/{1,2,1,2},
+    /*2540*/{2,1,1,1},/*2541*/{1,1,2,1},/*2542*/{2,1,2,1},/*2543*/{2,1,1,2},
+    /*2544*/{2,2,1,1},/*2545*/{1,1,2,2},/*2546*/{1,2,2,1},/*2547*/{2,2,1,2},
+    /*2548*/{1,2,2,2},/*2549*/{2,1,2,2},/*254A*/{2,2,2,1},/*254B*/{2,2,2,2},
+};
+
+bool drawCellGraphic(QPainter *p, char32_t cp, qreal x0, qreal y0, qreal w, qreal h)
+{
+    const qreal xm = qRound(x0 + w / 2), ym = qRound(y0 + h / 2), x1 = x0 + w, y1 = y0 + h;
+
+    // ---- Block Elements U+2580..259F ----
+    switch (cp) {
+    case 0x2588: fillR(p, x0, y0, w, h); return true;          // █ full
+    case 0x2580: fillR(p, x0, y0, w, ym - y0); return true;     // ▀ upper half
+    case 0x2584: fillR(p, x0, ym, w, y1 - ym); return true;     // ▄ lower half
+    case 0x258C: fillR(p, x0, y0, xm - x0, h); return true;     // ▌ left half
+    case 0x2590: fillR(p, xm, y0, x1 - xm, h); return true;     // ▐ right half
+    case 0x2594: fillR(p, x0, y0, w, qRound(h / 8)); return true;             // ▔ upper 1/8
+    case 0x2595: fillR(p, x1 - qRound(w / 8), y0, qRound(w / 8), h); return true; // ▕ right 1/8
+    }
+    if (cp >= 0x2581 && cp <= 0x2587) { // lower eighths (2588 full handled above)
+        const qreal t = qRound(h * (cp - 0x2580) / 8.0);
+        fillR(p, x0, y1 - t, w, t); return true;
+    }
+    if (cp >= 0x2589 && cp <= 0x258F) { // left eighths
+        const qreal t = qRound(w * (8 - (cp - 0x2588)) / 8.0);
+        fillR(p, x0, y0, t, h); return true;
+    }
+    if (cp == 0x2591 || cp == 0x2592 || cp == 0x2593) { // ░▒▓ shades → alpha coverage
+        const int a = cp == 0x2591 ? 64 : cp == 0x2592 ? 128 : 192;
+        p->fillRect(QRectF(x0, y0, w, h), QColor(255, 255, 255, a));
+        return true;
+    }
+    if (cp >= 0x2596 && cp <= 0x259F) { // quadrants (bits UL=8 UR=4 LL=2 LR=1)
+        static const quint8 q[10] = { 2, 1, 8, 11, 9, 14, 13, 4, 6, 7 };
+        const quint8 m = q[cp - 0x2596];
+        if (m & 8) fillR(p, x0, y0, xm - x0, ym - y0);
+        if (m & 4) fillR(p, xm, y0, x1 - xm, ym - y0);
+        if (m & 2) fillR(p, x0, ym, xm - x0, y1 - ym);
+        if (m & 1) fillR(p, xm, ym, x1 - xm, y1 - ym);
+        return true;
+    }
+
+    // ---- Powerline separators U+E0B0..E0B3 (Nerd-Font PUA) ----
+    // The prompt's segment arrows: font glyphs often don't span the full cell height → a hairline
+    // gap between segments. Draw the triangle to the exact cell so segment backgrounds meet flush.
+    if (cp >= 0xE0B0 && cp <= 0xE0B3) {
+        p->setRenderHint(QPainter::Antialiasing, true); // the diagonal wants AA; the flat side is on a cell edge so it still tiles
+        if (cp == 0xE0B0 || cp == 0xE0B2) {             // solid ▶ / ◀
+            p->setPen(Qt::NoPen);
+            p->setBrush(Qt::white);
+            QPolygonF tri;
+            if (cp == 0xE0B0) tri << QPointF(x0, y0) << QPointF(x1, ym) << QPointF(x0, y1);
+            else              tri << QPointF(x1, y0) << QPointF(x0, ym) << QPointF(x1, y1);
+            p->drawPolygon(tri);
+        } else {                                        // thin chevron › / ‹
+            QPen pen(Qt::white, qMax<qreal>(1.5, h * 0.06));
+            pen.setJoinStyle(Qt::MiterJoin);
+            p->setBrush(Qt::NoBrush);
+            p->setPen(pen);
+            QPolygonF v;
+            if (cp == 0xE0B1) v << QPointF(x0, y0) << QPointF(x1, ym) << QPointF(x0, y1);
+            else              v << QPointF(x1, y0) << QPointF(x0, ym) << QPointF(x1, y1);
+            p->drawPolyline(v);
+        }
+        return true;
+    }
+
+    // ---- Box Drawing U+2500..254B (light/heavy) ----
+    if (cp >= 0x2500 && cp <= 0x254B) {
+        const quint8 *a = kBoxArms[cp - 0x2500];
+        const qreal tl = qMax<qreal>(1.0, qRound(h * 0.07));
+        const qreal th = qMax<qreal>(2.0, qRound(h * 0.15));
+        auto tk = [&](int wt) { return wt == 2 ? th : tl; };
+        // Each present arm reaches from the cell edge to the centre (a touch past, to join cleanly).
+        if (a[0]) { const qreal t = tk(a[0]); fillR(p, xm - t / 2, y0, t, ym - y0 + t / 2); }       // up
+        if (a[2]) { const qreal t = tk(a[2]); fillR(p, xm - t / 2, ym - t / 2, t, y1 - ym + t / 2); } // down
+        if (a[3]) { const qreal t = tk(a[3]); fillR(p, x0, ym - t / 2, xm - x0 + t / 2, t); }        // left
+        if (a[1]) { const qreal t = tk(a[1]); fillR(p, xm - t / 2, ym - t / 2, x1 - xm + t / 2, t); } // right
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
 void GlyphCache::setFont(const QString &family, int pixelSize)
 {
     if (!m_atlas.isNull() && m_font.family() == family && m_font.pixelSize() == pixelSize)
@@ -79,7 +196,29 @@ GlyphCache::Entry GlyphCache::rasterize(const Key &k)
     p.setFont(k.style & 1 ? (k.style & 2 ? m_boldItalic : m_bold)
                           : (k.style & 2 ? m_italic : m_font));
     p.setClipRect(m_penX, m_penY, tileW, tileH);
-    p.drawText(QPointF(m_penX, m_penY + m_ascent), k.cluster);
+    // Box-drawing / block-element single codepoints: draw procedurally at the exact cell rect so they
+    // tile seamlessly (the font's glyphs don't fill the cell → visible seams). Everything else: font.
+    const QList<uint> cps = k.cluster.toUcs4();
+    if (cps.size() == 1 && drawCellGraphic(&p, cps.first(), m_penX, m_penY, tileW, tileH)) {
+        // drawn procedurally
+    } else {
+        // Nerd-Font / symbol glyphs are often wider (or taller) than one cell; the tile clip would cut
+        // them (the git/github/folder icons get chopped on the right). If the ink overflows the cell,
+        // uniform-scale it to fit and centre it (icons aren't baseline-aligned text). Normal glyphs
+        // keep the shared baseline so text lines up.
+        const QRectF br = QFontMetricsF(p.font()).boundingRect(k.cluster);
+        if (br.width() > tileW + 0.5 || br.height() > tileH + 0.5) {
+            const qreal s = qMin(tileW / qMax<qreal>(1.0, br.width()), tileH / qMax<qreal>(1.0, br.height()));
+            p.save();
+            p.translate(m_penX + tileW / 2.0, m_penY + tileH / 2.0); // tile centre
+            p.scale(s, s);
+            p.translate(-br.center().x(), -br.center().y());          // ink centre → tile centre
+            p.drawText(QPointF(0, 0), k.cluster);
+            p.restore();
+        } else {
+            p.drawText(QPointF(m_penX, m_penY + m_ascent), k.cluster);
+        }
+    }
     p.end();
 
     Entry e;

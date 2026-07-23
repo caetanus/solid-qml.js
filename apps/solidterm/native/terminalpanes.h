@@ -71,9 +71,14 @@ public:
     Q_INVOKABLE void focusPrev();
     Q_INVOKABLE void refocus(); // re-take keyboard focus on the current pane (tab switch)
     Q_INVOKABLE void toggleZoom(); // maximise the focused pane to fill the session; again restores
+    Q_INVOKABLE void zoomFocused(int delta); // per-pane FONT zoom (delta 0 = reset to the shared size)
     QStringList paneTitles() const;         // leaf titles in order (for the F12 overview)
     int focusedPaneIndex() const;           // index of the focused leaf
     Q_INVOKABLE void focusLeafByIndex(int i);
+    // Debug/test hook: drive the real drag path — drag leaf `srcIdx` onto `zone` (DropZone values:
+    // 1=centre 2=left 3=right 4=top 5=bottom) of leaf `dstIdx`. Lets the grab harness exercise
+    // rearrange without a synthetic gesture.
+    Q_INVOKABLE void debugDragLeaf(int srcIdx, int dstIdx, int zone);
     // Paste/copy proxied to the focused pane (menu actions).
     Q_INVOKABLE void copyFocused();
     Q_INVOKABLE void pasteFocused();
@@ -121,13 +126,15 @@ private:
         bool isLeaf() const { return children.isEmpty(); }
     };
 
-    Node *makeLeaf();                   // compose a cell + wire it
+    Node *makeLeaf(TerminalView *adopt = nullptr); // compose a cell; adopt a moved view or make one
     void wirePane(TerminalView *v, PaneHeader *header);
     void applyStyle(TerminalView *v);
 
     void layoutNode(Node *node, qreal x, qreal y, qreal w, qreal h);
     void rebuildDividers(Node *splitNode); // (re)create the divider items for a split node
     void collectLeaves(Node *node, QVector<Node *> &out) const;
+    void insertLeafBeside(Node *anchor, Node *fresh, int orient, bool before); // splice a leaf next to another
+    void unlinkLeaf(Node *leaf);        // detach a leaf from its parent + collapse a single-child split (node kept)
     void removeLeaf(Node *leaf);
     void deleteSubtree(Node *node);     // frees dividers + cells recursively
     void setFocused(Node *leaf);
@@ -135,12 +142,31 @@ private:
     void refreshHeaderFocus();
     void relayout();
 
+    // Header-drag pane rearrange (drop a pane onto a side of another to re-split; onto the centre to
+    // swap). Positions arrive as GLOBAL screen coords (works within and, later, across windows).
+    enum DropZone { ZoneNone, ZoneCenter, ZoneLeft, ZoneRight, ZoneTop, ZoneBottom };
+    void beginPaneDrag(TerminalView *v);
+    void updatePaneDrag(const QPointF &globalPos);
+    void endPaneDrag(const QPointF &globalPos);
+    Node *leafAtLocal(const QPointF &p) const;      // leaf whose cell contains a TerminalPanes-local point
+    int zoneAt(const QPointF &inCell, qreal w, qreal h) const;
+    QRectF zoneRect(Node *leaf, int zone) const;    // highlight rect (TerminalPanes coords) for a zone
+    void moveLeaf(TerminalView *v, Node *target, int side); // re-split: move the live pane beside target
+    void swapLeaves(TerminalView *v, Node *target);         // centre drop: exchange two panes' positions
+
     Node *m_root = nullptr;
     Node *m_focused = nullptr;          // focused LEAF
     bool m_zoomed = false;              // one pane maximised to fill the session
     Node *m_zoomLeaf = nullptr;
     bool m_didInitialFocus = false;
     class QQmlComponent *m_cellComponent = nullptr;
+    class QQmlComponent *m_viewComponent = nullptr;
+
+    // Live drag state (a pane being dragged by its header).
+    TerminalView *m_dragView = nullptr;  // non-null while dragging
+    QQuickItem *m_dropOverlay = nullptr;  // translucent highlight over the hovered drop zone
+    Node *m_dropTarget = nullptr;
+    int m_dropZone = ZoneNone;
 
     QString m_fontFamily = QStringLiteral("monospace");
     int m_fontSize = 15;

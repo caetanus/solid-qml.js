@@ -214,6 +214,42 @@ int main(int argc, char **argv)
         }
     }
 
+    // Debug: SOLIDTERM_DRAGTEST="src,dst,zone" drives the header-drag rearrange after a settle
+    // (zone 1=centre 2=left 3=right 4=top 5=bottom). Use with AUTOSPLIT to build panes first, e.g.
+    // SOLIDTERM_AUTOSPLIT=1 SOLIDTERM_DRAGTEST="1,0,5" drags pane #2 onto the bottom of pane #1.
+    const QString dragTest = qEnvironmentVariable("SOLIDTERM_DRAGTEST");
+    if (!dragTest.isEmpty() && window) {
+        const QStringList parts = dragTest.split(QLatin1Char(','));
+        if (parts.size() == 3) {
+            const int s = parts[0].toInt(), d = parts[1].toInt(), z = parts[2].toInt();
+            QTimer::singleShot(2200, window, [&engine, s, d, z] {
+                for (QObject *o : engine.rootObjects())
+                    if (auto *w = qobject_cast<QQuickWindow *>(o)) {
+                        QList<QQuickItem *> stack { w->contentItem() };
+                        while (!stack.isEmpty()) {
+                            QQuickItem *it = stack.takeLast();
+                            if (auto *panes = qobject_cast<TerminalPanes *>(it)) {
+                                panes->debugDragLeaf(s, d, z);
+                                // Grab after the layout settles, then quit (self-contained; don't pair
+                                // with PLAINSHOT, whose earlier timer would quit before the drag ran).
+                                const QString pfx = qEnvironmentVariable("SOLIDTERM_DRAGSHOT");
+                                if (!pfx.isEmpty())
+                                    QTimer::singleShot(500, qApp, [pfx] {
+                                        int i = 0;
+                                        for (QWindow *tw : QGuiApplication::topLevelWindows())
+                                            if (auto *qw = qobject_cast<QQuickWindow *>(tw))
+                                                qw->grabWindow().save(QStringLiteral("%1-%2.png").arg(pfx).arg(i++));
+                                        QCoreApplication::quit();
+                                    });
+                                return;
+                            }
+                            for (QQuickItem *k : it->childItems()) stack.append(k);
+                        }
+                    }
+            });
+        }
+    }
+
     // Debug: SOLIDTERM_OVERVIEW=1 opens the F12 overview after a settle (use with AUTOSPLIT).
     if (qEnvironmentVariableIsSet("SOLIDTERM_OVERVIEW") && window) {
         QTimer::singleShot(3200, window, [&engine] {

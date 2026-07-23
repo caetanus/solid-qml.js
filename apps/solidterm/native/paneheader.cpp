@@ -115,15 +115,53 @@ void PaneHeader::paint(QPainter *p)
 
 void PaneHeader::mousePressEvent(QMouseEvent *event)
 {
+    m_armed = false;
+    m_dragging = false;
     if (closeRect().adjusted(-3, -3, 3, 3).contains(event->position()))
         emit closeRequested();
     else if (maximizeRect().adjusted(-3, -3, 3, 3).contains(event->position()))
         emit maximizeRequested();
     else {
-        // The title area is the dropdown: focus this pane and open the menu below the header.
+        // Title area: focus now, but DEFER the dropdown to release — a press that turns into a drag
+        // is a pane move, not a menu open. Arm the drag; the threshold decides which it is.
         emit clicked();
+        m_armed = true;
+        m_pressGlobal = event->globalPosition();
+    }
+    event->accept();
+}
+
+void PaneHeader::mouseMoveEvent(QMouseEvent *event)
+{
+    if (!m_armed) {
+        event->ignore();
+        return;
+    }
+    const QPointF g = event->globalPosition();
+    if (!m_dragging) {
+        // Past the threshold → promote the press to a drag (tilix-style pane rearrange).
+        if ((g - m_pressGlobal).manhattanLength() < 8) {
+            event->accept();
+            return;
+        }
+        m_dragging = true;
+        emit dragStarted();
+    }
+    emit dragMoved(g.x(), g.y());
+    event->accept();
+}
+
+void PaneHeader::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (m_dragging) {
+        const QPointF g = event->globalPosition();
+        emit dragEnded(g.x(), g.y());
+    } else if (m_armed) {
+        // No drag happened → this was a click: open the dropdown below the header.
         const QPointF sp = mapToScene(QPointF(4, height()));
         emit menuRequested(sp.x(), sp.y());
     }
+    m_armed = false;
+    m_dragging = false;
     event->accept();
 }

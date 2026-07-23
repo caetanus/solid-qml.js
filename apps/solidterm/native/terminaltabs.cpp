@@ -205,6 +205,7 @@ void TerminalTabs::focusNext() { if (auto *p = active()) p->focusNext(); }
 void TerminalTabs::focusPrev() { if (auto *p = active()) p->focusPrev(); }
 void TerminalTabs::refocus() { if (auto *p = active()) p->refocus(); }
 void TerminalTabs::toggleZoom() { if (auto *p = active()) p->toggleZoom(); }
+void TerminalTabs::zoomFocused(int delta) { if (auto *p = active()) p->zoomFocused(delta); }
 void TerminalTabs::copyFocused() { if (auto *p = active()) p->copyFocused(); }
 void TerminalTabs::pasteFocused() { if (auto *p = active()) p->pasteFocused(); }
 void TerminalTabs::pasteTextFocused(const QString &t) { if (auto *p = active()) p->pasteTextFocused(t); }

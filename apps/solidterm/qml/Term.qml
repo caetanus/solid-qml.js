@@ -14,7 +14,7 @@ W.Div {
     property var scrollback: termConfig.getInt("scrollback", 8000)
     property var bgImage: termConfig.getString("bgImage", "")
     property var opacity_: termConfig.getInt("opacity", 100)
-    property var emboss: termConfig.getInt("emboss", 0)
+    property var uiEmboss: termConfig.getInt("emboss", 0)
     property var showHeader: termConfig.getInt("showHeader", 1)
     property var showStatus: termConfig.getInt("showStatus", 1)
     property var animSplits: termConfig.getInt("animSplits", 1)
@@ -63,8 +63,7 @@ W.Div {
     function applyRename() { _ref_term.setTabTitle(activeTab, renameValue); renameOpen = false; _ref_term.refocus(); }
     function tabLabel(t) { if (!t) { return "terminal"; } var s = t; if (s.endsWith("/")) { s = s.slice(0, -1); } var slash = s.lastIndexOf("/"); return slash >= 0 ? s.slice(slash + 1) : s; }
     function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : k === "newTab" ? kNewTab : k === "nextTab" ? kNextTab : k === "prevTab" ? kPrevTab : k === "search" ? kSearch : k === "zoomPane" ? kZoomPane : termConfig.getString("keys." + k, ""); }
-    function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } else { if (seq === kSearch) { openSearch(); } else { if (seq === "Ctrl+=" || seq === "Ctrl++") { zoomFont(1); } else { if (seq === "Ctrl+-") { zoomFont(-1); } else { if (seq === "Ctrl+0") { zoomFont(0); } else { if (seq === "Ctrl+,") { cfgOpen = true; } else { if (seq === kZoomPane) { _ref_term.toggleZoom(); } else { if (seq === "F12") { toggleOverview(); } } } } } } } } } } } } } } } }
-    function zoomFont(d) { var n = d === 0 ? 15 : Math.max(6, Math.min(40, uiFontSize + d)); uiFontSize = n; termConfig.set("fontSize", n); }
+    function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } else { if (seq === kSearch) { openSearch(); } else { if (seq === "Ctrl+=" || seq === "Ctrl++") { _ref_term.zoomFocused(1); } else { if (seq === "Ctrl+-") { _ref_term.zoomFocused(-1); } else { if (seq === "Ctrl+0") { _ref_term.zoomFocused(0); } else { if (seq === "Ctrl+,") { cfgOpen = true; } else { if (seq === kZoomPane) { _ref_term.toggleZoom(); } else { if (seq === "F12") { toggleOverview(); } } } } } } } } } } } } } } } }
     function setKey(k, seq) { termConfig.set("keys." + k, seq); if (k === "splitRight") { kSplitRight = seq; } else { if (k === "splitDown") { kSplitDown = seq; } else { if (k === "closePane") { kClosePane = seq; } else { if (k === "focusNext") { kFocusNext = seq; } else { if (k === "focusPrev") { kFocusPrev = seq; } else { if (k === "newTab") { kNewTab = seq; } else { if (k === "nextTab") { kNextTab = seq; } else { if (k === "prevTab") { kPrevTab = seq; } else { if (k === "search") { kSearch = seq; } else { if (k === "zoomPane") { kZoomPane = seq; } } } } } } } } } } }
     property var __cleanups: []
     Component.onCompleted: { sysTheme.setUiOpacity(opacity_ / 100); var searchInput = undefined; }
@@ -219,7 +218,7 @@ W.Div {
                 onTabsChanged: function(titles, active) { tabTitles = titles; activeTab = active; }
                 onSearchChanged: function(idx, count) { searchIdx = idx; searchCount = count; }
                 onUnsafePasteRequested: function(text) { return pastePrompt = text }
-                onZoomRequested: function(d) { return zoomFont(d) }
+                onZoomRequested: function(d) { return _ref_term.zoomFocused(d) }
                 onPaneMenuRequested: function(x_, y_, ro) { return openPaneMenu(x_, y_, ro) }
                 fontFamily: uiFontFamily
                 fontSize: uiFontSize
@@ -228,7 +227,7 @@ W.Div {
                 scrollbackLimit: scrollback
                 backgroundImage: bgImage
                 backgroundOpacity: opacity_ / 100
-                emboss: emboss !== 0
+                emboss: uiEmboss !== 0
                 animateSplits: animSplits !== 0
                 handleColor: sysTheme.window
                 reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, kZoomPane, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]
@@ -465,11 +464,11 @@ W.Div {
                         cssClass: ["cfg-sel"]
                         model: ["Off", "On"]
                         values: ["0", "1"]
-                        onActivated: (index) => { emboss = parseInt(__input9.values[index]); termConfig.set("emboss", parseInt(__input9.values[index])); }
+                        onActivated: (index) => { uiEmboss = parseInt(__input9.values[index]); termConfig.set("emboss", parseInt(__input9.values[index])); }
                         Binding {
                             target: __input9
                             property: "currentIndex"
-                            value: __input9.values.indexOf("" + emboss)
+                            value: __input9.values.indexOf("" + uiEmboss)
                             restoreMode: Binding.RestoreNone
                         }
                     }

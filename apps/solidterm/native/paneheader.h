@@ -46,13 +46,24 @@ signals:
     void closeRequested();
     void maximizeRequested(); // the ⤡ button (zoom this pane)
     void menuRequested(qreal x, qreal y); // title/▼ clicked → open the dropdown (scene coords)
+    // Drag a pane by its header (rearrange / detach). Positions are GLOBAL (screen) coords so the
+    // same gesture works within a window and across windows.
+    void dragStarted();
+    void dragMoved(qreal globalX, qreal globalY);
+    void dragEnded(qreal globalX, qreal globalY);
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
 
 private:
     QRectF closeRect() const;
     QRectF maximizeRect() const;
+
+    bool m_armed = false;      // pressed on the title area (a drag candidate)
+    bool m_dragging = false;   // moved past the threshold → a real drag
+    QPointF m_pressGlobal;      // press position in screen coords (drag threshold origin)
 
     QString m_title;
     int m_index = 0;       // 0 = no number (single pane); >0 shows "N: title"
