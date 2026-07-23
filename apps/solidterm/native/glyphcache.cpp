@@ -120,6 +120,78 @@ bool drawCellGraphic(QPainter *p, char32_t cp, qreal x0, qreal y0, qreal w, qrea
         if (a[1]) { const qreal t = tk(a[1]); fillR(p, xm - t / 2, ym - t / 2, x1 - xm + t / 2, t); } // right
         return true;
     }
+
+    // ---- Double-line box U+2550..256C ----
+    // Arms as {up,right,down,left}, value 0 none / 1 single / 2 double. Double arms draw two parallel
+    // rails offset ±g; each rail overshoots the centre by g so perpendicular rails meet at corners.
+    if (cp >= 0x2550 && cp <= 0x256C) {
+        static const quint8 kDbl[0x1D][4] = {
+            /*2550*/{0,2,0,2},/*2551*/{2,0,2,0},/*2552*/{0,2,1,0},/*2553*/{0,1,2,0},
+            /*2554*/{0,2,2,0},/*2555*/{0,0,1,2},/*2556*/{0,0,2,1},/*2557*/{0,0,2,2},
+            /*2558*/{1,2,0,0},/*2559*/{2,1,0,0},/*255A*/{2,2,0,0},/*255B*/{1,0,0,2},
+            /*255C*/{2,0,0,1},/*255D*/{2,0,0,2},/*255E*/{1,2,1,0},/*255F*/{2,1,2,0},
+            /*2560*/{2,2,2,0},/*2561*/{1,0,1,2},/*2562*/{2,0,2,1},/*2563*/{2,0,2,2},
+            /*2564*/{0,2,1,2},/*2565*/{0,1,2,1},/*2566*/{0,2,2,2},/*2567*/{1,2,0,2},
+            /*2568*/{2,1,0,1},/*2569*/{2,2,0,2},/*256A*/{1,2,1,2},/*256B*/{2,1,2,1},
+            /*256C*/{2,2,2,2},
+        };
+        const quint8 *a = kDbl[cp - 0x2550];
+        const qreal t = qMax<qreal>(1.0, qRound(h * 0.06));
+        const qreal g = qMax<qreal>(t, qRound(h * 0.09)); // rail offset from centre
+        // vertical rail x-positions (for up/down), horizontal rail y-positions (for left/right)
+        const qreal vx[2] = { xm - g, xm + g }, hy[2] = { ym - g, ym + g };
+        auto vrail = [&](qreal cx, qreal ya, qreal yb) { fillR(p, cx - t / 2, ya, t, yb - ya); };
+        auto hrail = [&](qreal cy, qreal xa, qreal xb) { fillR(p, xa, cy - t / 2, xb - xa, t); };
+        // up
+        if (a[0] == 1) vrail(xm, y0, ym + g);
+        else if (a[0] == 2) { vrail(vx[0], y0, ym + g); vrail(vx[1], y0, ym + g); }
+        if (a[2] == 1) vrail(xm, ym - g, y1);
+        else if (a[2] == 2) { vrail(vx[0], ym - g, y1); vrail(vx[1], ym - g, y1); }
+        if (a[3] == 1) hrail(ym, x0, xm + g);
+        else if (a[3] == 2) { hrail(hy[0], x0, xm + g); hrail(hy[1], x0, xm + g); }
+        if (a[1] == 1) hrail(ym, xm - g, x1);
+        else if (a[1] == 2) { hrail(hy[0], xm - g, x1); hrail(hy[1], xm - g, x1); }
+        return true;
+    }
+
+    // ---- Braille U+2800..28FF ----
+    // 2×4 dot matrix; the low 8 bits of (cp-0x2800) are the dots. Standard numbering:
+    // 1 4 / 2 5 / 3 6 / 7 8  → bit0..bit7. Each dot is a filled blob in its sub-cell.
+    if (cp >= 0x2800 && cp <= 0x28FF) {
+        const int mask = int(cp - 0x2800);
+        const qreal cw = w / 2, ch = h / 4;
+        const qreal d = qMax<qreal>(1.0, qMin(cw, ch) * 0.62);
+        static const int col[8] = { 0, 0, 0, 1, 1, 1, 0, 1 };
+        static const int rowIdx[8] = { 0, 1, 2, 0, 1, 2, 3, 3 };
+        for (int i = 0; i < 8; ++i)
+            if (mask & (1 << i)) {
+                const qreal cx = x0 + (col[i] + 0.5) * cw, cy = y0 + (rowIdx[i] + 0.5) * ch;
+                p->setBrush(Qt::white);
+                p->setPen(Qt::NoPen);
+                p->setRenderHint(QPainter::Antialiasing, true);
+                p->drawEllipse(QPointF(cx, cy), d / 2, d / 2);
+            }
+        return true;
+    }
+
+    // ---- Sextants U+1FB00..1FB3B (2×3 block mosaic) ----
+    // 6 sub-cells, bit i = (col, row): b0=(0,0) b1=(1,0) b2=(0,1) b3=(1,1) b4=(0,2) b5=(1,2). The 60
+    // codepoints enumerate 6-bit values 1..62 skipping 21 (=▌ left half) and 42 (=▐ right half).
+    if (cp >= 0x1FB00 && cp <= 0x1FB3B) {
+        const int index = int(cp - 0x1FB00);
+        int v = 0, seen = -1;
+        for (int cand = 1; cand <= 62; ++cand) {
+            if (cand == 21 || cand == 42) continue;
+            if (++seen == index) { v = cand; break; }
+        }
+        const qreal cw = w / 2, rh = h / 3;
+        for (int i = 0; i < 6; ++i)
+            if (v & (1 << i)) {
+                const qreal sx = x0 + (i & 1 ? cw : 0), sy = y0 + (i / 2) * rh;
+                fillR(p, sx, sy, cw, rh);
+            }
+        return true;
+    }
     return false;
 }
 
