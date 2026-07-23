@@ -62,6 +62,16 @@ export function Term() {
   const confirmPaste = () => { term.pasteTextFocused(pastePrompt()); setPastePrompt(""); term.refocus(); };
   const cancelPaste = () => { setPastePrompt(""); term.refocus(); };
   const closeCfg = () => { setCfgOpen(false); term.refocus(); };
+  // Pane header dropdown (tilix-style): the native header emits paneMenuRequested(x,y,readOnly).
+  const [paneMenuOpen, setPaneMenuOpen] = createSignal(false);
+  const [paneMenuX, setPaneMenuX] = createSignal(0);
+  const [paneMenuY, setPaneMenuY] = createSignal(0);
+  const [paneReadOnly, setPaneReadOnly] = createSignal(false);
+  const openPaneMenu = (x: number, y: number, ro: boolean) => {
+    setPaneMenuX(x); setPaneMenuY(y); setPaneReadOnly(ro); setPaneMenuOpen(true);
+  };
+  const paneFind = () => openSearch();
+  const paneToggleReadOnly = () => { const nv = !paneReadOnly(); term.setReadOnlyFocused(nv); setPaneReadOnly(nv); };
   // Editable tab title (overrides the OSC title; empty reverts to automatic).
   const [renameOpen, setRenameOpen] = createSignal(false);
   const [renameValue, setRenameValue] = createSignal("");
@@ -137,6 +147,20 @@ export function Term() {
 
   return (
     <div class="term-root">
+      <Menu open={paneMenuOpen()} x={paneMenuX()} y={paneMenuY()} class="tmenu" onClose={() => setPaneMenuOpen(false)}>
+        <MenuItem onClick={() => paneFind()}>&Find…</MenuItem>
+        <MenuItem onClick={() => paneToggleReadOnly()}>{paneReadOnly() ? "Read only ✓" : "Read only"}</MenuItem>
+        <MenuSeparator />
+        <MenuItem onClick={() => term.copyFocused()}>&Copy</MenuItem>
+        <MenuItem onClick={() => term.pasteFocused()}>&Paste</MenuItem>
+        <MenuItem onClick={() => term.resetFocused()}>&Reset</MenuItem>
+        <MenuSeparator />
+        <MenuItem onClick={() => term.split(Qt.Horizontal)}>Split &right</MenuItem>
+        <MenuItem onClick={() => term.split(Qt.Vertical)}>Split &down</MenuItem>
+        <MenuItem onClick={() => term.toggleZoom()}>&Zoom pane</MenuItem>
+        <MenuItem onClick={() => term.closeFocused()}>Close &pane</MenuItem>
+      </Menu>
+
       <Show when={showHeader() !== 0}>
         <div class="term-header">
           <text class="term-title">{title()}</text>
@@ -175,6 +199,7 @@ export function Term() {
           onSearchChanged={(idx, count) => { setSearchIdx(idx); setSearchCount(count); }}
           onUnsafePasteRequested={(text) => setPastePrompt(text)}
           onZoomRequested={(d) => zoomFont(d)}
+          onPaneMenuRequested={(x, y, ro) => openPaneMenu(x, y, ro)}
           fontFamily={uiFontFamily()}
           fontSize={uiFontSize()}
           background={scheme() === "system" ? sysTheme.base : (SCHEMES[scheme()] || SCHEMES.midnight).bg}

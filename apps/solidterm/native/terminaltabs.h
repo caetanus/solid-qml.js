@@ -76,6 +76,7 @@ public:
     Q_INVOKABLE void pasteTextFocused(const QString &text);
     Q_INVOKABLE void clearFocused();
     Q_INVOKABLE void resetFocused();
+    Q_INVOKABLE void setReadOnlyFocused(bool v);
     Q_INVOKABLE void searchFocused(const QString &query);
     Q_INVOKABLE void searchNext();
     Q_INVOKABLE void searchPrev();
@@ -93,6 +94,7 @@ signals:
     void searchChanged(int index, int count);  // active tab's search state → the Solid search bar
     void unsafePasteRequested(const QString &text);
     void zoomRequested(int delta);
+    void paneMenuRequested(qreal x, qreal y, bool readOnly);
 
 protected:
     void componentComplete() override;

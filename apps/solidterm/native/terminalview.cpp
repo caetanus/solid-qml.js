@@ -667,6 +667,10 @@ void TerminalView::keyPressEvent(QKeyEvent *event)
         m_scrollOffset = 0;
         update();
     }
+    if (m_readOnly) { // read-only pane: consume the key but don't feed the pty
+        event->accept();
+        return;
+    }
     resetBlink();
     keyToVTerm(event);
     event->accept();
@@ -770,6 +774,14 @@ void TerminalView::setDimmed(bool v)
         return;
     m_dimmed = v;
     update();
+}
+
+void TerminalView::setReadOnly(bool v)
+{
+    if (m_readOnly == v)
+        return;
+    m_readOnly = v;
+    emit readOnlyChanged();
 }
 
 void TerminalView::resetTerminal()
@@ -1183,7 +1195,7 @@ void TerminalView::setScrollbackLimit(int v)
 
 void TerminalView::sendText(const QString &text)
 {
-    if (!m_vt)
+    if (!m_vt || m_readOnly)
         return;
     const auto ucs4 = text.toUcs4();
     for (const char32_t c : ucs4)

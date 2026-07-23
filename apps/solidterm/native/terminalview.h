@@ -39,6 +39,7 @@ class TerminalView : public QQuickItem {
     // and leaks the key. Set from the solid keybinding config; a match emits accelerator(seq).
     Q_PROPERTY(QStringList reservedSequences READ reservedSequences WRITE setReservedSequences NOTIFY reservedSequencesChanged)
     Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY selectionChanged)
+    Q_PROPERTY(bool readOnly READ readOnly WRITE setReadOnly NOTIFY readOnlyChanged) // ignore keyboard/paste
     // Eye candy (owner): a background image behind the text (cover-fit), a background opacity so the
     // desktop/image shows through the terminal's own colour, and an engraved "emboss" on the glyphs.
     Q_PROPERTY(QString backgroundImage READ backgroundImage WRITE setBackgroundImage NOTIFY decorChanged)
@@ -76,6 +77,8 @@ public:
     Q_INVOKABLE void sendText(const QString &text);       // paste path
     Q_INVOKABLE void takeFocus() { forceActiveFocus(Qt::MouseFocusReason); }
     bool hasSelection() const { return m_selValid; }
+    bool readOnly() const { return m_readOnly; }
+    void setReadOnly(bool v);
     Q_INVOKABLE void copySelection();
     Q_INVOKABLE void pasteClipboard();      // paste the clipboard (guarded: multiline → confirm)
     Q_INVOKABLE void pasteText(const QString &text); // send text verbatim (post-confirm path)
@@ -100,6 +103,7 @@ signals:
     void bellRang();
     void sessionFinished();
     void selectionChanged();
+    void readOnlyChanged();
     void reservedSequencesChanged();
     void accelerator(const QString &sequence); // a reserved chord was pressed (consumed)
     void searchChanged(int index, int count);  // current match (1-based; 0 = none) + total
@@ -171,6 +175,7 @@ private:
     qreal m_bgOpacity = 1.0;                // terminal background alpha (1 = solid, 0 = fully see-through)
     bool m_emboss = false;                  // engraved glyphs
     bool m_dimmed = false;                  // dark overlay for an unfocused split pane
+    bool m_readOnly = false;                // block keyboard + paste to the pty
     // Scene-graph nodes (owned by the returned root), kept so the optional image layer can slot in
     // below the others without index juggling. Nulled when the node tree is dropped (0-size).
     QSGImageNode *m_imageNode = nullptr;

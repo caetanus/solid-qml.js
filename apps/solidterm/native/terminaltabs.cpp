@@ -74,6 +74,10 @@ TerminalPanes *TerminalTabs::makePanes()
     });
     connect(panes, &TerminalPanes::unsafePasteRequested, this, &TerminalTabs::unsafePasteRequested);
     connect(panes, &TerminalPanes::zoomRequested, this, &TerminalTabs::zoomRequested);
+    connect(panes, &TerminalPanes::paneMenuRequested, this, [this, panes](qreal x, qreal y, bool ro) {
+        if (active() == panes)
+            emit paneMenuRequested(x, y, ro);
+    });
     connect(panes, &TerminalPanes::titleChanged, this, [this, panes](const QString &t) {
         const int i = [&] { for (int k = 0; k < m_tabs.size(); ++k) if (m_tabs[k].panes == panes) return k; return -1; }();
         if (i < 0)
@@ -178,6 +182,7 @@ void TerminalTabs::pasteFocused() { if (auto *p = active()) p->pasteFocused(); }
 void TerminalTabs::pasteTextFocused(const QString &t) { if (auto *p = active()) p->pasteTextFocused(t); }
 void TerminalTabs::clearFocused() { if (auto *p = active()) p->clearFocused(); }
 void TerminalTabs::resetFocused() { if (auto *p = active()) p->resetFocused(); }
+void TerminalTabs::setReadOnlyFocused(bool v) { if (auto *p = active()) p->setReadOnlyFocused(v); }
 void TerminalTabs::searchFocused(const QString &q) { if (auto *p = active()) p->searchFocused(q); }
 void TerminalTabs::searchNext() { if (auto *p = active()) p->searchNext(); }
 void TerminalTabs::searchPrev() { if (auto *p = active()) p->searchPrev(); }

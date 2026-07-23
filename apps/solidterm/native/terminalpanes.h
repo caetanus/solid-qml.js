@@ -77,6 +77,7 @@ public:
     Q_INVOKABLE void pasteTextFocused(const QString &text); // confirmed paste → focused pane
     Q_INVOKABLE void clearFocused();
     Q_INVOKABLE void resetFocused();
+    Q_INVOKABLE void setReadOnlyFocused(bool v);
     // Search proxied to the focused pane.
     Q_INVOKABLE void searchFocused(const QString &query);
     Q_INVOKABLE void searchNext();
@@ -88,6 +89,7 @@ signals:
     void searchChanged(int index, int count);
     void unsafePasteRequested(const QString &text);
     void zoomRequested(int delta);
+    void paneMenuRequested(qreal x, qreal y, bool readOnly); // header title clicked → open dropdown
     void styleChanged();
     void allClosed();           // last pane's shell exited → the app can quit/close the tab
     void titleChanged(const QString &title); // focused pane's OSC title

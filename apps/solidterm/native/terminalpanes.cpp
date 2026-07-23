@@ -153,6 +153,11 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
     connect(header, &PaneHeader::maximizeRequested, this, [this, v] {
         if (Node *leaf = leafOfView(v)) { setFocused(leaf); toggleZoom(); }
     });
+    connect(header, &PaneHeader::menuRequested, this, [this, v](qreal x, qreal y) {
+        if (Node *leaf = leafOfView(v)) setFocused(leaf);
+        emit paneMenuRequested(x, y, v->readOnly());
+    });
+    connect(v, &TerminalView::readOnlyChanged, this, [v, header] { header->setReadOnly(v->readOnly()); });
     connect(v, &TerminalView::sessionFinished, this, [this, v] {
         if (Node *leaf = leafOfView(v)) removeLeaf(leaf);
     });
@@ -550,6 +555,7 @@ void TerminalPanes::pasteFocused() { if (m_focused && m_focused->view) m_focused
 void TerminalPanes::pasteTextFocused(const QString &t) { if (m_focused && m_focused->view) m_focused->view->pasteText(t); }
 void TerminalPanes::clearFocused() { if (m_focused && m_focused->view) m_focused->view->clearScrollback(); }
 void TerminalPanes::resetFocused() { if (m_focused && m_focused->view) m_focused->view->resetTerminal(); }
+void TerminalPanes::setReadOnlyFocused(bool v) { if (m_focused && m_focused->view) m_focused->view->setReadOnly(v); }
 void TerminalPanes::searchFocused(const QString &q) { if (m_focused && m_focused->view) m_focused->view->search(q); }
 void TerminalPanes::searchNext() { if (m_focused && m_focused->view) m_focused->view->searchNext(); }
 void TerminalPanes::searchPrev() { if (m_focused && m_focused->view) m_focused->view->searchPrev(); }

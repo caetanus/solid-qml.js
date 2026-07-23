@@ -11,6 +11,7 @@ class PaneHeader : public QQuickPaintedItem {
     Q_PROPERTY(QString title READ title WRITE setTitle NOTIFY titleChanged)
     Q_PROPERTY(int index READ index WRITE setIndex NOTIFY indexChanged) // 1-based pane number
     Q_PROPERTY(bool focused READ focused WRITE setFocused NOTIFY focusedChanged)
+    Q_PROPERTY(bool readOnly READ readOnly WRITE setReadOnly NOTIFY readOnlyChanged)
     Q_PROPERTY(QColor background READ background WRITE setBackground NOTIFY styleChanged)
     Q_PROPERTY(QColor foreground READ foreground WRITE setForeground NOTIFY styleChanged)
     Q_PROPERTY(QColor accent READ accent WRITE setAccent NOTIFY styleChanged)
@@ -24,6 +25,8 @@ public:
     void setIndex(int v);
     bool focused() const { return m_focused; }
     void setFocused(bool v);
+    bool readOnly() const { return m_readOnly; }
+    void setReadOnly(bool v);
     QColor background() const { return m_background; }
     void setBackground(const QColor &v);
     QColor foreground() const { return m_foreground; }
@@ -37,10 +40,12 @@ signals:
     void titleChanged();
     void indexChanged();
     void focusedChanged();
+    void readOnlyChanged();
     void styleChanged();
     void clicked();
     void closeRequested();
     void maximizeRequested(); // the ⤡ button (zoom this pane)
+    void menuRequested(qreal x, qreal y); // title/▼ clicked → open the dropdown (scene coords)
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -50,8 +55,9 @@ private:
     QRectF maximizeRect() const;
 
     QString m_title;
-    int m_index = 0;       // 0 = no number (single pane); >0 shows "N  title"
+    int m_index = 0;       // 0 = no number (single pane); >0 shows "N: title"
     bool m_focused = false;
+    bool m_readOnly = false;
     QColor m_background = QColor("#2a2a2a");
     QColor m_foreground = QColor("#cccccc");
     QColor m_accent = QColor("#3584e4");

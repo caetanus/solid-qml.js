@@ -214,6 +214,24 @@ int main(int argc, char **argv)
         }
     }
 
+    // Debug: SOLIDTERM_PANEMENU=1 opens the pane header dropdown after a settle.
+    if (qEnvironmentVariableIsSet("SOLIDTERM_PANEMENU") && window) {
+        QTimer::singleShot(1600, window, [&engine] {
+            for (QObject *o : engine.rootObjects())
+                if (auto *w = qobject_cast<QQuickWindow *>(o)) {
+                    QList<QQuickItem *> stack { w->contentItem() };
+                    while (!stack.isEmpty()) {
+                        QQuickItem *it = stack.takeLast();
+                        if (it->property("paneMenuOpen").isValid()) {
+                            it->setProperty("paneMenuX", 40); it->setProperty("paneMenuY", 30);
+                            it->setProperty("paneMenuOpen", true);
+                        }
+                        for (QQuickItem *k : it->childItems()) stack.append(k);
+                    }
+                }
+        });
+    }
+
     // Debug: SOLIDTERM_FINDTEST="query" opens the search bar + runs a search after a settle.
     const QString findTest = qEnvironmentVariable("SOLIDTERM_FINDTEST");
     if (!findTest.isEmpty() && window) {
