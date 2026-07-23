@@ -15,6 +15,7 @@ W.Div {
     property var bgImage: termConfig.getString("bgImage", "")
     property var opacity_: termConfig.getInt("opacity", 100)
     property var emboss: termConfig.getInt("emboss", 0)
+    property var showHeader: termConfig.getInt("showHeader", 1)
     property var cfgOpen: false
     property var title: "solidterm"
     property var searchOpen: false
@@ -47,7 +48,7 @@ W.Div {
     function applyRename() { _ref_term.setTabTitle(activeTab, renameValue); renameOpen = false; _ref_term.refocus(); }
     function tabLabel(t) { if (!t) { return "terminal"; } var s = t; if (s.endsWith("/")) { s = s.slice(0, -1); } var slash = s.lastIndexOf("/"); return slash >= 0 ? s.slice(slash + 1) : s; }
     function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : k === "newTab" ? kNewTab : k === "nextTab" ? kNextTab : k === "prevTab" ? kPrevTab : k === "search" ? kSearch : termConfig.getString("keys." + k, ""); }
-    function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } else { if (seq === kSearch) { openSearch(); } else { if (seq === "Ctrl+=" || seq === "Ctrl++") { zoomFont(1); } else { if (seq === "Ctrl+-") { zoomFont(-1); } else { if (seq === "Ctrl+0") { zoomFont(0); } } } } } } } } } } } } }
+    function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } else { if (seq === kSearch) { openSearch(); } else { if (seq === "Ctrl+=" || seq === "Ctrl++") { zoomFont(1); } else { if (seq === "Ctrl+-") { zoomFont(-1); } else { if (seq === "Ctrl+0") { zoomFont(0); } else { if (seq === "Ctrl+,") { cfgOpen = true; } } } } } } } } } } } } } }
     function zoomFont(d) { var n = d === 0 ? 15 : Math.max(6, Math.min(40, uiFontSize + d)); uiFontSize = n; termConfig.set("fontSize", n); }
     function setKey(k, seq) { termConfig.set("keys." + k, seq); if (k === "splitRight") { kSplitRight = seq; } else { if (k === "splitDown") { kSplitDown = seq; } else { if (k === "closePane") { kClosePane = seq; } else { if (k === "focusNext") { kFocusNext = seq; } else { if (k === "focusPrev") { kFocusPrev = seq; } else { if (k === "newTab") { kNewTab = seq; } else { if (k === "nextTab") { kNextTab = seq; } else { if (k === "prevTab") { kPrevTab = seq; } else { if (k === "search") { kSearch = seq; } } } } } } } } } }
     property var __cleanups: []
@@ -56,6 +57,7 @@ W.Div {
     cssClass: ["term-root"]
     W.Div {
         cssClass: ["term-header"]
+        visible: !!(showHeader !== 0)
         W.Text {
             cssClass: ["term-title"]
             text: "" + (title)
@@ -153,7 +155,7 @@ W.Div {
                 backgroundOpacity: opacity_ / 100
                 emboss: emboss !== 0
                 handleColor: sysTheme.window
-                reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0"]
+                reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,"]
                 onAccelerator: function(seq) { return onAccel(seq) }
                 onTitleChanged: function(t) { return title = t }
                 onAllClosed: function() { return process.exit(0) }
@@ -395,6 +397,30 @@ W.Div {
                         }
                     }
                 }
+                W.Div {
+                    cssClass: ["cfg-div"]
+                    cssPrimitive: "hr"
+                }
+                W.Div {
+                    cssClass: ["cfg-row"]
+                    W.Text {
+                        cssClass: ["cfg-l"]
+                        text: "Header bar"
+                    }
+                    W.Select {
+                        id: __input9
+                        cssClass: ["cfg-sel"]
+                        model: ["Shown", "Hidden"]
+                        values: ["1", "0"]
+                        onActivated: (index) => { showHeader = parseInt(__input9.values[index]); termConfig.set("showHeader", parseInt(__input9.values[index])); }
+                        Binding {
+                            target: __input9
+                            property: "currentIndex"
+                            value: __input9.values.indexOf("" + showHeader)
+                            restoreMode: Binding.RestoreNone
+                        }
+                    }
+                }
             }
             W.Text {
                 cssClass: ["cfg-group"]
@@ -409,15 +435,15 @@ W.Div {
                         text: "Scrollback"
                     }
                     W.Select {
-                        id: __input9
+                        id: __input10
                         cssClass: ["cfg-sel"]
                         model: ["1000 lines", "5000 lines", "8000 lines", "20000 lines", "100000 lines"]
                         values: ["1000", "5000", "8000", "20000", "100000"]
-                        onActivated: (index) => { scrollback = parseInt(__input9.values[index]); termConfig.set("scrollback", parseInt(__input9.values[index])); }
+                        onActivated: (index) => { scrollback = parseInt(__input10.values[index]); termConfig.set("scrollback", parseInt(__input10.values[index])); }
                         Binding {
-                            target: __input9
+                            target: __input10
                             property: "currentIndex"
-                            value: __input9.values.indexOf("" + scrollback)
+                            value: __input10.values.indexOf("" + scrollback)
                             restoreMode: Binding.RestoreNone
                         }
                     }
@@ -482,12 +508,12 @@ W.Div {
                 text: "Tab title"
             }
             W.TextField {
-                id: __input11
+                id: __input12
                 cssClass: ["cfg-in", "rename-in"]
                 placeholder: "(empty = automatic)"
                 onTextEdited: { renameValue = text }
                 Binding {
-                    target: __input11
+                    target: __input12
                     property: "text"
                     value: renameValue
                     restoreMode: Binding.RestoreNone

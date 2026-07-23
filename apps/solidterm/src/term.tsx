@@ -41,6 +41,7 @@ export function Term() {
   const clearBg = () => { setBgImage(""); termConfig.set("bgImage", ""); };
   const [opacity, setOpacity] = createSignal(termConfig.getInt("opacity", 100));
   const [emboss, setEmboss] = createSignal(termConfig.getInt("emboss", 0));
+  const [showHeader, setShowHeader] = createSignal(termConfig.getInt("showHeader", 1));
   sysTheme.setUiOpacity(opacity() / 100); // apply saved translucency to the chrome at startup
   const [cfgOpen, setCfgOpen] = createSignal(false);
   const [title, setTitle] = createSignal("solidterm");
@@ -105,6 +106,7 @@ export function Term() {
     else if (seq === "Ctrl+=" || seq === "Ctrl++") zoomFont(1);
     else if (seq === "Ctrl+-") zoomFont(-1);
     else if (seq === "Ctrl+0") zoomFont(0);
+    else if (seq === "Ctrl+,") setCfgOpen(true);
   };
   // Font zoom (Ctrl +/−/0). 0 resets to the default.
   const zoomFont = (d: number) => {
@@ -127,10 +129,12 @@ export function Term() {
 
   return (
     <div class="term-root">
-      <div class="term-header">
-        <text class="term-title">{title()}</text>
-        <button class="term-gear" onClick={() => setCfgOpen(true)}>⚙</button>
-      </div>
+      <Show when={showHeader() !== 0}>
+        <div class="term-header">
+          <text class="term-title">{title()}</text>
+          <button class="term-gear" onClick={() => setCfgOpen(true)}>⚙</button>
+        </div>
+      </Show>
 
       <Show when={tabTitles().length > 1}>
         <div class="tabbar">
@@ -171,7 +175,7 @@ export function Term() {
           backgroundOpacity={opacity() / 100}
           emboss={emboss() !== 0}
           handleColor={sysTheme.window}
-          reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0"]}
+          reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,"]}
           onAccelerator={(seq) => onAccel(seq)}
           onTitleChanged={(t) => setTitle(t)}
           onAllClosed={() => process.exit(0)}
@@ -266,6 +270,15 @@ export function Term() {
                       onChange={(v) => { setEmboss(parseInt(v)); termConfig.set("emboss", parseInt(v)); }}>
                 <option value="0">Off</option>
                 <option value="1">On</option>
+              </select>
+            </div>
+            <hr class="cfg-div" />
+            <div class="cfg-row">
+              <text class="cfg-l">Header bar</text>
+              <select class="cfg-sel" value={"" + showHeader()}
+                      onChange={(v) => { setShowHeader(parseInt(v)); termConfig.set("showHeader", parseInt(v)); }}>
+                <option value="1">Shown</option>
+                <option value="0">Hidden</option>
               </select>
             </div>
           </div>
