@@ -16,6 +16,7 @@ W.Div {
     property var opacity_: termConfig.getInt("opacity", 100)
     property var emboss: termConfig.getInt("emboss", 0)
     property var showHeader: termConfig.getInt("showHeader", 1)
+    property var showStatus: termConfig.getInt("showStatus", 1)
     property var cfgOpen: false
     property var title: "solidterm"
     property var searchOpen: false
@@ -36,21 +37,24 @@ W.Div {
     property var kNextTab: termConfig.getString("keys.nextTab", "Ctrl+PgDown")
     property var kPrevTab: termConfig.getString("keys.prevTab", "Ctrl+PgUp")
     property var kSearch: termConfig.getString("keys.search", "Ctrl+Shift+F")
+    property var kZoomPane: termConfig.getString("keys.zoomPane", "Ctrl+Shift+X")
     readonly property var __const_SCHEMES: ({ midnight: ({ bg: "#161a21", fg: "#d4dae3" }), solarized: ({ bg: "#002b36", fg: "#93a1a1" }), gruvbox: ({ bg: "#282828", fg: "#ebdbb2" }), paper: ({ bg: "#f7f2e9", fg: "#3a3532" }) })
-    readonly property var __const_ACTIONS: [({ key: "newTab", label: "New tab", def: "Ctrl+Shift+T" }), ({ key: "nextTab", label: "Next tab", def: "Ctrl+PgDown" }), ({ key: "prevTab", label: "Previous tab", def: "Ctrl+PgUp" }), ({ key: "search", label: "Find", def: "Ctrl+Shift+F" }), ({ key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" }), ({ key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" }), ({ key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" }), ({ key: "focusNext", label: "Focus next pane", def: "Alt+Right" }), ({ key: "focusPrev", label: "Focus previous pane", def: "Alt+Left" })]
+    readonly property var __const_ACTIONS: [({ key: "newTab", label: "New tab", def: "Ctrl+Shift+T" }), ({ key: "nextTab", label: "Next tab", def: "Ctrl+PgDown" }), ({ key: "prevTab", label: "Previous tab", def: "Ctrl+PgUp" }), ({ key: "search", label: "Find", def: "Ctrl+Shift+F" }), ({ key: "zoomPane", label: "Zoom pane", def: "Ctrl+Shift+X" }), ({ key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" }), ({ key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" }), ({ key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" }), ({ key: "focusNext", label: "Focus next pane", def: "Alt+Right" }), ({ key: "focusPrev", label: "Focus previous pane", def: "Alt+Left" })]
     function browseBg() { var p = termConfig.pickImage(); if (p) { bgImage = p; termConfig.set("bgImage", p); } }
     function clearBg() { bgImage = ""; termConfig.set("bgImage", ""); }
     function openSearch() { searchOpen = true; if (_ref_searchInput) { _ref_searchInput.forceActiveFocus(); } }
     function closeSearch() { searchOpen = false; _ref_term.clearSearch(); _ref_term.refocus(); }
     function pasteLineCount() { var p = pastePrompt; return p ? p.split("\n").length : 0; }
-    function confirmPaste() { _ref_term.pasteTextFocused(pastePrompt); pastePrompt = ""; }
+    function confirmPaste() { _ref_term.pasteTextFocused(pastePrompt); pastePrompt = ""; _ref_term.refocus(); }
+    function cancelPaste() { pastePrompt = ""; _ref_term.refocus(); }
+    function closeCfg() { cfgOpen = false; _ref_term.refocus(); }
     function openRename() { renameValue = _ref_term.tabTitle(activeTab) || ""; renameOpen = true; }
     function applyRename() { _ref_term.setTabTitle(activeTab, renameValue); renameOpen = false; _ref_term.refocus(); }
     function tabLabel(t) { if (!t) { return "terminal"; } var s = t; if (s.endsWith("/")) { s = s.slice(0, -1); } var slash = s.lastIndexOf("/"); return slash >= 0 ? s.slice(slash + 1) : s; }
-    function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : k === "newTab" ? kNewTab : k === "nextTab" ? kNextTab : k === "prevTab" ? kPrevTab : k === "search" ? kSearch : termConfig.getString("keys." + k, ""); }
-    function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } else { if (seq === kSearch) { openSearch(); } else { if (seq === "Ctrl+=" || seq === "Ctrl++") { zoomFont(1); } else { if (seq === "Ctrl+-") { zoomFont(-1); } else { if (seq === "Ctrl+0") { zoomFont(0); } else { if (seq === "Ctrl+,") { cfgOpen = true; } } } } } } } } } } } } } }
+    function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : k === "newTab" ? kNewTab : k === "nextTab" ? kNextTab : k === "prevTab" ? kPrevTab : k === "search" ? kSearch : k === "zoomPane" ? kZoomPane : termConfig.getString("keys." + k, ""); }
+    function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } else { if (seq === kSearch) { openSearch(); } else { if (seq === "Ctrl+=" || seq === "Ctrl++") { zoomFont(1); } else { if (seq === "Ctrl+-") { zoomFont(-1); } else { if (seq === "Ctrl+0") { zoomFont(0); } else { if (seq === "Ctrl+,") { cfgOpen = true; } else { if (seq === kZoomPane) { _ref_term.toggleZoom(); } } } } } } } } } } } } } } }
     function zoomFont(d) { var n = d === 0 ? 15 : Math.max(6, Math.min(40, uiFontSize + d)); uiFontSize = n; termConfig.set("fontSize", n); }
-    function setKey(k, seq) { termConfig.set("keys." + k, seq); if (k === "splitRight") { kSplitRight = seq; } else { if (k === "splitDown") { kSplitDown = seq; } else { if (k === "closePane") { kClosePane = seq; } else { if (k === "focusNext") { kFocusNext = seq; } else { if (k === "focusPrev") { kFocusPrev = seq; } else { if (k === "newTab") { kNewTab = seq; } else { if (k === "nextTab") { kNextTab = seq; } else { if (k === "prevTab") { kPrevTab = seq; } else { if (k === "search") { kSearch = seq; } } } } } } } } } }
+    function setKey(k, seq) { termConfig.set("keys." + k, seq); if (k === "splitRight") { kSplitRight = seq; } else { if (k === "splitDown") { kSplitDown = seq; } else { if (k === "closePane") { kClosePane = seq; } else { if (k === "focusNext") { kFocusNext = seq; } else { if (k === "focusPrev") { kFocusPrev = seq; } else { if (k === "newTab") { kNewTab = seq; } else { if (k === "nextTab") { kNextTab = seq; } else { if (k === "prevTab") { kPrevTab = seq; } else { if (k === "search") { kSearch = seq; } else { if (k === "zoomPane") { kZoomPane = seq; } } } } } } } } } } }
     property var __cleanups: []
     Component.onCompleted: { sysTheme.setUiOpacity(opacity_ / 100); var searchInput = undefined; }
     Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
@@ -146,6 +150,7 @@ W.Div {
                 onTabsChanged: function(titles, active) { tabTitles = titles; activeTab = active; }
                 onSearchChanged: function(idx, count) { searchIdx = idx; searchCount = count; }
                 onUnsafePasteRequested: function(text) { return pastePrompt = text }
+                onZoomRequested: function(d) { return zoomFont(d) }
                 fontFamily: uiFontFamily
                 fontSize: uiFontSize
                 background: scheme === "system" ? sysTheme.base : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).bg
@@ -155,7 +160,7 @@ W.Div {
                 backgroundOpacity: opacity_ / 100
                 emboss: emboss !== 0
                 handleColor: sysTheme.window
-                reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,"]
+                reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, kZoomPane, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,"]
                 onAccelerator: function(seq) { return onAccel(seq) }
                 onTitleChanged: function(t) { return title = t }
                 onAllClosed: function() { return process.exit(0) }
@@ -225,6 +230,7 @@ W.Div {
     }
     W.Div {
         cssClass: ["term-status"]
+        visible: !!(showStatus !== 0)
         W.Text {
             cssClass: ["term-status-t"]
             text: "solidterm"
@@ -421,6 +427,30 @@ W.Div {
                         }
                     }
                 }
+                W.Div {
+                    cssClass: ["cfg-div"]
+                    cssPrimitive: "hr"
+                }
+                W.Div {
+                    cssClass: ["cfg-row"]
+                    W.Text {
+                        cssClass: ["cfg-l"]
+                        text: "Status bar"
+                    }
+                    W.Select {
+                        id: __input10
+                        cssClass: ["cfg-sel"]
+                        model: ["Shown", "Hidden"]
+                        values: ["1", "0"]
+                        onActivated: (index) => { showStatus = parseInt(__input10.values[index]); termConfig.set("showStatus", parseInt(__input10.values[index])); }
+                        Binding {
+                            target: __input10
+                            property: "currentIndex"
+                            value: __input10.values.indexOf("" + showStatus)
+                            restoreMode: Binding.RestoreNone
+                        }
+                    }
+                }
             }
             W.Text {
                 cssClass: ["cfg-group"]
@@ -435,15 +465,15 @@ W.Div {
                         text: "Scrollback"
                     }
                     W.Select {
-                        id: __input10
+                        id: __input11
                         cssClass: ["cfg-sel"]
                         model: ["1000 lines", "5000 lines", "8000 lines", "20000 lines", "100000 lines"]
                         values: ["1000", "5000", "8000", "20000", "100000"]
-                        onActivated: (index) => { scrollback = parseInt(__input10.values[index]); termConfig.set("scrollback", parseInt(__input10.values[index])); }
+                        onActivated: (index) => { scrollback = parseInt(__input11.values[index]); termConfig.set("scrollback", parseInt(__input11.values[index])); }
                         Binding {
-                            target: __input10
+                            target: __input11
                             property: "currentIndex"
-                            value: __input10.values.indexOf("" + scrollback)
+                            value: __input11.values.indexOf("" + scrollback)
                             restoreMode: Binding.RestoreNone
                         }
                     }
@@ -491,7 +521,7 @@ W.Div {
                     cssClass: ["cfg-close"]
                     isDefault: true
                     text: "Done"
-                    onClicked: cfgOpen = false
+                    onClicked: closeCfg()
                 }
             }
         }
@@ -508,12 +538,12 @@ W.Div {
                 text: "Tab title"
             }
             W.TextField {
-                id: __input12
+                id: __input13
                 cssClass: ["cfg-in", "rename-in"]
                 placeholder: "(empty = automatic)"
                 onTextEdited: { renameValue = text }
                 Binding {
-                    target: __input12
+                    target: __input13
                     property: "text"
                     value: renameValue
                     restoreMode: Binding.RestoreNone
@@ -555,7 +585,7 @@ W.Div {
                 W.Button {
                     cssClass: ["paste-cancel"]
                     text: "Cancel"
-                    onClicked: pastePrompt = ""
+                    onClicked: cancelPaste()
                 }
                 W.Button {
                     cssClass: ["cfg-close"]

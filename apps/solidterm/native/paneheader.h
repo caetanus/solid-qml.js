@@ -9,6 +9,7 @@
 class PaneHeader : public QQuickPaintedItem {
     Q_OBJECT
     Q_PROPERTY(QString title READ title WRITE setTitle NOTIFY titleChanged)
+    Q_PROPERTY(int index READ index WRITE setIndex NOTIFY indexChanged) // 1-based pane number
     Q_PROPERTY(bool focused READ focused WRITE setFocused NOTIFY focusedChanged)
     Q_PROPERTY(QColor background READ background WRITE setBackground NOTIFY styleChanged)
     Q_PROPERTY(QColor foreground READ foreground WRITE setForeground NOTIFY styleChanged)
@@ -19,6 +20,8 @@ public:
 
     QString title() const { return m_title; }
     void setTitle(const QString &v);
+    int index() const { return m_index; }
+    void setIndex(int v);
     bool focused() const { return m_focused; }
     void setFocused(bool v);
     QColor background() const { return m_background; }
@@ -32,6 +35,7 @@ public:
 
 signals:
     void titleChanged();
+    void indexChanged();
     void focusedChanged();
     void styleChanged();
     void clicked();
@@ -44,6 +48,7 @@ private:
     QRectF closeRect() const;
 
     QString m_title;
+    int m_index = 0;       // 0 = no number (single pane); >0 shows "N  title"
     bool m_focused = false;
     QColor m_background = QColor("#2a2a2a");
     QColor m_foreground = QColor("#cccccc");

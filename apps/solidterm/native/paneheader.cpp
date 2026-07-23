@@ -19,6 +19,15 @@ void PaneHeader::setTitle(const QString &v)
     update();
 }
 
+void PaneHeader::setIndex(int v)
+{
+    if (m_index == v)
+        return;
+    m_index = v;
+    emit indexChanged();
+    update();
+}
+
 void PaneHeader::setFocused(bool v)
 {
     if (m_focused == v)
@@ -49,8 +58,21 @@ void PaneHeader::paint(QPainter *p)
     QFont f = p->font();
     f.setPixelSize(12);
     p->setFont(f);
+    qreal x = 10;
+    // Pane number badge ("1", "2"…) when split, in the accent colour (tilix numbers its terminals).
+    if (m_index > 0) {
+        QFont nf = f;
+        nf.setBold(true);
+        p->setFont(nf);
+        const QString num = QString::number(m_index);
+        p->setPen(m_accent);
+        const qreal nw = p->fontMetrics().horizontalAdvance(num);
+        p->drawText(QRectF(x, 0, nw, height()), Qt::AlignVCenter | Qt::AlignLeft, num);
+        x += nw + 8;
+        p->setFont(f);
+    }
     p->setPen(m_focused ? m_foreground : m_foreground.darker(130));
-    const QRectF textRect(10, 0, width() - 40, height());
+    const QRectF textRect(x, 0, width() - x - 30, height());
     const QString elided = p->fontMetrics().elidedText(
         m_title.isEmpty() ? QStringLiteral("terminal") : m_title, Qt::ElideRight, int(textRect.width()));
     p->drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, elided);

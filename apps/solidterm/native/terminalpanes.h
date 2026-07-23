@@ -68,6 +68,7 @@ public:
     Q_INVOKABLE void focusNext();
     Q_INVOKABLE void focusPrev();
     Q_INVOKABLE void refocus(); // re-take keyboard focus on the current pane (tab switch)
+    Q_INVOKABLE void toggleZoom(); // maximise the focused pane to fill the session; again restores
     // Paste/copy proxied to the focused pane (menu actions).
     Q_INVOKABLE void copyFocused();
     Q_INVOKABLE void pasteFocused();
@@ -84,6 +85,7 @@ signals:
     void panesChanged();
     void searchChanged(int index, int count);
     void unsafePasteRequested(const QString &text);
+    void zoomRequested(int delta);
     void styleChanged();
     void allClosed();           // last pane's shell exited → the app can quit/close the tab
     void titleChanged(const QString &title); // focused pane's OSC title
@@ -128,6 +130,8 @@ private:
 
     Node *m_root = nullptr;
     Node *m_focused = nullptr;          // focused LEAF
+    bool m_zoomed = false;              // one pane maximised to fill the session
+    Node *m_zoomLeaf = nullptr;
     bool m_didInitialFocus = false;
     class QQmlComponent *m_cellComponent = nullptr;
 

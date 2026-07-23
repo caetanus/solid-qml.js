@@ -67,6 +67,7 @@ public:
     Q_INVOKABLE void focusNext();
     Q_INVOKABLE void focusPrev();
     Q_INVOKABLE void refocus(); // keyboard focus back to the active pane (e.g. closing the search bar)
+    Q_INVOKABLE void toggleZoom();
     Q_INVOKABLE void copyFocused();
     Q_INVOKABLE void pasteFocused();
     Q_INVOKABLE void pasteTextFocused(const QString &text);
@@ -88,6 +89,7 @@ signals:
     void accelerator(const QString &sequence); // a reserved chord from the active tab
     void searchChanged(int index, int count);  // active tab's search state → the Solid search bar
     void unsafePasteRequested(const QString &text);
+    void zoomRequested(int delta);
 
 protected:
     void componentComplete() override;

@@ -27,6 +27,26 @@
 #include <QClipboard>
 #include <QSurfaceFormat>
 
+// App-level key filter: F11 toggles fullscreen. Installed on the QApplication so it's caught before
+// the focused TerminalView consumes it (no Q_OBJECT → no moc; eventFilter is a plain virtual).
+class KeyFilter : public QObject {
+public:
+    QQuickWindow *window = nullptr;
+    bool eventFilter(QObject *obj, QEvent *event) override {
+        if (event->type() == QEvent::KeyPress && window) {
+            auto *ke = static_cast<QKeyEvent *>(event);
+            if (ke->key() == Qt::Key_F11) {
+                if (window->visibility() == QWindow::FullScreen)
+                    window->showNormal();
+                else
+                    window->showFullScreen();
+                return true;
+            }
+        }
+        return QObject::eventFilter(obj, event);
+    }
+};
+
 int main(int argc, char **argv)
 {
     // Request an alpha channel on the window surface so translucent chrome (uiOpacity < 1) reveals
@@ -83,6 +103,9 @@ int main(int argc, char **argv)
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
     if (window) {
         SolidQmlEmbed::attachWindow(&engine, window);
+        auto *keyFilter = new KeyFilter; // F11 → fullscreen (app-level, before the terminal)
+        keyFilter->window = window;
+        app.installEventFilter(keyFilter);
         // Clear to transparent only when translucent (uiOpacity < 1) so the desktop shows through the
         // transparent app root; otherwise clear to the solid window colour. Tracks live changes.
         const auto retint = [window, sysTheme] {
@@ -173,6 +196,7 @@ int main(int argc, char **argv)
                                 if (cmd == QLatin1String("c")) tabs->closeFocused();
                                 else if (cmd == QLatin1String("n")) tabs->focusNext();
                                 else if (cmd == QLatin1String("t")) tabs->newTab();
+                                else if (cmd == QLatin1String("z")) tabs->toggleZoom();
                                 else if (cmd == QLatin1String("upaste")) {
                                     QGuiApplication::clipboard()->setText(QStringLiteral("line one\nline two\nline three"));
                                     tabs->pasteFocused();

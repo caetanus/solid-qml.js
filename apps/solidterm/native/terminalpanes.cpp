@@ -159,6 +159,7 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
             emit searchChanged(idx, count);
     });
     connect(v, &TerminalView::unsafePasteRequested, this, &TerminalPanes::unsafePasteRequested);
+    connect(v, &TerminalView::zoomRequested, this, &TerminalPanes::zoomRequested);
     v->setReservedSequences(m_reserved);
     connect(v, &TerminalView::accelerator, this, &TerminalPanes::accelerator);
 }
@@ -222,6 +223,7 @@ void TerminalPanes::split(int orient)
 {
     if (!m_focused)
         return;
+    m_zoomed = false; m_zoomLeaf = nullptr; // splitting exits zoom (tmux/tilix behaviour)
     Node *leaf = m_focused;
     Node *newLeaf = makeLeaf();
     if (!newLeaf)
@@ -270,6 +272,8 @@ void TerminalPanes::removeLeaf(Node *leaf)
 {
     if (!leaf || !leaf->isLeaf())
         return;
+    m_zoomed = false; m_zoomLeaf = nullptr; // closing a pane exits zoom
+
     // Root is the only pane → close the app.
     if (leaf == m_root && leaf->children.isEmpty() && !leaf->parent) {
         deleteSubtree(m_root);
@@ -402,8 +406,54 @@ void TerminalPanes::layoutNode(Node *node, qreal x, qreal y, qreal w, qreal h)
 
 void TerminalPanes::relayout()
 {
-    if (m_root)
+    if (!m_root)
+        return;
+    // Zoom: only the zoomed leaf's cell is visible (fills the session); every other cell + all
+    // dividers are hidden. Otherwise everything is visible and laid out by the tree.
+    std::function<void(Node *)> setVis = [&](Node *n) {
+        if (!n)
+            return;
+        if (n->isLeaf()) {
+            if (n->cell)
+                n->cell->setVisible(!m_zoomed || n == m_zoomLeaf);
+            return;
+        }
+        for (DividerItem *d : n->dividers)
+            if (d) d->setVisible(!m_zoomed);
+        for (Node *c : n->children)
+            setVis(c);
+    };
+    setVis(m_root);
+
+    if (m_zoomed && m_zoomLeaf && m_zoomLeaf->cell) {
+        m_zoomLeaf->cell->setX(0); m_zoomLeaf->cell->setY(0);
+        m_zoomLeaf->cell->setWidth(width()); m_zoomLeaf->cell->setHeight(height());
+    } else {
         layoutNode(m_root, 0, 0, width(), height());
+    }
+
+    // Number the panes in order (tilix "1: …, 2: …"); no number when there's only one.
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    for (int i = 0; i < leaves.size(); ++i)
+        if (leaves[i]->header)
+            leaves[i]->header->setIndex(leaves.size() > 1 ? i + 1 : 0);
+}
+
+void TerminalPanes::toggleZoom()
+{
+    if (m_zoomed) {
+        m_zoomed = false;
+        m_zoomLeaf = nullptr;
+    } else {
+        if (!m_focused)
+            return;
+        m_zoomed = true;
+        m_zoomLeaf = m_focused;
+    }
+    relayout();
+    if (Node *f = m_zoomLeaf ? m_zoomLeaf : m_focused)
+        setFocused(f);
 }
 
 void TerminalPanes::geometryChange(const QRectF &n, const QRectF &o)
@@ -444,9 +494,13 @@ void TerminalPanes::refreshHeaderFocus()
 {
     QVector<Node *> leaves;
     collectLeaves(m_root, leaves);
+    const bool multi = leaves.size() > 1;
     for (Node *l : leaves)
-        if (l->header && l->view)
-            l->header->setFocused(l->view->hasActiveFocus());
+        if (l->header && l->view) {
+            const bool focused = l->view->hasActiveFocus();
+            l->header->setFocused(focused);
+            l->view->setDimmed(multi && !focused); // dim inactive panes when split
+        }
 }
 
 void TerminalPanes::refocus()

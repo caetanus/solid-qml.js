@@ -137,7 +137,6 @@ QString SystemTheme::styleSheet() const
 .term-gear { color: %7; }
 .term-gear:hover { background: %4; }
 .term-gear:active { background: %5; }
-.term-pane { border: 1px solid %8; }
 .tabbar { background: %3; }
 .tab { background: %1; }
 .tab-label { color: %7; }

@@ -448,6 +448,10 @@ QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
         }
     }
 
+    // Unfocused split pane: a subtle dark overlay on top of everything (tilix "dim inactive").
+    if (m_dimmed)
+        pushBgQuad(cursor, 0, 0, width(), height(), QColor(0, 0, 0, 66));
+
     // Search highlights: every match on a visible row (current match brighter).
     if (!m_matches.isEmpty()) {
         const int top = int(m_scrollback.size()) - sbShown;
@@ -760,6 +764,14 @@ void TerminalView::clearScrollback()
     update();
 }
 
+void TerminalView::setDimmed(bool v)
+{
+    if (m_dimmed == v)
+        return;
+    m_dimmed = v;
+    update();
+}
+
 void TerminalView::resetTerminal()
 {
     if (m_screen)
@@ -1062,6 +1074,13 @@ void TerminalView::mouseReleaseEvent(QMouseEvent *event)
 
 void TerminalView::wheelEvent(QWheelEvent *event)
 {
+    // Ctrl+wheel zooms the font (like Ctrl +/−), instead of scrolling.
+    if (event->modifiers() & Qt::ControlModifier) {
+        if (event->angleDelta().y() != 0)
+            emit zoomRequested(event->angleDelta().y() > 0 ? 1 : -1);
+        event->accept();
+        return;
+    }
     const int lines = event->angleDelta().y() / 40; // 3 lines per notch
     m_scrollOffset = qBound(0, m_scrollOffset + lines, int(m_scrollback.size()));
     update();

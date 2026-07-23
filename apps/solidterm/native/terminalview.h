@@ -81,6 +81,7 @@ public:
     Q_INVOKABLE void pasteText(const QString &text); // send text verbatim (post-confirm path)
     Q_INVOKABLE void clearScrollback();
     Q_INVOKABLE void resetTerminal();       // soft reset (attrs/cursor/modes back to defaults)
+    Q_INVOKABLE void setDimmed(bool v);     // draw a subtle dark overlay (unfocused split pane)
     // Search the scrollback + screen (case-insensitive). Highlights matches, jumps to one, and
     // emits searchChanged(index, count) for the Solid search bar. next/prev cycle; clear removes.
     Q_INVOKABLE void search(const QString &query);
@@ -103,6 +104,7 @@ signals:
     void accelerator(const QString &sequence); // a reserved chord was pressed (consumed)
     void searchChanged(int index, int count);  // current match (1-based; 0 = none) + total
     void unsafePasteRequested(const QString &text); // multiline paste → confirm in the Solid dialog
+    void zoomRequested(int delta);          // Ctrl+wheel → font zoom (+1 in / −1 out)
 
 protected:
     void componentComplete() override;
@@ -168,6 +170,7 @@ private:
     bool m_bgImageDirty = false;            // reupload the image texture next frame
     qreal m_bgOpacity = 1.0;                // terminal background alpha (1 = solid, 0 = fully see-through)
     bool m_emboss = false;                  // engraved glyphs
+    bool m_dimmed = false;                  // dark overlay for an unfocused split pane
     // Scene-graph nodes (owned by the returned root), kept so the optional image layer can slot in
     // below the others without index juggling. Nulled when the node tree is dropped (0-size).
     QSGImageNode *m_imageNode = nullptr;

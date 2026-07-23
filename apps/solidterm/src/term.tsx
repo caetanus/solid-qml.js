@@ -23,6 +23,7 @@ const ACTIONS = [
   { key: "nextTab", label: "Next tab", def: "Ctrl+PgDown" },
   { key: "prevTab", label: "Previous tab", def: "Ctrl+PgUp" },
   { key: "search", label: "Find", def: "Ctrl+Shift+F" },
+  { key: "zoomPane", label: "Zoom pane", def: "Ctrl+Shift+X" },
   { key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" },
   { key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" },
   { key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" },
@@ -42,6 +43,7 @@ export function Term() {
   const [opacity, setOpacity] = createSignal(termConfig.getInt("opacity", 100));
   const [emboss, setEmboss] = createSignal(termConfig.getInt("emboss", 0));
   const [showHeader, setShowHeader] = createSignal(termConfig.getInt("showHeader", 1));
+  const [showStatus, setShowStatus] = createSignal(termConfig.getInt("showStatus", 1));
   sysTheme.setUiOpacity(opacity() / 100); // apply saved translucency to the chrome at startup
   const [cfgOpen, setCfgOpen] = createSignal(false);
   const [title, setTitle] = createSignal("solidterm");
@@ -56,7 +58,9 @@ export function Term() {
   // Multiline-paste confirmation (a stray newline would run the command).
   const [pastePrompt, setPastePrompt] = createSignal("");
   const pasteLineCount = () => { const p = pastePrompt(); return p ? p.split("\n").length : 0; };
-  const confirmPaste = () => { term.pasteTextFocused(pastePrompt()); setPastePrompt(""); };
+  const confirmPaste = () => { term.pasteTextFocused(pastePrompt()); setPastePrompt(""); term.refocus(); };
+  const cancelPaste = () => { setPastePrompt(""); term.refocus(); };
+  const closeCfg = () => { setCfgOpen(false); term.refocus(); };
   // Editable tab title (overrides the OSC title; empty reverts to automatic).
   const [renameOpen, setRenameOpen] = createSignal(false);
   const [renameValue, setRenameValue] = createSignal("");
@@ -86,10 +90,11 @@ export function Term() {
   const [kNextTab, setKNextTab] = createSignal(termConfig.getString("keys.nextTab", "Ctrl+PgDown"));
   const [kPrevTab, setKPrevTab] = createSignal(termConfig.getString("keys.prevTab", "Ctrl+PgUp"));
   const [kSearch, setKSearch] = createSignal(termConfig.getString("keys.search", "Ctrl+Shift+F"));
+  const [kZoomPane, setKZoomPane] = createSignal(termConfig.getString("keys.zoomPane", "Ctrl+Shift+X"));
   const getKey = (k: string) =>
     k === "splitRight" ? kSplitRight() : k === "splitDown" ? kSplitDown() : k === "closePane" ? kClosePane()
     : k === "focusNext" ? kFocusNext() : k === "focusPrev" ? kFocusPrev() : k === "newTab" ? kNewTab()
-    : k === "nextTab" ? kNextTab() : k === "prevTab" ? kPrevTab() : k === "search" ? kSearch()
+    : k === "nextTab" ? kNextTab() : k === "prevTab" ? kPrevTab() : k === "search" ? kSearch() : k === "zoomPane" ? kZoomPane()
     : termConfig.getString("keys." + k, "");
   // Accelerators are consumed by the focused terminal (not Qt's ambiguous Shortcut map) and
   // dispatched here by matching the pressed sequence to the configured binding.
@@ -107,6 +112,7 @@ export function Term() {
     else if (seq === "Ctrl+-") zoomFont(-1);
     else if (seq === "Ctrl+0") zoomFont(0);
     else if (seq === "Ctrl+,") setCfgOpen(true);
+    else if (seq === kZoomPane()) term.toggleZoom();
   };
   // Font zoom (Ctrl +/−/0). 0 resets to the default.
   const zoomFont = (d: number) => {
@@ -125,6 +131,7 @@ export function Term() {
     else if (k === "nextTab") setKNextTab(seq);
     else if (k === "prevTab") setKPrevTab(seq);
     else if (k === "search") setKSearch(seq);
+    else if (k === "zoomPane") setKZoomPane(seq);
   };
 
   return (
@@ -166,6 +173,7 @@ export function Term() {
           onTabsChanged={(titles, active) => { setTabTitles(titles); setActiveTab(active); }}
           onSearchChanged={(idx, count) => { setSearchIdx(idx); setSearchCount(count); }}
           onUnsafePasteRequested={(text) => setPastePrompt(text)}
+          onZoomRequested={(d) => zoomFont(d)}
           fontFamily={uiFontFamily()}
           fontSize={uiFontSize()}
           background={scheme() === "system" ? sysTheme.base : (SCHEMES[scheme()] || SCHEMES.midnight).bg}
@@ -175,7 +183,7 @@ export function Term() {
           backgroundOpacity={opacity() / 100}
           emboss={emboss() !== 0}
           handleColor={sysTheme.window}
-          reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,"]}
+          reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), kZoomPane(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,"]}
           onAccelerator={(seq) => onAccel(seq)}
           onTitleChanged={(t) => setTitle(t)}
           onAllClosed={() => process.exit(0)}
@@ -197,10 +205,12 @@ export function Term() {
         </ContextMenu>
       </div>
 
-      <div class="term-status">
-        <text class="term-status-t">solidterm</text>
-        <text class="term-hint">right-click for actions · shortcuts in Preferences</text>
-      </div>
+      <Show when={showStatus() !== 0}>
+        <div class="term-status">
+          <text class="term-status-t">solidterm</text>
+          <text class="term-hint">right-click for actions · shortcuts in Preferences</text>
+        </div>
+      </Show>
 
       <dialog open={cfgOpen()} title="Preferences" class="cfg" onClose={() => setCfgOpen(false)}>
         <div class="cfg-body">
@@ -281,6 +291,15 @@ export function Term() {
                 <option value="0">Hidden</option>
               </select>
             </div>
+            <hr class="cfg-div" />
+            <div class="cfg-row">
+              <text class="cfg-l">Status bar</text>
+              <select class="cfg-sel" value={"" + showStatus()}
+                      onChange={(v) => { setShowStatus(parseInt(v)); termConfig.set("showStatus", parseInt(v)); }}>
+                <option value="1">Shown</option>
+                <option value="0">Hidden</option>
+              </select>
+            </div>
           </div>
 
           <text class="cfg-group">Behavior</text>
@@ -320,7 +339,7 @@ export function Term() {
           <text class="cfg-path">Saved to {termConfig.path}</text>
 
           <div class="cfg-actions">
-            <button class="cfg-close" type="submit" onClick={() => setCfgOpen(false)}>Done</button>
+            <button class="cfg-close" type="submit" onClick={() => closeCfg()}>Done</button>
           </div>
         </div>
       </dialog>
@@ -342,7 +361,7 @@ export function Term() {
           <text class="paste-warn">Paste {pasteLineCount()} lines into the terminal?</text>
           <text class="paste-hint">Multi-line paste can run commands. Review before confirming.</text>
           <div class="cfg-actions paste-actions">
-            <button class="paste-cancel" onClick={() => setPastePrompt("")}>Cancel</button>
+            <button class="paste-cancel" onClick={() => cancelPaste()}>Cancel</button>
             <button class="cfg-close" type="submit" onClick={() => confirmPaste()}>Paste</button>
           </div>
         </div>
