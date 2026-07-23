@@ -12,6 +12,8 @@
 #include <vterm.h>
 
 class QSGTexture;
+class QSGImageNode;
+class QSGGeometryNode;
 
 // The terminal pane: a QQuickItem hosting one shell session. libvterm does the VT/xterm
 // interpretation (escape parsing, screen model, damage) — the same core neovim embeds; this
@@ -37,6 +39,11 @@ class TerminalView : public QQuickItem {
     // and leaks the key. Set from the solid keybinding config; a match emits accelerator(seq).
     Q_PROPERTY(QStringList reservedSequences READ reservedSequences WRITE setReservedSequences NOTIFY reservedSequencesChanged)
     Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY selectionChanged)
+    // Eye candy (owner): a background image behind the text (cover-fit), a background opacity so the
+    // desktop/image shows through the terminal's own colour, and an engraved "emboss" on the glyphs.
+    Q_PROPERTY(QString backgroundImage READ backgroundImage WRITE setBackgroundImage NOTIFY decorChanged)
+    Q_PROPERTY(qreal backgroundOpacity READ backgroundOpacity WRITE setBackgroundOpacity NOTIFY decorChanged)
+    Q_PROPERTY(bool emboss READ emboss WRITE setEmboss NOTIFY decorChanged)
 
 public:
     explicit TerminalView(QQuickItem *parent = nullptr);
@@ -55,6 +62,12 @@ public:
     void setScrollbackLimit(int v);
     QStringList reservedSequences() const { return m_reserved; }
     void setReservedSequences(const QStringList &v);
+    QString backgroundImage() const { return m_bgImagePath; }
+    void setBackgroundImage(const QString &path);
+    qreal backgroundOpacity() const { return m_bgOpacity; }
+    void setBackgroundOpacity(qreal v);
+    bool emboss() const { return m_emboss; }
+    void setEmboss(bool v);
 
     // C++-created panes (TerminalPanes uses `new`, so componentComplete never fires) call this
     // once sized to boot the pty+vterm; idempotent (m_started guard).
@@ -72,6 +85,7 @@ public:
 signals:
     void fontChanged();
     void colorsChanged();
+    void decorChanged();
     void titleChanged();
     void scrollbackLimitChanged();
     void bellRang();
@@ -117,6 +131,17 @@ private:
     int m_rows = 24, m_cols = 80;
     QColor m_background = QColor("#161a21");
     QColor m_foreground = QColor("#d4dae3");
+    QString m_bgImagePath;
+    QImage m_bgImage;                       // loaded background image (empty = none)
+    bool m_bgImageDirty = false;            // reupload the image texture next frame
+    qreal m_bgOpacity = 1.0;                // terminal background alpha (1 = solid, 0 = fully see-through)
+    bool m_emboss = false;                  // engraved glyphs
+    // Scene-graph nodes (owned by the returned root), kept so the optional image layer can slot in
+    // below the others without index juggling. Nulled when the node tree is dropped (0-size).
+    QSGImageNode *m_imageNode = nullptr;
+    QSGGeometryNode *m_bgNode = nullptr;
+    QSGGeometryNode *m_glyphNode = nullptr;
+    QSGGeometryNode *m_cursorNode = nullptr;
     QString m_title;
     VTermPos m_cursor = { 0, 0 };
     bool m_cursorVisible = true;

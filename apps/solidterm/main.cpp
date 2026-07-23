@@ -23,9 +23,17 @@
 #include <QKeySequence>
 #include <QTimer>
 #include <QGuiApplication>
+#include <QSurfaceFormat>
 
 int main(int argc, char **argv)
 {
+    // Request an alpha channel on the window surface so translucent chrome (uiOpacity < 1) reveals
+    // the desktop behind the whole window.
+    {
+        QSurfaceFormat fmt = QSurfaceFormat::defaultFormat();
+        fmt.setAlphaBufferSize(8);
+        QSurfaceFormat::setDefaultFormat(fmt);
+    }
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("solidterm"));
     app.setOrganizationName(QStringLiteral("solid-qml"));
@@ -70,8 +78,16 @@ int main(int argc, char **argv)
     if (engine.rootObjects().isEmpty())
         return 1;
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
-    if (window)
+    if (window) {
         SolidQmlEmbed::attachWindow(&engine, window);
+        // Clear to transparent only when translucent (uiOpacity < 1) so the desktop shows through the
+        // transparent app root; otherwise clear to the solid window colour. Tracks live changes.
+        const auto retint = [window, sysTheme] {
+            window->setColor(sysTheme->uiOpacity() < 1.0 ? QColor(Qt::transparent) : sysTheme->window());
+        };
+        retint();
+        QObject::connect(sysTheme, &SystemTheme::changed, window, retint);
+    }
 
     // Debug/CI screenshot: SOLIDTERM_SHOT=<prefix> opens preferences + the context menu after a
     // settle and grabs every top-level window (main + the modal dialog) to <prefix>-<i>.png.

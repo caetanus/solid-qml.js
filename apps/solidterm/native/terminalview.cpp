@@ -7,10 +7,12 @@
 #include <QQuickWindow>
 #include <QSGGeometry>
 #include <QSGGeometryNode>
+#include <QSGImageNode>
 #include <QSGMaterial>
 #include <QSGMaterialShader>
 #include <QSGTexture>
 #include <QSGVertexColorMaterial>
+#include <QUrl>
 
 #include <memory>
 #include <vector>
@@ -300,7 +302,10 @@ inline void pushBgQuad(std::vector<QSGGeometry::ColoredPoint2D> &v, qreal x, qre
 inline void pushGlyphQuad(std::vector<GlyphVertex> &v, qreal x, qreal y, qreal w, qreal h,
                           const QRectF &uv, const QColor &c)
 {
-    const float r = float(c.redF()), g = float(c.greenF()), b = float(c.blueF()), a = 1.0f;
+    // The glyph fragment shader is premultiplied (vColor × coverage), so premultiply here — lets the
+    // emboss shadow/highlight copies carry alpha < 1 correctly (opaque fg keeps alpha 1, unchanged).
+    const float al = float(c.alphaF());
+    const float r = float(c.redF()) * al, g = float(c.greenF()) * al, b = float(c.blueF()) * al, a = al;
     const float x0 = float(x), y0 = float(y), x1 = float(x + w), y1 = float(y + h);
     const float u0 = float(uv.left()), v0 = float(uv.top());
     const float u1 = float(uv.right()), v1 = float(uv.bottom());
@@ -311,17 +316,14 @@ inline void pushGlyphQuad(std::vector<GlyphVertex> &v, qreal x, qreal y, qreal w
     v.insert(v.end(), { tl, tr, bl, bl, tr, br });
 }
 
-QSGGeometryNode *takeChild(QSGNode *root, int index)
-{
-    return index < root->childCount() ? static_cast<QSGGeometryNode *>(root->childAtIndex(index)) : nullptr;
-}
-
 } // namespace
 
 QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 {
     if (!m_screen || width() <= 0 || height() <= 0) {
         delete oldNode;
+        m_imageNode = nullptr;
+        m_bgNode = m_glyphNode = m_cursorNode = nullptr;
         return nullptr;
     }
 
@@ -329,8 +331,11 @@ QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
     std::vector<GlyphVertex> glyphs;
     std::vector<QSGGeometry::ColoredPoint2D> cursor;
 
-    // Base background fills the whole item (so gaps between cells and the last partial row are clean).
-    pushBgQuad(bg, 0, 0, width(), height(), m_background);
+    // Base background fills the whole item. Its alpha = backgroundOpacity, so at <1 the layer behind
+    // (a bg image, or — with transparent chrome — the desktop) shows through the terminal's colour.
+    QColor baseBg = m_background;
+    baseBg.setAlphaF(m_bgOpacity);
+    pushBgQuad(bg, 0, 0, width(), height(), baseBg);
 
     const int sbShown = m_scrollOffset;
     for (int row = 0; row < m_rows; ++row) {
@@ -373,8 +378,14 @@ QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
                 cluster.append(QString::fromUcs4(&cell.chars[ci], 1));
             if (!cluster.isEmpty() && cluster != QLatin1String(" ")) {
                 const GlyphCache::Entry e = m_glyphs.glyph(cluster, cell.attrs.bold, cell.attrs.italic, cw);
-                if (e.valid)
+                if (e.valid) {
+                    // Emboss: a dark copy down-right + a light copy up-left behind the glyph → engraved.
+                    if (m_emboss) {
+                        pushGlyphQuad(glyphs, x + 1, y + 1, w, m_cellH, e.uv, QColor(0, 0, 0, 150));
+                        pushGlyphQuad(glyphs, x - 1, y - 1, w, m_cellH, e.uv, QColor(255, 255, 255, 80));
+                    }
                     pushGlyphQuad(glyphs, x, y, w, m_cellH, e.uv, fg);
+                }
             }
             if (cell.attrs.underline)
                 pushBgQuad(bg, x, y + m_cellH - 1, w, 1, fg);
@@ -424,72 +435,93 @@ QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
     }
 
     QSGNode *root = oldNode;
-    if (!root)
+    if (!root) {
         root = new QSGNode;
+        m_imageNode = nullptr;
+        m_bgNode = m_glyphNode = m_cursorNode = nullptr;
+    }
 
-    // Child 0: backgrounds + selection (vertex colour).
-    QSGGeometryNode *bgNode = takeChild(root, 0);
-    if (!bgNode) {
-        bgNode = new QSGGeometryNode;
+    // Layer 0 (optional): the background image, cover-fit, below everything.
+    if (m_bgImage.isNull()) {
+        if (m_imageNode) {
+            root->removeChildNode(m_imageNode);
+            delete m_imageNode;
+            m_imageNode = nullptr;
+        }
+    } else {
+        if (!m_imageNode) {
+            m_imageNode = window()->createImageNode();
+            m_imageNode->setOwnsTexture(true);
+            root->prependChildNode(m_imageNode); // below bg/glyph/cursor
+        }
+        if (m_bgImageDirty || !m_imageNode->texture()) {
+            m_imageNode->setTexture(window()->createTextureFromImage(m_bgImage));
+            m_bgImageDirty = false;
+        }
+        m_imageNode->setRect(0, 0, width(), height());
+        const qreal iw = qMax(1, m_bgImage.width()), ih = qMax(1, m_bgImage.height());
+        const qreal scale = qMax(width() / iw, height() / ih); // cover
+        const qreal sw = width() / scale, sh = height() / scale;
+        m_imageNode->setSourceRect(QRectF((iw - sw) / 2, (ih - sh) / 2, sw, sh));
+    }
+
+    // Backgrounds + selection (vertex colour).
+    if (!m_bgNode) {
+        m_bgNode = new QSGGeometryNode;
         auto *geo = new QSGGeometry(QSGGeometry::defaultAttributes_ColoredPoint2D(), 0);
         geo->setDrawingMode(QSGGeometry::DrawTriangles);
-        bgNode->setGeometry(geo);
-        bgNode->setFlag(QSGNode::OwnsGeometry);
-        auto *mat = new QSGVertexColorMaterial;
-        bgNode->setMaterial(mat);
-        bgNode->setFlag(QSGNode::OwnsMaterial);
-        root->appendChildNode(bgNode);
+        m_bgNode->setGeometry(geo);
+        m_bgNode->setFlag(QSGNode::OwnsGeometry);
+        m_bgNode->setMaterial(new QSGVertexColorMaterial);
+        m_bgNode->setFlag(QSGNode::OwnsMaterial);
+        root->appendChildNode(m_bgNode);
     }
     {
-        QSGGeometry *geo = bgNode->geometry();
+        QSGGeometry *geo = m_bgNode->geometry();
         geo->allocate(int(bg.size()));
         memcpy(geo->vertexData(), bg.data(), bg.size() * sizeof(QSGGeometry::ColoredPoint2D));
-        bgNode->markDirty(QSGNode::DirtyGeometry);
+        m_bgNode->markDirty(QSGNode::DirtyGeometry);
     }
 
-    // Child 1: glyphs (atlas material). Rebuild the texture only when the atlas changed.
-    QSGGeometryNode *glyphNode = takeChild(root, 1);
-    if (!glyphNode) {
-        glyphNode = new QSGGeometryNode;
+    // Glyphs (atlas material). Rebuild the texture only when the atlas changed.
+    if (!m_glyphNode) {
+        m_glyphNode = new QSGGeometryNode;
         auto *geo = new QSGGeometry(kGlyphAttrSet, 0);
         geo->setDrawingMode(QSGGeometry::DrawTriangles);
-        glyphNode->setGeometry(geo);
-        glyphNode->setFlag(QSGNode::OwnsGeometry);
-        auto *mat = new GlyphMaterial;
-        glyphNode->setMaterial(mat);
-        glyphNode->setFlag(QSGNode::OwnsMaterial);
-        root->appendChildNode(glyphNode);
+        m_glyphNode->setGeometry(geo);
+        m_glyphNode->setFlag(QSGNode::OwnsGeometry);
+        m_glyphNode->setMaterial(new GlyphMaterial);
+        m_glyphNode->setFlag(QSGNode::OwnsMaterial);
+        root->appendChildNode(m_glyphNode);
     }
-    auto *glyphMat = static_cast<GlyphMaterial *>(glyphNode->material());
+    auto *glyphMat = static_cast<GlyphMaterial *>(m_glyphNode->material());
     if (m_glyphs.takeDirty())
         glyphMat->setTexture(window()->createTextureFromImage(m_glyphs.atlas()));
     {
-        QSGGeometry *geo = glyphNode->geometry();
+        QSGGeometry *geo = m_glyphNode->geometry();
         geo->allocate(int(glyphs.size()));
         if (!glyphs.empty())
             memcpy(geo->vertexData(), glyphs.data(), glyphs.size() * sizeof(GlyphVertex));
-        glyphNode->markDirty(QSGNode::DirtyGeometry | QSGNode::DirtyMaterial);
+        m_glyphNode->markDirty(QSGNode::DirtyGeometry | QSGNode::DirtyMaterial);
     }
 
-    // Child 2: cursor (vertex colour, on top).
-    QSGGeometryNode *cursorNode = takeChild(root, 2);
-    if (!cursorNode) {
-        cursorNode = new QSGGeometryNode;
+    // Cursor (vertex colour, on top).
+    if (!m_cursorNode) {
+        m_cursorNode = new QSGGeometryNode;
         auto *geo = new QSGGeometry(QSGGeometry::defaultAttributes_ColoredPoint2D(), 0);
         geo->setDrawingMode(QSGGeometry::DrawTriangles);
-        cursorNode->setGeometry(geo);
-        cursorNode->setFlag(QSGNode::OwnsGeometry);
-        auto *mat = new QSGVertexColorMaterial;
-        cursorNode->setMaterial(mat);
-        cursorNode->setFlag(QSGNode::OwnsMaterial);
-        root->appendChildNode(cursorNode);
+        m_cursorNode->setGeometry(geo);
+        m_cursorNode->setFlag(QSGNode::OwnsGeometry);
+        m_cursorNode->setMaterial(new QSGVertexColorMaterial);
+        m_cursorNode->setFlag(QSGNode::OwnsMaterial);
+        root->appendChildNode(m_cursorNode);
     }
     {
-        QSGGeometry *geo = cursorNode->geometry();
+        QSGGeometry *geo = m_cursorNode->geometry();
         geo->allocate(int(cursor.size()));
         if (!cursor.empty())
             memcpy(geo->vertexData(), cursor.data(), cursor.size() * sizeof(QSGGeometry::ColoredPoint2D));
-        cursorNode->markDirty(QSGNode::DirtyGeometry);
+        m_cursorNode->markDirty(QSGNode::DirtyGeometry);
     }
 
     return root;
@@ -712,6 +744,42 @@ void TerminalView::wheelEvent(QWheelEvent *event)
 }
 
 // ─── property surface ───────────────────────────────────────────────────────────────────────────
+
+void TerminalView::setBackgroundImage(const QString &path)
+{
+    if (m_bgImagePath == path)
+        return;
+    m_bgImagePath = path;
+    m_bgImage = QImage();
+    if (!path.isEmpty()) {
+        QString p = path;
+        if (p.startsWith(QLatin1String("file://")))
+            p = QUrl(p).toLocalFile();
+        m_bgImage.load(p);
+    }
+    m_bgImageDirty = true;
+    emit decorChanged();
+    update();
+}
+
+void TerminalView::setBackgroundOpacity(qreal v)
+{
+    v = qBound(0.0, v, 1.0);
+    if (qFuzzyCompare(m_bgOpacity, v))
+        return;
+    m_bgOpacity = v;
+    emit decorChanged();
+    update();
+}
+
+void TerminalView::setEmboss(bool v)
+{
+    if (m_emboss == v)
+        return;
+    m_emboss = v;
+    emit decorChanged();
+    update();
+}
 
 void TerminalView::setFontFamily(const QString &f)
 {

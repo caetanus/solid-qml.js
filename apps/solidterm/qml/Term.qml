@@ -12,6 +12,9 @@ W.Div {
     property var uiFontSize: termConfig.getInt("fontSize", 15)
     property var scheme: termConfig.getString("scheme", "system")
     property var scrollback: termConfig.getInt("scrollback", 8000)
+    property var bgImage: termConfig.getString("bgImage", "")
+    property var opacity_: termConfig.getInt("opacity", 100)
+    property var emboss: termConfig.getInt("emboss", 0)
     property var cfgOpen: false
     property var title: "solidterm"
     property var kSplitRight: termConfig.getString("keys.splitRight", "Ctrl+Shift+E")
@@ -24,6 +27,9 @@ W.Div {
     function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : termConfig.getString("keys." + k, ""); }
     function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } } } } } }
     function setKey(k, seq) { termConfig.set("keys." + k, seq); if (k === "splitRight") { kSplitRight = seq; } else { if (k === "splitDown") { kSplitDown = seq; } else { if (k === "closePane") { kClosePane = seq; } else { if (k === "focusNext") { kFocusNext = seq; } else { if (k === "focusPrev") { kFocusPrev = seq; } } } } } }
+    property var __cleanups: []
+    Component.onCompleted: { sysTheme.setUiOpacity(opacity_ / 100); }
+    Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
     cssClass: ["term-root"]
     W.Div {
         cssClass: ["term-header"]
@@ -50,6 +56,9 @@ W.Div {
                 background: scheme === "system" ? sysTheme.base : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).bg
                 foreground: scheme === "system" ? sysTheme.text : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).fg
                 scrollbackLimit: scrollback
+                backgroundImage: bgImage
+                backgroundOpacity: opacity_ / 100
+                emboss: emboss !== 0
                 handleColor: sysTheme.window
                 reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev]
                 onAccelerator: function(seq) { return onAccel(seq) }
@@ -193,6 +202,77 @@ W.Div {
                         }
                     }
                 }
+                W.Div {
+                    cssClass: ["cfg-div"]
+                    cssPrimitive: "hr"
+                }
+                W.Div {
+                    cssClass: ["cfg-row"]
+                    W.Text {
+                        cssClass: ["cfg-l"]
+                        text: "Background image"
+                    }
+                    W.TextField {
+                        id: __input5
+                        cssClass: ["cfg-in"]
+                        placeholder: "/path/to/image.png"
+                        onTextEdited: { bgImage = text; termConfig.set("bgImage", text); }
+                        Binding {
+                            target: __input5
+                            property: "text"
+                            value: bgImage
+                            restoreMode: Binding.RestoreNone
+                        }
+                    }
+                }
+                W.Div {
+                    cssClass: ["cfg-div"]
+                    cssPrimitive: "hr"
+                }
+                W.Div {
+                    cssClass: ["cfg-row"]
+                    W.Text {
+                        cssClass: ["cfg-l"]
+                        text: "Opacity"
+                    }
+                    W.Select {
+                        id: __input6
+                        cssClass: ["cfg-sel"]
+                        model: ["100% (opaque)", "95%", "90%", "85%", "75%", "65%", "50%"]
+                        values: ["100", "95", "90", "85", "75", "65", "50"]
+                        onActivated: (index) => {  opacity_ = n; termConfig.set("opacity", n); sysTheme.setUiOpacity(n / 100); }
+                        Binding {
+                            target: __input6
+                            property: "currentIndex"
+                            value: __input6.values.indexOf("" + opacity_)
+                            restoreMode: Binding.RestoreNone
+                        }
+                    }
+                }
+                W.Div {
+                    cssClass: ["cfg-div"]
+                    cssPrimitive: "hr"
+                }
+                W.Div {
+                    cssClass: ["cfg-row"]
+                    W.Text {
+                        cssClass: ["cfg-l"]
+                        text: "Emboss text"
+                    }
+                    W.Select {
+                        id: __input7
+                        cssClass: ["cfg-sel"]
+                        model: ["Off", "On"]
+                        values: ["0", "1"]
+                        onActivated: (index) => {  emboss = n; termConfig.set("emboss", n); }
+                        Binding {
+                            target: __input7
+                            property: "currentIndex"
+                            value: __input7.values.indexOf("" + emboss)
+                            restoreMode: Binding.RestoreNone
+                        }
+                    }
+                }
             }
             W.Text {
                 cssClass: ["cfg-group"]
@@ -207,15 +287,15 @@ W.Div {
                         text: "Scrollback"
                     }
                     W.Select {
-                        id: __input5
+                        id: __input8
                         cssClass: ["cfg-sel"]
                         model: ["1000 lines", "5000 lines", "8000 lines", "20000 lines", "100000 lines"]
                         values: ["1000", "5000", "8000", "20000", "100000"]
-                        onActivated: (index) => { scrollback = parseInt(__input5.values[index]); termConfig.set("scrollback", parseInt(__input5.values[index])); }
+                        onActivated: (index) => { scrollback = parseInt(__input8.values[index]); termConfig.set("scrollback", parseInt(__input8.values[index])); }
                         Binding {
-                            target: __input5
+                            target: __input8
                             property: "currentIndex"
-                            value: __input5.values.indexOf("" + scrollback)
+                            value: __input8.values.indexOf("" + scrollback)
                             restoreMode: Binding.RestoreNone
                         }
                     }

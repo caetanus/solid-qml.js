@@ -479,6 +479,9 @@ void TerminalPanes::applyStyle(TerminalView *v)
     v->setBackground(m_background);
     v->setForeground(m_foreground);
     v->setScrollbackLimit(m_scrollbackLimit);
+    v->setBackgroundImage(m_bgImage);
+    v->setBackgroundOpacity(m_bgOpacity);
+    v->setEmboss(m_emboss);
 }
 
 #define STYLE_SETTER(Setter, Member, Type) \
@@ -493,6 +496,9 @@ STYLE_SETTER(setFontSize, m_fontSize, int)
 STYLE_SETTER(setBackground, m_background, const QColor &)
 STYLE_SETTER(setForeground, m_foreground, const QColor &)
 STYLE_SETTER(setScrollbackLimit, m_scrollbackLimit, int)
+STYLE_SETTER(setBackgroundImage, m_bgImage, const QString &)
+STYLE_SETTER(setBackgroundOpacity, m_bgOpacity, qreal)
+STYLE_SETTER(setEmboss, m_emboss, bool)
 #undef STYLE_SETTER
 
 void TerminalPanes::setReservedSequences(const QStringList &v)

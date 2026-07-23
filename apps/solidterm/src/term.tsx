@@ -31,6 +31,11 @@ export function Term() {
   const [uiFontSize, setUiFontSize] = createSignal(termConfig.getInt("fontSize", 15));
   const [scheme, setScheme] = createSignal(termConfig.getString("scheme", "system"));
   const [scrollback, setScrollback] = createSignal(termConfig.getInt("scrollback", 8000));
+  // Decorations: background image (path), window opacity (percent), engraved text.
+  const [bgImage, setBgImage] = createSignal(termConfig.getString("bgImage", ""));
+  const [opacity, setOpacity] = createSignal(termConfig.getInt("opacity", 100));
+  const [emboss, setEmboss] = createSignal(termConfig.getInt("emboss", 0));
+  sysTheme.setUiOpacity(opacity() / 100); // apply saved translucency to the chrome at startup
   const [cfgOpen, setCfgOpen] = createSignal(false);
   const [title, setTitle] = createSignal("solidterm");
   let term: any;
@@ -80,6 +85,9 @@ export function Term() {
           background={scheme() === "system" ? sysTheme.base : (SCHEMES[scheme()] || SCHEMES.midnight).bg}
           foreground={scheme() === "system" ? sysTheme.text : (SCHEMES[scheme()] || SCHEMES.midnight).fg}
           scrollbackLimit={scrollback()}
+          backgroundImage={bgImage()}
+          backgroundOpacity={opacity() / 100}
+          emboss={emboss() !== 0}
           handleColor={sysTheme.window}
           reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev()]}
           onAccelerator={(seq) => onAccel(seq)}
@@ -139,6 +147,35 @@ export function Term() {
                 <option value="solarized">Solarized Dark</option>
                 <option value="gruvbox">Gruvbox</option>
                 <option value="paper">Paper (light)</option>
+              </select>
+            </div>
+            <hr class="cfg-div" />
+            <div class="cfg-row">
+              <text class="cfg-l">Background image</text>
+              <input class="cfg-in" value={bgImage()} placeholder="/path/to/image.png"
+                     onInput={(e) => { setBgImage(e.target.value); termConfig.set("bgImage", e.target.value); }} />
+            </div>
+            <hr class="cfg-div" />
+            <div class="cfg-row">
+              <text class="cfg-l">Opacity</text>
+              <select class="cfg-sel" value={"" + opacity()}
+                      onChange={(v) => { const n = parseInt(v); setOpacity(n); termConfig.set("opacity", n); sysTheme.setUiOpacity(n / 100); }}>
+                <option value="100">100% (opaque)</option>
+                <option value="95">95%</option>
+                <option value="90">90%</option>
+                <option value="85">85%</option>
+                <option value="75">75%</option>
+                <option value="65">65%</option>
+                <option value="50">50%</option>
+              </select>
+            </div>
+            <hr class="cfg-div" />
+            <div class="cfg-row">
+              <text class="cfg-l">Emboss text</text>
+              <select class="cfg-sel" value={"" + emboss()}
+                      onChange={(v) => { const n = parseInt(v); setEmboss(n); termConfig.set("emboss", n); }}>
+                <option value="0">Off</option>
+                <option value="1">On</option>
               </select>
             </div>
           </div>

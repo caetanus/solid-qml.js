@@ -30,9 +30,18 @@ public:
     // over the structural term.css.
     Q_INVOKABLE QString styleSheet() const;
 
+    // Window translucency (owner: "transparência de verdade"). 1 = solid; < 1 makes the chrome
+    // surfaces (root/header/status) translucent so the desktop shows through the whole window.
+    // Changing it re-emits changed() → the app reloads the palette layer + retints the window.
+    qreal uiOpacity() const { return m_uiOpacity; }
+    Q_INVOKABLE void setUiOpacity(qreal v);
+
 signals:
     void changed();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
+
+private:
+    qreal m_uiOpacity = 1.0;
 };

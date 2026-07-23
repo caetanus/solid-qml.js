@@ -29,6 +29,10 @@ class TerminalPanes : public QQuickItem {
     Q_PROPERTY(int scrollbackLimit READ scrollbackLimit WRITE setScrollbackLimit NOTIFY styleChanged)
     Q_PROPERTY(QColor handleColor READ handleColor WRITE setHandleColor NOTIFY styleChanged)
     Q_PROPERTY(QStringList reservedSequences READ reservedSequences WRITE setReservedSequences NOTIFY reservedChanged)
+    // Decorations forwarded to every pane (per-window eye candy).
+    Q_PROPERTY(QString backgroundImage READ backgroundImage WRITE setBackgroundImage NOTIFY styleChanged)
+    Q_PROPERTY(qreal backgroundOpacity READ backgroundOpacity WRITE setBackgroundOpacity NOTIFY styleChanged)
+    Q_PROPERTY(bool emboss READ emboss WRITE setEmboss NOTIFY styleChanged)
 
 public:
     explicit TerminalPanes(QQuickItem *parent = nullptr);
@@ -50,6 +54,12 @@ public:
     void setHandleColor(const QColor &v);
     QStringList reservedSequences() const { return m_reserved; }
     void setReservedSequences(const QStringList &v);
+    QString backgroundImage() const { return m_bgImage; }
+    void setBackgroundImage(const QString &v);
+    qreal backgroundOpacity() const { return m_bgOpacity; }
+    void setBackgroundOpacity(qreal v);
+    bool emboss() const { return m_emboss; }
+    void setEmboss(bool v);
 
     // Split the FOCUSED pane along `orient` (Qt::Horizontal = side by side / "split right",
     // Qt::Vertical = stacked / "split down"). Nests independently of prior splits.
@@ -118,4 +128,7 @@ private:
     int m_scrollbackLimit = 8000;
     QColor m_handleColor = QColor("#151515");
     QStringList m_reserved;
+    QString m_bgImage;
+    qreal m_bgOpacity = 1.0;
+    bool m_emboss = false;
 };

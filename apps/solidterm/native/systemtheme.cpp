@@ -111,14 +111,27 @@ bool SystemTheme::eventFilter(QObject *watched, QEvent *event)
     return QObject::eventFilter(watched, event);
 }
 
+void SystemTheme::setUiOpacity(qreal v)
+{
+    v = qBound(0.0, v, 1.0);
+    if (qFuzzyCompare(m_uiOpacity, v))
+        return;
+    m_uiOpacity = v;
+    emit changed();
+}
+
 QString SystemTheme::styleSheet() const
 {
     const Palette p = paletteFor(dark(), accent());
     const auto h = [](const QColor &c) { return c.name(QColor::HexRgb); };
+    // When translucent, the app root goes transparent so the (alpha) window reveals the desktop
+    // behind the terminal + gaps; the header/status chrome stay solid (tilix-style glass). At full
+    // opacity the root is the solid window colour, so nothing shows through.
+    const QString rootBg = m_uiOpacity < 1.0 ? QStringLiteral("transparent") : h(p.window);
 
     // Semantic app classes → the desktop palette. Loaded OVER the structural term.css.
     return QStringLiteral(R"(
-.term-root { background: %1; color: %6; }
+.term-root { background: %11; color: %6; }
 .term-header { background: %3; border-bottom: 1px solid %8; }
 .term-title { color: %6; }
 .term-gear { color: %7; }
@@ -145,5 +158,6 @@ QString SystemTheme::styleSheet() const
 .cfg-close:hover { background: %9; }
 )")
         .arg(h(p.window), h(p.view), h(p.header), h(p.card), h(p.popover),
-             h(p.text), h(p.dim), h(p.border), h(p.accent), h(p.accentText));
+             h(p.text), h(p.dim), h(p.border), h(p.accent), h(p.accentText))
+        .arg(rootBg);
 }
