@@ -7,16 +7,18 @@
 #include <QSize>
 
 // GPU glyph atlas for the terminal (owner: "as fast as alacritty"). Each distinct
-// (cluster, bold, italic, width-in-cells) is rasterised ONCE into a cell-sized coverage tile and
-// packed into a grayscale atlas image; the terminal then draws the whole grid as textured quads
-// in one scene-graph node (GPU-composited) instead of re-rasterising with QPainter every frame.
-// Grid-perfect by construction: every tile is exactly cellW×cellH (×2 for wide chars), so cells
-// align without per-glyph bearing math.
+// (cluster, bold, italic, width-in-cells) is rasterised ONCE into a cell-sized tile and packed
+// into a PREMULTIPLIED RGBA atlas; the terminal then draws the whole grid as textured quads in one
+// scene-graph node (GPU-composited) instead of re-rasterising with QPainter every frame. Regular
+// glyphs are white coverage (the shader tints them by the cell's fg colour); colour glyphs (emoji)
+// keep their own colours (Entry::color → the shader uses the texture as-is). Grid-perfect: every
+// tile is exactly cellW×cellH (×2 for wide chars), so cells align without per-glyph bearing math.
 class GlyphCache {
 public:
     struct Entry {
         QRectF uv;        // normalised atlas coordinates
         int widthCells = 1;
+        bool color = false; // a colour glyph (emoji) → use the texture colour, don't tint by fg
         bool valid = false;
     };
 

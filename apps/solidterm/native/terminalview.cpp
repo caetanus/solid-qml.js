@@ -26,14 +26,15 @@
 // the fragment shader). One instance per TerminalView; its texture is the item's glyph atlas.
 namespace {
 
-struct GlyphVertex { float x, y, u, v, r, g, b, a; };
+struct GlyphVertex { float x, y, u, v, r, g, b, a, isColor; };
 
 const QSGGeometry::Attribute kGlyphAttrs[] = {
     QSGGeometry::Attribute::create(0, 2, QSGGeometry::FloatType, true),  // pos
     QSGGeometry::Attribute::create(1, 2, QSGGeometry::FloatType, false), // uv
     QSGGeometry::Attribute::create(2, 4, QSGGeometry::FloatType, false), // color
+    QSGGeometry::Attribute::create(3, 1, QSGGeometry::FloatType, false), // isColor (emoji flag)
 };
-const QSGGeometry::AttributeSet kGlyphAttrSet = { 3, sizeof(GlyphVertex), kGlyphAttrs };
+const QSGGeometry::AttributeSet kGlyphAttrSet = { 4, sizeof(GlyphVertex), kGlyphAttrs };
 
 class GlyphMaterial : public QSGMaterial {
 public:
@@ -316,19 +317,20 @@ inline void pushBgQuad(std::vector<QSGGeometry::ColoredPoint2D> &v, qreal x, qre
 }
 
 inline void pushGlyphQuad(std::vector<GlyphVertex> &v, qreal x, qreal y, qreal w, qreal h,
-                          const QRectF &uv, const QColor &c)
+                          const QRectF &uv, const QColor &c, bool colorGlyph)
 {
     // The glyph fragment shader is premultiplied (vColor × coverage), so premultiply here — lets the
     // emboss shadow/highlight copies carry alpha < 1 correctly (opaque fg keeps alpha 1, unchanged).
     const float al = float(c.alphaF());
     const float r = float(c.redF()) * al, g = float(c.greenF()) * al, b = float(c.blueF()) * al, a = al;
+    const float ic = colorGlyph ? 1.0f : 0.0f;
     const float x0 = float(x), y0 = float(y), x1 = float(x + w), y1 = float(y + h);
     const float u0 = float(uv.left()), v0 = float(uv.top());
     const float u1 = float(uv.right()), v1 = float(uv.bottom());
-    const GlyphVertex tl{ x0, y0, u0, v0, r, g, b, a };
-    const GlyphVertex tr{ x1, y0, u1, v0, r, g, b, a };
-    const GlyphVertex bl{ x0, y1, u0, v1, r, g, b, a };
-    const GlyphVertex br{ x1, y1, u1, v1, r, g, b, a };
+    const GlyphVertex tl{ x0, y0, u0, v0, r, g, b, a, ic };
+    const GlyphVertex tr{ x1, y0, u1, v0, r, g, b, a, ic };
+    const GlyphVertex bl{ x0, y1, u0, v1, r, g, b, a, ic };
+    const GlyphVertex br{ x1, y1, u1, v1, r, g, b, a, ic };
     v.insert(v.end(), { tl, tr, bl, bl, tr, br });
 }
 
@@ -395,12 +397,13 @@ QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
             if (!cluster.isEmpty() && cluster != QLatin1String(" ")) {
                 const GlyphCache::Entry e = m_glyphs.glyph(cluster, cell.attrs.bold, cell.attrs.italic, cw);
                 if (e.valid) {
-                    // Emboss: a dark copy down-right + a light copy up-left behind the glyph → engraved.
-                    if (m_emboss) {
-                        pushGlyphQuad(glyphs, x + 1, y + 1, w, m_cellH, e.uv, QColor(0, 0, 0, 150));
-                        pushGlyphQuad(glyphs, x - 1, y - 1, w, m_cellH, e.uv, QColor(255, 255, 255, 80));
+                    // Emboss: a dark copy down-right + a light copy up-left behind the glyph → engraved
+                    // (coverage-tinted; skip for colour glyphs so emoji aren't shadowed).
+                    if (m_emboss && !e.color) {
+                        pushGlyphQuad(glyphs, x + 1, y + 1, w, m_cellH, e.uv, QColor(0, 0, 0, 150), false);
+                        pushGlyphQuad(glyphs, x - 1, y - 1, w, m_cellH, e.uv, QColor(255, 255, 255, 80), false);
                     }
-                    pushGlyphQuad(glyphs, x, y, w, m_cellH, e.uv, fg);
+                    pushGlyphQuad(glyphs, x, y, w, m_cellH, e.uv, fg, e.color);
                 }
             }
             if (cell.attrs.underline)

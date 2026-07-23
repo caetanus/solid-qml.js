@@ -29,11 +29,11 @@ void GlyphCache::setFont(const QString &family, int pixelSize)
 
 void GlyphCache::reset()
 {
-    // Fixed 2048² coverage atlas: UVs must never shift mid-frame, so the atlas can't grow while a
-    // frame is being built. 2048² at ~9×17 px/tile holds >25k glyph tiles — no real session's glyph
-    // set overflows it; if one somehow does, glyph() flags overflow and the caller rebuilds next frame.
-    m_atlas = QImage(2048, 2048, QImage::Format_Grayscale8);
-    m_atlas.fill(0);
+    // Fixed 2048² premultiplied-RGBA atlas: UVs must never shift mid-frame, so the atlas can't grow
+    // while a frame is being built. 2048² at ~9×17 px/tile holds >25k glyph tiles — no real session's
+    // glyph set overflows it; if one somehow does, glyph() flags overflow and the caller rebuilds.
+    m_atlas = QImage(2048, 2048, QImage::Format_ARGB32_Premultiplied);
+    m_atlas.fill(Qt::transparent);
     m_penX = 0;
     m_penY = 0;
     m_rowH = 0;
@@ -70,7 +70,9 @@ GlyphCache::Entry GlyphCache::rasterize(const Key &k)
         return Entry{}; // invalid: nothing drawn for this cell this frame
     }
 
-    // Render the cluster in white on black into its tile at the cell baseline (grayscale coverage).
+    // Render the cluster in WHITE on transparent into its tile. Monochrome glyphs come out white
+    // (coverage, tinted later by fg); colour glyphs (emoji, COLR/CBDT fonts) ignore the pen and
+    // render in their own colours.
     QPainter p(&m_atlas);
     p.setRenderHint(QPainter::TextAntialiasing, true);
     p.setPen(Qt::white);
@@ -84,6 +86,14 @@ GlyphCache::Entry GlyphCache::rasterize(const Key &k)
     e.widthCells = k.widthCells;
     e.uv = QRectF(qreal(m_penX) / m_atlas.width(), qreal(m_penY) / m_atlas.height(),
                   qreal(tileW) / m_atlas.width(), qreal(tileH) / m_atlas.height());
+    // Colour glyph if any drawn pixel has non-equal RGB channels (a coloured, not white, pixel).
+    for (int y = m_penY; y < m_penY + tileH && !e.color; ++y) {
+        const QRgb *row = reinterpret_cast<const QRgb *>(m_atlas.constScanLine(y));
+        for (int x = m_penX; x < m_penX + tileW; ++x) {
+            const QRgb px = row[x];
+            if (qAlpha(px) && (qRed(px) != qGreen(px) || qGreen(px) != qBlue(px))) { e.color = true; break; }
+        }
+    }
     e.valid = true;
 
     m_penX += tileW + 1;
