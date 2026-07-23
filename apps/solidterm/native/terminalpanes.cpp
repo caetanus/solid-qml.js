@@ -260,11 +260,16 @@ void TerminalPanes::split(int orient)
     relayout();
     setFocused(newLeaf);
     // The cell's initial class is ["pane","pane-enter"] → the @keyframes plays on compose; strip the
-    // trigger class after so a later re-resolve (theme change) doesn't replay it.
+    // trigger class after so a later re-resolve (theme change) doesn't replay it. When animations are
+    // off, strip it immediately (no enter animation).
     QQuickItem *cell = newLeaf->cell;
-    QTimer::singleShot(kAnimMs, cell, [cell] {
+    if (m_animateSplits) {
+        QTimer::singleShot(kAnimMs, cell, [cell] {
+            cell->setProperty("cssClass", QVariant::fromValue(QStringList{ QStringLiteral("pane") }));
+        });
+    } else {
         cell->setProperty("cssClass", QVariant::fromValue(QStringList{ QStringLiteral("pane") }));
-    });
+    }
     emit panesChanged();
 }
 
@@ -282,11 +287,11 @@ void TerminalPanes::removeLeaf(Node *leaf)
         emit allClosed();
         return;
     }
-    // Play the leave animation, then actually detach when it finishes.
-    if (leaf->cell)
+    // Play the leave animation (if enabled), then actually detach when it finishes.
+    if (m_animateSplits && leaf->cell)
         leaf->cell->setProperty("cssClass", QVariant::fromValue(QStringList{ QStringLiteral("pane"), QStringLiteral("pane-leave") }));
     TerminalView *v = leaf->view;
-    QTimer::singleShot(kAnimMs, this, [this, v] {
+    QTimer::singleShot(m_animateSplits ? kAnimMs : 0, this, [this, v] {
         Node *l = leafOfView(v);
         if (!l)
             return;

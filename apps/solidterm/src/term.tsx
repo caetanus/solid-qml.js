@@ -44,6 +44,7 @@ export function Term() {
   const [emboss, setEmboss] = createSignal(termConfig.getInt("emboss", 0));
   const [showHeader, setShowHeader] = createSignal(termConfig.getInt("showHeader", 1));
   const [showStatus, setShowStatus] = createSignal(termConfig.getInt("showStatus", 1));
+  const [animSplits, setAnimSplits] = createSignal(termConfig.getInt("animSplits", 1));
   sysTheme.setUiOpacity(opacity() / 100); // apply saved translucency to the chrome at startup
   const [cfgOpen, setCfgOpen] = createSignal(false);
   const [title, setTitle] = createSignal("solidterm");
@@ -182,6 +183,7 @@ export function Term() {
           backgroundImage={bgImage()}
           backgroundOpacity={opacity() / 100}
           emboss={emboss() !== 0}
+          animateSplits={animSplits() !== 0}
           handleColor={sysTheme.window}
           reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), kZoomPane(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,"]}
           onAccelerator={(seq) => onAccel(seq)}
@@ -298,6 +300,15 @@ export function Term() {
                       onChange={(v) => { setShowStatus(parseInt(v)); termConfig.set("showStatus", parseInt(v)); }}>
                 <option value="1">Shown</option>
                 <option value="0">Hidden</option>
+              </select>
+            </div>
+            <hr class="cfg-div" />
+            <div class="cfg-row">
+              <text class="cfg-l">Split animation</text>
+              <select class="cfg-sel" value={"" + animSplits()}
+                      onChange={(v) => { setAnimSplits(parseInt(v)); termConfig.set("animSplits", parseInt(v)); }}>
+                <option value="1">On</option>
+                <option value="0">Off</option>
               </select>
             </div>
           </div>

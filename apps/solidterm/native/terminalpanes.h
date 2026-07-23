@@ -60,6 +60,8 @@ public:
     void setBackgroundOpacity(qreal v);
     bool emboss() const { return m_emboss; }
     void setEmboss(bool v);
+    bool animateSplits() const { return m_animateSplits; }
+    void setAnimateSplits(bool v) { m_animateSplits = v; }
 
     // Split the FOCUSED pane along `orient` (Qt::Horizontal = side by side / "split right",
     // Qt::Vertical = stacked / "split down"). Nests independently of prior splits.
@@ -145,4 +147,5 @@ private:
     QString m_bgImage;
     qreal m_bgOpacity = 1.0;
     bool m_emboss = false;
+    bool m_animateSplits = true;
 };

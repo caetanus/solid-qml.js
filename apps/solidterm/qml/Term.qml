@@ -17,6 +17,7 @@ W.Div {
     property var emboss: termConfig.getInt("emboss", 0)
     property var showHeader: termConfig.getInt("showHeader", 1)
     property var showStatus: termConfig.getInt("showStatus", 1)
+    property var animSplits: termConfig.getInt("animSplits", 1)
     property var cfgOpen: false
     property var title: "solidterm"
     property var searchOpen: false
@@ -159,6 +160,7 @@ W.Div {
                 backgroundImage: bgImage
                 backgroundOpacity: opacity_ / 100
                 emboss: emboss !== 0
+                animateSplits: animSplits !== 0
                 handleColor: sysTheme.window
                 reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, kZoomPane, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,"]
                 onAccelerator: function(seq) { return onAccel(seq) }
@@ -451,6 +453,30 @@ W.Div {
                         }
                     }
                 }
+                W.Div {
+                    cssClass: ["cfg-div"]
+                    cssPrimitive: "hr"
+                }
+                W.Div {
+                    cssClass: ["cfg-row"]
+                    W.Text {
+                        cssClass: ["cfg-l"]
+                        text: "Split animation"
+                    }
+                    W.Select {
+                        id: __input11
+                        cssClass: ["cfg-sel"]
+                        model: ["On", "Off"]
+                        values: ["1", "0"]
+                        onActivated: (index) => { animSplits = parseInt(__input11.values[index]); termConfig.set("animSplits", parseInt(__input11.values[index])); }
+                        Binding {
+                            target: __input11
+                            property: "currentIndex"
+                            value: __input11.values.indexOf("" + animSplits)
+                            restoreMode: Binding.RestoreNone
+                        }
+                    }
+                }
             }
             W.Text {
                 cssClass: ["cfg-group"]
@@ -465,15 +491,15 @@ W.Div {
                         text: "Scrollback"
                     }
                     W.Select {
-                        id: __input11
+                        id: __input12
                         cssClass: ["cfg-sel"]
                         model: ["1000 lines", "5000 lines", "8000 lines", "20000 lines", "100000 lines"]
                         values: ["1000", "5000", "8000", "20000", "100000"]
-                        onActivated: (index) => { scrollback = parseInt(__input11.values[index]); termConfig.set("scrollback", parseInt(__input11.values[index])); }
+                        onActivated: (index) => { scrollback = parseInt(__input12.values[index]); termConfig.set("scrollback", parseInt(__input12.values[index])); }
                         Binding {
-                            target: __input11
+                            target: __input12
                             property: "currentIndex"
-                            value: __input11.values.indexOf("" + scrollback)
+                            value: __input12.values.indexOf("" + scrollback)
                             restoreMode: Binding.RestoreNone
                         }
                     }
@@ -538,12 +564,12 @@ W.Div {
                 text: "Tab title"
             }
             W.TextField {
-                id: __input13
+                id: __input14
                 cssClass: ["cfg-in", "rename-in"]
                 placeholder: "(empty = automatic)"
                 onTextEdited: { renameValue = text }
                 Binding {
-                    target: __input13
+                    target: __input14
                     property: "text"
                     value: renameValue
                     restoreMode: Binding.RestoreNone
