@@ -21,6 +21,8 @@ public:
     Q_INVOKABLE QString getString(const QString &key, const QString &fallback) const;
     Q_INVOKABLE int getInt(const QString &key, int fallback) const;
     Q_INVOKABLE void set(const QString &key, const QVariant &value);
+    // Native file picker for the background image (returns "" if cancelled).
+    Q_INVOKABLE QString pickImage() const;
 
 signals:
     void changed(const QString &key);

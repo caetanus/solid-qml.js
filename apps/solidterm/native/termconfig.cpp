@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QJsonDocument>
 #include <QStandardPaths>
 
@@ -57,4 +58,13 @@ void TermConfig::set(const QString &key, const QVariant &value)
     m_data.insert(key, QJsonValue::fromVariant(value));
     save();
     emit changed(key);
+}
+
+QString TermConfig::pickImage() const
+{
+    const QString start = getString(QStringLiteral("bgImage"), QDir::homePath());
+    return QFileDialog::getOpenFileName(
+        nullptr, QStringLiteral("Choose background image"),
+        start.isEmpty() ? QDir::homePath() : start,
+        QStringLiteral("Images (*.png *.jpg *.jpeg *.webp *.bmp *.gif);;All files (*)"));
 }

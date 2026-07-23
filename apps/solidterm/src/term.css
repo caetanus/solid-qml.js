@@ -52,6 +52,9 @@
 .cfg-div { height: 1px; border: none; }
 .cfg-in, .cfg-num, .cfg-sel { border-radius: 7px; padding: 6px 10px; font-size: 13px; }
 .cfg-in { width: 190px; }
+.cfg-imgrow { display: flex; flex-direction: row; align-items: center; }
+.cfg-in-img { width: 120px; border-radius: 7px; padding: 6px 10px; font-size: 13px; }
+.cfg-browse { margin-left: 6px; padding: 6px 12px; border: none; border-radius: 7px; font-size: 13px; }
 .cfg-num { width: 90px; }
 .cfg-sel { width: 180px; }
 .cfg-actions { display: flex; justify-content: flex-end; margin-top: 4px; }

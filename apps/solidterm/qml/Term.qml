@@ -37,6 +37,8 @@ W.Div {
     property var kSearch: termConfig.getString("keys.search", "Ctrl+Shift+F")
     readonly property var __const_SCHEMES: ({ midnight: ({ bg: "#161a21", fg: "#d4dae3" }), solarized: ({ bg: "#002b36", fg: "#93a1a1" }), gruvbox: ({ bg: "#282828", fg: "#ebdbb2" }), paper: ({ bg: "#f7f2e9", fg: "#3a3532" }) })
     readonly property var __const_ACTIONS: [({ key: "newTab", label: "New tab", def: "Ctrl+Shift+T" }), ({ key: "nextTab", label: "Next tab", def: "Ctrl+PgDown" }), ({ key: "prevTab", label: "Previous tab", def: "Ctrl+PgUp" }), ({ key: "search", label: "Find", def: "Ctrl+Shift+F" }), ({ key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" }), ({ key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" }), ({ key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" }), ({ key: "focusNext", label: "Focus next pane", def: "Alt+Right" }), ({ key: "focusPrev", label: "Focus previous pane", def: "Alt+Left" })]
+    function browseBg() { var p = termConfig.pickImage(); if (p) { bgImage = p; termConfig.set("bgImage", p); } }
+    function clearBg() { bgImage = ""; termConfig.set("bgImage", ""); }
     function openSearch() { searchOpen = true; if (_ref_searchInput) { _ref_searchInput.forceActiveFocus(); } }
     function closeSearch() { searchOpen = false; _ref_term.clearSearch(); _ref_term.refocus(); }
     function pasteLineCount() { var p = pastePrompt; return p ? p.split("\n").length : 0; }
@@ -319,16 +321,29 @@ W.Div {
                         cssClass: ["cfg-l"]
                         text: "Background image"
                     }
-                    W.TextField {
-                        id: __input6
-                        cssClass: ["cfg-in"]
-                        placeholder: "/path/to/image.png"
-                        onTextEdited: { bgImage = text; termConfig.set("bgImage", text); }
-                        Binding {
-                            target: __input6
-                            property: "text"
-                            value: bgImage
-                            restoreMode: Binding.RestoreNone
+                    W.Div {
+                        cssClass: ["cfg-imgrow"]
+                        W.TextField {
+                            id: __input6
+                            cssClass: ["cfg-in-img"]
+                            placeholder: "none"
+                            onTextEdited: { bgImage = text; termConfig.set("bgImage", text); }
+                            Binding {
+                                target: __input6
+                                property: "text"
+                                value: bgImage
+                                restoreMode: Binding.RestoreNone
+                            }
+                        }
+                        W.Button {
+                            cssClass: ["cfg-browse"]
+                            text: "Browse…"
+                            onClicked: browseBg()
+                        }
+                        W.Button {
+                            cssClass: ["cfg-browse"]
+                            text: "✕"
+                            onClicked: clearBg()
                         }
                     }
                 }
@@ -347,7 +362,7 @@ W.Div {
                         cssClass: ["cfg-sel"]
                         model: ["100% (opaque)", "95%", "90%", "85%", "75%", "65%", "50%"]
                         values: ["100", "95", "90", "85", "75", "65", "50"]
-                        onActivated: (index) => {  opacity_ = n; termConfig.set("opacity", n); sysTheme.setUiOpacity(n / 100); }
+                        onActivated: (index) => { opacity_ = parseInt(__input7.values[index]); termConfig.set("opacity", parseInt(__input7.values[index])); sysTheme.setUiOpacity(parseInt(__input7.values[index]) / 100); }
                         Binding {
                             target: __input7
                             property: "currentIndex"
@@ -371,7 +386,7 @@ W.Div {
                         cssClass: ["cfg-sel"]
                         model: ["Off", "On"]
                         values: ["0", "1"]
-                        onActivated: (index) => {  emboss = n; termConfig.set("emboss", n); }
+                        onActivated: (index) => { emboss = parseInt(__input8.values[index]); termConfig.set("emboss", parseInt(__input8.values[index])); }
                         Binding {
                             target: __input8
                             property: "currentIndex"

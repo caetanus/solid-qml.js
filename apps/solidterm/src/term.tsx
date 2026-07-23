@@ -37,6 +37,8 @@ export function Term() {
   const [scrollback, setScrollback] = createSignal(termConfig.getInt("scrollback", 8000));
   // Decorations: background image (path), window opacity (percent), engraved text.
   const [bgImage, setBgImage] = createSignal(termConfig.getString("bgImage", ""));
+  const browseBg = () => { const p = termConfig.pickImage(); if (p) { setBgImage(p); termConfig.set("bgImage", p); } };
+  const clearBg = () => { setBgImage(""); termConfig.set("bgImage", ""); };
   const [opacity, setOpacity] = createSignal(termConfig.getInt("opacity", 100));
   const [emboss, setEmboss] = createSignal(termConfig.getInt("emboss", 0));
   sysTheme.setUiOpacity(opacity() / 100); // apply saved translucency to the chrome at startup
@@ -236,14 +238,18 @@ export function Term() {
             <hr class="cfg-div" />
             <div class="cfg-row">
               <text class="cfg-l">Background image</text>
-              <input class="cfg-in" value={bgImage()} placeholder="/path/to/image.png"
-                     onInput={(e) => { setBgImage(e.target.value); termConfig.set("bgImage", e.target.value); }} />
+              <div class="cfg-imgrow">
+                <input class="cfg-in-img" value={bgImage()} placeholder="none"
+                       onInput={(e) => { setBgImage(e.target.value); termConfig.set("bgImage", e.target.value); }} />
+                <button class="cfg-browse" onClick={() => browseBg()}>Browse…</button>
+                <button class="cfg-browse" onClick={() => clearBg()}>✕</button>
+              </div>
             </div>
             <hr class="cfg-div" />
             <div class="cfg-row">
               <text class="cfg-l">Opacity</text>
               <select class="cfg-sel" value={"" + opacity()}
-                      onChange={(v) => { const n = parseInt(v); setOpacity(n); termConfig.set("opacity", n); sysTheme.setUiOpacity(n / 100); }}>
+                      onChange={(v) => { setOpacity(parseInt(v)); termConfig.set("opacity", parseInt(v)); sysTheme.setUiOpacity(parseInt(v) / 100); }}>
                 <option value="100">100% (opaque)</option>
                 <option value="95">95%</option>
                 <option value="90">90%</option>
@@ -257,7 +263,7 @@ export function Term() {
             <div class="cfg-row">
               <text class="cfg-l">Emboss text</text>
               <select class="cfg-sel" value={"" + emboss()}
-                      onChange={(v) => { const n = parseInt(v); setEmboss(n); termConfig.set("emboss", n); }}>
+                      onChange={(v) => { setEmboss(parseInt(v)); termConfig.set("emboss", parseInt(v)); }}>
                 <option value="0">Off</option>
                 <option value="1">On</option>
               </select>

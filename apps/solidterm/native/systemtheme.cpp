@@ -167,7 +167,9 @@ QString SystemTheme::styleSheet() const
 .cfg-card { background: %4; border: 1px solid %8; }
 .cfg-l { color: %6; }
 .cfg-div { background: %8; }
-.cfg-in, .cfg-num, .cfg-sel { background: %2; color: %6; border: 1px solid %8; }
+.cfg-in, .cfg-num, .cfg-sel, .cfg-in-img { background: %2; color: %6; border: 1px solid %8; }
+.cfg-browse { background: %4; color: %6; }
+.cfg-browse:hover { background: %5; }
 .cfg-in:focus, .cfg-num:focus, .cfg-sel:focus { border: 1px solid %9; }
 .cfg-close { background: %9; color: %10; }
 .cfg-close:hover { background: %9; }
