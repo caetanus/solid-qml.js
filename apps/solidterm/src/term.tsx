@@ -54,6 +54,11 @@ export function Term() {
   const [pastePrompt, setPastePrompt] = createSignal("");
   const pasteLineCount = () => { const p = pastePrompt(); return p ? p.split("\n").length : 0; };
   const confirmPaste = () => { term.pasteTextFocused(pastePrompt()); setPastePrompt(""); };
+  // Editable tab title (overrides the OSC title; empty reverts to automatic).
+  const [renameOpen, setRenameOpen] = createSignal(false);
+  const [renameValue, setRenameValue] = createSignal("");
+  const openRename = () => { setRenameValue(term.tabTitle(activeTab()) || ""); setRenameOpen(true); };
+  const applyRename = () => { term.setTabTitle(activeTab(), renameValue()); setRenameOpen(false); term.refocus(); };
   // Tab model mirrored from the native (headless) stack: one title per tab + the active index. The
   // bar is rendered here in Solid; the native side just keeps the ptys alive and shows one by index.
   const [tabTitles, setTabTitles] = createSignal(["terminal"]);
@@ -179,6 +184,7 @@ export function Term() {
           <MenuItem onClick={() => term.closeFocused()}>Close &pane</MenuItem>
           <MenuSeparator />
           <MenuItem onClick={() => openSearch()}>&Find…</MenuItem>
+          <MenuItem onClick={() => openRename()}>Set &title…</MenuItem>
           <MenuItem onClick={() => term.clearFocused()}>Clear scrollback</MenuItem>
           <MenuItem onClick={() => term.resetFocused()}>&Reset</MenuItem>
           <MenuItem onClick={() => setCfgOpen(true)}>Pre&ferences…</MenuItem>
@@ -296,6 +302,18 @@ export function Term() {
 
           <div class="cfg-actions">
             <button class="cfg-close" type="submit" onClick={() => setCfgOpen(false)}>Done</button>
+          </div>
+        </div>
+      </dialog>
+
+      <dialog open={renameOpen()} title="Rename tab" class="cfg" onClose={() => setRenameOpen(false)}>
+        <div class="cfg-body paste-body">
+          <text class="paste-warn">Tab title</text>
+          <input class="cfg-in rename-in" value={renameValue()} placeholder="(empty = automatic)"
+                 onInput={(e) => setRenameValue(e.target.value)} />
+          <div class="cfg-actions paste-actions">
+            <button class="paste-cancel" onClick={() => setRenameOpen(false)}>Cancel</button>
+            <button class="cfg-close" type="submit" onClick={() => applyRename()}>Set</button>
           </div>
         </div>
       </dialog>

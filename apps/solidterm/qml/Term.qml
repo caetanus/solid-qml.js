@@ -22,6 +22,8 @@ W.Div {
     property var searchIdx: 0
     property var searchCount: 0
     property var pastePrompt: ""
+    property var renameOpen: false
+    property var renameValue: ""
     property var tabTitles: ["terminal"]
     property var activeTab: 0
     property var kSplitRight: termConfig.getString("keys.splitRight", "Ctrl+Shift+E")
@@ -39,6 +41,8 @@ W.Div {
     function closeSearch() { searchOpen = false; _ref_term.clearSearch(); _ref_term.refocus(); }
     function pasteLineCount() { var p = pastePrompt; return p ? p.split("\n").length : 0; }
     function confirmPaste() { _ref_term.pasteTextFocused(pastePrompt); pastePrompt = ""; }
+    function openRename() { renameValue = _ref_term.tabTitle(activeTab) || ""; renameOpen = true; }
+    function applyRename() { _ref_term.setTabTitle(activeTab, renameValue); renameOpen = false; _ref_term.refocus(); }
     function tabLabel(t) { if (!t) { return "terminal"; } var s = t; if (s.endsWith("/")) { s = s.slice(0, -1); } var slash = s.lastIndexOf("/"); return slash >= 0 ? s.slice(slash + 1) : s; }
     function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : k === "newTab" ? kNewTab : k === "nextTab" ? kNextTab : k === "prevTab" ? kPrevTab : k === "search" ? kSearch : termConfig.getString("keys." + k, ""); }
     function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } else { if (seq === kSearch) { openSearch(); } else { if (seq === "Ctrl+=" || seq === "Ctrl++") { zoomFont(1); } else { if (seq === "Ctrl+-") { zoomFont(-1); } else { if (seq === "Ctrl+0") { zoomFont(0); } } } } } } } } } } } } }
@@ -195,6 +199,10 @@ W.Div {
                 W.MenuItem {
                     text: "&Find…"
                     onTriggered: { openSearch() }
+                }
+                W.MenuItem {
+                    text: "Set &title…"
+                    onTriggered: { openRename() }
                 }
                 W.MenuItem {
                     text: "Clear scrollback"
@@ -443,6 +451,45 @@ W.Div {
                     isDefault: true
                     text: "Done"
                     onClicked: cfgOpen = false
+                }
+            }
+        }
+    }
+    W.Dialog {
+        open: !!(renameOpen)
+        title: "Rename tab"
+        cssClass: ["cfg"]
+        onDialogClosed: { renameOpen = false }
+        W.Div {
+            cssClass: ["cfg-body", "paste-body"]
+            W.Text {
+                cssClass: ["paste-warn"]
+                text: "Tab title"
+            }
+            W.TextField {
+                id: __input11
+                cssClass: ["cfg-in", "rename-in"]
+                placeholder: "(empty = automatic)"
+                onTextEdited: { renameValue = text }
+                Binding {
+                    target: __input11
+                    property: "text"
+                    value: renameValue
+                    restoreMode: Binding.RestoreNone
+                }
+            }
+            W.Div {
+                cssClass: ["cfg-actions", "paste-actions"]
+                W.Button {
+                    cssClass: ["paste-cancel"]
+                    text: "Cancel"
+                    onClicked: renameOpen = false
+                }
+                W.Button {
+                    cssClass: ["cfg-close"]
+                    isDefault: true
+                    text: "Set"
+                    onClicked: applyRename()
                 }
             }
         }

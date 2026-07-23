@@ -176,7 +176,8 @@ int main(int argc, char **argv)
                                 else if (cmd == QLatin1String("upaste")) {
                                     QGuiApplication::clipboard()->setText(QStringLiteral("line one\nline two\nline three"));
                                     tabs->pasteFocused();
-                                } else if (cmd.startsWith(QLatin1Char('s'))) tabs->selectTab(cmd.mid(1).toInt());
+                                } else if (cmd.startsWith(QLatin1String("rename:"))) tabs->setTabTitle(0, cmd.mid(7));
+                                else if (cmd.startsWith(QLatin1Char('s'))) tabs->selectTab(cmd.mid(1).toInt());
                                 else tabs->split(cmd.toInt());
                                 return;
                             }

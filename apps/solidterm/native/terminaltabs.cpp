@@ -30,8 +30,23 @@ void TerminalTabs::emitModel()
     QStringList titles;
     titles.reserve(m_tabs.size());
     for (const Tab &t : m_tabs)
-        titles.append(t.title);
+        titles.append(t.effective());
     emit tabsChanged(titles, m_active);
+}
+
+void TerminalTabs::setTabTitle(int index, const QString &title)
+{
+    if (index < 0 || index >= m_tabs.size())
+        return;
+    m_tabs[index].customTitle = title;
+    emitModel();
+    if (index == m_active)
+        emit titleChanged(m_tabs[index].effective());
+}
+
+QString TerminalTabs::tabTitle(int index) const
+{
+    return (index >= 0 && index < m_tabs.size()) ? m_tabs[index].effective() : QString();
 }
 
 TerminalPanes *TerminalTabs::makePanes()
@@ -65,7 +80,7 @@ TerminalPanes *TerminalTabs::makePanes()
         m_tabs[i].title = t;
         emitModel();
         if (i == m_active)
-            emit titleChanged(t);
+            emit titleChanged(m_tabs[i].effective());
     });
     connect(panes, &TerminalPanes::allClosed, this, [this, panes] {
         for (int k = 0; k < m_tabs.size(); ++k)
@@ -119,7 +134,7 @@ void TerminalTabs::selectTab(int index)
     emitModel();
     if (auto *p = active()) {
         QMetaObject::invokeMethod(p, "refocus", Qt::QueuedConnection); // keyboard focus → its pane
-        emit titleChanged(m_tabs[index].title);
+        emit titleChanged(m_tabs[index].effective());
     }
 }
 

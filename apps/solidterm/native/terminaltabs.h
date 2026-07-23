@@ -59,6 +59,8 @@ public:
     Q_INVOKABLE void newTab();
     Q_INVOKABLE void closeTab(int index);
     Q_INVOKABLE void selectTab(int index);
+    Q_INVOKABLE void setTabTitle(int index, const QString &title); // custom title (empty = back to OSC)
+    Q_INVOKABLE QString tabTitle(int index) const;                 // the effective (custom or OSC) title
     // Proxied to the ACTIVE tab's panes (same names as TerminalPanes, so the TSX is unchanged).
     Q_INVOKABLE void split(int orient);
     Q_INVOKABLE void closeFocused();
@@ -95,7 +97,9 @@ protected:
 private:
     struct Tab {
         TerminalPanes *panes = nullptr;
-        QString title;
+        QString title;         // OSC title from the focused pane
+        QString customTitle;   // user-set override; when non-empty it wins
+        QString effective() const { return customTitle.isEmpty() ? title : customTitle; }
     };
 
     TerminalPanes *makePanes();
