@@ -40,12 +40,14 @@ signals:
     void styleChanged();
     void clicked();
     void closeRequested();
+    void maximizeRequested(); // the ⤡ button (zoom this pane)
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
 
 private:
     QRectF closeRect() const;
+    QRectF maximizeRect() const;
 
     QString m_title;
     int m_index = 0;       // 0 = no number (single pane); >0 shows "N  title"

@@ -150,6 +150,9 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
     connect(header, &PaneHeader::closeRequested, this, [this, v] {
         if (Node *leaf = leafOfView(v)) removeLeaf(leaf);
     });
+    connect(header, &PaneHeader::maximizeRequested, this, [this, v] {
+        if (Node *leaf = leafOfView(v)) { setFocused(leaf); toggleZoom(); }
+    });
     connect(v, &TerminalView::sessionFinished, this, [this, v] {
         if (Node *leaf = leafOfView(v)) removeLeaf(leaf);
     });

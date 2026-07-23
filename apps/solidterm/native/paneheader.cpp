@@ -47,6 +47,12 @@ QRectF PaneHeader::closeRect() const
     return QRectF(width() - s - 8, (height() - s) / 2, s, s);
 }
 
+QRectF PaneHeader::maximizeRect() const
+{
+    const qreal s = 16;
+    return QRectF(width() - 2 * s - 16, (height() - s) / 2, s, s); // left of the close ×
+}
+
 void PaneHeader::paint(QPainter *p)
 {
     p->setRenderHint(QPainter::Antialiasing);
@@ -58,28 +64,26 @@ void PaneHeader::paint(QPainter *p)
     QFont f = p->font();
     f.setPixelSize(12);
     p->setFont(f);
-    qreal x = 10;
-    // Pane number badge ("1", "2"…) when split, in the accent colour (tilix numbers its terminals).
-    if (m_index > 0) {
-        QFont nf = f;
-        nf.setBold(true);
-        p->setFont(nf);
-        const QString num = QString::number(m_index);
-        p->setPen(m_accent);
-        const qreal nw = p->fontMetrics().horizontalAdvance(num);
-        p->drawText(QRectF(x, 0, nw, height()), Qt::AlignVCenter | Qt::AlignLeft, num);
-        x += nw + 8;
-        p->setFont(f);
-    }
+    // "N: title" (plain, tilix-style) — the number is a text prefix, not a badge.
+    const QString base = m_title.isEmpty() ? QStringLiteral("terminal") : m_title;
+    const QString full = m_index > 0 ? (QString::number(m_index) + QStringLiteral(": ") + base) : base;
     p->setPen(m_focused ? m_foreground : m_foreground.darker(130));
-    const QRectF textRect(x, 0, width() - x - 30, height());
-    const QString elided = p->fontMetrics().elidedText(
-        m_title.isEmpty() ? QStringLiteral("terminal") : m_title, Qt::ElideRight, int(textRect.width()));
-    p->drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, elided);
+    const QRectF textRect(10, 0, width() - 62, height());
+    p->drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft,
+                p->fontMetrics().elidedText(full, Qt::ElideRight, int(textRect.width())));
 
-    // Close affordance (×) on the right.
-    const QRectF cr = closeRect();
+    // Maximize/restore (⤡) and close (×) on the right.
+    const QRectF mr = maximizeRect();
     p->setPen(QPen(m_foreground.darker(120), 1.4));
+    const qreal m = 3.5;
+    // two opposing corner brackets — the tilix zoom glyph
+    p->drawLine(mr.left() + m, mr.top() + m + 3, mr.left() + m, mr.top() + m);
+    p->drawLine(mr.left() + m, mr.top() + m, mr.left() + m + 3, mr.top() + m);
+    p->drawLine(mr.right() - m, mr.bottom() - m - 3, mr.right() - m, mr.bottom() - m);
+    p->drawLine(mr.right() - m, mr.bottom() - m, mr.right() - m - 3, mr.bottom() - m);
+    p->drawLine(mr.left() + m, mr.top() + m, mr.right() - m, mr.bottom() - m);
+
+    const QRectF cr = closeRect();
     p->drawLine(cr.topLeft() + QPointF(4, 4), cr.bottomRight() - QPointF(4, 4));
     p->drawLine(cr.topRight() + QPointF(-4, 4), cr.bottomLeft() + QPointF(4, -4));
 }
@@ -88,6 +92,8 @@ void PaneHeader::mousePressEvent(QMouseEvent *event)
 {
     if (closeRect().adjusted(-3, -3, 3, 3).contains(event->position()))
         emit closeRequested();
+    else if (maximizeRect().adjusted(-3, -3, 3, 3).contains(event->position()))
+        emit maximizeRequested();
     else
         emit clicked();
     event->accept();
