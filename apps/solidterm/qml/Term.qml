@@ -17,6 +17,10 @@ W.Div {
     property var emboss: termConfig.getInt("emboss", 0)
     property var cfgOpen: false
     property var title: "solidterm"
+    property var searchOpen: false
+    property var searchQuery: ""
+    property var searchIdx: 0
+    property var searchCount: 0
     property var tabTitles: ["terminal"]
     property var activeTab: 0
     property var kSplitRight: termConfig.getString("keys.splitRight", "Ctrl+Shift+E")
@@ -27,14 +31,17 @@ W.Div {
     property var kNewTab: termConfig.getString("keys.newTab", "Ctrl+Shift+T")
     property var kNextTab: termConfig.getString("keys.nextTab", "Ctrl+PgDown")
     property var kPrevTab: termConfig.getString("keys.prevTab", "Ctrl+PgUp")
+    property var kSearch: termConfig.getString("keys.search", "Ctrl+Shift+F")
     readonly property var __const_SCHEMES: ({ midnight: ({ bg: "#161a21", fg: "#d4dae3" }), solarized: ({ bg: "#002b36", fg: "#93a1a1" }), gruvbox: ({ bg: "#282828", fg: "#ebdbb2" }), paper: ({ bg: "#f7f2e9", fg: "#3a3532" }) })
-    readonly property var __const_ACTIONS: [({ key: "newTab", label: "New tab", def: "Ctrl+Shift+T" }), ({ key: "nextTab", label: "Next tab", def: "Ctrl+PgDown" }), ({ key: "prevTab", label: "Previous tab", def: "Ctrl+PgUp" }), ({ key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" }), ({ key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" }), ({ key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" }), ({ key: "focusNext", label: "Focus next pane", def: "Alt+Right" }), ({ key: "focusPrev", label: "Focus previous pane", def: "Alt+Left" })]
+    readonly property var __const_ACTIONS: [({ key: "newTab", label: "New tab", def: "Ctrl+Shift+T" }), ({ key: "nextTab", label: "Next tab", def: "Ctrl+PgDown" }), ({ key: "prevTab", label: "Previous tab", def: "Ctrl+PgUp" }), ({ key: "search", label: "Find", def: "Ctrl+Shift+F" }), ({ key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" }), ({ key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" }), ({ key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" }), ({ key: "focusNext", label: "Focus next pane", def: "Alt+Right" }), ({ key: "focusPrev", label: "Focus previous pane", def: "Alt+Left" })]
+    function openSearch() { searchOpen = true; if (_ref_searchInput) { _ref_searchInput.forceActiveFocus(); } }
+    function closeSearch() { searchOpen = false; _ref_term.clearSearch(); _ref_term.refocus(); }
     function tabLabel(t) { if (!t) { return "terminal"; } var s = t; if (s.endsWith("/")) { s = s.slice(0, -1); } var slash = s.lastIndexOf("/"); return slash >= 0 ? s.slice(slash + 1) : s; }
-    function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : k === "newTab" ? kNewTab : k === "nextTab" ? kNextTab : k === "prevTab" ? kPrevTab : termConfig.getString("keys." + k, ""); }
-    function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } } } } } } } } }
-    function setKey(k, seq) { termConfig.set("keys." + k, seq); if (k === "splitRight") { kSplitRight = seq; } else { if (k === "splitDown") { kSplitDown = seq; } else { if (k === "closePane") { kClosePane = seq; } else { if (k === "focusNext") { kFocusNext = seq; } else { if (k === "focusPrev") { kFocusPrev = seq; } else { if (k === "newTab") { kNewTab = seq; } else { if (k === "nextTab") { kNextTab = seq; } else { if (k === "prevTab") { kPrevTab = seq; } } } } } } } } }
+    function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : k === "newTab" ? kNewTab : k === "nextTab" ? kNextTab : k === "prevTab" ? kPrevTab : k === "search" ? kSearch : termConfig.getString("keys." + k, ""); }
+    function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } else { if (seq === kSearch) { openSearch(); } } } } } } } } } }
+    function setKey(k, seq) { termConfig.set("keys." + k, seq); if (k === "splitRight") { kSplitRight = seq; } else { if (k === "splitDown") { kSplitDown = seq; } else { if (k === "closePane") { kClosePane = seq; } else { if (k === "focusNext") { kFocusNext = seq; } else { if (k === "focusPrev") { kFocusPrev = seq; } else { if (k === "newTab") { kNewTab = seq; } else { if (k === "nextTab") { kNextTab = seq; } else { if (k === "prevTab") { kPrevTab = seq; } else { if (k === "search") { kSearch = seq; } } } } } } } } } }
     property var __cleanups: []
-    Component.onCompleted: { sysTheme.setUiOpacity(opacity_ / 100); }
+    Component.onCompleted: { sysTheme.setUiOpacity(opacity_ / 100); var searchInput = undefined; }
     Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
     cssClass: ["term-root"]
     W.Div {
@@ -82,6 +89,41 @@ W.Div {
         }
     }
     W.Div {
+        cssClass: ["searchbar"]
+        visible: !!(searchOpen)
+        W.TextField {
+            id: __input0
+            cssClass: ["search-in"]
+            placeholder: "Find…"
+            onTextEdited: { searchQuery = text; _ref_term.searchFocused(text); }
+            Binding {
+                target: __input0
+                property: "text"
+                value: searchQuery
+                restoreMode: Binding.RestoreNone
+            }
+        }
+        W.Text {
+            cssClass: ["search-count"]
+            text: "" + (searchCount > 0 ? searchIdx + " / " + searchCount : "0 / 0")
+        }
+        W.Button {
+            cssClass: ["search-btn"]
+            text: "‹"
+            onClicked: _ref_term.searchPrev()
+        }
+        W.Button {
+            cssClass: ["search-btn"]
+            text: "›"
+            onClicked: _ref_term.searchNext()
+        }
+        W.Button {
+            cssClass: ["search-btn"]
+            text: "✕"
+            onClicked: closeSearch()
+        }
+    }
+    W.Div {
         cssClass: ["term-body"]
         Css.CssRect {
             cssPrimitive: "div"
@@ -90,6 +132,7 @@ W.Div {
                 id: _ref_term
                 anchors.fill: parent
                 onTabsChanged: function(titles, active) { tabTitles = titles; activeTab = active; }
+                onSearchChanged: function(idx, count) { searchIdx = idx; searchCount = count; }
                 fontFamily: uiFontFamily
                 fontSize: uiFontSize
                 background: scheme === "system" ? sysTheme.base : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).bg
@@ -106,17 +149,17 @@ W.Div {
             }
         }
         Item {
-            id: __menuHost0
+            id: __menuHost1
             anchors.fill: parent
-            Window.onActiveChanged: if (!Window.active) __menu0.close()
+            Window.onActiveChanged: if (!Window.active) __menu1.close()
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.RightButton
-                onClicked: function(mouse) { __menu0.popup(mouse.x, mouse.y) }
+                onClicked: function(mouse) { __menu1.popup(mouse.x, mouse.y) }
             }
             W.Menu {
-                id: __menu0
-                cssAncestor: __menuHost0
+                id: __menu1
+                cssAncestor: __menuHost1
                 authorClass: ["tmenu"]
                 W.MenuItem {
                     text: "&Copy"
@@ -186,11 +229,11 @@ W.Div {
                         text: "Font family"
                     }
                     W.TextField {
-                        id: __input2
+                        id: __input3
                         cssClass: ["cfg-in"]
                         onTextEdited: { uiFontFamily = text; termConfig.set("fontFamily", text); }
                         Binding {
-                            target: __input2
+                            target: __input3
                             property: "text"
                             value: uiFontFamily
                             restoreMode: Binding.RestoreNone
@@ -208,15 +251,15 @@ W.Div {
                         text: "Font size"
                     }
                     W.Select {
-                        id: __input3
+                        id: __input4
                         cssClass: ["cfg-sel"]
                         model: ["11 px", "12 px", "13 px", "14 px", "15 px", "16 px", "18 px", "20 px", "24 px"]
                         values: ["11", "12", "13", "14", "15", "16", "18", "20", "24"]
-                        onActivated: (index) => { uiFontSize = parseInt(__input3.values[index]); termConfig.set("fontSize", parseInt(__input3.values[index])); }
+                        onActivated: (index) => { uiFontSize = parseInt(__input4.values[index]); termConfig.set("fontSize", parseInt(__input4.values[index])); }
                         Binding {
-                            target: __input3
+                            target: __input4
                             property: "currentIndex"
-                            value: __input3.values.indexOf("" + uiFontSize)
+                            value: __input4.values.indexOf("" + uiFontSize)
                             restoreMode: Binding.RestoreNone
                         }
                     }
@@ -232,15 +275,15 @@ W.Div {
                         text: "Color scheme"
                     }
                     W.Select {
-                        id: __input4
+                        id: __input5
                         cssClass: ["cfg-sel"]
                         model: ["System", "Midnight", "Solarized Dark", "Gruvbox", "Paper (light)"]
                         values: ["system", "midnight", "solarized", "gruvbox", "paper"]
-                        onActivated: (index) => { scheme = __input4.values[index]; termConfig.set("scheme", __input4.values[index]); }
+                        onActivated: (index) => { scheme = __input5.values[index]; termConfig.set("scheme", __input5.values[index]); }
                         Binding {
-                            target: __input4
+                            target: __input5
                             property: "currentIndex"
-                            value: __input4.values.indexOf(scheme)
+                            value: __input5.values.indexOf(scheme)
                             restoreMode: Binding.RestoreNone
                         }
                     }
@@ -256,12 +299,12 @@ W.Div {
                         text: "Background image"
                     }
                     W.TextField {
-                        id: __input5
+                        id: __input6
                         cssClass: ["cfg-in"]
                         placeholder: "/path/to/image.png"
                         onTextEdited: { bgImage = text; termConfig.set("bgImage", text); }
                         Binding {
-                            target: __input5
+                            target: __input6
                             property: "text"
                             value: bgImage
                             restoreMode: Binding.RestoreNone
@@ -279,15 +322,15 @@ W.Div {
                         text: "Opacity"
                     }
                     W.Select {
-                        id: __input6
+                        id: __input7
                         cssClass: ["cfg-sel"]
                         model: ["100% (opaque)", "95%", "90%", "85%", "75%", "65%", "50%"]
                         values: ["100", "95", "90", "85", "75", "65", "50"]
                         onActivated: (index) => {  opacity_ = n; termConfig.set("opacity", n); sysTheme.setUiOpacity(n / 100); }
                         Binding {
-                            target: __input6
+                            target: __input7
                             property: "currentIndex"
-                            value: __input6.values.indexOf("" + opacity_)
+                            value: __input7.values.indexOf("" + opacity_)
                             restoreMode: Binding.RestoreNone
                         }
                     }
@@ -303,15 +346,15 @@ W.Div {
                         text: "Emboss text"
                     }
                     W.Select {
-                        id: __input7
+                        id: __input8
                         cssClass: ["cfg-sel"]
                         model: ["Off", "On"]
                         values: ["0", "1"]
                         onActivated: (index) => {  emboss = n; termConfig.set("emboss", n); }
                         Binding {
-                            target: __input7
+                            target: __input8
                             property: "currentIndex"
-                            value: __input7.values.indexOf("" + emboss)
+                            value: __input8.values.indexOf("" + emboss)
                             restoreMode: Binding.RestoreNone
                         }
                     }
@@ -330,15 +373,15 @@ W.Div {
                         text: "Scrollback"
                     }
                     W.Select {
-                        id: __input8
+                        id: __input9
                         cssClass: ["cfg-sel"]
                         model: ["1000 lines", "5000 lines", "8000 lines", "20000 lines", "100000 lines"]
                         values: ["1000", "5000", "8000", "20000", "100000"]
-                        onActivated: (index) => { scrollback = parseInt(__input8.values[index]); termConfig.set("scrollback", parseInt(__input8.values[index])); }
+                        onActivated: (index) => { scrollback = parseInt(__input9.values[index]); termConfig.set("scrollback", parseInt(__input9.values[index])); }
                         Binding {
-                            target: __input8
+                            target: __input9
                             property: "currentIndex"
-                            value: __input8.values.indexOf("" + scrollback)
+                            value: __input9.values.indexOf("" + scrollback)
                             restoreMode: Binding.RestoreNone
                         }
                     }

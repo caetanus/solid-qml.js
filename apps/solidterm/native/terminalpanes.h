@@ -72,9 +72,15 @@ public:
     Q_INVOKABLE void copyFocused();
     Q_INVOKABLE void pasteFocused();
     Q_INVOKABLE void clearFocused();
+    // Search proxied to the focused pane.
+    Q_INVOKABLE void searchFocused(const QString &query);
+    Q_INVOKABLE void searchNext();
+    Q_INVOKABLE void searchPrev();
+    Q_INVOKABLE void clearSearch();
 
 signals:
     void panesChanged();
+    void searchChanged(int index, int count);
     void styleChanged();
     void allClosed();           // last pane's shell exited → the app can quit/close the tab
     void titleChanged(const QString &title); // focused pane's OSC title

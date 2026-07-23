@@ -185,5 +185,23 @@ int main(int argc, char **argv)
         }
     }
 
+    // Debug: SOLIDTERM_FINDTEST="query" opens the search bar + runs a search after a settle.
+    const QString findTest = qEnvironmentVariable("SOLIDTERM_FINDTEST");
+    if (!findTest.isEmpty() && window) {
+        QTimer::singleShot(1600, window, [&engine, findTest] {
+            for (QObject *o : engine.rootObjects()) {
+                if (auto *w = qobject_cast<QQuickWindow *>(o)) {
+                    QList<QQuickItem *> stack { w->contentItem() };
+                    while (!stack.isEmpty()) {
+                        QQuickItem *it = stack.takeLast();
+                        if (it->property("searchOpen").isValid()) it->setProperty("searchOpen", true);
+                        if (auto *tabs = qobject_cast<TerminalTabs *>(it)) tabs->searchFocused(findTest);
+                        for (QQuickItem *k : it->childItems()) stack.append(k);
+                    }
+                }
+            }
+        });
+    }
+
     return app.exec();
 }

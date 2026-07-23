@@ -63,6 +63,12 @@ button {
 .tab-x { font-size: 11px; padding: 1px 5px; border: none; border-radius: 5px; background: transparent; margin-left: 6px; }
 .tab-new { font-size: 16px; padding: 2px 11px; height: 30px; border: none; border-radius: 7px; background: transparent; margin: 0 2px; }
 
+/* scrollback search bar (Solid; native does the find) */
+.searchbar { display: flex; flex-direction: row; align-items: center; padding: 6px 10px; }
+.search-in { flex: 1; border-radius: 7px; padding: 6px 10px; font-size: 13px; }
+.search-count { font-size: 12px; padding: 0 12px; }
+.search-btn { font-size: 15px; padding: 3px 10px; border: none; border-radius: 6px; background: transparent; margin-left: 2px; }
+
 .term-status {
   display: flex; flex-direction: row; justify-content: space-between;
   padding: 5px 12px; border-top: 1px solid #1a1a1a; font-size: 11px;

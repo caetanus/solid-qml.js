@@ -79,6 +79,12 @@ public:
     Q_INVOKABLE void copySelection();
     Q_INVOKABLE void pasteClipboard();
     Q_INVOKABLE void clearScrollback();
+    // Search the scrollback + screen (case-insensitive). Highlights matches, jumps to one, and
+    // emits searchChanged(index, count) for the Solid search bar. next/prev cycle; clear removes.
+    Q_INVOKABLE void search(const QString &query);
+    Q_INVOKABLE void searchNext();
+    Q_INVOKABLE void searchPrev();
+    Q_INVOKABLE void clearSearch();
 
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) override;
 
@@ -93,6 +99,7 @@ signals:
     void selectionChanged();
     void reservedSequencesChanged();
     void accelerator(const QString &sequence); // a reserved chord was pressed (consumed)
+    void searchChanged(int index, int count);  // current match (1-based; 0 = none) + total
 
 protected:
     void componentComplete() override;
@@ -134,6 +141,14 @@ private:
     };
     LinkSpan linkAt(const QPointF &pos) const;
     LinkSpan m_hoverLink;
+
+    // Scrollback search.
+    struct Match { int absRow = 0; int c0 = 0; int len = 0; };
+    QString rowText(int absRow) const;      // col-indexed text of an absolute row
+    void scrollToMatch(int i);
+    QString m_searchQuery;
+    QVector<Match> m_matches;
+    int m_searchIndex = -1;                 // index into m_matches, -1 = none
 
     VTerm *m_vt = nullptr;
     VTermScreen *m_screen = nullptr;

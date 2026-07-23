@@ -64,9 +64,14 @@ public:
     Q_INVOKABLE void closeFocused();
     Q_INVOKABLE void focusNext();
     Q_INVOKABLE void focusPrev();
+    Q_INVOKABLE void refocus(); // keyboard focus back to the active pane (e.g. closing the search bar)
     Q_INVOKABLE void copyFocused();
     Q_INVOKABLE void pasteFocused();
     Q_INVOKABLE void clearFocused();
+    Q_INVOKABLE void searchFocused(const QString &query);
+    Q_INVOKABLE void searchNext();
+    Q_INVOKABLE void searchPrev();
+    Q_INVOKABLE void clearSearch();
 
 signals:
     void styleChanged();
@@ -77,6 +82,7 @@ signals:
     void allClosed();                          // last tab closed → the app can quit
     void titleChanged(const QString &title);   // active tab's focused-pane title → window
     void accelerator(const QString &sequence); // a reserved chord from the active tab
+    void searchChanged(int index, int count);  // active tab's search state → the Solid search bar
 
 protected:
     void componentComplete() override;

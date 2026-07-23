@@ -147,6 +147,12 @@ QString SystemTheme::styleSheet() const
 .tab-x:hover { background: %5; }
 .tab-new { color: %7; }
 .tab-new:hover { background: %4; }
+.searchbar { background: %3; border-bottom: 1px solid %8; }
+.search-in { background: %2; color: %6; border: 1px solid %8; }
+.search-in:focus { border: 1px solid %9; }
+.search-count { color: %7; }
+.search-btn { color: %6; }
+.search-btn:hover { background: %4; }
 .term-status { background: %3; border-top: 1px solid %8; }
 .term-status-t { color: %9; }
 .term-hint { color: %7; }

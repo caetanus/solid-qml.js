@@ -154,6 +154,10 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
         if (Node *leaf = leafOfView(v)) removeLeaf(leaf);
     });
     connect(v, &QQuickItem::activeFocusChanged, this, [this] { refreshHeaderFocus(); });
+    connect(v, &TerminalView::searchChanged, this, [this, v](int idx, int count) {
+        if (m_focused && m_focused->view == v)
+            emit searchChanged(idx, count);
+    });
     v->setReservedSequences(m_reserved);
     connect(v, &TerminalView::accelerator, this, &TerminalPanes::accelerator);
 }
@@ -481,6 +485,10 @@ void TerminalPanes::focusPrev()
 void TerminalPanes::copyFocused() { if (m_focused && m_focused->view) m_focused->view->copySelection(); }
 void TerminalPanes::pasteFocused() { if (m_focused && m_focused->view) m_focused->view->pasteClipboard(); }
 void TerminalPanes::clearFocused() { if (m_focused && m_focused->view) m_focused->view->clearScrollback(); }
+void TerminalPanes::searchFocused(const QString &q) { if (m_focused && m_focused->view) m_focused->view->search(q); }
+void TerminalPanes::searchNext() { if (m_focused && m_focused->view) m_focused->view->searchNext(); }
+void TerminalPanes::searchPrev() { if (m_focused && m_focused->view) m_focused->view->searchPrev(); }
+void TerminalPanes::clearSearch() { if (m_focused && m_focused->view) m_focused->view->clearSearch(); }
 
 // ─── style ──────────────────────────────────────────────────────────────────────────────────────
 

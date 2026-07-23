@@ -431,6 +431,19 @@ QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
         }
     }
 
+    // Search highlights: every match on a visible row (current match brighter).
+    if (!m_matches.isEmpty()) {
+        const int top = int(m_scrollback.size()) - sbShown;
+        for (int mi = 0; mi < m_matches.size(); ++mi) {
+            const Match &m = m_matches[mi];
+            const int row = m.absRow - top;
+            if (row < 0 || row >= m_rows)
+                continue;
+            const QColor hl = mi == m_searchIndex ? QColor(255, 160, 0, 210) : QColor(230, 200, 0, 90);
+            pushBgQuad(bg, m.c0 * m_cellW, row * m_cellH, m.len * m_cellW, m_cellH, hl);
+        }
+    }
+
     // Hovered hyperlink: underline it across its span (drawn in the bg layer, at the cell baseline).
     if (m_hoverLink.valid) {
         const int row = m_hoverLink.absRow - (int(m_scrollback.size()) - sbShown);
@@ -707,6 +720,100 @@ void TerminalView::clearScrollback()
     m_scrollOffset = 0;
     m_selValid = false;
     emit selectionChanged();
+    update();
+}
+
+// ─── search ─────────────────────────────────────────────────────────────────────────────────────
+
+QString TerminalView::rowText(int absRow) const
+{
+    QString line(m_cols, QLatin1Char(' '));
+    if (!m_screen || absRow < 0)
+        return line;
+    const int sbSize = m_scrollback.size();
+    if (absRow < sbSize) {
+        const auto &cells = m_scrollback.at(absRow).cells;
+        for (int c = 0; c < m_cols && c < cells.size(); ++c)
+            if (cells[c].chars[0])
+                line[c] = QChar(char32_t(cells[c].chars[0]));
+    } else {
+        const int liveRow = absRow - sbSize;
+        if (liveRow >= m_rows)
+            return line;
+        for (int c = 0; c < m_cols; ++c) {
+            VTermScreenCell cell {};
+            vterm_screen_get_cell(m_screen, VTermPos{ liveRow, c }, &cell);
+            if (cell.chars[0])
+                line[c] = QChar(char32_t(cell.chars[0]));
+        }
+    }
+    return line;
+}
+
+void TerminalView::search(const QString &query)
+{
+    m_searchQuery = query;
+    m_matches.clear();
+    m_searchIndex = -1;
+    if (!query.isEmpty() && m_screen) {
+        const int total = m_scrollback.size() + m_rows;
+        for (int absRow = 0; absRow < total; ++absRow) {
+            const QString line = rowText(absRow);
+            int from = 0;
+            while (true) {
+                const int idx = line.indexOf(query, from, Qt::CaseInsensitive);
+                if (idx < 0)
+                    break;
+                m_matches.append({ absRow, idx, int(query.length()) });
+                from = idx + query.length();
+            }
+        }
+        if (!m_matches.isEmpty()) {
+            m_searchIndex = m_matches.size() - 1; // most recent (nearest the bottom)
+            scrollToMatch(m_searchIndex);
+        }
+    }
+    emit searchChanged(m_searchIndex + 1, int(m_matches.size()));
+    update();
+}
+
+void TerminalView::scrollToMatch(int i)
+{
+    if (i < 0 || i >= m_matches.size())
+        return;
+    const int sbSize = m_scrollback.size();
+    const int desiredTop = m_matches[i].absRow - m_rows / 2; // centre the match
+    m_scrollOffset = qBound(0, sbSize - desiredTop, sbSize);
+}
+
+void TerminalView::searchNext()
+{
+    if (m_matches.isEmpty())
+        return;
+    m_searchIndex = (m_searchIndex + 1) % m_matches.size();
+    scrollToMatch(m_searchIndex);
+    emit searchChanged(m_searchIndex + 1, int(m_matches.size()));
+    update();
+}
+
+void TerminalView::searchPrev()
+{
+    if (m_matches.isEmpty())
+        return;
+    m_searchIndex = (m_searchIndex - 1 + m_matches.size()) % m_matches.size();
+    scrollToMatch(m_searchIndex);
+    emit searchChanged(m_searchIndex + 1, int(m_matches.size()));
+    update();
+}
+
+void TerminalView::clearSearch()
+{
+    if (m_searchQuery.isEmpty() && m_matches.isEmpty())
+        return;
+    m_searchQuery.clear();
+    m_matches.clear();
+    m_searchIndex = -1;
+    emit searchChanged(0, 0);
     update();
 }
 

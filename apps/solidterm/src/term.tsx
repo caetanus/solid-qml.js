@@ -22,6 +22,7 @@ const ACTIONS = [
   { key: "newTab", label: "New tab", def: "Ctrl+Shift+T" },
   { key: "nextTab", label: "Next tab", def: "Ctrl+PgDown" },
   { key: "prevTab", label: "Previous tab", def: "Ctrl+PgUp" },
+  { key: "search", label: "Find", def: "Ctrl+Shift+F" },
   { key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" },
   { key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" },
   { key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" },
@@ -41,6 +42,14 @@ export function Term() {
   sysTheme.setUiOpacity(opacity() / 100); // apply saved translucency to the chrome at startup
   const [cfgOpen, setCfgOpen] = createSignal(false);
   const [title, setTitle] = createSignal("solidterm");
+  // Scrollback search (Ctrl+Shift+F): the bar is Solid; the native pane does the find/highlight.
+  const [searchOpen, setSearchOpen] = createSignal(false);
+  const [searchQuery, setSearchQuery] = createSignal("");
+  const [searchIdx, setSearchIdx] = createSignal(0);
+  const [searchCount, setSearchCount] = createSignal(0);
+  let searchInput: any;
+  const openSearch = () => { setSearchOpen(true); if (searchInput) searchInput.forceActiveFocus(); };
+  const closeSearch = () => { setSearchOpen(false); term.clearSearch(); term.refocus(); };
   // Tab model mirrored from the native (headless) stack: one title per tab + the active index. The
   // bar is rendered here in Solid; the native side just keeps the ptys alive and shows one by index.
   const [tabTitles, setTabTitles] = createSignal(["terminal"]);
@@ -64,10 +73,11 @@ export function Term() {
   const [kNewTab, setKNewTab] = createSignal(termConfig.getString("keys.newTab", "Ctrl+Shift+T"));
   const [kNextTab, setKNextTab] = createSignal(termConfig.getString("keys.nextTab", "Ctrl+PgDown"));
   const [kPrevTab, setKPrevTab] = createSignal(termConfig.getString("keys.prevTab", "Ctrl+PgUp"));
+  const [kSearch, setKSearch] = createSignal(termConfig.getString("keys.search", "Ctrl+Shift+F"));
   const getKey = (k: string) =>
     k === "splitRight" ? kSplitRight() : k === "splitDown" ? kSplitDown() : k === "closePane" ? kClosePane()
     : k === "focusNext" ? kFocusNext() : k === "focusPrev" ? kFocusPrev() : k === "newTab" ? kNewTab()
-    : k === "nextTab" ? kNextTab() : k === "prevTab" ? kPrevTab()
+    : k === "nextTab" ? kNextTab() : k === "prevTab" ? kPrevTab() : k === "search" ? kSearch()
     : termConfig.getString("keys." + k, "");
   // Accelerators are consumed by the focused terminal (not Qt's ambiguous Shortcut map) and
   // dispatched here by matching the pressed sequence to the configured binding.
@@ -80,6 +90,7 @@ export function Term() {
     else if (seq === kNewTab()) term.newTab();
     else if (seq === kNextTab()) { const n = tabTitles().length; if (n > 1) term.selectTab((activeTab() + 1) % n); }
     else if (seq === kPrevTab()) { const n = tabTitles().length; if (n > 1) term.selectTab((activeTab() - 1 + n) % n); }
+    else if (seq === kSearch()) openSearch();
   };
   const setKey = (k: string, seq: string) => {
     termConfig.set("keys." + k, seq);
@@ -91,6 +102,7 @@ export function Term() {
     else if (k === "newTab") setKNewTab(seq);
     else if (k === "nextTab") setKNextTab(seq);
     else if (k === "prevTab") setKPrevTab(seq);
+    else if (k === "search") setKSearch(seq);
   };
 
   return (
@@ -112,11 +124,23 @@ export function Term() {
         </div>
       </Show>
 
+      <Show when={searchOpen()}>
+        <div class="searchbar">
+          <input ref={searchInput} class="search-in" value={searchQuery()} placeholder="Find…"
+                 onInput={(e) => { setSearchQuery(e.target.value); term.searchFocused(e.target.value); }} />
+          <text class="search-count">{searchCount() > 0 ? (searchIdx() + " / " + searchCount()) : "0 / 0"}</text>
+          <button class="search-btn" onClick={() => term.searchPrev()}>‹</button>
+          <button class="search-btn" onClick={() => term.searchNext()}>›</button>
+          <button class="search-btn" onClick={() => closeSearch()}>✕</button>
+        </div>
+      </Show>
+
       <div class="term-body">
         <TerminalTabs
           ref={term}
           class="term-pane"
           onTabsChanged={(titles, active) => { setTabTitles(titles); setActiveTab(active); }}
+          onSearchChanged={(idx, count) => { setSearchIdx(idx); setSearchCount(count); }}
           fontFamily={uiFontFamily()}
           fontSize={uiFontSize()}
           background={scheme() === "system" ? sysTheme.base : (SCHEMES[scheme()] || SCHEMES.midnight).bg}

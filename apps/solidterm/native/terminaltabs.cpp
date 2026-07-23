@@ -53,6 +53,10 @@ TerminalPanes *TerminalTabs::makePanes()
     applyStyle(panes);
 
     connect(panes, &TerminalPanes::accelerator, this, &TerminalTabs::accelerator);
+    connect(panes, &TerminalPanes::searchChanged, this, [this, panes](int idx, int count) {
+        if (active() == panes)
+            emit searchChanged(idx, count);
+    });
     connect(panes, &TerminalPanes::titleChanged, this, [this, panes](const QString &t) {
         const int i = [&] { for (int k = 0; k < m_tabs.size(); ++k) if (m_tabs[k].panes == panes) return k; return -1; }();
         if (i < 0)
@@ -150,9 +154,14 @@ void TerminalTabs::split(int orient) { if (auto *p = active()) p->split(orient);
 void TerminalTabs::closeFocused() { if (auto *p = active()) p->closeFocused(); }
 void TerminalTabs::focusNext() { if (auto *p = active()) p->focusNext(); }
 void TerminalTabs::focusPrev() { if (auto *p = active()) p->focusPrev(); }
+void TerminalTabs::refocus() { if (auto *p = active()) p->refocus(); }
 void TerminalTabs::copyFocused() { if (auto *p = active()) p->copyFocused(); }
 void TerminalTabs::pasteFocused() { if (auto *p = active()) p->pasteFocused(); }
 void TerminalTabs::clearFocused() { if (auto *p = active()) p->clearFocused(); }
+void TerminalTabs::searchFocused(const QString &q) { if (auto *p = active()) p->searchFocused(q); }
+void TerminalTabs::searchNext() { if (auto *p = active()) p->searchNext(); }
+void TerminalTabs::searchPrev() { if (auto *p = active()) p->searchPrev(); }
+void TerminalTabs::clearSearch() { if (auto *p = active()) p->clearSearch(); }
 
 // ─── style forwarding ───────────────────────────────────────────────────────────────────────────
 
