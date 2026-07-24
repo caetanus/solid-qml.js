@@ -41,13 +41,12 @@ W.Div {
             Window.onActiveChanged: if (!Window.active) __menu0.close()
             W.Button {
                 id: __mtrig0
-                onClicked: { if (__menu0.visible) __menu0.close(); else if (Date.now() - __menu0.__closedAt > 250) __menu0.open() }
+                onClicked: { if (__menu0.visible) __menu0.close(); else if (Date.now() - __menu0.__closedAt > 250) __menu0.popup(0, __menuHost0.height + 2) }
                 text: "Actions ▾"
             }
             W.Menu {
                 id: __menu0
                 cssAncestor: __menuHost0
-                y: __menuHost0.height + 2
                 W.MenuItem {
                     text: "&New file"
                     onTriggered: { lastAction = "new file" }
@@ -168,27 +167,32 @@ W.Div {
             Item {
                 id: __menuHost1
                 anchors.fill: parent
-                Window.onActiveChanged: if (!Window.active) __menu1.close()
                 MouseArea {
                     anchors.fill: parent
                     acceptedButtons: Qt.RightButton
-                    onClicked: function(mouse) { __menu1.popup(mouse.x, mouse.y) }
+                    onClicked: function(mouse) { __ctxAnchor1.x = mouse.x; __ctxAnchor1.y = mouse.y; __menu1.popup(0, 0) }
                 }
-                W.Menu {
-                    id: __menu1
-                    cssAncestor: __menuHost1
-                    W.MenuItem {
-                        text: "&Copy"
-                        onTriggered: { lastAction = "ctx: copy" }
-                    }
-                    W.MenuItem {
-                        text: "&Paste"
-                        onTriggered: { lastAction = "ctx: paste" }
-                    }
-                    W.MenuSeparator { }
-                    W.MenuItem {
-                        text: "&Delete"
-                        onTriggered: { lastAction = "ctx: delete" }
+                Item {
+                    id: __ctxAnchor1
+                    width: 1
+                    height: 1
+                    Window.onActiveChanged: if (!Window.active) __menu1.close()
+                    W.Menu {
+                        id: __menu1
+                        cssAncestor: __ctxAnchor1
+                        W.MenuItem {
+                            text: "&Copy"
+                            onTriggered: { lastAction = "ctx: copy" }
+                        }
+                        W.MenuItem {
+                            text: "&Paste"
+                            onTriggered: { lastAction = "ctx: paste" }
+                        }
+                        W.MenuSeparator { }
+                        W.MenuItem {
+                            text: "&Delete"
+                            onTriggered: { lastAction = "ctx: delete" }
+                        }
                     }
                 }
             }
