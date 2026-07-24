@@ -245,6 +245,7 @@ export function Term() {
 
       <dialog open={cfgOpen()} title="Preferences" class="cfg" onClose={() => setCfgOpen(false)}>
         <div class="cfg-body">
+          <div class="cfg-scroll">
           <text class="cfg-group">Appearance</text>
           <div class="cfg-card">
             <div class="cfg-row">
@@ -377,6 +378,7 @@ export function Term() {
             </For>
           </div>
           <text class="cfg-path">Saved to {termConfig.path}</text>
+          </div>
 
           <div class="cfg-actions">
             <button class="cfg-close" type="submit" onClick={() => closeCfg()}>Done</button>

@@ -161,15 +161,18 @@ QString SystemTheme::styleSheet() const
 .option-label:hover { color: %10; }
 .sep { background: %8; }
 .cfg { background: %1; color: %6; }
+.cfg-scroll { background: %1; }
 .cfg-group { color: %7; }
 .cfg-path { color: %7; }
 .cfg-card { background: %4; border: 1px solid %8; }
 .cfg-l { color: %6; }
 .cfg-div { background: %8; }
-.cfg-in, .cfg-num, .cfg-sel, .cfg-in-img { background: %2; color: %6; border: 1px solid %8; }
-.cfg-browse { background: %4; color: %6; }
-.cfg-browse:hover { background: %5; }
-.cfg-in:focus, .cfg-num:focus, .cfg-sel:focus { border: 1px solid %9; }
+/* text inputs = inset (view shade); dropdowns/browse = raised button (popover shade) */
+.cfg-in, .cfg-num, .cfg-in-img { background: %2; color: %6; border: 1px solid %8; }
+.cfg-sel, .cfg-browse { background: %5; color: %6; border: 1px solid %8; }
+.cfg-sel:hover, .cfg-browse:hover { background: %3; }
+.cfg-in:focus, .cfg-num:focus, .cfg-sel:focus, .cfg-in-img:focus { border: 1px solid %9; }
+.cfg-actions { background: %1; border-top: 1px solid %8; }
 .cfg-close { background: %9; color: %10; }
 .cfg-close:hover { background: %9; }
 .paste-hint { color: %7; }

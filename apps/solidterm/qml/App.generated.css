@@ -80,22 +80,24 @@ button {
 .tmenu .option-label { font-size: 13px; }
 .tmenu .sep { margin: 4px 6px; }
 
-/* preferences window — GNOME Settings geometry (grouped cards of label→control rows) */
-.cfg-body { display: flex; flex-direction: column; padding: 20px 22px; width: 440px; }
-.cfg-group { font-size: 12px; font-weight: 700; margin: 6px 2px; }
-.cfg-card { display: flex; flex-direction: column; border-radius: 12px; margin-bottom: 16px; }
-.cfg-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 12px 14px; }
-.cfg-l { font-size: 13px; }
+/* preferences window — GNOME Settings geometry (grouped cards of label→control rows).
+   Fixed-height scroll body + pinned footer so the window stays a sane size and the list scrolls. */
+.cfg-body { display: flex; flex-direction: column; width: 620px; }
+.cfg-scroll { display: flex; flex-direction: column; height: 520px; overflow-y: auto; padding: 20px 24px; }
+.cfg-group { font-size: 12px; font-weight: 700; margin: 8px 2px 6px; letter-spacing: 0.4px; }
+.cfg-card { display: flex; flex-direction: column; border-radius: 12px; margin-bottom: 18px; }
+.cfg-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 13px 16px; }
+.cfg-l { font-size: 14px; }
 .cfg-div { height: 1px; border: none; }
-.cfg-in, .cfg-num, .cfg-sel { border-radius: 7px; padding: 6px 10px; font-size: 13px; }
-.cfg-in { width: 190px; }
+.cfg-in, .cfg-num, .cfg-sel { border-radius: 8px; padding: 7px 11px; font-size: 13px; }
+.cfg-in { width: 240px; }
 .cfg-imgrow { display: flex; flex-direction: row; align-items: center; }
-.cfg-in-img { width: 120px; border-radius: 7px; padding: 6px 10px; font-size: 13px; }
-.cfg-browse { margin-left: 6px; padding: 6px 12px; border: none; border-radius: 7px; font-size: 13px; }
+.cfg-in-img { width: 150px; border-radius: 8px; padding: 7px 11px; font-size: 13px; }
+.cfg-browse { margin-left: 8px; padding: 7px 14px; border: none; border-radius: 8px; font-size: 13px; }
 .cfg-num { width: 90px; }
-.cfg-sel { width: 180px; }
-.cfg-actions { display: flex; justify-content: flex-end; margin-top: 4px; }
-.cfg-close { padding: 7px 22px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; }
+.cfg-sel { width: 210px; }
+.cfg-actions { display: flex; justify-content: flex-end; align-items: center; padding: 12px 24px; }
+.cfg-close { padding: 8px 26px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; }
 
 /* multiline-paste confirmation */
 .paste-body { width: 340px; }
