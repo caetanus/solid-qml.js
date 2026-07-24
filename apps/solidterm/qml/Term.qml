@@ -233,7 +233,6 @@ W.Div {
                 reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, kZoomPane, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]
                 onAccelerator: function(seq) { return onAccel(seq) }
                 onTitleChanged: function(t) { return title = t }
-                onAllClosed: function() { return process.exit(0) }
             }
         }
         Item {

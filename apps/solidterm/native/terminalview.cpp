@@ -191,6 +191,21 @@ int TerminalView::cbBell(void *user)
     return 1;
 }
 
+void TerminalView::itemChange(ItemChange change, const ItemChangeData &data)
+{
+    // Cross-window move (pane detach/reattach): our cached scene-graph nodes and the glyph-atlas
+    // texture belong to the OLD window's render context. Drop the cached pointers (Qt frees the old
+    // nodes on the scene change) and force an atlas re-upload so updatePaintNode rebuilds fresh in the
+    // new window — otherwise it would touch stale nodes and hang/crash on the new render thread.
+    if (change == ItemSceneChange) {
+        m_bgNode = m_glyphNode = m_cursorNode = nullptr;
+        m_imageNode = nullptr;
+        m_glyphs.reset();
+        update();
+    }
+    QQuickItem::itemChange(change, data);
+}
+
 int TerminalView::cbSbPushLine(int cols, const VTermScreenCell *cells, void *user)
 {
     auto *self = static_cast<TerminalView *>(user);

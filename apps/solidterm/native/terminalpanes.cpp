@@ -100,15 +100,23 @@ const char *kDropQml =
 
 } // namespace
 
+QVector<TerminalPanes *> TerminalPanes::s_all;
+QUrl TerminalPanes::s_windowUrl;
+TerminalView *TerminalPanes::s_pendingAdopt = nullptr;
+
+void TerminalPanes::setWindowUrl(const QUrl &url) { s_windowUrl = url; }
+
 TerminalPanes::TerminalPanes(QQuickItem *parent)
     : QQuickItem(parent)
 {
     setFlag(ItemIsFocusScope, true);
     setActiveFocusOnTab(true);
+    s_all.append(this);
 }
 
 TerminalPanes::~TerminalPanes()
 {
+    s_all.removeAll(this);
     deleteSubtree(m_root);
 }
 
@@ -144,8 +152,8 @@ TerminalPanes::Node *TerminalPanes::makeLeaf(TerminalView *adopt)
             cell->deleteLater();
             return nullptr;
         }
-        view->setParent(this);
     }
+    view->setParent(this);        // QObject owner = this container (also re-homes an adopted cross-window view)
     view->setParentItem(content); // anchors.fill re-targets the new content area
 
     auto *node = new Node;
@@ -210,7 +218,11 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
 void TerminalPanes::componentComplete()
 {
     QQuickItem::componentComplete();
-    m_root = makeLeaf();
+    // A window spawned by a pane detach adopts that live view as its first pane (pty rides along)
+    // instead of spawning a fresh shell. s_pendingAdopt is consumed by the first container to build.
+    TerminalView *adopt = s_pendingAdopt;
+    s_pendingAdopt = nullptr;
+    m_root = makeLeaf(adopt);
     m_focused = m_root;
     relayout();
     // Initial focus is taken on the first non-zero geometry (scene ready) — see geometryChange.
@@ -513,15 +525,22 @@ void TerminalPanes::endPaneDrag(const QPointF &globalPos)
     if (m_dropOverlay)
         m_dropOverlay->setVisible(false);
 
-    if (!v || !t || zone == ZoneNone)
-        return; // dropped on nothing / on itself → keep the layout (detach handled in a later step)
-    Node *src = leafOfView(v);
-    if (!src || src == t)
+    if (!v)
         return;
-    if (zone == ZoneCenter)
-        swapLeaves(v, t);
-    else
-        moveLeaf(v, t, zone);
+    if (t && zone != ZoneNone) {
+        Node *src = leafOfView(v);
+        if (!src || src == t)
+            return; // dropped on itself
+        if (zone == ZoneCenter)
+            swapLeaves(v, t);
+        else
+            moveLeaf(v, t, zone);
+        return;
+    }
+    // No in-window target: dropped over ANOTHER window → reattach there; over nothing → detach to a
+    // fresh window. Both keep the live pty (the view is reparented, not recreated).
+    if (!tryCrossWindowDrop(v, globalPos))
+        detachToNewWindow(v);
 }
 
 void TerminalPanes::moveLeaf(TerminalView *v, Node *target, int side)
@@ -573,6 +592,130 @@ void TerminalPanes::swapLeaves(TerminalView *v, Node *target)
     relayout();
     setFocused(leafOfView(v));
     emit panesChanged();
+}
+
+// ─── cross-window drag (detach / reattach) ──────────────────────────────────────────────────────
+
+TerminalView *TerminalPanes::detachViewKeepAlive(TerminalView *v)
+{
+    Node *src = leafOfView(v);
+    if (!src)
+        return nullptr;
+    m_zoomed = false; m_zoomLeaf = nullptr;
+    // Sever the view from THIS container: drop its old signal wiring (or the source keeps reacting to
+    // a pane it no longer owns) and pull it out of the scene, kept alive for the adopter to re-home.
+    disconnect(v, nullptr, this, nullptr);
+    v->setParentItem(nullptr);
+    v->setParent(nullptr);
+    QQuickItem *oldCell = src->cell;
+    src->view = nullptr; src->cell = nullptr; src->header = nullptr;
+    if (m_focused == src)
+        m_focused = nullptr;
+    const bool wasOnlyLeaf = (src == m_root);
+    if (wasOnlyLeaf)
+        m_root = nullptr;
+    else
+        unlinkLeaf(src);
+    delete src;
+    if (oldCell)
+        oldCell->deleteLater();
+
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    if (leaves.isEmpty()) {
+        emit allClosed(); // source tab/window is now empty → it closes
+    } else {
+        relayout();
+        if (!m_focused)
+            setFocused(leaves.first());
+        emit panesChanged();
+    }
+    return v;
+}
+
+void TerminalPanes::insertExternalView(TerminalView *v, Node *target, int zone)
+{
+    if (!v || !target)
+        return;
+    Node *moved = makeLeaf(v); // adopts v into THIS window (setParent + reparent into a fresh cell)
+    if (!moved)
+        return;
+    if (zone == ZoneCenter || zone == ZoneNone)
+        zone = ZoneRight; // no swap across windows — just splice beside the target
+    const int orient = (zone == ZoneLeft || zone == ZoneRight) ? Qt::Horizontal : Qt::Vertical;
+    const bool before = (zone == ZoneLeft || zone == ZoneTop);
+    insertLeafBeside(target, moved, orient, before);
+    if (moved->cell)
+        moved->cell->setProperty("cssClass", QVariant::fromValue(QStringList{ QStringLiteral("pane") }));
+    relayout();
+    setFocused(moved);
+    emit panesChanged();
+}
+
+bool TerminalPanes::tryCrossWindowDrop(TerminalView *v, const QPointF &globalPos)
+{
+    for (TerminalPanes *p : std::as_const(s_all)) {
+        if (p == this || !p->window())
+            continue;
+        const QPointF local = p->mapFromGlobal(globalPos);
+        Node *t = p->leafAtLocal(local);
+        if (!t || !t->cell)
+            continue;
+        const QPointF inCell(local.x() - t->cell->x(), local.y() - t->cell->y());
+        int zone = p->zoneAt(inCell, t->cell->width(), t->cell->height());
+        detachViewKeepAlive(v);
+        p->insertExternalView(v, t, zone);
+        if (QWindow *w = p->window())
+            w->requestActivate();
+        return true;
+    }
+    return false;
+}
+
+void TerminalPanes::detachToNewWindow(TerminalView *v)
+{
+    QQmlEngine *eng = qmlEngine(this);
+    if (!eng || s_windowUrl.isEmpty() || !leafOfView(v))
+        return;
+    detachViewKeepAlive(v);       // v is now parentless but alive
+    s_pendingAdopt = v;           // the new window's first pane will adopt it
+    QQmlComponent comp(eng, s_windowUrl);
+    QObject *win = comp.create(); // builds synchronously → componentComplete adopts s_pendingAdopt
+    if (!win) {
+        qWarning("solidterm: detach window failed: %s", qPrintable(comp.errorString()));
+        s_pendingAdopt = nullptr;
+        return;
+    }
+    s_pendingAdopt = nullptr;
+    win->setParent(eng);          // keep the new top-level window alive
+}
+
+void TerminalPanes::debugDetachFocused()
+{
+    if (m_focused && m_focused->view)
+        detachToNewWindow(m_focused->view);
+}
+
+void TerminalPanes::debugReattachLastToFirst()
+{
+    if (s_all.size() < 2)
+        return;
+    TerminalPanes *last = s_all.last();
+    if (!last->m_focused || !last->m_focused->view)
+        return;
+    // Aim at the centre of the first OTHER window's first leaf and run the real cross-window drop.
+    for (TerminalPanes *p : std::as_const(s_all)) {
+        if (p == last || !p->window())
+            continue;
+        QVector<Node *> lv;
+        p->collectLeaves(p->m_root, lv);
+        if (lv.isEmpty() || !lv.first()->cell)
+            continue;
+        const QPointF c(lv.first()->cell->x() + lv.first()->cell->width() / 2,
+                        lv.first()->cell->y() + lv.first()->cell->height() / 2);
+        last->tryCrossWindowDrop(last->m_focused->view, p->mapToGlobal(c));
+        return;
+    }
 }
 
 // ─── dividers + layout ──────────────────────────────────────────────────────────────────────────

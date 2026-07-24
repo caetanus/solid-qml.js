@@ -2,6 +2,7 @@
 
 #include <QQuickItem>
 #include <QStringList>
+#include <QUrl>
 #include <QVector>
 
 class TerminalView;
@@ -79,6 +80,13 @@ public:
     // 1=centre 2=left 3=right 4=top 5=bottom) of leaf `dstIdx`. Lets the grab harness exercise
     // rearrange without a synthetic gesture.
     Q_INVOKABLE void debugDragLeaf(int srcIdx, int dstIdx, int zone);
+    Q_INVOKABLE void debugDetachFocused(); // test hook: detach the focused pane to a new window
+    static void debugReattachLastToFirst();  // test hook: reattach the newest window's pane into the first
+
+    // The URL of the top-level solidterm Window component (App.generated.qml), set by main() — used to
+    // spawn a full new window when a pane is detached.
+    static void setWindowUrl(const QUrl &url);
+    static bool anyLive() { return !s_all.isEmpty(); } // any terminal pane alive in any window?
     // Paste/copy proxied to the focused pane (menu actions).
     Q_INVOKABLE void copyFocused();
     Q_INVOKABLE void pasteFocused();
@@ -153,6 +161,12 @@ private:
     QRectF zoneRect(Node *leaf, int zone) const;    // highlight rect (TerminalPanes coords) for a zone
     void moveLeaf(TerminalView *v, Node *target, int side); // re-split: move the live pane beside target
     void swapLeaves(TerminalView *v, Node *target);         // centre drop: exchange two panes' positions
+    // Cross-window drag: detach the live view from this tree (keeping the pty), then either splice it
+    // into another window's tree (reattach) or spawn a fresh window around it (detach).
+    TerminalView *detachViewKeepAlive(TerminalView *v);     // remove from this tree, return the live view
+    void insertExternalView(TerminalView *v, Node *target, int zone); // adopt a view from another window
+    void detachToNewWindow(TerminalView *v);
+    bool tryCrossWindowDrop(TerminalView *v, const QPointF &globalPos); // reattach into a window under the cursor
 
     Node *m_root = nullptr;
     Node *m_focused = nullptr;          // focused LEAF
@@ -161,6 +175,11 @@ private:
     bool m_didInitialFocus = false;
     class QQmlComponent *m_cellComponent = nullptr;
     class QQmlComponent *m_viewComponent = nullptr;
+
+    // All live pane containers across every window (for cross-window drag hit-testing).
+    static QVector<TerminalPanes *> s_all;
+    static QUrl s_windowUrl;             // App.generated.qml Window component
+    static TerminalView *s_pendingAdopt; // a detached view the next new window should adopt as pane 1
 
     // Live drag state (a pane being dragged by its header).
     TerminalView *m_dragView = nullptr;  // non-null while dragging

@@ -97,7 +97,9 @@ int main(int argc, char **argv)
         SolidQmlEmbed::loadCssString(&engine, sysTheme->styleSheet());
     });
 
-    engine.load(appDir.resolved(QUrl(QStringLiteral("App.generated.qml"))));
+    const QUrl windowUrl = appDir.resolved(QUrl(QStringLiteral("App.generated.qml")));
+    TerminalPanes::setWindowUrl(windowUrl); // so a pane detach can spawn a full new solidterm window
+    engine.load(windowUrl);
     if (engine.rootObjects().isEmpty())
         return 1;
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
@@ -248,6 +250,51 @@ int main(int argc, char **argv)
                     }
             });
         }
+    }
+
+    // Debug: SOLIDTERM_DETACH=1 detaches the focused pane to a new window after a settle (use with
+    // AUTOSPLIT so the source keeps a pane). Exercises the cross-window detach without a gesture.
+    if (qEnvironmentVariableIsSet("SOLIDTERM_DETACH") && window) {
+        QTimer::singleShot(2200, window, [&engine] {
+            for (QObject *o : engine.rootObjects())
+                if (auto *w = qobject_cast<QQuickWindow *>(o)) {
+                    QList<QQuickItem *> stack { w->contentItem() };
+                    while (!stack.isEmpty()) {
+                        QQuickItem *it = stack.takeLast();
+                        if (auto *panes = qobject_cast<TerminalPanes *>(it)) {
+                            panes->debugDetachFocused();
+                            const QString pfx = qEnvironmentVariable("SOLIDTERM_DETACHSHOT");
+                            if (!pfx.isEmpty() && !qEnvironmentVariableIsSet("SOLIDTERM_REATTACH"))
+                                QTimer::singleShot(700, qApp, [pfx] {
+                                    int i = 0;
+                                    for (QWindow *tw : QGuiApplication::topLevelWindows())
+                                        if (auto *qw = qobject_cast<QQuickWindow *>(tw))
+                                            qw->grabWindow().save(QStringLiteral("%1-%2.png").arg(pfx).arg(i++));
+                                    QCoreApplication::quit();
+                                });
+                            return;
+                        }
+                        for (QQuickItem *k : it->childItems()) stack.append(k);
+                    }
+                }
+        });
+    }
+
+    // Debug: SOLIDTERM_REATTACH=1 (with SOLIDTERM_DETACH) reattaches the detached window's pane back
+    // into the first window, then grabs — exercises the full detach→reattach round trip.
+    if (qEnvironmentVariableIsSet("SOLIDTERM_REATTACH") && window) {
+        QTimer::singleShot(3200, window, [] {
+            TerminalPanes::debugReattachLastToFirst();
+            const QString pfx = qEnvironmentVariable("SOLIDTERM_DETACHSHOT");
+            if (!pfx.isEmpty())
+                QTimer::singleShot(700, qApp, [pfx] {
+                    int i = 0;
+                    for (QWindow *tw : QGuiApplication::topLevelWindows())
+                        if (auto *qw = qobject_cast<QQuickWindow *>(tw))
+                            qw->grabWindow().save(QStringLiteral("%1-%2.png").arg(pfx).arg(i++));
+                    QCoreApplication::quit();
+                });
+        });
     }
 
     // Debug: SOLIDTERM_OVERVIEW=1 opens the F12 overview after a settle (use with AUTOSPLIT).

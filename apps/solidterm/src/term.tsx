@@ -218,7 +218,6 @@ export function Term() {
           reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), kZoomPane(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]}
           onAccelerator={(seq) => onAccel(seq)}
           onTitleChanged={(t) => setTitle(t)}
-          onAllClosed={() => process.exit(0)}
         />
         <ContextMenu class="tmenu">
           <MenuItem onClick={() => term.copyFocused()}>&Copy</MenuItem>

@@ -2,9 +2,12 @@
 
 #include "terminalpanes.h"
 
+#include <QCoreApplication>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
+#include <QQuickWindow>
+#include <QTimer>
 
 #include <utility>
 
@@ -146,7 +149,16 @@ void TerminalTabs::closeTab(int index)
     if (panes)
         panes->deleteLater();
     if (m_tabs.isEmpty()) {
+        // This window has no terminals left → close JUST this window (a detached window emptying must
+        // not kill the whole app). Once no pane survives in any window, quit. Keep allClosed for any
+        // Solid-side listeners, but the lifetime decision is native + multi-window aware now.
         emit allClosed();
+        if (QQuickWindow *w = window())
+            w->close();
+        QTimer::singleShot(0, qApp, [] {
+            if (!TerminalPanes::anyLive())
+                QCoreApplication::quit();
+        });
         return;
     }
     if (m_active >= m_tabs.size())
