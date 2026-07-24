@@ -141,8 +141,6 @@ function menuObjectLines(opts: {
   items: MenuChild[];
   classes: string[];
   title?: string;       // MenuBar submenu title (already a QML string expression)
-  xExpr?: string;
-  yExpr?: string;
   onCloseBody?: string;
 }, scope: Scope, level: number): string[] {
   const i = (n: number) => INDENT.repeat(level + n);
@@ -157,8 +155,7 @@ function menuObjectLines(opts: {
     `${i(1)}cssAncestor: ${anchorId}`,
     ...(classes.length ? [`${i(1)}authorClass: [${authorClass}]`] : []),
     ...(opts.title ? [`${i(1)}title: ${opts.title}`] : []),
-    ...(opts.xExpr ? [`${i(1)}x: ${opts.xExpr}`] : []),
-    ...(opts.yExpr ? [`${i(1)}y: ${opts.yExpr}`] : []),
+    // No x/y on the menu: callers open via popup(x, y) (positions a Window popup + a fresh grab).
     ...(opts.onCloseBody ? [`${i(1)}onMenuClosed: { ${opts.onCloseBody} }`] : []),
   ];
 
@@ -195,12 +192,10 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
 
   markWidgetLib(scope);
   const props = propsOf(propsArg);
-  const binding = (e: t.Expression) => emitExpr(e, { ...scope, mode: "binding" });
   const openProp = props.get("open");
-  const xProp = props.get("x");
-  const yProp = props.get("y");
   const onClose = props.get("onClose");
   const triggerProp = props.get("trigger");
+  const refProp = props.get("ref");
 
   const items = parseMenuChildren(children, scope, "Menu");
 
@@ -221,7 +216,10 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
       throw new Error("<Menu trigger> must be a <button>");
     if (trig.some((l) => /^\s*onClicked:/.test(l)))
       throw new Error("<Menu trigger> button must not declare its own onClick");
-    const toggle = `if (${menuId}.visible) ${menuId}.close(); else if (Date.now() - ${menuId}.__closedAt > 250) ${menuId}.open()`;
+    // popup(0, host.height+2) opens the menu below the trigger, SYNCHRONOUSLY in onClicked → the
+    // Wayland popup grab gets a fresh input serial. Clicking again closes it (__closedAt debounce
+    // swallows the dismiss click).
+    const toggle = `if (${menuId}.visible) ${menuId}.close(); else if (Date.now() - ${menuId}.__closedAt > 250) ${menuId}.popup(0, ${hostId}.height + 2)`;
     trig.splice(openIdx + 1, 0, `${i(2)}id: ${trigId}`, `${i(2)}onClicked: { ${toggle} }`);
 
     return [
@@ -237,46 +235,48 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
       ...trig,
       ...menuObjectLines({
         menuId, anchorId: hostId, items, classes: classesOf(props),
-        yExpr: `${hostId}.height + 2`,
         onCloseBody: onClose ? handlerBody(onClose, scope) : undefined,
       }, scope, level + 1),
       `${pad}}`,
     ];
   }
 
-  const lines: string[] = [
-    `${pad}Item {`,
-    `${i(1)}id: ${hostId}`,
-    `${i(1)}width: 0`,
-    `${i(1)}height: 0`,
-    // Qt::Popup semantics (owner directive, see emitSelect): a native popup window must not
-    // linger over other applications when this one deactivates.
-    `${i(1)}Window.onActiveChanged: if (!Window.active) ${menuId}.close()`,
-    ...menuObjectLines({
-      menuId, anchorId: hostId, items, classes: classesOf(props),
-      xExpr: xProp ? binding(xProp) : undefined,
-      yExpr: yProp ? binding(yProp) : undefined,
-      onCloseBody: onClose ? handlerBody(onClose, scope) : undefined,
-    }, scope, level + 1),
-  ];
-
-  // Controlled open: Binding element (survives the menu closing itself, unlike a plain
-  // `visible:` binding which self-close would break). A Show guard folds into the value —
-  // a popup must never be opened by `visible: !!(guard)` alone.
-  if (openProp) {
-    const value = `!!(${binding(openProp)})${guard ? ` && !!(${guard})` : ""}`;
-    lines.push(
-      `${i(1)}Binding {`,
-      `${i(2)}target: ${menuId}`,
-      `${i(2)}property: "visible"`,
-      `${i(2)}value: ${value}`,
-      `${i(2)}restoreMode: Binding.RestoreNone`,
-      `${i(1)}}`,
-    );
+  // ── Imperative form: <Menu ref={r}> → r.open(x, y) ──────────────────────────────────────────────
+  // A Popup.Window grabs input on show and the grab needs a FRESH input serial, so the menu must be
+  // opened SYNCHRONOUSLY inside the triggering input handler. The author holds a ref and calls
+  // r.open(sceneX, sceneY) directly in the click/handler (e.g. onContextRequested). The old reactive
+  // `<Menu open={sig}>` is retired — a deferred signal loses the serial and the grab fails.
+  if (refProp && t.isIdentifier(refProp)) {
+    const refId = `_ref_${safeName(refProp.name)}`;
+    if (scope.refs) scope.refs.push(refProp.name);
+    // The host IS the popup's anchor. On Wayland the compositor positions a Popup.Window by anchoring
+    // to the parentItem's boundingRect@scene (parentControlGeometry) and IGNORES the popup(x,y) offset
+    // — so to open at (x,y) we MOVE this 1×1 host there (in its parent frame), then popup(0,0). A
+    // zero-size host degenerates the anchor rect; 1×1 keeps it valid.
+    return [
+      `${pad}Item {`,
+      `${i(1)}id: ${refId}`,
+      `${i(1)}width: 1`,
+      `${i(1)}height: 1`,
+      // x/y are SCENE coords → place the anchor there (parent frame), then open below it.
+      `${i(1)}function open(x, y) { var __p = ${refId}.parent.mapFromItem(null, x, y); ${refId}.x = __p.x; ${refId}.y = __p.y; ${menuId}.popup(0, 0) }`,
+      `${i(1)}function close() { ${menuId}.close() }`,
+      `${i(1)}Window.onActiveChanged: if (!Window.active) ${menuId}.close()`,
+      ...menuObjectLines({
+        menuId, anchorId: refId, items, classes: classesOf(props),
+        onCloseBody: onClose ? handlerBody(onClose, scope) : undefined,
+      }, scope, level + 1),
+      `${pad}}`,
+    ];
   }
 
-  lines.push(`${pad}}`);
-  return lines;
+  if (openProp) {
+    throw new Error(
+      "<Menu open={…}> is retired: a Wayland popup window can't be opened from a deferred reactive " +
+      "signal (the input grab fails). Use <Menu ref={r}> and call r.open(x, y) SYNCHRONOUSLY inside " +
+      "the click/handler that should open it.");
+  }
+  throw new Error("<Menu> needs trigger={<button>} (self-managed) or ref={r} (open via r.open(x, y))");
 }
 
 // ─── <MenuBar> with <Menu title="…"> children ───────────────────────────────────────────────────
@@ -298,21 +298,31 @@ function emitContextMenu(propsArg: t.Node | undefined, children: t.Node[], scope
   const onClose = props.get("onClose");
   const items = parseMenuChildren(children, scope, "ContextMenu");
 
+  // The menu's parentItem is a 1×1 anchor MOVED to the cursor: on Wayland the compositor positions a
+  // Popup.Window by anchoring to parentItem's rect and ignores the popup(x,y) offset, so a right-click
+  // moves the anchor to (mouse.x, mouse.y) then popup(0,0). The outer fill Item hosts the RightButton
+  // MouseArea (left clicks/hover/wheel pass through).
+  const anchorId = `__ctxAnchor${n}`;
   return [
     `${pad}Item {`,
     `${i(1)}id: ${hostId}`,
     `${i(1)}anchors.fill: parent`,
     ...(guard ? [`${i(1)}visible: !!(${guard})`] : []),
-    `${i(1)}Window.onActiveChanged: if (!Window.active) ${menuId}.close()`,
     `${i(1)}MouseArea {`,
     `${i(2)}anchors.fill: parent`,
     `${i(2)}acceptedButtons: Qt.RightButton`,
-    `${i(2)}onClicked: function(mouse) { ${menuId}.popup(mouse.x, mouse.y) }`,
+    `${i(2)}onClicked: function(mouse) { ${anchorId}.x = mouse.x; ${anchorId}.y = mouse.y; ${menuId}.popup(0, 0) }`,
     `${i(1)}}`,
+    `${i(1)}Item {`,
+    `${i(2)}id: ${anchorId}`,
+    `${i(2)}width: 1`,
+    `${i(2)}height: 1`,
+    `${i(2)}Window.onActiveChanged: if (!Window.active) ${menuId}.close()`,
     ...menuObjectLines({
-      menuId, anchorId: hostId, items, classes: classesOf(props),
+      menuId, anchorId, items, classes: classesOf(props),
       onCloseBody: onClose ? handlerBody(onClose, scope) : undefined,
-    }, scope, level + 1),
+    }, scope, level + 2),
+    `${i(1)}}`,
     `${pad}}`,
   ];
 }

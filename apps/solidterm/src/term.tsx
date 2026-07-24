@@ -65,13 +65,14 @@ export function Term() {
   const confirmPaste = () => { term.pasteTextFocused(pastePrompt()); setPastePrompt(""); term.refocus(); };
   const cancelPaste = () => { setPastePrompt(""); term.refocus(); };
   const closeCfg = () => { setCfgOpen(false); term.refocus(); };
-  // Pane header dropdown (tilix-style): the native header emits paneMenuRequested(x,y,readOnly).
-  const [paneMenuOpen, setPaneMenuOpen] = createSignal(false);
-  const [paneMenuX, setPaneMenuX] = createSignal(0);
-  const [paneMenuY, setPaneMenuY] = createSignal(0);
+  // Pane header dropdown (tilix-style): the native header emits paneMenuRequested(x,y,readOnly),
+  // fired SYNCHRONOUSLY during the mouse event → we open the menu imperatively (paneMenu.open) so the
+  // Wayland popup grab gets a fresh input serial. (A reactive `open={sig}` would defer past it.)
+  let paneMenu: any;
   const [paneReadOnly, setPaneReadOnly] = createSignal(false);
   const openPaneMenu = (x: number, y: number, ro: boolean) => {
-    setPaneMenuX(x); setPaneMenuY(y); setPaneReadOnly(ro); setPaneMenuOpen(true);
+    setPaneReadOnly(ro);
+    paneMenu.open(x, y);
   };
   const paneFind = () => openSearch();
   const paneToggleReadOnly = () => { const nv = !paneReadOnly(); term.setReadOnlyFocused(nv); setPaneReadOnly(nv); };
@@ -152,7 +153,7 @@ export function Term() {
 
   return (
     <div class="term-root">
-      <Menu open={paneMenuOpen()} x={paneMenuX()} y={paneMenuY()} class="tmenu" onClose={() => setPaneMenuOpen(false)}>
+      <Menu ref={paneMenu} class="tmenu">
         <MenuItem onClick={() => paneFind()}>&Find…</MenuItem>
         <MenuItem onClick={() => paneToggleReadOnly()}>{paneReadOnly() ? "Read only ✓" : "Read only"}</MenuItem>
         <MenuSeparator />

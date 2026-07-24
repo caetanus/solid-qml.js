@@ -73,9 +73,14 @@ namespace SolidWidgets {
 Menu::Menu(QObject *parent)
     : QQuickMenu(parent)
 {
-    // In-scene overlay popup, NOT Popup.Window — Wayland compositors don't honor client toplevel
-    // positioning, so a window-type menu opens at the top of the screen once the app floats.
-    setPopupType(QQuickPopup::Item);
+    // Popup.Window: a menu is its own popup surface (owner: "o popup é uma janela por si só") so it
+    // overflows the app window instead of clipping to the scene. CRITICAL Wayland constraint: a
+    // Popup.Window grabs input when shown, and the grab needs a FRESH input serial — so the menu MUST
+    // be opened SYNCHRONOUSLY inside the triggering input handler (button onClicked / a C++ signal
+    // fired during the mouse event), via popup(x, y). Opening it from a DEFERRED reactive signal
+    // (`<Menu open={sig}>`) fails the grab ("Failed to create grabbing popup"). The emitter therefore
+    // opens every menu imperatively: <Menu ref={r}> → r.open(x,y), <Menu trigger>, <ContextMenu>.
+    setPopupType(QQuickPopup::Window);
     // padding ≥ border-width keeps the popup CssFill border from clipping rows (G3).
     setPadding(1);
     connect(this, &QQuickPopup::closed, this, [this] {

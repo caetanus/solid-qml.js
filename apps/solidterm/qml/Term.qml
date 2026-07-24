@@ -25,9 +25,6 @@ W.Div {
     property var searchIdx: 0
     property var searchCount: 0
     property var pastePrompt: ""
-    property var paneMenuOpen: false
-    property var paneMenuX: 0
-    property var paneMenuY: 0
     property var paneReadOnly: false
     property var overviewOpen: false
     property var renameOpen: false
@@ -54,7 +51,7 @@ W.Div {
     function confirmPaste() { _ref_term.pasteTextFocused(pastePrompt); pastePrompt = ""; _ref_term.refocus(); }
     function cancelPaste() { pastePrompt = ""; _ref_term.refocus(); }
     function closeCfg() { cfgOpen = false; _ref_term.refocus(); }
-    function openPaneMenu(x_, y_, ro) { paneMenuX = x_; paneMenuY = y_; paneReadOnly = ro; paneMenuOpen = true; }
+    function openPaneMenu(x_, y_, ro) { paneReadOnly = ro; _ref_paneMenu.open(x_, y_); }
     function paneToggleReadOnly() { var nv = !paneReadOnly; _ref_term.setReadOnlyFocused(nv); paneReadOnly = nv; }
     function closeOverview() { overviewOpen = false; _ref_term.refocus(); }
     function toggleOverview() { if (overviewOpen) { closeOverview(); } else { overviewOpen = true; } }
@@ -70,17 +67,16 @@ W.Div {
     Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
     cssClass: ["term-root"]
     Item {
-        id: __menuHost0
-        width: 0
-        height: 0
+        id: _ref_paneMenu
+        width: 1
+        height: 1
+        function open(x, y) { var __p = _ref_paneMenu.parent.mapFromItem(null, x, y); _ref_paneMenu.x = __p.x; _ref_paneMenu.y = __p.y; __menu0.popup(0, 0) }
+        function close() { __menu0.close() }
         Window.onActiveChanged: if (!Window.active) __menu0.close()
         W.Menu {
             id: __menu0
-            cssAncestor: __menuHost0
+            cssAncestor: _ref_paneMenu
             authorClass: ["tmenu"]
-            x: paneMenuX
-            y: paneMenuY
-            onMenuClosed: { paneMenuOpen = false }
             W.MenuItem {
                 text: "&Find…"
                 onTriggered: { (openSearch()) }
@@ -119,12 +115,6 @@ W.Div {
                 text: "Close &pane"
                 onTriggered: { _ref_term.closeFocused() }
             }
-        }
-        Binding {
-            target: __menu0
-            property: "visible"
-            value: !!(paneMenuOpen)
-            restoreMode: Binding.RestoreNone
         }
     }
     W.Div {
@@ -238,61 +228,66 @@ W.Div {
         Item {
             id: __menuHost2
             anchors.fill: parent
-            Window.onActiveChanged: if (!Window.active) __menu2.close()
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.RightButton
-                onClicked: function(mouse) { __menu2.popup(mouse.x, mouse.y) }
+                onClicked: function(mouse) { __ctxAnchor2.x = mouse.x; __ctxAnchor2.y = mouse.y; __menu2.popup(0, 0) }
             }
-            W.Menu {
-                id: __menu2
-                cssAncestor: __menuHost2
-                authorClass: ["tmenu"]
-                W.MenuItem {
-                    text: "&Copy"
-                    onTriggered: { _ref_term.copyFocused() }
-                }
-                W.MenuItem {
-                    text: "&Paste"
-                    onTriggered: { _ref_term.pasteFocused() }
-                }
-                W.MenuSeparator { }
-                W.MenuItem {
-                    text: "New &tab"
-                    onTriggered: { _ref_term.newTab() }
-                }
-                W.MenuItem {
-                    text: "Split &right"
-                    onTriggered: { _ref_term.split(Qt.Horizontal) }
-                }
-                W.MenuItem {
-                    text: "Split &down"
-                    onTriggered: { _ref_term.split(Qt.Vertical) }
-                }
-                W.MenuItem {
-                    text: "Close &pane"
-                    onTriggered: { _ref_term.closeFocused() }
-                }
-                W.MenuSeparator { }
-                W.MenuItem {
-                    text: "&Find…"
-                    onTriggered: { openSearch() }
-                }
-                W.MenuItem {
-                    text: "Set &title…"
-                    onTriggered: { openRename() }
-                }
-                W.MenuItem {
-                    text: "Clear scrollback"
-                    onTriggered: { _ref_term.clearFocused() }
-                }
-                W.MenuItem {
-                    text: "&Reset"
-                    onTriggered: { _ref_term.resetFocused() }
-                }
-                W.MenuItem {
-                    text: "Pre&ferences…"
-                    onTriggered: { cfgOpen = true }
+            Item {
+                id: __ctxAnchor2
+                width: 1
+                height: 1
+                Window.onActiveChanged: if (!Window.active) __menu2.close()
+                W.Menu {
+                    id: __menu2
+                    cssAncestor: __ctxAnchor2
+                    authorClass: ["tmenu"]
+                    W.MenuItem {
+                        text: "&Copy"
+                        onTriggered: { _ref_term.copyFocused() }
+                    }
+                    W.MenuItem {
+                        text: "&Paste"
+                        onTriggered: { _ref_term.pasteFocused() }
+                    }
+                    W.MenuSeparator { }
+                    W.MenuItem {
+                        text: "New &tab"
+                        onTriggered: { _ref_term.newTab() }
+                    }
+                    W.MenuItem {
+                        text: "Split &right"
+                        onTriggered: { _ref_term.split(Qt.Horizontal) }
+                    }
+                    W.MenuItem {
+                        text: "Split &down"
+                        onTriggered: { _ref_term.split(Qt.Vertical) }
+                    }
+                    W.MenuItem {
+                        text: "Close &pane"
+                        onTriggered: { _ref_term.closeFocused() }
+                    }
+                    W.MenuSeparator { }
+                    W.MenuItem {
+                        text: "&Find…"
+                        onTriggered: { openSearch() }
+                    }
+                    W.MenuItem {
+                        text: "Set &title…"
+                        onTriggered: { openRename() }
+                    }
+                    W.MenuItem {
+                        text: "Clear scrollback"
+                        onTriggered: { _ref_term.clearFocused() }
+                    }
+                    W.MenuItem {
+                        text: "&Reset"
+                        onTriggered: { _ref_term.resetFocused() }
+                    }
+                    W.MenuItem {
+                        text: "Pre&ferences…"
+                        onTriggered: { cfgOpen = true }
+                    }
                 }
             }
         }

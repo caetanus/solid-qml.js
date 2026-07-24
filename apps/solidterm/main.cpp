@@ -312,17 +312,21 @@ int main(int argc, char **argv)
         });
     }
 
-    // Debug: SOLIDTERM_PANEMENU=1 opens the pane header dropdown after a settle.
+    // Debug: SOLIDTERM_PANEMENU="x,y" opens the pane header dropdown at scene (x,y) after a settle,
+    // by calling the root's openPaneMenu(x, y, ro) — the same path a real ▼ click takes.
     if (qEnvironmentVariableIsSet("SOLIDTERM_PANEMENU") && window) {
         QTimer::singleShot(1600, window, [&engine] {
+            const QStringList xy = qEnvironmentVariable("SOLIDTERM_PANEMENU").split(QLatin1Char(','));
+            const int mx = xy.size() == 2 ? xy[0].toInt() : 300;
+            const int my = xy.size() == 2 ? xy[1].toInt() : 20;
             for (QObject *o : engine.rootObjects())
                 if (auto *w = qobject_cast<QQuickWindow *>(o)) {
                     QList<QQuickItem *> stack { w->contentItem() };
                     while (!stack.isEmpty()) {
                         QQuickItem *it = stack.takeLast();
-                        if (it->property("paneMenuOpen").isValid()) {
-                            it->setProperty("paneMenuX", 40); it->setProperty("paneMenuY", 30);
-                            it->setProperty("paneMenuOpen", true);
+                        if (it->metaObject()->indexOfMethod("openPaneMenu(QVariant,QVariant,QVariant)") >= 0) {
+                            QMetaObject::invokeMethod(it, "openPaneMenu", Q_ARG(QVariant, mx), Q_ARG(QVariant, my), Q_ARG(QVariant, false));
+                            return;
                         }
                         for (QQuickItem *k : it->childItems()) stack.append(k);
                     }

@@ -47,11 +47,12 @@ async function qmlType(src: string): Promise<string> {
 
 const MENU_SRC = `
   export function F() {
-    const [open, setOpen] = createSignal(false);
+    let menuRef;
     const [last, setLast] = createSignal("");
+    const openAt = (x, y) => menuRef.open(x, y);
     return (
       <div class="demo">
-        <Menu open={open()} x={12} y={40} onClose={() => setOpen(false)}>
+        <Menu ref={menuRef} onClose={() => setLast("closed")}>
           <MenuItem onClick={() => setLast("new")}>New</MenuItem>
           <MenuItem onClick={() => setLast("open")}>Open</MenuItem>
           <MenuSeparator />
@@ -63,13 +64,12 @@ const MENU_SRC = `
 `;
 
 // ---------------------------------------------------------------------------
-// <Menu> — structure, controlled open, popup canon
+// <Menu ref={r}> — imperative open, Popup.Window, anchor-move positioning
 // ---------------------------------------------------------------------------
 
-test("menus: <Menu> instantiates W.Menu inside a zero-size Item host", async () => {
+test("menus: <Menu ref> instantiates W.Menu inside a 1×1 anchor host", async () => {
   const out = await qml(MENU_SRC);
-  assert.match(out, /Item \{/);
-  assert.match(out, /id: __menuHost0/);
+  assert.match(out, /id: _ref_menuRef/);
   assert.match(out, /W\.Menu \{/);
   assert.match(out, /id: __menu0/);
   // The T.Menu shell now lives in Menu.qml, not the emit.
@@ -77,33 +77,36 @@ test("menus: <Menu> instantiates W.Menu inside a zero-size Item host", async () 
   assert.doesNotMatch(out, /popupType/);
 });
 
-test("menus: <Menu x/y> map to popup x/y", async () => {
+test("menus: ref.open(x,y) moves the anchor host to the scene point then popup(0,0)", async () => {
   const out = await qml(MENU_SRC);
-  assert.match(out, /^\s*x: 12$/m);
-  assert.match(out, /^\s*y: 40$/m);
+  // A Wayland Popup.Window anchors to parentItem's rect and ignores the popup(x,y) offset, so the
+  // anchor host is MOVED to the click and opened with popup(0,0). Non-zero (1×1) keeps the rect valid.
+  assert.match(out, /width: 1/);
+  assert.match(out, /height: 1/);
+  assert.match(out, /function open\(x, y\) \{ var __p = _ref_menuRef\.parent\.mapFromItem\(null, x, y\); _ref_menuRef\.x = __p\.x; _ref_menuRef\.y = __p\.y; __menu0\.popup\(0, 0\) \}/);
+  // NO reactive visible Binding — the menu opens imperatively (fresh Wayland input serial).
+  assert.doesNotMatch(out, /Binding \{/);
 });
 
-test("menus: open={sig()} becomes a visible Binding with RestoreNone (emitInput idiom)", async () => {
-  const out = await qml(MENU_SRC);
-  assert.match(out, /Binding \{/);
-  assert.match(out, /target: __menu0/);
-  assert.match(out, /property: "visible"/);
-  assert.match(out, /value: !!\(open\)/);
-  assert.match(out, /restoreMode: Binding\.RestoreNone/);
+test("menus: <Menu open={sig}> is retired with a clear error pointing at ref+open", async () => {
+  await assert.rejects(
+    qml(`export function F(){ const [o] = createSignal(false); return <Menu open={o()}><MenuItem>A</MenuItem></Menu>; }`),
+    /retired.*ref=\{r\}.*r\.open\(x, y\)/s,
+  );
 });
 
 test("menus: onClose wires the component's menuClosed signal", async () => {
   const out = await qml(MENU_SRC);
-  assert.match(out, /onMenuClosed: \{ open = false \}/);
+  assert.match(out, /onMenuClosed: \{ last = "closed" \}/);
 });
 
 test("menus: <Menu> re-anchors the CSS walk at the host via cssAncestor", async () => {
   const out = await qml(MENU_SRC);
-  assert.match(out, /cssAncestor: __menuHost0/);
+  assert.match(out, /cssAncestor: _ref_menuRef/);
 });
 
 test("menus: author class on <Menu> passes through as authorClass (component merges 'popup')", async () => {
-  const out = await qml(`export function F(){ return <Menu class="ctx" open={false}><MenuItem>A</MenuItem></Menu>; }`);
+  const out = await qml(`export function F(){ let r; return <Menu ref={r} class="ctx"><MenuItem>A</MenuItem></Menu>; }`);
   assert.match(out, /authorClass: \["ctx"\]/);
 });
 
@@ -112,13 +115,15 @@ test("menus: window deactivation closes the native popup (Qt::Popup semantics)",
   assert.match(out, /Window\.onActiveChanged: if \(!Window\.active\) __menu0\.close\(\)/);
 });
 
-test("menus: the C++ Menu hosts the popup shell (implicit size, Popup.Item, cssAncestor slots)", async () => {
+test("menus: the C++ Menu hosts the popup shell (implicit size, Popup.Window, cssAncestor slots)", async () => {
   // Menu subclasses the PRIVATE QQuickMenu (it manages rows via casts to QQuickMenuItem); the
   // Css slot items ride as root-bound snippets.
   const src = await readFile(fileURLToPath(new URL("../../src/widgets/menuwidgets.cpp", import.meta.url)), "utf8")
     + await readFile(fileURLToPath(new URL("../../src/widgets/menuwidgets.h", import.meta.url)), "utf8");
   assert.match(src, /class Menu : public QQuickMenu/);
-  assert.match(src, /setPopupType\(QQuickPopup::Item\)/);
+  // Popup.Window: its own popup surface so it overflows the app window (opened synchronously via the
+  // ref/trigger/context forms so the Wayland grab gets a fresh input serial).
+  assert.match(src, /setPopupType\(QQuickPopup::Window\)/);
   // Width floor on the POPUP itself — a background CssFill's implicitWidth is clobbered by the engine.
   assert.match(src, /setImplicitWidth\(qMax<qreal>\(180\.0, implicitContentWidth\(\) \+ leftPadding\(\) \+ rightPadding\(\)\)\)/);
   assert.match(src, /setPadding\(1\)/);
@@ -179,8 +184,10 @@ const TRIGGER_SRC = `
 
 test("menus: <Menu trigger> toggles itself with a __closedAt debounce, no external Binding", async () => {
   const out = await qml(TRIGGER_SRC);
-  // The toggle (reading the component's __closedAt) stays in the emit's trigger button.
-  assert.match(out, /onClicked: \{ if \(__menu0\.visible\) __menu0\.close\(\); else if \(Date\.now\(\) - __menu0\.__closedAt > 250\) __menu0\.open\(\) \}/);
+  // The toggle opens SYNCHRONOUSLY in onClicked via popup() (fresh Wayland grab serial); the button
+  // host is the anchor, so popup(0, host.height+2) opens the menu just below it. __closedAt debounce
+  // swallows the dismiss click so a second click just closes.
+  assert.match(out, /onClicked: \{ if \(__menu0\.visible\) __menu0\.close\(\); else if \(Date\.now\(\) - __menu0\.__closedAt > 250\) __menu0\.popup\(0, __menuHost0\.height \+ 2\) \}/);
   // Self-managed: no controlled-open Binding element, and no author onClose signal.
   assert.doesNotMatch(out, /property: "visible"/);
   assert.doesNotMatch(out, /onMenuClosed/);
@@ -201,7 +208,6 @@ test("menus: <Menu trigger> hosts the trigger in a Css box that joins the flex f
   // button by the engine's content pass.
   assert.match(out, /Css\.CssRect \{\n\s*id: __menuHost0\n\s*cssPrimitive: "div"/);
   assert.doesNotMatch(out, /implicitWidth: __mtrig0\.implicitWidth/);
-  assert.match(out, /y: __menuHost0\.height \+ 2/);
 });
 
 test("menus: <Menu trigger> that isn't a button throws a clear error", async () => {
@@ -224,7 +230,7 @@ test("menus: <MenuSeparator> emits a bare W.MenuSeparator (internals in MenuSepa
 
 test("menus: a non-item child of <Menu> throws a clear error", async () => {
   await assert.rejects(
-    qml(`export function F(){ return <Menu open={false}><div /></Menu>; }`),
+    qml(`export function F(){ let r; return <Menu ref={r}><div /></Menu>; }`),
     /only accepts <MenuItem>\/<MenuSeparator>/,
   );
 });
@@ -514,7 +520,11 @@ test("contextmenu: <ContextMenu> fills its parent and opens at the cursor on rig
   assert.match(out, /Item \{\n\s*id: __menuHost0\n\s*anchors\.fill: parent/);
   // Right-button only — left clicks/hover/wheel pass through to the content below.
   assert.match(out, /acceptedButtons: Qt\.RightButton/);
-  assert.match(out, /onClicked: function\(mouse\) \{ __menu0\.popup\(mouse\.x, mouse\.y\) \}/);
+  // A Wayland Popup.Window anchors to parentItem's rect, so the click MOVES a 1×1 anchor to the
+  // cursor then opens with popup(0,0) (the offset is ignored on Wayland).
+  assert.match(out, /onClicked: function\(mouse\) \{ __ctxAnchor0\.x = mouse\.x; __ctxAnchor0\.y = mouse\.y; __menu0\.popup\(0, 0\) \}/);
+  assert.match(out, /id: __ctxAnchor0\n\s*width: 1\n\s*height: 1/);
+  assert.match(out, /cssAncestor: __ctxAnchor0/);
   assert.match(out, /W\.Menu \{/);
   assert.match(out, /onMenuClosed: \{ last = "closed" \}/);
   assert.equal((out.match(/W\.MenuItem \{/g) ?? []).length, 2);

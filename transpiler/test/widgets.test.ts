@@ -1469,8 +1469,11 @@ test("calendar: MonthGrid.qml day label carries the day states (sibling slots â€
 // Templates 6.8+) so they escape the app window, and they flip ABOVE the control when
 // opening below would overflow the screen. ---
 
-test("popups: Select.qml popup is an in-scene item popup and flips above on window overflow", async () => {
-  assert.match(SELECT_QML, /popup: T\.Popup \{[\s\S]*?popupType: T\.Popup\.Item/);
+test("popups: Select.qml popup is a Popup.Window (overflows the app window) and flips above on overflow", async () => {
+  // Popup.Window: the dropdown escapes the app window (esp. the small Preferences dialog) instead of
+  // clipping. A ComboBox opens its popup via popup->open() and RESPECTS the declarative y below (it
+  // anchors to the ComboBox control, which is a real non-zero rect â€” unlike a Menu), so the flip holds.
+  assert.match(SELECT_QML, /popup: T\.Popup \{[\s\S]*?popupType: T\.Popup\.Window/);
   assert.match(SELECT_QML, /y: \(ctl\.mapToItem\(null, 0, ctl\.height \+ 2\)\.y \+ height > \(ctl\.Window\.height \|\| Screen\.height\)\) \? -\(height \+ 2\) : ctl\.height \+ 2/);
 });
 
