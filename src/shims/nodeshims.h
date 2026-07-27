@@ -37,7 +37,12 @@ class NodeShims final : public QObject {
 public:
     explicit NodeShims(QObject *parent = nullptr);
 
-    static void install(QQmlEngine *engine);
+    // Capability profile gating the privileged host surface (fs / child_process / process powers).
+    // browser: none; desktop: fs + process, no exec (default); trusted: everything, with a warning.
+    enum class Profile { Browser, Desktop, Trusted };
+    static Profile profileFromString(const QString &s, Profile fallback = Profile::Desktop);
+
+    static void install(QQmlEngine *engine, Profile profile = Profile::Desktop);
 
     // --- process ---
     Q_INVOKABLE QString cwd() const;

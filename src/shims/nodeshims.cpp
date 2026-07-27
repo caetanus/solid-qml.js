@@ -186,9 +186,11 @@ NodeProcessReply *NodeShims::spawn(const QString &command, const QStringList &ar
 
 // process / fs / child_process as importable modules, built on the C++ backend exposed as
 // `__nodeBackend`. fs is synchronous (throws Node-style errors); child_process.exec/execFile return
-// Promises driven by the QProcess reply's signals.
+// Promises driven by the QProcess reply's signals. `C` is the capability profile (__nodeCaps):
+// { fs, exec, procFull } — fs and child_process are only built when granted, and the ambient
+// `process` keeps its native probe (versions) always but neuters env/cwd/argv/exit without procFull.
 static const char *kNodeShim = R"JS(
-(function (B) {
+(function (B, C) {
     function fsThrow(r, syscall, path) {
         var e = new Error(r.code + ": " + r.message);
         e.code = r.code; e.syscall = syscall; e.path = path; e.errno = -2;
@@ -202,7 +204,7 @@ static const char *kNodeShim = R"JS(
         return u;
     }
 
-    var fs = {
+    var fs = !C.fs ? undefined : {
         readFileSync: function (path, options) {
             var r = B.readFile(String(path));
             if (!r.ok) fsThrow(r, "open", path);
@@ -222,7 +224,7 @@ static const char *kNodeShim = R"JS(
             return { size: r.size, mtimeMs: r.mtimeMs, isFile: function () { return r.isFile; }, isDirectory: function () { return r.isDirectory; } };
         }
     };
-    fs.promises = {
+    if (fs) fs.promises = {
         readFile: function (p, o) { return new Promise(function (res, rej) { try { res(fs.readFileSync(p, o)); } catch (e) { rej(e); } }); },
         writeFile: function (p, d, o) { return new Promise(function (res, rej) { try { fs.writeFileSync(p, d, o); res(); } catch (e) { rej(e); } }); }
     };
@@ -241,7 +243,7 @@ static const char *kNodeShim = R"JS(
         });
     }
     var isWin = B.platform() === "win32";
-    var child_process = {
+    var child_process = !C.exec ? undefined : {
         // Promise-like (project preference): exec/execFile resolve { stdout, stderr } or reject an
         // Error carrying code/stdout/stderr — async over QProcess, never blocking the event loop.
         exec: function (command, options) {
@@ -254,13 +256,17 @@ static const char *kNodeShim = R"JS(
         spawn: function (file, args, options) { return run(String(file), (args || []).map(String), options); }
     };
 
+    function denied(what) { return function () { throw new Error(what + " is not permitted under the current capability profile"); }; }
     var process = {
         platform: B.platform(),
-        argv: B.argv(),
-        env: B.env(),
-        cwd: function () { return B.cwd(); },
+        // procFull gates the ambient-process powers: full argv/env, the real cwd, and app exit.
+        // Without it (browser profile) the environment and argv stay empty and exit/cwd are blocked —
+        // but `versions` (the native probe) is always present so feature detection still works.
+        argv: C.procFull ? B.argv() : [],
+        env: C.procFull ? B.env() : {},
+        cwd: C.procFull ? function () { return B.cwd(); } : denied("process.cwd"),
         nextTick: function (cb) { var a = Array.prototype.slice.call(arguments, 1); Promise.resolve().then(function () { cb.apply(null, a); }); },
-        exit: function (code) { B.exitApp(code === undefined ? 0 : Number(code)); },
+        exit: C.procFull ? function (code) { B.exitApp(code === undefined ? 0 : Number(code)); } : denied("process.exit"),
         version: "v18.0.0-solidqml",
         // Electron idiom: `process.versions.solidQml` IS the native-runtime probe —
         // `typeof process !== "undefined" && !!process.versions?.solidQml`.
@@ -268,18 +274,49 @@ static const char *kNodeShim = R"JS(
     };
 
     return { fs: fs, child_process: child_process, process: process };
-})(__nodeBackend)
+})(__nodeBackend, __nodeCaps)
 )JS";
 
-void NodeShims::install(QQmlEngine *engine)
+NodeShims::Profile NodeShims::profileFromString(const QString &s, Profile fallback)
+{
+    const QString v = s.trimmed().toLower();
+    if (v == QLatin1String("browser")) return Profile::Browser;
+    if (v == QLatin1String("desktop")) return Profile::Desktop;
+    if (v == QLatin1String("trusted") || v == QLatin1String("trusted-node")) return Profile::Trusted;
+    if (!v.isEmpty())
+        qWarning().noquote() << "node shims: unknown capability profile" << s << "— using default (desktop)";
+    return fallback;
+}
+
+void NodeShims::install(QQmlEngine *engine, Profile profile)
 {
     if (!engine)
         return;
+
+    // Capability profile (owner decision 2026-07-26): "import any npm" must not silently grant every
+    // app full machine access. Three profiles gate the privileged host surface:
+    //   browser  — no filesystem, no child_process; `process` keeps only its native probe (versions)
+    //              and platform, with env/argv empty and cwd/exit blocked. For sandboxed embeds.
+    //   desktop  — filesystem + full process, but NO arbitrary command execution (default).
+    //   trusted  — full access incl. child_process / /bin/sh; logs a stark warning.
+    const bool allowFs = profile != Profile::Browser;
+    const bool allowExec = profile == Profile::Trusted;
+    const bool procFull = profile != Profile::Browser;
+    if (profile == Profile::Trusted)
+        qWarning().noquote() << "node shims: TRUSTED capability profile — filesystem AND arbitrary "
+                                "command execution (/bin/sh) are exposed to ALL imported code.";
+
     auto *backend = new NodeShims(engine);
     QQmlEngine::setObjectOwnership(backend, QQmlEngine::CppOwnership);
 
     QJSValue global = engine->globalObject();
     global.setProperty(QStringLiteral("__nodeBackend"), engine->newQObject(backend));
+
+    QJSValue caps = engine->newObject();
+    caps.setProperty(QStringLiteral("fs"), allowFs);
+    caps.setProperty(QStringLiteral("exec"), allowExec);
+    caps.setProperty(QStringLiteral("procFull"), procFull);
+    global.setProperty(QStringLiteral("__nodeCaps"), caps);
 
     const QJSValue api = engine->evaluate(QString::fromUtf8(kNodeShim));
     if (api.isError()) {
@@ -287,12 +324,16 @@ void NodeShims::install(QQmlEngine *engine)
         return;
     }
     // Register each module under both its bare and node:-prefixed specifier. A `default` self-reference
-    // makes `import fs from "fs"` and `import { readFileSync } from "fs"` both resolve.
+    // makes `import fs from "fs"` and `import { readFileSync } from "fs"` both resolve. A module the
+    // profile withholds (fs/child_process) is left unregistered → `import` fails cleanly, so the
+    // capability is genuinely absent rather than present-but-throwing.
     const std::pair<const char *, const char *> mods[] = {
         { "fs", "fs" }, { "child_process", "child_process" }, { "process", "process" },
     };
     for (const auto &[name, prop] : mods) {
         QJSValue mod = api.property(QString::fromUtf8(prop));
+        if (mod.isUndefined() || mod.isNull())
+            continue;
         mod.setProperty(QStringLiteral("default"), mod);
         engine->registerModule(QString::fromUtf8(name), mod);
         engine->registerModule(QStringLiteral("node:") + QString::fromUtf8(name), mod);

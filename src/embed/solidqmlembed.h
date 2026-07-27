@@ -35,8 +35,12 @@ class QQmlEngine;
 namespace SolidQmlEmbed {
 
 // Arm a host engine (idempotent). `appDir` anchors relative SolidIsland.source /cssFiles paths
-// and Worker script URLs; defaults to the application directory.
-void init(QQmlEngine *engine, const QUrl &appDir = QUrl());
+// and Worker script URLs; defaults to the application directory. `capabilities` selects the
+// node-shim capability profile the hosted TSX runs under — "browser" (no fs/process), "desktop"
+// (fs + process, no command execution — the default), or "trusted" (full access incl.
+// child_process); a host embedding untrusted UI should pass "browser".
+void init(QQmlEngine *engine, const QUrl &appDir = QUrl(),
+          const QString &capabilities = QStringLiteral("desktop"));
 
 // Full-app hosting (a standalone binary loading a generated Window root directly, no island):
 // load a stylesheet into the engine's shared cascade, and keep viewport units tracking a window.

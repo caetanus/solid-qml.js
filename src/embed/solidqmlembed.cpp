@@ -60,7 +60,7 @@ EngineRuntime *runtimeFor(QQmlEngine *engine)
 
 } // namespace
 
-void init(QQmlEngine *engine, const QUrl &appDir)
+void init(QQmlEngine *engine, const QUrl &appDir, const QString &capabilities)
 {
     if (!engine || runtimeFor(engine))
         return;
@@ -84,7 +84,7 @@ void init(QQmlEngine *engine, const QUrl &appDir)
     WebTimers::install(engine);
     WebPlatform::install(engine);
     JsPolyfill::install(engine);
-    NodeShims::install(engine);
+    NodeShims::install(engine, NodeShims::profileFromString(capabilities));
     SolidWorkers::SharedBuffers::install(engine);
     SolidWorkers::BackgroundTasks::install(engine);
     SolidWorkers::WebWorkerFactory::install(engine, base);

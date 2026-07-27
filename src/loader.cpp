@@ -3,7 +3,9 @@
 #include "shims/nodeshims.h"
 #include "shims/tabstop.h"
 #include "shims/notifications.h"
+#ifdef HAVE_RICHTEXT
 #include "shims/richtext.h"
+#endif
 #include "shims/codeeditor.h"
 #include "widgets/solidwidgets.h"
 #include "shims/webfetch.h"
@@ -54,7 +56,7 @@ QUrl qmlUrl(const QString &path)
 // Headless "mini-node": evaluate a JS/ES-module file directly in the V4 engine with the browser/host
 // shims installed, no QML/Window. Lets us probe V4 JS behaviour and exercise mirrored npm modules
 // (the file may `import` them) without scaffolding a throwaway .qml each time.
-int runMiniNode(QGuiApplication &app, const QString &path)
+int runMiniNode(QGuiApplication &app, const QString &path, NodeShims::Profile caps)
 {
     QQmlEngine engine;
     engine.installExtensions(QJSEngine::ConsoleExtension); // console.log/warn/error
@@ -63,7 +65,7 @@ int runMiniNode(QGuiApplication &app, const QString &path)
     WebTimers::install(&engine);
     WebPlatform::install(&engine);
     JsPolyfill::install(&engine);
-    NodeShims::install(&engine);
+    NodeShims::install(&engine, caps); // dev probe tool: defaults to trusted; --capabilities overrides
     SolidWorkers::SharedBuffers::install(&engine);
     SolidWorkers::BackgroundTasks::install(&engine);
     SolidWorkers::WebWorkerFactory::install(&engine, QUrl::fromLocalFile(QDir::currentPath() + QLatin1Char('/')));
@@ -176,11 +178,26 @@ int main(int argc, char **argv)
                        "V4 JS behaviour and npm-module compat. SQ_MININODE_MS sets the async wait."),
         QStringLiteral("path"),
     });
+    parser.addOption({
+        QStringLiteral("capabilities"),
+        QStringLiteral("Node-shim capability profile: browser (no fs/process), desktop (fs + "
+                       "process, no command execution — the default), or trusted (full access incl. "
+                       "child_process). Overridable via SOLIDQML_CAPABILITIES."),
+        QStringLiteral("profile"),
+    });
     parser.process(app);
+
+    // Resolve the capability profile: --capabilities wins, then $SOLIDQML_CAPABILITIES, else desktop.
+    QString capsArg = parser.value(QStringLiteral("capabilities"));
+    if (capsArg.isEmpty())
+        capsArg = qEnvironmentVariable("SOLIDQML_CAPABILITIES");
+    const NodeShims::Profile capsProfile = NodeShims::profileFromString(capsArg);
 
     const QString miniNodePath = parser.value(QStringLiteral("mini-node"));
     if (!miniNodePath.isEmpty())
-        return runMiniNode(app, miniNodePath);
+        // The dev probe defaults to trusted (it exists to exercise fs/exec-using npm modules), but
+        // --capabilities still narrows it so the profiles themselves can be probed headlessly.
+        return runMiniNode(app, miniNodePath, NodeShims::profileFromString(capsArg, NodeShims::Profile::Trusted));
 
     QmlCss::CssTheme cssTheme;
     // Base layer: the app stylesheet(s) from disk/qrc. Inline-style rules synthesised by the
@@ -232,7 +249,9 @@ int main(int argc, char **argv)
     QmlCss::registerTypes();
     SolidWidgets::registerTypes(); // the C++ widget layer (pre-AOT port; merges with the qmldir)
     // Loader-provided helper types for the opt-in widget modules (no extra Qt deps).
+#ifdef HAVE_RICHTEXT
     qmlRegisterType<RichTextHandler>("solidqml.native", 1, 0, "RichTextHandler");
+#endif
     qmlRegisterType<CodeHighlighter>("solidqml.native", 1, 0, "CodeHighlighter");
 
     SolidTabstop solidTabstop;
@@ -259,7 +278,7 @@ int main(int argc, char **argv)
     WebTimers::install(&engine);       // setTimeout/setInterval/clear* + queueMicrotask
     WebPlatform::install(&engine);     // btoa/atob, TextEncoder/Decoder, crypto, performance, structuredClone
     JsPolyfill::install(&engine);      // additive ES2019-2023 stdlib backfill (trimStart, flat, at, fromEntries, ...)
-    NodeShims::install(&engine);       // process / fs (sync) / child_process (promise) as importable modules
+    NodeShims::install(&engine, capsProfile); // process / fs (sync) / child_process (promise), gated by profile
     // Worker global (real OS threads, each a full shim'd engine); relative URLs anchor at the app dir.
     SolidWorkers::SharedBuffers::install(&engine); // SharedArrayBuffer + Atomics.wait/notify
     SolidWorkers::BackgroundTasks::install(&engine); // solid:background (desktop backend)

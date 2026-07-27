@@ -4,3 +4,38 @@ option(
   value: true,
   description: 'Compile in QML/JS debugging support (the -qmljsdebugger arg / V4 debug server). Dev only.',
 )
+
+# ── Component feature options ──────────────────────────────────────────────────────────────────
+# Independent so building the framework on one platform is not blocked by a component that needs a
+# platform-specific dependency (e.g. SolidTerm's libvterm). `auto` builds when its deps are present.
+
+option(
+  'embed',
+  type: 'feature',
+  value: 'enabled',
+  description: 'Install libsolidqml as a consumable product (headers + pkg-config + CMake package). The library itself is always built as it is the shared foundation.',
+)
+option(
+  'loader',
+  type: 'feature',
+  value: 'auto',
+  description: 'Build the solid-qml-loader executable (the standalone dev/preview runner).',
+)
+option(
+  'examples',
+  type: 'feature',
+  value: 'auto',
+  description: 'Build the embed demos (embed-host island + the legacy Acme QML plugin).',
+)
+option(
+  'solidterm',
+  type: 'feature',
+  value: 'auto',
+  description: 'Build the SolidTerm terminal app. Requires libvterm (Linux/desktop); skipped on auto when vterm is absent.',
+)
+option(
+  'richtext',
+  type: 'feature',
+  value: 'auto',
+  description: 'Build the <RichText> ODF widget. Pulls the private QZipReader (Qt Core private headers). Disable to drop that dependency.',
+)
