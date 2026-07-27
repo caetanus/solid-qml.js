@@ -2,12 +2,12 @@
 import { mergeProps, splitProps } from "solid-js";
 import { div, text } from "../src/solid-qml/runtime";
 
-function Greeting(props) {
+function Greeting(props: { greeting?: string; name?: string }) {
   const merged = mergeProps({ greeting: "Hello", name: "stranger" }, props);
   return <text class="h1">{merged.greeting}, {merged.name}!</text>;
 }
 
-function Tag(props) {
+function Tag(props: { label: string }) {
   const [local] = splitProps(props, ["label"]);
   return <text class="bio">#{local.label}</text>;
 }

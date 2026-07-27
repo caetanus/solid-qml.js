@@ -2,12 +2,14 @@
 // provider holds state, children consume it via useContext — no prop drilling. Exercises
 // createContext, <Ctx.Provider>, props.children slotting, useContext, and components reading
 // shared state. Plain component (no Window/render) for the gallery.
+import type { ParentProps } from "solid-js";
 import { createContext, useContext, createSignal } from "solid-js";
 import { div, text, button } from "../src/solid-qml/runtime";
 
-const CounterContext = createContext();
+type CounterCtx = { count: () => number; increment: () => void };
+const CounterContext = createContext<CounterCtx>();
 
-function CounterProvider(props) {
+function CounterProvider(props: ParentProps<{ count?: number }>) {
   const [count, setCount] = createSignal(props.count || 0);
   const counter = { count, increment: () => setCount(count() + 1) };
   return (
@@ -18,12 +20,12 @@ function CounterProvider(props) {
 }
 
 function Display() {
-  const counter = useContext(CounterContext);
+  const counter = useContext(CounterContext)!;
   return <text>Count: {counter.count()}</text>;
 }
 
 function Increment() {
-  const counter = useContext(CounterContext);
+  const counter = useContext(CounterContext)!;
   return <button onClick={counter.increment}>increment</button>;
 }
 

@@ -50,7 +50,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   // Mutable flag set by widget emitters during the render pass.
   // `flag`: any Templates widget emitted → prepend the import.
   // `calendar`: MonthGrid / DayOfWeekRow used → upgrade to 6.3 (AbstractMonthGrid added in 6.3).
-  const usedWidgets: { flag: boolean; calendar: boolean; popupWindow: boolean; extraImports?: Set<string> } =
+  const usedWidgets: { flag: boolean; calendar: boolean; popupWindow: boolean; extraImports?: Set<string>; widgetLib?: boolean } =
     { flag: false, calendar: false, popupWindow: false };
   // Radio button group names collected by emitRadioButton; each unique name becomes one
   // T.ButtonGroup { id: __group_<name> } child of the root item (emitted into lifecycle below).
@@ -382,7 +382,7 @@ function resolveSignalInit(
     if (hasPropRef) return;
     if (isPropRef(n)) { hasPropRef = true; return; }
     for (const key of Object.keys(n)) {
-      const v = (n as Record<string, unknown>)[key];
+      const v = (n as unknown as Record<string, unknown>)[key];
       if (Array.isArray(v)) { for (const c of v) if (c && typeof (c as t.Node).type === "string") walk(c as t.Node); }
       else if (v && typeof (v as t.Node).type === "string") walk(v as t.Node);
     }

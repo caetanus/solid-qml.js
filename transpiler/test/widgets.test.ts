@@ -1140,7 +1140,7 @@ test("widgets: <Calendar> is dispatched as builtin even when Calendar is in scop
     inputCounter: { n: 0 },
     hoverCounter: { n: 0 },
     components: new Map([["Calendar", "MyCalendarComp"]]),   // user component shadowed
-    usedWidgets: { flag: false, calendar: false, widgetLib: false },
+    usedWidgets: { flag: false, calendar: false, popupWindow: false, widgetLib: false },
   };
   const out = emitQml(render, scope).join("\n");
   // Our builtin instantiates W.Calendar; user component MyCalendarComp must NOT appear.

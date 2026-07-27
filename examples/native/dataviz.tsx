@@ -11,8 +11,6 @@ import { Show } from "solid-js";
 import { div, text } from "../../src/solid-qml/runtime";
 import "./dataviz.css";
 
-declare const Chart: any, Scene3D: any, Surface: any, MediaPlayer: any, WebView: any, RichText: any, CodeEditor: any;
-
 export function ChartsAnd3D() {
   const isNative = typeof process !== "undefined" && !!(process.versions && process.versions.solidQml);
   return (

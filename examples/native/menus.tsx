@@ -6,8 +6,6 @@ import { createSignal, Show } from "solid-js";
 import { div, text, button, notifications } from "../../src/solid-qml/runtime";
 import "./menus.css";
 
-declare const Menu: any, MenuItem: any, MenuSeparator: any, MenuBar: any, TreeView: any, ListView: any, TableView: any, Tray: any, ContextMenu: any, Shortcut: any;
-
 export function MenusAndViews() {
   const [lastAction, setLastAction] = createSignal("none yet");
   const [trayOn, setTrayOn] = createSignal(true);

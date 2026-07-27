@@ -433,7 +433,7 @@ W.Div {
                     from: 0
                     to: 100
                     stepSize: 1
-                    onMoved: { volume = __input14.value }
+                    onMoved: { volume = Number(__input14.value) }
                     Binding {
                         target: __input14
                         property: "value"
@@ -454,7 +454,7 @@ W.Div {
                     from: 1
                     to: 10
                     stepSize: 1
-                    onValueModified: { qty = __input15.value }
+                    onValueModified: { qty = Number(__input15.value) }
                     Binding {
                         target: __input15
                         property: "value"
@@ -471,7 +471,7 @@ W.Div {
                 }
                 W.DateField {
                     cssClass: ["wg-date"]
-                    value: inputDate
+                    value: inputDate ?? undefined
                     onDayPicked: (date) => { inputDate = date }
                 }
             }

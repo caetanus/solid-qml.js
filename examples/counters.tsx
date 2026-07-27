@@ -3,7 +3,7 @@
 import { createSignal } from "solid-js";
 import { div, text, button } from "../src/solid-qml/runtime";
 
-function Counter(props) {
+function Counter(props: { label: string }) {
   const [count, setCount] = createSignal(0);
   return (
     <div class="counter">

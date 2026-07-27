@@ -26,8 +26,8 @@ export function Widgets() {
   const [fruit, setFruit] = createSignal("apple");
   const [volume, setVolume] = createSignal(50);
   const [qty, setQty] = createSignal(1);
-  const [inputDate, setInputDate] = createSignal(null);
-  const [calDate, setCalDate] = createSignal(null);
+  const [inputDate, setInputDate] = createSignal<string | null>(null);
+  const [calDate, setCalDate] = createSignal<Date | null>(null);
 
   // ── reset ─────────────────────────────────────────────────────────────────────
   function reset() {
@@ -148,17 +148,17 @@ export function Widgets() {
               <text class="wg-label">Volume</text>
               <text class="wg-range-val">{volume()}</text>
             </div>
-            <input type="range" class="wg-range" min={0} max={100} step={1} value={volume()} onInput={(e) => setVolume(e.target.value)} />
+            <input type="range" class="wg-range" min={0} max={100} step={1} value={volume()} onInput={(e) => setVolume(Number(e.target.value))} />
           </div>
 
           <div class="wg-field">
             <text class="wg-label">Quantity</text>
-            <input type="number" class="wg-number" min={1} max={10} step={1} value={qty()} onChange={(e) => setQty(e.target.value)} />
+            <input type="number" class="wg-number" min={1} max={10} step={1} value={qty()} onChange={(e) => setQty(Number(e.target.value))} />
           </div>
 
           <div class="wg-field">
             <text class="wg-label">Date</text>
-            <input type="date" class="wg-date" value={inputDate()} onChange={(e) => setInputDate(e.target.value)} />
+            <input type="date" class="wg-date" value={inputDate() ?? undefined} onChange={(e) => setInputDate(e.target.value)} />
           </div>
         </div>
 

@@ -11,7 +11,7 @@ interface Props {
   classes: string[];
   classList: Array<{ key: string; expr: t.Expression }>;
   onClick: t.Node | undefined;
-  type: string | undefined; // the `type` attr (e.g. <button type="submit"> → default button)
+  type?: string | undefined; // the `type` attr (e.g. <button type="submit"> → default button)
   ref: string | undefined; // the local var name a ref={ident} binds to
   // HTML5 drag-and-drop subset: draggable + dragData on the source, onDrop on the target.
   // The drop handler's parameter receives the SOURCE's dragData (not a DragEvent).

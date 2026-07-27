@@ -39,7 +39,7 @@ export function TodoMVC() {
     if (saved) {
       const restored = JSON.parse(saved);
       setTodos(restored);
-      nextId = restored.reduce((max, todo) => Math.max(max, todo.id), 0) + 1;
+      nextId = restored.reduce((max: number, todo: { id: number }) => Math.max(max, todo.id), 0) + 1;
     }
   });
 

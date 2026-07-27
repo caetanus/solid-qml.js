@@ -103,7 +103,7 @@ function usedComponentTags(render: t.CallExpression, known: Set<string>): string
       if (isComponentIdentifier(tag, known)) tags.add(tag.name);
     }
     for (const key of Object.keys(n)) {
-      const v = (n as Record<string, unknown>)[key];
+      const v = (n as unknown as Record<string, unknown>)[key];
       if (Array.isArray(v)) { for (const c of v) if (c && typeof (c as t.Node).type === "string") walk(c as t.Node); }
       else if (v && typeof (v as t.Node).type === "string") walk(v as t.Node);
     }

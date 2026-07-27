@@ -148,11 +148,11 @@ export function Dashboard() {
     applyOverrides();
   }
   onCleanup(() => cssTheme.loadLayeredString(""));
-  function proj(n) {
+  function proj(n: string) {
     const hit = PROJECTS.filter((x) => x.name === n);
     return hit.length > 0 ? hit[0] : PROJECTS[0];
   }
-  function reorder(list, src, dst) {
+  function reorder(list: string[], src: string, dst: string) {
     if (src === dst) return list;
     const out = list.filter((x) => x !== src);
     out.splice(out.indexOf(dst), 0, src);

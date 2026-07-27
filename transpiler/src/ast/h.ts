@@ -16,7 +16,7 @@ export function isHCall(node: t.Node | null | undefined): node is t.CallExpressi
 }
 
 export function hParts(call: t.CallExpression): HCallParts {
-  if (!isHCall(call)) throw new Error(`expected normalized h(...) call, got ${call.type}`);
+  if (!isHCall(call)) throw new Error(`expected normalized h(...) call, got ${(call as t.Node).type}`);
   const [tag, props, ...children] = call.arguments;
   if (!tag || !t.isExpression(tag) && !t.isPrivateName(tag))
     throw new Error("normalized h(...) is missing a tag expression");

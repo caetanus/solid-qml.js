@@ -1,7 +1,8 @@
 // props.children: a wrapper component slots whatever it's given (no <Window>/render).
+import type { ParentProps } from "solid-js";
 import { div, text } from "../src/solid-qml/runtime";
 
-function Card(props) {
+function Card(props: ParentProps) {
   return <div class="card">{props.children}</div>;
 }
 

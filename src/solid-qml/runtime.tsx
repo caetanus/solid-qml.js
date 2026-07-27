@@ -147,7 +147,10 @@ export const tabstop = { enabled: true };
 // transpiler rewrites this to the loader's `solidNotifications` context property (D-Bus worker
 // thread on Linux); this web mirror only keeps shared sources typechecking — the browser
 // preview reports the capability as absent.
-const noSignal = { connect() { /* native-only */ }, disconnect() { /* native-only */ } };
+const noSignal = {
+  connect(_handler: (...args: any[]) => void) { /* native-only */ },
+  disconnect(_handler: (...args: any[]) => void) { /* native-only */ },
+};
 export const notifications = {
   available: false,
   supportsActions: false,

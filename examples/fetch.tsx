@@ -29,10 +29,10 @@ export function Fetch() {
       <Suspense fallback={<text class="fetch-loading">loading…</text>}>
         <Show when={user()} fallback={<text class="fetch-empty">no such user</text>}>
           <div class="fetch-card">
-            <img class="fetch-avatar" src={user().avatar_url} />
-            <text class="fetch-name">{user().name}</text>
-            <text class="fetch-bio">{user().bio}</text>
-            <text class="fetch-repos">{user().public_repos} public repos</text>
+            <img class="fetch-avatar" src={user()!.avatar_url} />
+            <text class="fetch-name">{user()!.name}</text>
+            <text class="fetch-bio">{user()!.bio}</text>
+            <text class="fetch-repos">{user()!.public_repos} public repos</text>
           </div>
         </Show>
       </Suspense>

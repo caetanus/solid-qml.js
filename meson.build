@@ -24,8 +24,9 @@ if get_option('qml_debug')
 endif
 
 # The CSS engine (parse/cascade/paint + C++ layout) is its own repo, consumed as a meson
-# subproject (git submodule under subprojects/). Shared with qbar.
-qmlcss = subproject('qml-css-engine')
+# subproject (git submodule under vendor/). Shared with other projects. `tests=enabled` makes the
+# engine's css/qml-css/layout suites register into this project's `meson test`.
+qmlcss = subproject('qml-css-engine', default_options: ['tests=enabled'])
 qml_css_engine_dep = qmlcss.get_variable('qml_css_engine_dep')
 
 # fetch() shim transport.
@@ -272,3 +273,20 @@ install_data('apps/solidterm/solidterm.desktop', install_dir: get_option('datadi
 install_data('apps/solidterm/solidterm.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
   rename: 'solidterm.svg')
+
+# ── Tests ────────────────────────────────────────────────────────────────────────────────────
+# The engine's C++ suites register above (subproject tests=enabled). Wire the transpiler's Node
+# suite in too so `meson test` is the single honest entry point for BOTH halves. It runs the same
+# `npm run test:transpiler` the docs use (a bare directory arg loses tsx over node --test's child
+# processes → false green; the package.json glob is the form that actually reports all 495). Skipped
+# cleanly where sh/npm are absent (the C++ engine tests still run).
+sh_prog = find_program('sh', required: false)
+if sh_prog.found()
+  test(
+    'transpiler',
+    sh_prog,
+    args: ['-c', 'npm run test:transpiler'],
+    workdir: meson.project_source_root(),
+    timeout: 180,
+  )
+endif
