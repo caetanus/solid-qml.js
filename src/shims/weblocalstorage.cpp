@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QJSEngine>
+#include <QSaveFile>
 #include <QJSValue>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -38,8 +39,10 @@ void WebLocalStorage::load()
 void WebLocalStorage::save() const
 {
     QDir().mkpath(QFileInfo(m_filePath).absolutePath());
-    QFile file(m_filePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+    // QSaveFile writes to a temp sibling and atomically renames on commit(), so a crash mid-write
+    // never leaves a truncated/corrupt store (the previous QFile+Truncate path could).
+    QSaveFile file(m_filePath);
+    if (!file.open(QIODevice::WriteOnly)) {
         qWarning().noquote() << "localStorage: cannot write" << m_filePath;
         return;
     }
@@ -47,6 +50,8 @@ void WebLocalStorage::save() const
     for (auto it = m_data.constBegin(); it != m_data.constEnd(); ++it)
         obj.insert(it.key(), it.value());
     file.write(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+    if (!file.commit())
+        qWarning().noquote() << "localStorage: commit failed for" << m_filePath;
 }
 
 QVariant WebLocalStorage::getItem(const QString &key) const
@@ -55,13 +60,25 @@ QVariant WebLocalStorage::getItem(const QString &key) const
     return it == m_data.constEnd() ? QVariant() : QVariant(it.value());
 }
 
-void WebLocalStorage::setItem(const QString &key, const QString &value)
+bool WebLocalStorage::setItem(const QString &key, const QString &value)
 {
     if (m_data.value(key) == value && m_data.contains(key))
-        return;
+        return true;
+    // Enforce the per-origin quota on the resulting store size (UTF-8 bytes of keys + values), so a
+    // runaway writer fails loudly instead of ballooning the JSON file.
+    qint64 total = 0;
+    for (auto it = m_data.constBegin(); it != m_data.constEnd(); ++it)
+        if (it.key() != key)
+            total += it.key().toUtf8().size() + it.value().toUtf8().size();
+    total += key.toUtf8().size() + value.toUtf8().size();
+    if (total > kQuotaBytes) {
+        qWarning().noquote() << "localStorage: quota exceeded (" << total << ">" << kQuotaBytes << "bytes)";
+        return false;
+    }
     m_data.insert(key, value);
     save();
     emit changed();
+    return true;
 }
 
 void WebLocalStorage::removeItem(const QString &key)
@@ -96,7 +113,13 @@ static const char *kAdapterSource = R"JS(
 (function (b) {
     var api = {
         getItem: function (k) { var v = b.getItem(String(k)); return (v === undefined || v === null) ? null : String(v); },
-        setItem: function (k, v) { b.setItem(String(k), v === undefined ? "undefined" : String(v)); },
+        setItem: function (k, v) {
+            if (!b.setItem(String(k), v === undefined ? "undefined" : String(v))) {
+                var e = new Error("Failed to execute 'setItem' on 'Storage': the quota has been exceeded.");
+                e.name = "QuotaExceededError";
+                throw e;
+            }
+        },
         removeItem: function (k) { b.removeItem(String(k)); },
         clear: function () { b.clear(); },
         key: function (i) { var k = b.key(i | 0); return (k === undefined || k === null) ? null : String(k); }

@@ -21,9 +21,14 @@ public:
     // Install `localStorage` as a JS global on the engine. Call once, before loading QML.
     static void install(QQmlEngine *engine, const QString &filePath = {});
 
+    // Per-origin storage budget (WHATWG suggests ~5 MiB); setItem past it fails like a real
+    // QuotaExceededError instead of growing without bound.
+    static constexpr int kQuotaBytes = 5 * 1024 * 1024;
+
     // Storage API primitives (the JS adapter layers null/coercion/indexing on top).
     Q_INVOKABLE QVariant getItem(const QString &key) const;
-    Q_INVOKABLE void setItem(const QString &key, const QString &value);
+    // Returns false when the write would exceed the quota (the adapter throws QuotaExceededError).
+    Q_INVOKABLE bool setItem(const QString &key, const QString &value);
     Q_INVOKABLE void removeItem(const QString &key);
     Q_INVOKABLE void clear();
     Q_INVOKABLE QVariant key(int index) const; // key name at index, or invalid (→ null)

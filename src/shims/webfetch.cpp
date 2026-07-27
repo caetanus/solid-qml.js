@@ -22,7 +22,7 @@ WebFetchReply::WebFetchReply(QNetworkReply *reply, QObject *parent)
         } else if (status == 0 && m_reply->error() == QNetworkReply::NoError) {
             // Local schemes (file://, qrc://) carry no HTTP status — a clean read IS a 200
             // (browsers report file: fetches the same way).
-            emit finished(200, QStringLiteral("OK"), QVariantMap(), QString::fromUtf8(m_reply->readAll()));
+            emit finished(200, QStringLiteral("OK"), QVariantMap(), m_reply->readAll());
         } else if (status > 0) {
             // A genuine HTTP response — resolve even for 4xx/5xx (fetch semantics).
             const QString statusText = m_reply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString();
@@ -34,7 +34,7 @@ WebFetchReply::WebFetchReply(QNetworkReply *reply, QObject *parent)
                 // Per spec, repeated headers combine with ", ".
                 headers.insert(key, headers.contains(key) ? headers.value(key).toString() + QStringLiteral(", ") + val : val);
             }
-            emit finished(status, statusText, headers, QString::fromUtf8(m_reply->readAll()));
+            emit finished(status, statusText, headers, m_reply->readAll());
         } else {
             emit failed(m_reply->errorString(), false);
         }
@@ -122,7 +122,11 @@ static const char *kFetchShim = R"JS(
     class Response {
         constructor(body, init) {
             init = init || {};
-            this._body = body == null ? "" : String(body);
+            // body is either a string (user-built Response / Response.json) or an ArrayBuffer(View)
+            // (the fetch transport, which carries RAW BYTES so binary payloads survive). It is kept
+            // as-is and converted on demand — text()/json() UTF-8-decode, arrayBuffer()/blob() hand
+            // back the real bytes — instead of being force-stringified (which corrupted non-UTF-8).
+            this._body = body == null ? "" : body;
             this.status = init.status !== undefined ? init.status : 200;
             this.statusText = init.statusText !== undefined ? init.statusText : "";
             this.ok = this.status >= 200 && this.status < 300;
@@ -133,16 +137,24 @@ static const char *kFetchShim = R"JS(
             this.bodyUsed = false;
         }
         _consume() { if (this.bodyUsed) return Promise.reject(new TypeError("Body already consumed")); this.bodyUsed = true; return Promise.resolve(this._body); }
-        text() { return this._consume(); }
-        json() { return this._consume().then(t => JSON.parse(t)); }
-        arrayBuffer() {
-            return this._consume().then(t => {
-                var b = new ArrayBuffer(t.length), u = new Uint8Array(b);
-                for (var i = 0; i < t.length; ++i) u[i] = t.charCodeAt(i) & 0xff;
-                return b;
+        static _toText(b) { return typeof b === "string" ? b : new TextDecoder("utf-8").decode(b); }
+        static _toBuffer(b) {
+            if (typeof b === "string") return new TextEncoder().encode(b).buffer; // UTF-8 encode
+            if (b instanceof ArrayBuffer) return b.slice(0);
+            return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);     // ArrayBufferView
+        }
+        text() { return this._consume().then(Response._toText); }
+        json() { return this.text().then(t => JSON.parse(t)); }
+        arrayBuffer() { return this._consume().then(Response._toBuffer); }
+        blob() {
+            var self = this;
+            return this._consume().then(b => {
+                var buf = Response._toBuffer(b);
+                return { size: buf.byteLength, type: self.headers.get("content-type") || "",
+                         arrayBuffer: () => Promise.resolve(buf),
+                         text: () => Promise.resolve(Response._toText(b)) };
             });
         }
-        blob() { var self = this; return this._consume().then(t => ({ size: t.length, type: self.headers.get("content-type") || "", text: () => Promise.resolve(t) })); }
         clone() { var r = new Response(this._body, { status: this.status, statusText: this.statusText, headers: this.headers, url: this.url, redirected: this.redirected }); return r; }
     }
 

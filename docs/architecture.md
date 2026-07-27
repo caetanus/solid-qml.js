@@ -17,7 +17,7 @@ construct to its native QtQuick equivalent (bindings, `Repeater`, Loaders).
 npm/node module imports are **mirrored**: the package's real code is rewritten into ESM loadable
 by V4 and executed on the engine — it is not a reimplementation.
 
-## C++ CSS engine (`subprojects/qml-css-engine/`)
+## C++ CSS engine (`vendor/qml-css-engine/`)
 
 Vendored. Does **layout AND paint**: box model, flexbox, grid, `calc()`, `@media`, `vw`/`vh`,
 remote `@font-face` (download + cache + registration with `QFontDatabase`). Exposes lightweight

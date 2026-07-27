@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QObject>
 #include <QString>
 #include <QVariantMap>
@@ -20,7 +21,9 @@ public:
     Q_INVOKABLE void abort();
 
 signals:
-    void finished(int status, const QString &statusText, const QVariantMap &headers, const QString &body);
+    // body is raw bytes (QByteArray → an ArrayBuffer in V4), NOT a decoded string — so binary
+    // payloads survive intact. The JS Response layer decodes UTF-8 lazily for text()/json().
+    void finished(int status, const QString &statusText, const QVariantMap &headers, const QByteArray &body);
     void failed(const QString &error, bool aborted);
     void downloadProgress(qint64 received, qint64 total);
 

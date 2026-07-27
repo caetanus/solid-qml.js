@@ -1,8 +1,10 @@
 project(
   'solid-qml-native',
   'cpp',
-  version: '0.1.0',
-  license: 'MIT',
+  version: '0.2.0',
+  # No license chosen yet — experimental phase (README: "TBD"). Deliberately NOT asserting MIT here
+  # until the owner decides; there is intentionally no LICENSE file yet.
+  license: 'LicenseRef-NONE',
   # The CSS engine lives in vendor/ as a git submodule (its own repo, shared with other
   # projects) — meson resolves subproject('qml-css-engine') against this directory.
   subproject_dir: 'vendor',
@@ -172,7 +174,7 @@ solidqml_lib = shared_library(
   cpp_args: notify_args + richtext_args,
   include_directories: include_directories('src'),
   dependencies: [qml_css_engine_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep, qt6_templates_private_dep] + core_private_deps,
-  version: '0.2.0',
+  version: meson.project_version(),
   install: install_lib,
 )
 

@@ -29,6 +29,11 @@ file per component**, plus a stylesheet, running on top of a custom C++ CSS engi
 - **vs React Native** — real native components, no asynchronous JS bridge between worlds. And
   the release target is compiling everything to **C++ (AOT)**, eliminating the interpreter.
 
+> **On the claims below:** visual parity with the web is *measured* — the milestone harness
+> reports 16/16 reference views at ≥96% pixel match (see below). The footprint/startup/frame-time
+> advantages over Electron are **design goals of the architecture, not yet published benchmarks**;
+> treat them as the target this project is built toward, not measured results.
+
 ## Highlights (real, working today)
 
 - ⭐ **npm/node module imports running on Qt's V4 engine.** QML's biggest historical defect has
@@ -107,9 +112,10 @@ widget set below, apps written in Solid/JSX now get:
 
 Every widget — HTML-derived (`<button>`, `<details>`, `<dialog>`, tables…) **and**
 desktop-native (`<TabBar>`, `<SplitView>`, `<TreeView>`, `<ListView>`, `<TableView>`, `<Menu>`,
-OS-chrome `<MenuBar>`, `<Tray>`…) — is now a reusable `.qml` component in the
-`solidqml.Widgets` module; the transpiler **instantiates** components instead of hand-emitting
-their internals. And the set finally *feels* native:
+OS-chrome `<MenuBar>`, `<Tray>`…) — is a reusable component in the `solidqml.Widgets` module
+(now C++-backed types registered into that module, having been ported from their original `.qml`
+for AOT-friendliness); the transpiler **instantiates** them instead of hand-emitting their
+internals. And the set finally *feels* native:
 
 - **Desktop keyboard model throughout** — one tab stop per group with arrows inside (lists,
   tables, trees with expand/collapse on Right/Left/Space, tab bars with wrap), Enter fires the
