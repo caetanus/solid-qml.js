@@ -224,10 +224,10 @@ export function App() { return <Window width={100} height={100}><C /></Window>; 
   assert.match(source, /->setText\(sq::str\(state->name\(\)\)\)/);            // value → field
   assert.match(source, /&SolidWidgets::TextField::textEdited, state, \[\w+, state\] \{ state->setName\(QVariant\(\w+->text\(\)\)\); \}/); // edit → signal
 
-  const checkbox = `
+  const radio = `
 import { div, input, Window } from "../../src/solid-qml/runtime";
-export function App() { return <Window width={100} height={100}><div class="a"><input type="checkbox" /></div></Window>; }`;
-  await assert.rejects(() => generateCpp(checkbox, "y.tsx"), /type="checkbox".*not supported/);
+export function App() { return <Window width={100} height={100}><div class="a"><input type="radio" /></div></Window>; }`;
+  await assert.rejects(() => generateCpp(radio, "y.tsx"), /type="radio".*not supported/);
 });
 
 test("cpp: follows relative imports across files (multi-file graph)", async () => {
@@ -355,6 +355,25 @@ export function App() { return <Window width={100} height={100}><Demo /></Window
   // ContextDemo creates the provider State, injects it into both consumers
   assert.match(source, /buildDisplay\(ctx, \w+_st\)/);
   assert.match(source, /buildBump\(ctx, \w+_st\)/);
+});
+
+test("cpp: <input type=checkbox> → Checkbox; role=switch → Toggle; toggled→setter", async () => {
+  const src = `
+import { createSignal } from "solid-js";
+import { div, input, Window } from "../../src/solid-qml/runtime";
+function C() {
+  const [on, setOn] = createSignal(true);
+  return <div class="a">
+    <input type="checkbox" checked={on()} onChange={(e) => setOn(e.target.checked)} />
+    <input type="checkbox" role="switch" checked={on()} onChange={(e) => setOn(e.target.checked)} />
+  </div>;
+}
+export function App() { return <Window width={100} height={100}><C /></Window>; }`;
+  const { source } = await generateCpp(src, "x.tsx");
+  assert.match(source, /new SolidWidgets::Checkbox\(\)/);
+  assert.match(source, /new SolidWidgets::Toggle\(\)/);                         // role="switch"
+  assert.match(source, /->setChecked\(sq::truthy\(state->on\(\)\)\)/);         // controlled
+  assert.match(source, /&SolidWidgets::Checkbox::toggled, state, \[\w+, state\] \{ state->setOn\(QVariant\(\w+->checked\(\)\)\); \}/);
 });
 
 test("cpp: <Switch>/<Match> — first-match-wins guards + fallback", async () => {

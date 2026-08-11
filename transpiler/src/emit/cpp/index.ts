@@ -679,7 +679,17 @@ function emitElement(node: t.CallExpression, c: Ctx): string {
     c.completes.push(v);
     return v;
   }
-  if (tagName === "input") { emitTextControl(propsArg, p, v, c, false); c.completes.push(v); return v; }
+  if (tagName === "input") {
+    const readAttr = (k: string) => {
+      if (propsArg && t.isObjectExpression(propsArg))
+        for (const pr of propsArg.properties)
+          if (t.isObjectProperty(pr) && t.isIdentifier(pr.key, { name: k }) && t.isStringLiteral(pr.value)) return pr.value.value;
+      return null;
+    };
+    const itype = readAttr("type");
+    if (itype === "checkbox") { emitCheckbox(propsArg, p, v, c, readAttr("role") === "switch"); c.completes.push(v); return v; }
+    emitTextControl(propsArg, p, v, c, false); c.completes.push(v); return v;
+  }
   if (tagName === "textarea") { emitTextControl(propsArg, p, v, c, true); c.completes.push(v); return v; }
   if (tagName === "img") { emitImage(propsArg, p, v, c); c.completes.push(v); return v; }
   if (tagName === "select") { emitSelect(propsArg, children, p, v, c); c.completes.push(v); return v; }
@@ -826,6 +836,39 @@ function emitSelect(propsArg: t.Node | undefined, children: t.Node[], p: ElemPro
         : `state->set${cap(sym.signal)}(${arg && t.isExpression(arg) ? emitExpr(arg, c.sc) : "QVariant()"});`;
     } else throw new Error("AOT: unsupported <select> onChange (only setX(e.target.value))");
     c.out.push(`QObject::connect(${v}, &SolidWidgets::Select::activated, state, [${v}, state](int __i) { ${handler} });`);
+  }
+}
+
+/** Controlled `<input type="checkbox">` → SolidWidgets::Checkbox (or Toggle for role="switch"): a
+ *  `checked` binding pushes the signal into the box, and `toggled` runs onChange with `e.target.checked`
+ *  → the box's live checked state. */
+function emitCheckbox(propsArg: t.Node | undefined, p: ElemProps, v: string, c: Ctx, isSwitch: boolean): void {
+  let checked: t.Expression | null = null, onChange: t.Node | undefined, disabled = false;
+  if (propsArg && t.isObjectExpression(propsArg))
+    for (const pr of propsArg.properties) {
+      if (!t.isObjectProperty(pr) || !t.isIdentifier(pr.key)) continue;
+      if (pr.key.name === "checked" && t.isExpression(pr.value)) checked = pr.value;
+      else if (pr.key.name === "onChange" || pr.key.name === "onInput") onChange = pr.value;
+      else if (pr.key.name === "disabled") disabled = true;
+    }
+  const cls = isSwitch ? "Toggle" : "Checkbox";
+  c.out.push(`auto *${v} = new SolidWidgets::${cls}();`, `sq::begin(${v}, ctx);`, ...classLine(v, p.classes));
+  if (disabled) c.out.push(`${v}->setEnabled(false);`);
+  if (checked) emitReactiveSet(`${v}->setChecked(sq::truthy(EXPR))`, checked, v, c);
+  if (onChange) {
+    if (!t.isArrowFunctionExpression(onChange) && !t.isFunctionExpression(onChange)) throw new Error("AOT: checkbox onChange must be an inline arrow");
+    if (t.isBlockStatement(onChange.body)) throw new Error("AOT: block-bodied checkbox onChange not supported yet");
+    const ev = onChange.params[0] && t.isIdentifier(onChange.params[0]) ? onChange.params[0].name : null;
+    const body = onChange.body;
+    // `(e) => setX(e.target.checked)` → setX(<box>->checked())
+    if (t.isCallExpression(body) && t.isIdentifier(body.callee) && c.sc.table.get(body.callee.name)?.kind === "setter") {
+      const sym = c.sc.table.get(body.callee.name) as { kind: "setter"; signal: string };
+      const arg = body.arguments[0];
+      const isChecked = arg && t.isMemberExpression(arg) && !arg.computed && t.isIdentifier(arg.property, { name: "checked" })
+        && t.isMemberExpression(arg.object) && t.isIdentifier(arg.object.object, { name: ev ?? "" });
+      const rhs = isChecked ? `QVariant(${v}->checked())` : (arg && t.isExpression(arg) ? emitExpr(arg, c.sc) : "QVariant()");
+      c.out.push(`QObject::connect(${v}, &SolidWidgets::${cls}::toggled, state, [${v}, state] { state->set${cap(sym.signal)}(${rhs}); });`);
+    } else throw new Error("AOT: unsupported checkbox onChange (only setX(e.target.checked))");
   }
 }
 
@@ -1075,6 +1118,7 @@ export async function generateCpp(source: string, filename: string, opts: Genera
     '#include "widgets/primitives.h"',
     '#include "widgets/select.h"',
     '#include "widgets/textinputs.h"',
+    '#include "widgets/toggles.h"',
     "",
     "#include <QJSEngine>",
     "#include <QJSValue>",
