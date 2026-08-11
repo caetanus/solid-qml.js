@@ -155,6 +155,24 @@ export function App() { return <Window width={100} height={100}><C /></Window>; 
   assert.match(source, /sq::strictEq\(state->t\(\), QVariant\(QStringLiteral\("h1"\)\)\)/);
 });
 
+test("cpp: <Show> guards each branch with a reactive visible binding (fallback inverted)", async () => {
+  const src = `
+import { createSignal, Show } from "solid-js";
+import { div, text, button, Window } from "../../src/solid-qml/runtime";
+function C() {
+  const [on, setOn] = createSignal(true);
+  return <div class="a">
+    <button onClick={() => setOn(!on())}>t</button>
+    <Show when={on()} fallback={<text class="b">off</text>}><text class="h">on</text></Show>
+  </div>;
+}
+export function App() { return <Window width={100} height={100}><C /></Window>; }`;
+  const { source } = await generateCpp(src, "x.tsx");
+  assert.match(source, /setVisible\(sq::truthy\(state->on\(\)\)\)/);       // truthy branch
+  assert.match(source, /setVisible\(!sq::truthy\(state->on\(\)\)\)/);      // fallback inverted
+  assert.match(source, /&CState::onChanged, \w+, __vis\)/);               // reactive
+});
+
 test("cpp: ternary binding → sq::truthy(...) ? a : b", async () => {
   const src = `
 import { createSignal } from "solid-js";

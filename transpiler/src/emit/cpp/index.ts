@@ -212,11 +212,58 @@ function emitChildrenInto(parentVar: string, children: t.Node[], c: Ctx): void {
     run = [];
   };
   for (const n of children) {
-    if (isElement(n)) { flush(); const cv = emitElement(n as t.CallExpression, c); c.out.push(`sq::append(${parentVar}, ${cv});`); }
-    else run.push(n);
+    if (!isElement(n)) { run.push(n); continue; }
+    flush();
+    const { tag } = hParts(n as t.CallExpression);
+    // <Show> is control flow, not an element: it appends each of its children to THIS container with a
+    // `visible` guard (an invisible box leaves the layout — the engine already handles it).
+    if (t.isIdentifier(tag, { name: "Show" })) { emitShowInto(parentVar, n as t.CallExpression, c); continue; }
+    const cv = emitElement(n as t.CallExpression, c);
+    c.out.push(`sq::append(${parentVar}, ${cv});`);
   }
   flush();
 }
+
+/** Read the `when` / `fallback` expression nodes from a <Show>'s props object. */
+function showProps(propsArg: t.Node | undefined): { when: t.Expression | null; fallback: t.Expression | null } {
+  let when: t.Expression | null = null, fallback: t.Expression | null = null;
+  if (propsArg && t.isObjectExpression(propsArg))
+    for (const p of propsArg.properties)
+      if (t.isObjectProperty(p) && t.isIdentifier(p.key) && t.isExpression(p.value)) {
+        if (p.key.name === "when") when = p.value;
+        if (p.key.name === "fallback") fallback = p.value;
+      }
+  return { when, fallback };
+}
+
+/** Give a built child a reactive `visible` binding over the Show condition's dependencies. */
+function emitVisibleGuard(childVar: string, whenNode: t.Expression, invert: boolean, c: Ctx): void {
+  const cond = `sq::truthy(${emitExpr(whenNode, c.sc)})`;
+  const val = invert ? `!${cond}` : cond;
+  const deps = new Set<string>();
+  collectDeps(whenNode, c.sc, deps);
+  if (deps.size === 0) { c.out.push(`${childVar}->setVisible(${val});`); return; }
+  c.out.push(`{ auto __vis = [${childVar}, state] { ${childVar}->setVisible(${val}); };`);
+  for (const d of deps) c.out.push(`  QObject::connect(state, &${c.sc.stateClass}::${d}Changed, ${childVar}, __vis);`);
+  c.out.push(`  __vis(); }`);
+}
+
+/** Expand a <Show> into `parentVar`: each truthy-branch child guarded on `when`, each fallback child on
+ *  its inverse. Children may be elements or component instances (a fragment fallback is unwrapped). */
+function emitShowInto(parentVar: string, showNode: t.CallExpression, c: Ctx): void {
+  const { children } = hParts(showNode);
+  const { when, fallback } = showProps(showNode.arguments[1]);
+  if (!when) throw new Error("AOT: <Show> requires a `when` prop");
+  for (const child of children)
+    if (isElement(child)) { const cv = emitElement(child as t.CallExpression, c); c.out.push(`sq::append(${parentVar}, ${cv});`); emitVisibleGuard(cv, when, false, c); }
+  if (fallback) {
+    const fbNodes = t.isCallExpression(fallback) && isFragment(fallback) ? hParts(fallback).children : [fallback];
+    for (const fb of fbNodes)
+      if (isElement(fb)) { const cv = emitElement(fb as t.CallExpression, c); c.out.push(`sq::append(${parentVar}, ${cv});`); emitVisibleGuard(cv, when, true, c); }
+  }
+}
+
+const isFragment = (n: t.Node): boolean => isElement(n) && (() => { const { tag } = hParts(n as t.CallExpression); return t.isIdentifier(tag, { name: "hFrag" }) || (t.isMemberExpression(tag) && t.isIdentifier(tag.property, { name: "Fragment" })); })();
 
 /** Emit the C++ that builds one element subtree into a fresh var; returns that var name. Completion is
  *  deferred (recorded in c.completes) so the whole subtree is assembled before anything completes. */
