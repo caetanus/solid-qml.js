@@ -21,6 +21,13 @@ browser APIs (localStorage/fetch/timers/…) via C++ shims.
 > #1: QVariant-first), bindings are connect-driven lambdas over NOTIFY signals, handlers are
 > `connect`s, and JS coercions live in a thin `src/aot/sqruntime.h` (not an interpreter). Next:
 > M-AOT-1 (all static gallery views; unsupported constructs already fail loudly — the gap queue).
+>
+> **M-AOT-2 (preliminary numbers)** — `npm run bench` (scripts/bench-aot.mjs) renders the same TSX
+> through the interpreted loader vs the AOT binary and measures stripped size / cold-start / peak RSS.
+> Counter scene: AOT **590K / 172ms / 60.9 MiB** vs loader **707K / 190ms / 62.3 MiB** — 117K smaller,
+> ~9% faster start (the removed QML parse/compile), 1.4 MiB less RSS. Both link the shared
+> libsolidqml.so (CSS engine + widgets + shims), so the win is startup-side and grows with scene size;
+> the full-gallery + Electron comparison (the real M-AOT-2 target) awaits broader construct coverage.
 
 In release, **don't** load QML text at runtime or interpret in V4. Since **we** generate the
 QML (a controlled, simple subset), we don't need **qmltc** (which exists to compile

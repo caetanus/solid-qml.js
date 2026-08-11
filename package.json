@@ -19,7 +19,8 @@
     "dev:native": "node --import tsx scripts/dev-native.mjs",
     "gen:cpp": "node --import tsx scripts/gen-cpp.mjs",
     "twin-render": "node --import tsx scripts/twin-render.mjs",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "bench": "node --import tsx scripts/bench-aot.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-basic-ssl": "^2.1.0",
