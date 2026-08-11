@@ -95,6 +95,12 @@ inline QVariant or_(const QVariant &a, const QVariant &b) { return truthy(a) ? a
 inline QVariant nullish(const QVariant &a, const QVariant &b) { return (a.typeId() == QMetaType::UnknownType || a.typeId() == QMetaType::Nullptr) ? b : a; }
 inline QVariant not_(const QVariant &a) { return !truthy(a); }
 
+// Safe member access `obj.key` on a QVariantMap-backed object (JS returns undefined for a miss).
+inline QVariant get(const QVariant &obj, const QString &key)
+{
+    return obj.canConvert<QVariantMap>() ? obj.toMap().value(key) : QVariant();
+}
+
 // JS truthiness (for <Show>/conditional bindings): 0, NaN, "", null, undefined, false are falsy.
 inline bool truthy(const QVariant &v)
 {

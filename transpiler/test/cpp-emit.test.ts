@@ -173,6 +173,42 @@ export function App() { return <Window width={100} height={100}><C /></Window>; 
   assert.match(source, /&CState::onChanged, \w+, __vis\)/);               // reactive
 });
 
+test("cpp: <Index> emits a rebuild-on-change row factory over the model", async () => {
+  const src = `
+import { createSignal, Index } from "solid-js";
+import { div, text, button, Window } from "../../src/solid-qml/runtime";
+function L() {
+  const [items, setItems] = createSignal(["a", "b"]);
+  return <div class="a">
+    <button onClick={() => setItems([...items(), "c"])}>add</button>
+    <Index each={items()}>{(item, i) => <text>{i}: {item()}</text>}</Index>
+  </div>;
+}
+export function App() { return <Window width={100} height={100}><L /></Window>; }`;
+  const { source, header } = await generateCpp(src, "x.tsx");
+  assert.match(header, /QVariant m_items = QVariant::fromValue\(QVariantList\{QStringLiteral\("a"\), QStringLiteral\("b"\)\}\)/);
+  assert.match(source, /const QVariantList __model = state->items\(\)\.toList\(\);/);
+  assert.match(source, /for \(int __i = 0; __i < __model\.size\(\); \+\+__i\)/);
+  assert.match(source, /QVariant\(__i\)/); // the index local
+  assert.match(source, /&LState::itemsChanged, state, __rebuild/); // reactive rebuild
+  // the spread handler builds the new list imperatively
+  assert.match(source, /for \(const auto &__e : state->items\(\)\.toList\(\)\) __l\.append\(__e\);/);
+});
+
+test("cpp: <For> object rows use safe member lookup; object init → QVariantMap", async () => {
+  const src = `
+import { createSignal, For } from "solid-js";
+import { div, text, Window } from "../../src/solid-qml/runtime";
+function L() {
+  const [users] = createSignal([{ name: "Ada" }]);
+  return <div class="a"><For each={users()}>{(u) => <text>{u.name}</text>}</For></div>;
+}
+export function App() { return <Window width={100} height={100}><L /></Window>; }`;
+  const { source, header } = await generateCpp(src, "x.tsx");
+  assert.match(header, /QVariant::fromValue\(QVariantMap\{\{QStringLiteral\("name"\), QStringLiteral\("Ada"\)\}\}\)/);
+  assert.match(source, /sq::get\(__item, "name"\)/);
+});
+
 test("cpp: ternary binding → sq::truthy(...) ? a : b", async () => {
   const src = `
 import { createSignal } from "solid-js";

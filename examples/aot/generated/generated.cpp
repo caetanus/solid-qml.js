@@ -9,6 +9,7 @@
 #include "widgets/button.h"
 #include "widgets/primitives.h"
 
+#include <QList>
 #include <QQmlContext>
 
 namespace aot {

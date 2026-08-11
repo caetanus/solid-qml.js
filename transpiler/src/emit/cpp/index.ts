@@ -97,6 +97,8 @@ function emitExpr(node: t.Node, sc: Scope): string {
     return `QVariant(-${node.argument.value})`;
   if (t.isCallExpression(node) && t.isIdentifier(node.callee)) {
     const sym = sc.table.get(node.callee.name);
+    // A local accessor call `item()` (a <For>/<Index> row param) → its bound value.
+    if (node.arguments.length === 0 && sc.locals && node.callee.name in sc.locals) return sc.locals[node.callee.name];
     // `count()` — a signal/memo/store accessor call with no args → the state getter.
     if (node.arguments.length === 0 && isStateRead(node.callee.name, sc)) return `state->${node.callee.name}()`;
     // `doubleCount()` — a derived (a plain zero/param accessor) → inline its expression body, binding
@@ -111,6 +113,20 @@ function emitExpr(node: t.Node, sc: Scope): string {
   if (t.isMemberExpression(node) && !node.computed && t.isIdentifier(node.object) && t.isIdentifier(node.property)
       && (node.object.name === sc.propsParam || sc.propAliases?.has(node.object.name)))
     return `state->${node.property.name}()`;
+  // `item.name` — member access on a <For> row local (an object item) → safe QVariantMap lookup.
+  if (t.isMemberExpression(node) && !node.computed && t.isIdentifier(node.object) && t.isIdentifier(node.property)
+      && sc.locals && node.object.name in sc.locals)
+    return `sq::get(${sc.locals[node.object.name]}, "${node.property.name}")`;
+  if (t.isArrayExpression(node)) {
+    if (!node.elements.some((e) => t.isSpreadElement(e)))
+      return `QVariant::fromValue(QVariantList{${node.elements.map((e) => e && t.isExpression(e) ? emitExpr(e, sc) : "QVariant()").join(", ")}})`;
+    // A spread `[...items(), x]` builds the list imperatively (an IIFE keeps it an expression).
+    const stmts = node.elements.map((e) => {
+      if (t.isSpreadElement(e)) return `for (const auto &__e : ${emitExpr(e.argument, sc)}.toList()) __l.append(__e);`;
+      return e && t.isExpression(e) ? `__l.append(${emitExpr(e, sc)});` : "";
+    }).filter(Boolean).join(" ");
+    return `[&]{ QVariantList __l; ${stmts} return QVariant::fromValue(__l); }()`;
+  }
   if (t.isLogicalExpression(node)) {
     const fn = { "&&": "and_", "||": "or_", "??": "nullish" }[node.operator];
     return `sq::${fn}(${emitExpr(node.left, sc)}, ${emitExpr(node.right, sc)})`;
@@ -218,6 +234,12 @@ function emitChildrenInto(parentVar: string, children: t.Node[], c: Ctx): void {
     // <Show> is control flow, not an element: it appends each of its children to THIS container with a
     // `visible` guard (an invisible box leaves the layout — the engine already handles it).
     if (t.isIdentifier(tag, { name: "Show" })) { emitShowInto(parentVar, n as t.CallExpression, c); continue; }
+    // <For>/<Index> — a rebuild-on-change row factory appended to THIS container (Fase 1: destroy+
+    // rebuild over the array; keyed reconcile is Fase 1.5).
+    if (t.isIdentifier(tag, { name: "For" }) || t.isIdentifier(tag, { name: "Index" })) {
+      emitRepeaterInto(parentVar, n as t.CallExpression, c);
+      continue;
+    }
     const cv = emitElement(n as t.CallExpression, c);
     c.out.push(`sq::append(${parentVar}, ${cv});`);
   }
@@ -264,6 +286,56 @@ function emitShowInto(parentVar: string, showNode: t.CallExpression, c: Ctx): vo
 }
 
 const isFragment = (n: t.Node): boolean => isElement(n) && (() => { const { tag } = hParts(n as t.CallExpression); return t.isIdentifier(tag, { name: "hFrag" }) || (t.isMemberExpression(tag) && t.isIdentifier(tag.property, { name: "Fragment" })); })();
+
+/** Expand a <For>/<Index> into `parentVar`: a runtime closure that (re)builds one row per model
+ *  element on every change to the model's dependencies. For/Index share the emit — the difference is
+ *  purely how the delegate reads the row (`item` vs `item()`), which is the same local binding here.
+ *  Fase 1 is destroy-and-rebuild (fine at config-panel scale); keyed reconcile is Fase 1.5. */
+function emitRepeaterInto(parentVar: string, node: t.CallExpression, c: Ctx): void {
+  const { children } = hParts(node);
+  let eachNode: t.Expression | null = null;
+  const props = node.arguments[1];
+  if (props && t.isObjectExpression(props))
+    for (const p of props.properties)
+      if (t.isObjectProperty(p) && t.isIdentifier(p.key, { name: "each" }) && t.isExpression(p.value)) eachNode = p.value;
+  const delegate = children.find((ch) => t.isArrowFunctionExpression(ch) || t.isFunctionExpression(ch)) as
+    t.ArrowFunctionExpression | t.FunctionExpression | undefined;
+  if (!eachNode || !delegate) throw new Error("AOT: <For>/<Index> needs an `each` prop and a delegate function");
+  const body = delegate.body;
+  if (!isHCall(body)) throw new Error("AOT: <For>/<Index> delegate must return a single element");
+
+  const id = c.fresh();
+  const rows = `__rows_${id}`, rebuild = `__rebuild_${id}`;
+  const [p0, p1] = delegate.params;
+  const locals = { ...(c.sc.locals ?? {}) };
+  if (p0 && t.isIdentifier(p0)) locals[p0.name] = "__item";      // `item` / `item()` → the row value
+  if (p1 && t.isIdentifier(p1)) locals[p1.name] = "QVariant(__i)"; // `index` / `i` → the row index
+
+  // Build the row subtree (synchronously — it lives inside the runtime rebuild loop, not the initial
+  // deferred pass): assemble, append to the container, then complete bottom-up.
+  const sub: Ctx = { sc: { ...c.sc, locals }, ctx: c.ctx, out: [], fresh: c.fresh, completes: [] };
+  const rowVar = emitElement(body, sub);
+  sub.out.push(`sq::append(${parentVar}, ${rowVar});`);
+  for (const v of [...sub.completes].reverse()) sub.out.push(`sq::complete(${v});`);
+  sub.out.push(`${rows}->append(${rowVar});`);
+
+  c.out.push(
+    `auto *${rows} = new QList<QQuickItem *>();`,
+    `auto ${rebuild} = [=] {`,
+    `    for (auto *__r : *${rows}) { __r->setParentItem(nullptr); __r->deleteLater(); }`,
+    `    ${rows}->clear();`,
+    `    const QVariantList __model = ${emitExpr(eachNode, c.sc)}.toList();`,
+    `    for (int __i = 0; __i < __model.size(); ++__i) {`,
+    `        const QVariant __item = __model.at(__i);`,
+    ...sub.out.map((l) => `        ${l}`),
+    `    }`,
+    `};`,
+  );
+  const deps = new Set<string>();
+  collectDeps(eachNode, c.sc, deps);
+  for (const d of deps) c.out.push(`QObject::connect(state, &${c.sc.stateClass}::${d}Changed, state, ${rebuild});`);
+  c.out.push(`${rebuild}();`);
+}
 
 /** Emit the C++ that builds one element subtree into a fresh var; returns that var name. Completion is
  *  deferred (recorded in c.completes) so the whole subtree is assembled before anything completes. */
@@ -503,6 +575,7 @@ export async function generateCpp(source: string, filename: string): Promise<Gen
     '#include "widgets/button.h"',
     '#include "widgets/primitives.h"',
     "",
+    "#include <QList>",
     "#include <QQmlContext>",
     "",
     "namespace aot {",
@@ -525,6 +598,16 @@ function emitInitLiteral(node: t.Expression): string {
   if (t.isStringLiteral(node)) return cppStr(node.value);
   if (t.isBooleanLiteral(node)) return `${node.value}`;
   if (t.isUnaryExpression(node) && node.operator === "-" && t.isNumericLiteral(node.argument)) return `-${node.argument.value}`;
+  // Array-literal signal init (`createSignal(["a", "b"])`) → a QVariantList.
+  if (t.isArrayExpression(node) && node.elements.every((e) => e && t.isExpression(e)))
+    return `QVariant::fromValue(QVariantList{${node.elements.map((e) => emitInitLiteral(e as t.Expression)).join(", ")}})`;
+  // Object-literal init (`createSignal([{ name: "Ada" }])`) → a QVariantMap.
+  if (t.isObjectExpression(node) && node.properties.every((p) => t.isObjectProperty(p) && !p.computed && (t.isIdentifier(p.key) || t.isStringLiteral(p.key)) && t.isExpression(p.value)))
+    return `QVariant::fromValue(QVariantMap{${node.properties.map((p) => {
+      const op = p as t.ObjectProperty;
+      const key = t.isIdentifier(op.key) ? op.key.name : (op.key as t.StringLiteral).value;
+      return `{${cppStr(key)}, ${emitInitLiteral(op.value as t.Expression)}}`;
+    }).join(", ")}})`;
   return ""; // undefined default
 }
 
