@@ -142,6 +142,8 @@ interface Scope {
   propAliases?: Set<string>;
   /** Component names that own a state class (built as `buildX(ctx, new XState())` vs `buildX(ctx)`). */
   stateful: Set<string>;
+  /** Component names that slot `props.children` (their build fn takes a QList<QQuickItem*> &__slot). */
+  slotted: Set<string>;
   /** createResource names in this component (each owns state props r/r_loading/r_error). */
   resources?: string[];
 }
@@ -304,9 +306,13 @@ function emitChildrenInto(parentVar: string, children: t.Node[], c: Ctx): void {
     }
     run = [];
   };
+  // `{props.children}` (or an alias) slots the children the component was given — append the __slot list.
+  const isChildrenMarker = (n: t.Node) => t.isMemberExpression(n) && !n.computed && t.isIdentifier(n.object)
+    && t.isIdentifier(n.property, { name: "children" }) && (n.object.name === c.sc.propsParam || c.sc.propAliases?.has(n.object.name));
   // Each element child (regular, component instance, or control flow) goes through emitControlChild,
   // which dispatches Show/Suspense/For/Index (unguarded at this level) and plain elements uniformly.
   for (const n of children) {
+    if (isChildrenMarker(n)) { flush(); c.out.push(`for (auto *__s : __slot) sq::append(${parentVar}, __s);`); continue; }
     if (!isElement(n)) { run.push(n); continue; }
     flush();
     emitControlChild(parentVar, n, null, c);
@@ -513,6 +519,32 @@ function emitRepeaterInto(parentVar: string, node: t.CallExpression, c: Ctx, out
   c.out.push(`${rebuild}();`);
 }
 
+/** Build a component instance's children (in the PARENT scope) into a QList, to hand to a slotted
+ *  component's build fn. Same element/text handling as emitChildrenInto, collecting instead of appending. */
+function emitSlotChildren(slotVar: string, children: t.Node[], c: Ctx): void {
+  let run: t.Node[] = [];
+  const meaningful = (n: t.Node) =>
+    (t.isStringLiteral(n) && (n.value.trim() || /\s/.test(n.value))) || (t.isJSXText(n) && n.value.trim())
+    || (t.isExpression(n) && !t.isStringLiteral(n) && !t.isJSXText(n));
+  const flush = () => {
+    if (run.some(meaningful)) {
+      const tv = c.fresh();
+      c.out.push(`auto *${tv} = new QmlCss::CssText();`, `sq::begin(${tv}, ctx);`, `${tv}->setCssPrimitive(QStringLiteral(""));`);
+      emitTextBinding(run, tv, c.sc, c.out);
+      c.out.push(`${slotVar}.append(${tv});`);
+      c.completes.push(tv);
+    }
+    run = [];
+  };
+  for (const n of children) {
+    if (!isElement(n)) { run.push(n); continue; }
+    flush();
+    const cv = emitElement(n as t.CallExpression, c);
+    c.out.push(`${slotVar}.append(${cv});`);
+  }
+  flush();
+}
+
 /** Emit the C++ that builds one element subtree into a fresh var; returns that var name. Completion is
  *  deferred (recorded in c.completes) so the whole subtree is assembled before anything completes. */
 function emitElement(node: t.CallExpression, c: Ctx): string {
@@ -522,9 +554,17 @@ function emitElement(node: t.CallExpression, c: Ctx): string {
   // Nested component instance: `<Counter label="A" />`. buildX returns an already-complete subtree.
   if (t.isIdentifier(tag) && sc.components.has(tag.name)) {
     const v = c.fresh();
-    // A stateless component (no signals/props) has no state class → `buildX(ctx)`.
+    // A component that slots props.children receives its (parent-built) kids as a QList<QQuickItem*>.
+    let slotArg = "";
+    if (sc.slotted.has(tag.name)) {
+      const slotVar = `__slot_${v}`;
+      out.push(`QList<QQuickItem *> ${slotVar};`);
+      emitSlotChildren(slotVar, children, c);
+      slotArg = `, ${slotVar}`;
+    }
+    // A stateless component (no signals/props) has no state class → `buildX(ctx[, slot])`.
     if (!sc.stateful.has(tag.name)) {
-      out.push(`auto *${v} = build${tag.name}(ctx);`);
+      out.push(`auto *${v} = build${tag.name}(ctx${slotArg});`);
       return v;
     }
     const stateVar = `${v}_st`;
@@ -534,7 +574,7 @@ function emitElement(node: t.CallExpression, c: Ctx): string {
         if (t.isObjectProperty(p) && t.isIdentifier(p.key) && p.key.name !== "children" && t.isExpression(p.value))
           out.push(`${stateVar}->set${cap(p.key.name)}(${emitExpr(p.value, sc)});`);
     }
-    out.push(`auto *${v} = build${tag.name}(ctx, ${stateVar});`, `${stateVar}->setParent(${v}); // lifetime tied to the built item`);
+    out.push(`auto *${v} = build${tag.name}(ctx, ${stateVar}${slotArg});`, `${stateVar}->setParent(${v}); // lifetime tied to the built item`);
     return v;
   }
   if (!t.isStringLiteral(tag)) throw new Error(`AOT: unsupported tag ${tag.type}`);
@@ -772,14 +812,17 @@ export async function generateCpp(source: string, filename: string, opts: Genera
   }
   if (!entryName) throw new Error("AOT: no <Window>-rooted entry component (M-AOT-0 needs an app window)");
 
-  // Pre-pass: which components own a state class (have signals/stores or read props → QVariant state).
+  // Pre-pass: which components own a state class (signals/stores or non-children props → QVariant
+  // state), and which slot props.children (their build fn takes a __slot list).
   const stateful = new Set<string>();
+  const slotted = new Set<string>();
   for (const [name, info] of comps) {
     const table = analyzeSignals(info.fn);
     const propsInfo = analyzeProps(info.fn);
     const hasCells = [...table.values()].some((s) => s.kind === "signal" || s.kind === "store")
       || propsInfo.used.some((n) => n !== "children") || analyzeResources(info.fn).length > 0;
     if (hasCells) stateful.add(name);
+    if (propsInfo.used.includes("children")) slotted.add(name);
   }
 
   const headers: string[] = [];
@@ -813,6 +856,7 @@ export async function generateCpp(source: string, filename: string, opts: Genera
       props: new Set(propNames),
       components: componentNames,
       stateful,
+      slotted,
       ...(resources.length ? { resources: resources.map((r) => r.name) } : {}),
       ...(propsInfo.aliases.length ? { propAliases: new Set(propsInfo.aliases) } : {}),
     };
@@ -865,9 +909,10 @@ export async function generateCpp(source: string, filename: string, opts: Genera
       signature = `QQuickItem *build${name}(QQmlContext *ctx)`;
     } else {
       retVar = emitElement(info.render, c);
+      const slotParam = slotted.has(name) ? `, const QList<QQuickItem *> &__slot` : "";
       signature = hasState
-        ? `QQuickItem *build${name}(QQmlContext *ctx, ${name}State *state)`
-        : `QQuickItem *build${name}(QQmlContext *ctx)`;
+        ? `QQuickItem *build${name}(QQmlContext *ctx, ${name}State *state${slotParam})`
+        : `QQuickItem *build${name}(QQmlContext *ctx${slotParam})`;
     }
     // Complete the fully-assembled tree bottom-up (reverse creation order).
     for (const v of [...completes].reverse()) out.push(`sq::complete(${v});`);

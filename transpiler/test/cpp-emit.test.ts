@@ -317,6 +317,18 @@ export function App() { return <Window width={100} height={100}><C /></Window>; 
   assert.match(source, /&SolidWidgets::Select::activated, state, \[\w+, state\]\(int __i\) \{ state->setF\(\w+->values\(\)\.toList\(\)\.value\(__i\)\); \}/);
 });
 
+test("cpp: props.children slotting — kids built in parent scope, appended at the marker", async () => {
+  const src = `
+import { div, text, Window } from "../../src/solid-qml/runtime";
+function Card(props) { return <div class="card">{props.children}</div>; }
+function C() { return <div class="a"><Card><text class="t">hi</text></Card></div>; }
+export function App() { return <Window width={100} height={100}><C /></Window>; }`;
+  const { source } = await generateCpp(src, "x.tsx");
+  assert.match(source, /QQuickItem \*buildCard\(QQmlContext \*ctx, const QList<QQuickItem \*> &__slot\)/); // slot param
+  assert.match(source, /for \(auto \*__s : __slot\) sq::append\(\w+, __s\);/);                            // slotted at the marker
+  assert.match(source, /QList<QQuickItem \*> __slot_\w+;[\s\S]*buildCard\(ctx, __slot_\w+\)/);            // kids collected + passed
+});
+
 test("cpp: <Switch>/<Match> — first-match-wins guards + fallback", async () => {
   const src = `
 import { createSignal, Switch, Match } from "solid-js";
