@@ -62,11 +62,54 @@ export function App() {
   await assert.rejects(() => generateCpp(src, "x.tsx"), /unsupported binary operator "%"/);
 });
 
-test("cpp: raw text in a <div> fails loudly (not silently dropped)", async () => {
+test("cpp: raw text in a <div> becomes an anonymous CssText child (inherits, no type match)", async () => {
   const src = `
 import { div, text, Window } from "../../src/solid-qml/runtime";
 export function App() {
   return <Window width={100} height={100}><div class="x">hello</div></Window>;
 }`;
-  await assert.rejects(() => generateCpp(src, "x.tsx"), /raw text content in <div>/);
+  const { source } = await generateCpp(src, "x.tsx");
+  assert.match(source, /new QmlCss::CssText\(\)/);
+  assert.match(source, /setCssPrimitive\(QStringLiteral\(""\)\)/);
+  assert.match(source, /setText\(sq::str\(sq::add\(QVariant\(QString\(\)\), QVariant\(QStringLiteral\("hello"\)\)\)\)\)/);
+});
+
+test("cpp: <text> keeps its class; completion is deferred bottom-up (assemble then complete)", async () => {
+  const src = `
+import { div, text, Window } from "../../src/solid-qml/runtime";
+export function App() {
+  return <Window width={100} height={100}><div class="a"><text class="b">hi</text></div></Window>;
+}`;
+  const { source } = await generateCpp(src, "x.tsx");
+  assert.match(source, /new SolidWidgets::Text\(\)[\s\S]*setCssClass\(sq::classes\(\{"b"\}\)\)/);
+  // all sq::complete calls come after all construction (deferred), in reverse creation order.
+  const firstComplete = source.indexOf("sq::complete(");
+  const lastNew = source.lastIndexOf("new ");
+  assert.ok(firstComplete > lastNew, "completes must follow all construction");
+});
+
+test("cpp: functional setter updater inlines the prev value (setX(v => v + 1))", async () => {
+  const src = `
+import { createSignal } from "solid-js";
+import { div, button, Window } from "../../src/solid-qml/runtime";
+function C() {
+  const [n, setN] = createSignal(0);
+  return <div class="c"><button onClick={() => setN((v) => v + 1)}>go</button></div>;
+}
+export function App() { return <Window width={100} height={100}><C /></Window>; }`;
+  const { source } = await generateCpp(src, "x.tsx");
+  assert.match(source, /state->setN\(sq::add\(state->n\(\), QVariant\(1\)\)\)/);
+});
+
+test("cpp: ternary binding → sq::truthy(...) ? a : b", async () => {
+  const src = `
+import { createSignal } from "solid-js";
+import { div, button, Window } from "../../src/solid-qml/runtime";
+function C() {
+  const [on, setOn] = createSignal(0);
+  return <div class="c"><button onClick={() => setOn(1)}>{on() ? "yes" : "no"}</button></div>;
+}
+export function App() { return <Window width={100} height={100}><C /></Window>; }`;
+  const { source } = await generateCpp(src, "x.tsx");
+  assert.match(source, /\(sq::truthy\(state->on\(\)\) \? QVariant\(QStringLiteral\("yes"\)\) : QVariant\(QStringLiteral\("no"\)\)\)/);
 });

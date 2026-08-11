@@ -5,6 +5,7 @@
 #include "aot/sqruntime.h"
 
 #include "qmlcss/cssrect.h"
+#include "qmlcss/csstext.h"
 #include "widgets/button.h"
 #include "widgets/primitives.h"
 
@@ -24,13 +25,13 @@ QQuickItem *buildCounter(QQmlContext *ctx, CounterState *state)
     auto *v1 = new SolidWidgets::Button();
     sq::begin(v1, ctx);
     QObject::connect(v1, &SolidWidgets::Button::clicked, state, [state] { state->setCount(sq::add(state->count(), QVariant(1))); });
-    sq::complete(v1);
     { auto __upd = [v1, state] { v1->setText(sq::str(sq::add(sq::add(sq::add(QVariant(QString()), state->label()), QVariant(QStringLiteral(": "))), state->count()))); };
       QObject::connect(state, &CounterState::labelChanged, v1, __upd);
       QObject::connect(state, &CounterState::countChanged, v1, __upd);
       __upd(); }
     sq::append(v0, v1);
     sq::complete(v0);
+    sq::complete(v1);
     return v0;
 }
 
@@ -58,8 +59,8 @@ QQuickItem *buildCounterApp(QQmlContext *ctx)
     auto *v3 = buildCounter(ctx, v3_st);
     v3_st->setParent(v3); // lifetime tied to the built item
     sq::append(v0, v3);
-    sq::complete(v0);
     sq::append(winBox, v0);
+    sq::complete(v0);
     sq::complete(winBox);
     return winBox;
 }

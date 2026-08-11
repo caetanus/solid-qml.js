@@ -65,6 +65,8 @@ interface Scope {
   props: Set<string>;
   components: Set<string>;
   stateClass: string;
+  /** Local aliases (e.g. a functional-updater param → `state->events()`). */
+  locals?: Record<string, string>;
 }
 
 /** Is `name` a state-backed reactive/prop cell (→ `state->name()`)? */
@@ -80,9 +82,12 @@ function emitExpr(node: t.Node, sc: Scope): string {
   if (t.isNumericLiteral(node)) return `QVariant(${Number.isInteger(node.value) ? node.value : `${node.value}`})`;
   if (t.isBooleanLiteral(node)) return `QVariant(${node.value})`;
   if (t.isIdentifier(node)) {
+    if (sc.locals && node.name in sc.locals) return sc.locals[node.name];
     if (isStateRead(node.name, sc)) return `state->${node.name}()`;
     throw new Error(`AOT: unsupported identifier "${node.name}" (not a signal/prop of the component)`);
   }
+  if (t.isConditionalExpression(node))
+    return `(sq::truthy(${emitExpr(node.test, sc)}) ? ${emitExpr(node.consequent, sc)} : ${emitExpr(node.alternate, sc)})`;
   // `count()` — a signal/memo accessor call with no args → the state getter.
   if (t.isCallExpression(node) && t.isIdentifier(node.callee) && node.arguments.length === 0 && isStateRead(node.callee.name, sc))
     return `state->${node.callee.name}()`;
@@ -152,13 +157,50 @@ function emitTextBinding(children: t.Node[], targetVar: string, sc: Scope, out: 
   out.push(`  __upd(); }`);
 }
 
-/** Emit the C++ that builds one element subtree into a fresh var; returns that var name. */
-function emitElement(node: t.CallExpression, sc: Scope, ctx: string, out: string[], fresh: () => string): string {
+/** Build context threaded through the element walker. `completes` records every item that still
+ *  needs componentComplete(), in CREATION order; the build function completes them in REVERSE at the
+ *  end (bottom-up), so each node's style resolution and layout see the fully-assembled tree — exactly
+ *  the QML engine's build-then-complete lifecycle. (Inheritance relies on the parent link existing
+ *  before a child completes.) */
+interface Ctx { sc: Scope; ctx: string; out: string[]; fresh: () => string; completes: string[] }
+
+const classLine = (v: string, classes: string[]) =>
+  classes.length ? [`${v}->setCssClass(sq::classes({${classes.map((c) => `"${c}"`).join(", ")}}));`] : [];
+
+/** Emit a container's children in order: element children as their own nodes, and each contiguous run
+ *  of raw text/expression children as an anonymous `Css.CssText` node (cssPrimitive "" — inherits
+ *  style, does not match type selectors), mirroring the QML back-end. */
+function emitChildrenInto(parentVar: string, children: t.Node[], c: Ctx): void {
+  let run: t.Node[] = [];
+  const meaningful = (n: t.Node) =>
+    (t.isStringLiteral(n) && (n.value.trim() || /\s/.test(n.value))) || (t.isJSXText(n) && n.value.trim())
+    || (t.isExpression(n) && !t.isStringLiteral(n) && !t.isJSXText(n));
+  const flush = () => {
+    if (run.some(meaningful)) {
+      const tv = c.fresh();
+      c.out.push(`auto *${tv} = new QmlCss::CssText();`, `sq::begin(${tv}, ctx);`, `${tv}->setCssPrimitive(QStringLiteral(""));`);
+      c.out.push(`sq::append(${parentVar}, ${tv});`);
+      emitTextBinding(run, tv, c.sc, c.out);
+      c.completes.push(tv);
+    }
+    run = [];
+  };
+  for (const n of children) {
+    if (isElement(n)) { flush(); const cv = emitElement(n as t.CallExpression, c); c.out.push(`sq::append(${parentVar}, ${cv});`); }
+    else run.push(n);
+  }
+  flush();
+}
+
+/** Emit the C++ that builds one element subtree into a fresh var; returns that var name. Completion is
+ *  deferred (recorded in c.completes) so the whole subtree is assembled before anything completes. */
+function emitElement(node: t.CallExpression, c: Ctx): string {
+  const { sc, out } = c;
   const { tag, props: propsArg, children } = hParts(node);
 
-  // Nested component instance: `<Counter label="A" />`.
+  // Nested component instance: `<Counter label="A" />`. buildX returns an already-complete subtree.
   if (t.isIdentifier(tag) && sc.components.has(tag.name)) {
-    const v = fresh();
+    const v = c.fresh();
     const stateVar = `${v}_st`;
     out.push(`auto *${stateVar} = new ${tag.name}State();`);
     if (propsArg && t.isObjectExpression(propsArg)) {
@@ -172,39 +214,32 @@ function emitElement(node: t.CallExpression, sc: Scope, ctx: string, out: string
   if (!t.isStringLiteral(tag)) throw new Error(`AOT: unsupported tag ${tag.type}`);
   const tagName = tag.value;
   const p = readProps(propsArg);
-  const v = fresh();
+  const v = c.fresh();
 
   if (tagName === "div") {
-    // A <div> is a pure container in M-AOT-0; raw text content (which the web wraps in an anonymous
-    // text node) is not modelled yet — fail loud rather than drop it silently.
-    for (const c of children)
-      if (!isElement(c) && ((t.isStringLiteral(c) && c.value.trim()) || (t.isJSXText(c) && c.value.trim()) || t.isExpression(c) && !t.isStringLiteral(c) && !t.isJSXText(c)))
-        throw new Error("AOT: raw text content in <div> is not supported (wrap it in <text>)");
-    out.push(`auto *${v} = new SolidWidgets::Div();`, `sq::begin(${v}, ctx);`);
-    if (p.classes.length) out.push(`${v}->setCssClass(sq::classes({${p.classes.map((c) => `"${c}"`).join(", ")}}));`);
-    for (const c of children) if (isElement(c)) { const cv = emitElement(c as t.CallExpression, sc, ctx, out, fresh); out.push(`sq::append(${v}, ${cv});`); }
-    out.push(`sq::complete(${v});`);
+    out.push(`auto *${v} = new SolidWidgets::Div();`, `sq::begin(${v}, ctx);`, ...classLine(v, p.classes));
+    emitChildrenInto(v, children, c);
+    c.completes.push(v);
     return v;
   }
   if (tagName === "button") {
-    out.push(`auto *${v} = new SolidWidgets::Button();`, `sq::begin(${v}, ctx);`);
-    if (p.classes.length) out.push(`${v}->setCssClass(sq::classes({${p.classes.map((c) => `"${c}"`).join(", ")}}));`);
+    out.push(`auto *${v} = new SolidWidgets::Button();`, `sq::begin(${v}, ctx);`, ...classLine(v, p.classes));
     if (p.onClick) {
       if (!t.isArrowFunctionExpression(p.onClick) && !t.isFunctionExpression(p.onClick)) throw new Error("AOT: onClick must be an inline arrow");
       if (t.isBlockStatement(p.onClick.body)) throw new Error("AOT: block-bodied onClick not supported");
       out.push(`QObject::connect(${v}, &SolidWidgets::Button::clicked, state, [state] { ${emitHandler(p.onClick.body, sc)} });`);
     }
-    // element children first (so the label composes after), then the text binding.
-    for (const c of children) if (isElement(c)) { const cv = emitElement(c as t.CallExpression, sc, ctx, out, fresh); out.push(`sq::append(${v}, ${cv});`); }
-    out.push(`sq::complete(${v});`);
+    // Match the QML declaration order: the `text` property first, then the element children.
     emitTextBinding(children, v, sc, out);
+    for (const n of children) if (isElement(n)) { const cv = emitElement(n as t.CallExpression, c); out.push(`sq::append(${v}, ${cv});`); }
+    c.completes.push(v);
     return v;
   }
   if (TEXT_TAGS.has(tagName)) {
-    out.push(`auto *${v} = new SolidWidgets::Text();`, `sq::begin(${v}, ctx);`);
+    out.push(`auto *${v} = new SolidWidgets::Text();`, `sq::begin(${v}, ctx);`, ...classLine(v, p.classes));
     if (tagName !== "text") out.push(`${v}->setCssPrimitive(${cppStr(tagName)});`);
-    out.push(`sq::complete(${v});`);
     emitTextBinding(children, v, sc, out);
+    c.completes.push(v);
     return v;
   }
   throw new Error(`AOT: unsupported element <${tagName}>`);
@@ -217,6 +252,12 @@ function emitHandler(body: t.Expression, sc: Scope): string {
     if (sym && sym.kind === "setter") {
       const arg = body.arguments[0];
       if (!arg || !t.isExpression(arg)) throw new Error("AOT: setter handler needs one expression arg");
+      // Functional-updater form `setX(prev => expr)` → inline with prev bound to the current getter.
+      if ((t.isArrowFunctionExpression(arg) || t.isFunctionExpression(arg)) && !t.isBlockStatement(arg.body)) {
+        const param = arg.params[0] && t.isIdentifier(arg.params[0]) ? arg.params[0].name : null;
+        const inner: Scope = param ? { ...sc, locals: { ...(sc.locals ?? {}), [param]: `state->${sym.signal}()` } } : sc;
+        return `state->set${cap(sym.signal)}(${emitExpr(arg.body, inner)});`;
+      }
       return `state->set${cap(sym.signal)}(${emitExpr(arg, sc)});`;
     }
   }
@@ -310,22 +351,28 @@ export async function generateCpp(source: string, filename: string): Promise<Gen
     const out: string[] = [];
     let n = 0;
     const fresh = () => `v${n++}`;
-    let signature: string;
+    const completes: string[] = [];
+    const c: Ctx = { sc, ctx: "ctx", out, fresh, completes };
+    let signature: string, retVar: string;
     if (isEntry) {
       // <Window> root → build the window-primitive box and the child subtree inside it.
       const win = readWindow(info.render);
       out.push(`auto *winBox = new QmlCss::CssRect();`, `sq::begin(winBox, ctx);`,
         `winBox->setCssPrimitive(QStringLiteral("window"));`, `winBox->setCssClass(sq::classes({"qml-window"}));`);
-      const childVar = emitElement(win.child, sc, "ctx", out, fresh);
-      out.push(`sq::append(winBox, ${childVar});`, `sq::complete(winBox);`, `return winBox;`);
+      completes.push("winBox"); // created first → completes last (bottom-up)
+      const childVar = emitElement(win.child, c);
+      out.push(`sq::append(winBox, ${childVar});`);
+      retVar = "winBox";
       signature = `QQuickItem *build${name}(QQmlContext *ctx)`;
     } else {
-      const childVar = emitElement(info.render, sc, "ctx", out, fresh);
-      out.push(`return ${childVar};`);
+      retVar = emitElement(info.render, c);
       signature = hasState
         ? `QQuickItem *build${name}(QQmlContext *ctx, ${name}State *state)`
         : `QQuickItem *build${name}(QQmlContext *ctx)`;
     }
+    // Complete the fully-assembled tree bottom-up (reverse creation order).
+    for (const v of [...completes].reverse()) out.push(`sq::complete(${v});`);
+    out.push(`return ${retVar};`);
     forwards.push(`${signature};`);
     sources.push(`${signature}\n{\n    ${out.join("\n    ")}\n}\n`);
   }
@@ -361,6 +408,7 @@ export async function generateCpp(source: string, filename: string): Promise<Gen
     '#include "aot/sqruntime.h"',
     "",
     '#include "qmlcss/cssrect.h"',
+    '#include "qmlcss/csstext.h"',
     '#include "widgets/button.h"',
     '#include "widgets/primitives.h"',
     "",

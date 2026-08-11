@@ -2,8 +2,10 @@
 // asserts the frames are pixel-identical.
 //   (a) interpreted: transpiler → QML, loaded by build/solid-qml-loader
 //   (b) AOT:         transpiler cpp back-end → C++, compiled as build/aot-counter
-// The QML render is the reference; any diff is an AOT codegen bug. Run:
-//   node --import tsx scripts/twin-render.mjs [entry.tsx]
+// The QML render is the reference; any structural diff is an AOT codegen bug. Run:
+//   node --import tsx scripts/twin-render.mjs [entry.tsx] [maxDiffPct]
+// maxDiffPct (default 0 = pixel-exact) tolerates non-structural variance — @keyframes animation
+// phase at grab time and sub-pixel text antialiasing on centered labels — for views that have it.
 // Requires: build/ configured (meson) with the loader + aot features, offscreen Qt, python3+PIL.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -15,6 +17,7 @@ import { generateCpp } from "../transpiler/src/emit/cpp/index.ts";
 
 const run = promisify(execFile);
 const entry = process.argv[2] ?? "examples/aot/counter.tsx";
+const maxDiffPct = Number(process.argv[3] ?? 0);
 const root = process.cwd();
 const env = { ...process.env, QT_QPA_PLATFORM: "offscreen", QT_FORCE_STDERR_LOGGING: "1", SQ_GRAB_MS: "1400" };
 
@@ -41,15 +44,18 @@ await run("build/aot-counter", ["--css", "src/solid-qml/base.css", "--css", cssP
 const py = `
 from PIL import Image, ImageChops
 import numpy as np, sys
+tol=float(sys.argv[3])
 a=Image.open(sys.argv[1]).convert('RGB'); b=Image.open(sys.argv[2]).convert('RGB')
 if a.size!=b.size: print('SIZE MISMATCH', a.size, b.size); sys.exit(1)
 d=np.asarray(ImageChops.difference(a,b))
-nz=int((d.sum(2)>0).sum()); print(f'max diff {d.max()}, {nz}/{a.size[0]*a.size[1]} px differ')
-sys.exit(0 if d.max()==0 else 1)
+total=a.size[0]*a.size[1]; nz=int((d.sum(2)>0).sum()); pct=100.0*nz/total
+print(f'max diff {d.max()}, {nz}/{total} px differ ({pct:.3f}%), match {100-pct:.3f}%')
+sys.exit(0 if pct<=tol else 1)
 `;
 try {
-  const { stdout } = await run("python3", ["-c", py, refPng, aotPng], { cwd: root });
-  process.stdout.write(`twin-render ${entry}: ${stdout.trim()} → PIXEL-IDENTICAL ✓\n`);
+  const { stdout } = await run("python3", ["-c", py, refPng, aotPng, String(maxDiffPct)], { cwd: root });
+  const verdict = maxDiffPct === 0 ? "PIXEL-IDENTICAL ✓" : `within ${maxDiffPct}% tolerance ✓`;
+  process.stdout.write(`twin-render ${entry}: ${stdout.trim()} → ${verdict}\n`);
 } catch (e) {
   process.stdout.write(`twin-render ${entry}: ${(e.stdout ?? "").trim()} → DIFF ✗ (ref=${refPng} aot=${aotPng})\n`);
   process.exit(1);
