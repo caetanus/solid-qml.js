@@ -564,6 +564,7 @@ function emitElement(node: t.CallExpression, c: Ctx): string {
   if (tagName === "input") { emitTextControl(propsArg, p, v, c, false); c.completes.push(v); return v; }
   if (tagName === "textarea") { emitTextControl(propsArg, p, v, c, true); c.completes.push(v); return v; }
   if (tagName === "img") { emitImage(propsArg, p, v, c); c.completes.push(v); return v; }
+  if (tagName === "select") { emitSelect(propsArg, children, p, v, c); c.completes.push(v); return v; }
   if (TEXT_TAGS.has(tagName)) {
     out.push(`auto *${v} = new SolidWidgets::Text();`, `sq::begin(${v}, ctx);`, ...classLine(v, p.classes));
     if (tagName !== "text") out.push(`${v}->setCssPrimitive(${cppStr(tagName)});`);
@@ -652,6 +653,61 @@ function emitTextControl(propsArg: t.Node | undefined, p: ElemProps, v: string, 
   if (onInput) {
     if (!t.isArrowFunctionExpression(onInput) && !t.isFunctionExpression(onInput)) throw new Error("AOT: onInput must be an inline arrow");
     c.out.push(`QObject::connect(${v}, &SolidWidgets::${cls}::${editSignal}, state, [${v}, state] { ${emitInputHandler(onInput, v, c.sc)} });`);
+  }
+}
+
+/** Controlled `<select value={v} onChange={…}><option value="x">Label</option>…</select>` →
+ *  SolidWidgets::Select (model = labels, values = the option values). The controlled currentIndex
+ *  tracks value→index; `activated(index)` runs onChange with the picked value (`values[index]`). */
+function emitSelect(propsArg: t.Node | undefined, children: t.Node[], p: ElemProps, v: string, c: Ctx): void {
+  let value: t.Expression | null = null, onChange: t.Node | undefined;
+  if (propsArg && t.isObjectExpression(propsArg))
+    for (const pr of propsArg.properties) {
+      if (!t.isObjectProperty(pr) || !t.isIdentifier(pr.key)) continue;
+      if (pr.key.name === "value" && t.isExpression(pr.value)) value = pr.value;
+      else if (pr.key.name === "onChange" || pr.key.name === "onInput") onChange = pr.value;
+    }
+  const labels: string[] = [], values: string[] = [];
+  for (const ch of children) {
+    if (!isElement(ch)) continue;
+    const { tag, children: ock } = hParts(ch as t.CallExpression);
+    if (!t.isStringLiteral(tag, { value: "option" })) continue;
+    let ov = "";
+    const op = (ch as t.CallExpression).arguments[1];
+    if (op && t.isObjectExpression(op))
+      for (const pr of op.properties)
+        if (t.isObjectProperty(pr) && t.isIdentifier(pr.key, { name: "value" }) && t.isStringLiteral(pr.value)) ov = pr.value.value;
+    let label = "";
+    for (const oc of ock) { if (t.isStringLiteral(oc)) label = oc.value; else if (t.isJSXText(oc) && oc.value.trim()) label = oc.value.trim(); }
+    labels.push(label); values.push(ov || label);
+  }
+  c.out.push(
+    `auto *${v} = new SolidWidgets::Select();`, `sq::begin(${v}, ctx);`, ...classLine(v, p.classes),
+    `${v}->setModel(QVariant::fromValue(QVariantList{${labels.map((l) => cppStr(l)).join(", ")}}));`,
+    `${v}->setValues(QVariant::fromValue(QVariantList{${values.map((l) => cppStr(l)).join(", ")}}));`,
+  );
+  if (value) {
+    // Controlled: currentIndex follows the bound value's position in the values list.
+    c.out.push(`{ auto __sync = [${v}, state] { ${v}->setCurrentIndex(${v}->values().toList().indexOf(${emitExpr(value, c.sc)})); };`);
+    const deps = new Set<string>(); collectDeps(value, c.sc, deps);
+    for (const d of deps) c.out.push(`  QObject::connect(state, &${c.sc.stateClass}::${d}Changed, ${v}, __sync);`);
+    c.out.push(`  __sync(); }`);
+  }
+  if (onChange) {
+    if (!t.isArrowFunctionExpression(onChange) && !t.isFunctionExpression(onChange)) throw new Error("AOT: <select> onChange must be an inline arrow");
+    if (t.isBlockStatement(onChange.body)) throw new Error("AOT: block-bodied <select> onChange not supported");
+    // e.target.value → the picked value (values[index]); other setter args emit normally.
+    const ev = onChange.params[0] && t.isIdentifier(onChange.params[0]) ? onChange.params[0].name : null;
+    const body = onChange.body;
+    let handler: string;
+    if (t.isCallExpression(body) && t.isIdentifier(body.callee) && c.sc.table.get(body.callee.name)?.kind === "setter") {
+      const sym = c.sc.table.get(body.callee.name) as { kind: "setter"; signal: string };
+      const arg = body.arguments[0];
+      handler = arg && isEventValue(arg, ev)
+        ? `state->set${cap(sym.signal)}(${v}->values().toList().value(__i));`
+        : `state->set${cap(sym.signal)}(${arg && t.isExpression(arg) ? emitExpr(arg, c.sc) : "QVariant()"});`;
+    } else throw new Error("AOT: unsupported <select> onChange (only setX(e.target.value))");
+    c.out.push(`QObject::connect(${v}, &SolidWidgets::Select::activated, state, [${v}, state](int __i) { ${handler} });`);
   }
 }
 
@@ -858,6 +914,7 @@ export async function generateCpp(source: string, filename: string, opts: Genera
     '#include "qmlcss/csstext.h"',
     '#include "widgets/button.h"',
     '#include "widgets/primitives.h"',
+    '#include "widgets/select.h"',
     '#include "widgets/textinputs.h"',
     "",
     "#include <QJSEngine>",

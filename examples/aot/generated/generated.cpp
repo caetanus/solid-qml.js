@@ -8,6 +8,7 @@
 #include "qmlcss/csstext.h"
 #include "widgets/button.h"
 #include "widgets/primitives.h"
+#include "widgets/select.h"
 #include "widgets/textinputs.h"
 
 #include <QJSEngine>

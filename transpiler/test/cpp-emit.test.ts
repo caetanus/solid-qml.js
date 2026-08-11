@@ -298,6 +298,25 @@ export function App() { return <Window width={100} height={100}><C /></Window>; 
   assert.match(source, /->setSrc\(QUrl\(sq::str\(QVariant\(QStringLiteral\("\/abs\/logo\.png"\)\)\)\)\);/); // static src, one-shot (no `state`)
 });
 
+test("cpp: controlled <select> — model/values + activated→setter with picked value", async () => {
+  const src = `
+import { createSignal } from "solid-js";
+import { div, select, option, Window } from "../../src/solid-qml/runtime";
+function C() {
+  const [f, setF] = createSignal("b");
+  return <div class="a"><select value={f()} onChange={(e) => setF(e.target.value)}>
+    <option value="a">A</option><option value="b">B</option>
+  </select></div>;
+}
+export function App() { return <Window width={100} height={100}><C /></Window>; }`;
+  const { source } = await generateCpp(src, "x.tsx");
+  assert.match(source, /new SolidWidgets::Select\(\)/);
+  assert.match(source, /->setModel\(QVariant::fromValue\(QVariantList\{QStringLiteral\("A"\), QStringLiteral\("B"\)\}\)\)/);
+  assert.match(source, /->setValues\(QVariant::fromValue\(QVariantList\{QStringLiteral\("a"\), QStringLiteral\("b"\)\}\)\)/);
+  assert.match(source, /setCurrentIndex\(\w+->values\(\)\.toList\(\)\.indexOf\(state->f\(\)\)\)/); // controlled
+  assert.match(source, /&SolidWidgets::Select::activated, state, \[\w+, state\]\(int __i\) \{ state->setF\(\w+->values\(\)\.toList\(\)\.value\(__i\)\); \}/);
+});
+
 test("cpp: <Switch>/<Match> — first-match-wins guards + fallback", async () => {
   const src = `
 import { createSignal, Switch, Match } from "solid-js";
