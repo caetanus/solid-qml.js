@@ -57,9 +57,9 @@ import { createSignal } from "solid-js";
 import { div, button, Window } from "../../src/solid-qml/runtime";
 export function App() {
   const [n] = createSignal(0);
-  return <Window width={100} height={100}><div class="x"><button>{n() % 2}</button></div></Window>;
+  return <Window width={100} height={100}><div class="x"><button>{n() ** 2}</button></div></Window>;
 }`;
-  await assert.rejects(() => generateCpp(src, "x.tsx"), /unsupported binary operator "%"/);
+  await assert.rejects(() => generateCpp(src, "x.tsx"), /unsupported binary operator "\*\*"/);
 });
 
 test("cpp: raw text in a <div> becomes an anonymous CssText child (inherits, no type match)", async () => {
@@ -99,6 +99,60 @@ function C() {
 export function App() { return <Window width={100} height={100}><C /></Window>; }`;
   const { source } = await generateCpp(src, "x.tsx");
   assert.match(source, /state->setN\(sq::add\(state->n\(\), QVariant\(1\)\)\)/);
+});
+
+test("cpp: derived accessor is inlined; its deps drive the binding", async () => {
+  const src = `
+import { createSignal } from "solid-js";
+import { div, text, button, Window } from "../../src/solid-qml/runtime";
+function C() {
+  const [count, setCount] = createSignal(0);
+  const doubled = () => count() * 2;
+  return <div class="c"><text>{count()} x2 = {doubled()}</text></div>;
+}
+export function App() { return <Window width={100} height={100}><C /></Window>; }`;
+  const { source } = await generateCpp(src, "x.tsx");
+  assert.match(source, /\(sq::mul\(state->count\(\), QVariant\(2\)\)\)/); // inlined body
+  assert.match(source, /&CState::countChanged/); // dep discovered THROUGH the derived
+});
+
+test("cpp: mergeProps defaults seed the state member; alias.member resolves to props", async () => {
+  const src = `
+import { mergeProps } from "solid-js";
+import { text, div, Window } from "../../src/solid-qml/runtime";
+function G(props: { greeting?: string; name?: string }) {
+  const merged = mergeProps({ greeting: "Hello", name: "stranger" }, props);
+  return <text class="h1">{merged.greeting}, {merged.name}!</text>;
+}
+export function App() { return <Window width={100} height={100}><div class="a"><G name="Solid" /></div></Window>; }`;
+  const { header, source } = await generateCpp(src, "x.tsx");
+  assert.match(header, /QVariant m_greeting = QStringLiteral\("Hello"\);/);
+  assert.match(header, /QVariant m_name = QStringLiteral\("stranger"\);/);
+  assert.match(source, /state->greeting\(\)/); // merged.greeting → the prop getter
+  assert.match(source, /->setName\(QVariant\(QStringLiteral\("Solid"\)\)\)/); // instance override
+});
+
+test("cpp: a stateless component instance builds without a state class", async () => {
+  const src = `
+import { text, div, Window } from "../../src/solid-qml/runtime";
+function Inner() { return <text class="b">hi</text>; }
+export function App() { return <Window width={100} height={100}><div class="a"><Inner /></div></Window>; }`;
+  const { source } = await generateCpp(src, "x.tsx");
+  assert.match(source, /auto \*\w+ = buildInner\(ctx\);/); // no `new InnerState`
+  assert.doesNotMatch(source, /new InnerState/);
+});
+
+test("cpp: comparison + logical operators map to sq:: helpers", async () => {
+  const src = `
+import { createSignal } from "solid-js";
+import { div, button, Window } from "../../src/solid-qml/runtime";
+function C() {
+  const [t, setT] = createSignal("h1");
+  return <div class="c"><button onClick={() => setT(t() === "h1" ? "p" : "h1")}>{t()}</button></div>;
+}
+export function App() { return <Window width={100} height={100}><C /></Window>; }`;
+  const { source } = await generateCpp(src, "x.tsx");
+  assert.match(source, /sq::strictEq\(state->t\(\), QVariant\(QStringLiteral\("h1"\)\)\)/);
 });
 
 test("cpp: ternary binding → sq::truthy(...) ? a : b", async () => {

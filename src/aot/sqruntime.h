@@ -20,6 +20,8 @@ inline bool isString(const QVariant &v)
     return v.typeId() == QMetaType::QString || v.typeId() == QMetaType::QChar;
 }
 
+bool truthy(const QVariant &v); // defined below; used by the logical operators
+
 // JS `String(v)` — the coercion `"" + v` performs. Numbers print without a trailing ".0" for
 // integral values (ECMAScript Number→String), booleans as "true"/"false", null/undefined faithfully.
 inline QString str(const QVariant &v)
@@ -74,6 +76,24 @@ inline QVariant add(const QVariant &a, const QVariant &b)
 inline QVariant sub(const QVariant &a, const QVariant &b) { return num(a) - num(b); }
 inline QVariant mul(const QVariant &a, const QVariant &b) { return num(a) * num(b); }
 inline QVariant div(const QVariant &a, const QVariant &b) { return num(a) / num(b); }
+inline QVariant mod(const QVariant &a, const QVariant &b) { return std::fmod(num(a), num(b)); }
+
+// Relational operators. String-vs-string compares lexically (JS); otherwise numeric.
+inline QVariant lt(const QVariant &a, const QVariant &b) { return isString(a) && isString(b) ? a.toString() < b.toString() : num(a) < num(b); }
+inline QVariant gt(const QVariant &a, const QVariant &b) { return isString(a) && isString(b) ? a.toString() > b.toString() : num(a) > num(b); }
+inline QVariant le(const QVariant &a, const QVariant &b) { return isString(a) && isString(b) ? a.toString() <= b.toString() : num(a) <= num(b); }
+inline QVariant ge(const QVariant &a, const QVariant &b) { return isString(a) && isString(b) ? a.toString() >= b.toString() : num(a) >= num(b); }
+
+// JS strict equality `===`: same JS type AND equal value. QVariant::operator== already compares by
+// value with type awareness for our cases (numbers/strings/bools).
+inline QVariant strictEq(const QVariant &a, const QVariant &b) { return isString(a) != isString(b) ? false : a == b; }
+inline QVariant strictNe(const QVariant &a, const QVariant &b) { return !strictEq(a, b).toBool(); }
+
+// JS `&&`/`||`/`??` return one of the OPERANDS (not a bool). `!` returns a real bool.
+inline QVariant and_(const QVariant &a, const QVariant &b) { return truthy(a) ? b : a; }
+inline QVariant or_(const QVariant &a, const QVariant &b) { return truthy(a) ? a : b; }
+inline QVariant nullish(const QVariant &a, const QVariant &b) { return (a.typeId() == QMetaType::UnknownType || a.typeId() == QMetaType::Nullptr) ? b : a; }
+inline QVariant not_(const QVariant &a) { return !truthy(a); }
 
 // JS truthiness (for <Show>/conditional bindings): 0, NaN, "", null, undefined, false are falsy.
 inline bool truthy(const QVariant &v)

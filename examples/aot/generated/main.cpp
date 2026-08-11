@@ -3,9 +3,12 @@
 // generated scene in C++, hosts it in a QQuickWindow, supports the offscreen --grab/--click.
 #include "generated.h"
 
+#include "aot/sqbuild.h"
 #include "qmlcss/QMLCss.h"
 #include "qmlcss/csslayout.h"
 #include "qmlcss/csstheme.h"
+#include "shims/tabstop.h"
+#include "widgets/focusring.h"
 #include "widgets/solidwidgets.h"
 
 #include <QApplication>
@@ -39,9 +42,11 @@ int main(int argc, char **argv)
     QQmlEngine engine;
     QmlCss::CssTheme theme;
     QmlCss::CssLayoutEngine layout(&theme);
+    SolidTabstop solidTabstop;
     QQmlContext *ctx = engine.rootContext();
     ctx->setContextProperty(QStringLiteral("cssTheme"), &theme);
     ctx->setContextProperty(QStringLiteral("cssLayout"), &layout);
+    ctx->setContextProperty(QStringLiteral("solidTabstop"), &solidTabstop);
     theme.loadLayered(parser.values(QStringLiteral("css")));
 
     QQuickWindow window;
@@ -57,6 +62,18 @@ int main(int argc, char **argv)
     root->setSize(QSizeF(w, h));
     QObject::connect(&window, &QQuickWindow::widthChanged, root, [root, &window] { root->setWidth(window.width()); });
     QObject::connect(&window, &QQuickWindow::heightChanged, root, [root, &window] { root->setHeight(window.height()); });
+
+    // Desktop tab-focus chrome (mirrors the generated Window's Tabstop + focus-on-load): the
+    // Tabstop overlay tracks the focused control and paints the ::tab-stop ring.
+    auto *tabstop = new SolidWidgets::Tabstop();
+    sq::begin(tabstop, ctx);
+    tabstop->setWindow(&window);
+    tabstop->setParentItem(window.contentItem());
+    sq::complete(tabstop);
+    if (solidTabstop.enabled())
+        QTimer::singleShot(0, &window, [&window] {
+            if (auto *f = window.contentItem()->nextItemInFocusChain(true)) f->forceActiveFocus(Qt::TabFocusReason);
+        });
     window.show();
 
     const int grabMs = qEnvironmentVariableIntValue("SQ_GRAB_MS") > 0 ? qEnvironmentVariableIntValue("SQ_GRAB_MS") : 1400;

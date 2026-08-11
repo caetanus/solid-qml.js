@@ -67,6 +67,10 @@ interface Scope {
   stateClass: string;
   /** Local aliases (e.g. a functional-updater param → `state->events()`). */
   locals?: Record<string, string>;
+  /** mergeProps/splitProps alias names whose `.member` reads resolve to props (`merged.greeting`). */
+  propAliases?: Set<string>;
+  /** Component names that own a state class (built as `buildX(ctx, new XState())` vs `buildX(ctx)`). */
+  stateful: Set<string>;
 }
 
 /** Is `name` a state-backed reactive/prop cell (→ `state->name()`)? */
@@ -88,15 +92,33 @@ function emitExpr(node: t.Node, sc: Scope): string {
   }
   if (t.isConditionalExpression(node))
     return `(sq::truthy(${emitExpr(node.test, sc)}) ? ${emitExpr(node.consequent, sc)} : ${emitExpr(node.alternate, sc)})`;
-  // `count()` — a signal/memo accessor call with no args → the state getter.
-  if (t.isCallExpression(node) && t.isIdentifier(node.callee) && node.arguments.length === 0 && isStateRead(node.callee.name, sc))
-    return `state->${node.callee.name}()`;
-  // `props.label` → the state getter of the same name.
+  if (t.isUnaryExpression(node) && node.operator === "!") return `sq::not_(${emitExpr(node.argument, sc)})`;
+  if (t.isUnaryExpression(node) && node.operator === "-" && t.isNumericLiteral(node.argument))
+    return `QVariant(-${node.argument.value})`;
+  if (t.isCallExpression(node) && t.isIdentifier(node.callee)) {
+    const sym = sc.table.get(node.callee.name);
+    // `count()` — a signal/memo/store accessor call with no args → the state getter.
+    if (node.arguments.length === 0 && isStateRead(node.callee.name, sc)) return `state->${node.callee.name}()`;
+    // `doubleCount()` — a derived (a plain zero/param accessor) → inline its expression body, binding
+    // any params to the call args (JS derived are just functions; we inline rather than emit a method).
+    if (sym && sym.kind === "derived" && t.isExpression(sym.body)) {
+      const locals = { ...(sc.locals ?? {}) };
+      sym.params.forEach((pn, i) => { const a = node.arguments[i]; if (t.isExpression(a)) locals[pn] = emitExpr(a, sc); });
+      return `(${emitExpr(sym.body, { ...sc, locals })})`;
+    }
+  }
+  // `props.label` / `merged.greeting` (a mergeProps/splitProps alias) → the state getter.
   if (t.isMemberExpression(node) && !node.computed && t.isIdentifier(node.object) && t.isIdentifier(node.property)
-      && node.object.name === sc.propsParam)
+      && (node.object.name === sc.propsParam || sc.propAliases?.has(node.object.name)))
     return `state->${node.property.name}()`;
+  if (t.isLogicalExpression(node)) {
+    const fn = { "&&": "and_", "||": "or_", "??": "nullish" }[node.operator];
+    return `sq::${fn}(${emitExpr(node.left, sc)}, ${emitExpr(node.right, sc)})`;
+  }
   if (t.isBinaryExpression(node) && t.isExpression(node.left)) {
-    const op = ({ "+": "add", "-": "sub", "*": "mul", "/": "div" } as Record<string, string>)[node.operator];
+    const op = ({ "+": "add", "-": "sub", "*": "mul", "/": "div", "%": "mod",
+      "===": "strictEq", "!==": "strictNe", "==": "strictEq", "!=": "strictNe",
+      "<": "lt", ">": "gt", "<=": "le", ">=": "ge" } as Record<string, string>)[node.operator];
     if (!op) throw new Error(`AOT: unsupported binary operator "${node.operator}"`);
     return `sq::${op}(${emitExpr(node.left, sc)}, ${emitExpr(node.right, sc)})`;
   }
@@ -106,10 +128,14 @@ function emitExpr(node: t.Node, sc: Scope): string {
 /** Collect the reactive dependency identifiers (signals/props) an expression reads. */
 function collectDeps(node: t.Node, sc: Scope, out: Set<string>): void {
   if (t.isIdentifier(node) && isStateRead(node.name, sc)) out.add(node.name);
-  if (t.isCallExpression(node) && t.isIdentifier(node.callee) && node.arguments.length === 0 && isStateRead(node.callee.name, sc))
-    out.add(node.callee.name);
+  if (t.isCallExpression(node) && t.isIdentifier(node.callee)) {
+    if (node.arguments.length === 0 && isStateRead(node.callee.name, sc)) out.add(node.callee.name);
+    // A derived accessor's deps are the deps of its (inlined) body.
+    const sym = sc.table.get(node.callee.name);
+    if (sym && sym.kind === "derived" && t.isExpression(sym.body)) collectDeps(sym.body, sc, out);
+  }
   if (t.isMemberExpression(node) && !node.computed && t.isIdentifier(node.object) && t.isIdentifier(node.property)
-      && node.object.name === sc.propsParam)
+      && (node.object.name === sc.propsParam || sc.propAliases?.has(node.object.name)))
     out.add(node.property.name);
   for (const key of Object.keys(node)) {
     const v = (node as unknown as Record<string, unknown>)[key];
@@ -201,6 +227,11 @@ function emitElement(node: t.CallExpression, c: Ctx): string {
   // Nested component instance: `<Counter label="A" />`. buildX returns an already-complete subtree.
   if (t.isIdentifier(tag) && sc.components.has(tag.name)) {
     const v = c.fresh();
+    // A stateless component (no signals/props) has no state class → `buildX(ctx)`.
+    if (!sc.stateful.has(tag.name)) {
+      out.push(`auto *${v} = build${tag.name}(ctx);`);
+      return v;
+    }
     const stateVar = `${v}_st`;
     out.push(`auto *${stateVar} = new ${tag.name}State();`);
     if (propsArg && t.isObjectExpression(propsArg)) {
@@ -296,6 +327,16 @@ export async function generateCpp(source: string, filename: string): Promise<Gen
   }
   if (!entryName) throw new Error("AOT: no <Window>-rooted entry component (M-AOT-0 needs an app window)");
 
+  // Pre-pass: which components own a state class (have signals/stores or read props → QVariant state).
+  const stateful = new Set<string>();
+  for (const [name, info] of comps) {
+    const table = analyzeSignals(info.fn);
+    const propsInfo = analyzeProps(info.fn);
+    const hasCells = [...table.values()].some((s) => s.kind === "signal" || s.kind === "store")
+      || propsInfo.used.some((n) => n !== "children");
+    if (hasCells) stateful.add(name);
+  }
+
   const headers: string[] = [];
   const sources: string[] = [];
   const forwards: string[] = [];
@@ -305,10 +346,11 @@ export async function generateCpp(source: string, filename: string): Promise<Gen
     const propsInfo = analyzeProps(info.fn);
     const propNames = propsInfo.used.filter((n) => n !== "children");
     // The reactive cells that become QVariant state properties (signals/memos/stores), plus props.
+    // A prop with a mergeProps default seeds the state member with that default (props override it).
     const cells = new Map<string, t.Expression | null>();
     for (const sym of table.values())
       if (sym.kind === "signal" || sym.kind === "store") cells.set(sym.name, sym.init ?? null);
-    for (const n of propNames) if (!cells.has(n)) cells.set(n, null);
+    for (const n of propNames) if (!cells.has(n)) cells.set(n, propsInfo.defaults[n] ?? null);
 
     const sc: Scope & { table: SymbolTable; propsParam: string | null; props: Set<string>; components: Set<string> } = {
       stateClass: `${name}State`,
@@ -316,6 +358,8 @@ export async function generateCpp(source: string, filename: string): Promise<Gen
       propsParam: propsInfo.param,
       props: new Set(propNames),
       components: componentNames,
+      stateful,
+      ...(propsInfo.aliases.length ? { propAliases: new Set(propsInfo.aliases) } : {}),
     };
 
     const isEntry = name === entryName;
@@ -444,9 +488,12 @@ function emitMain(entryName: string, win: WindowMeta): string {
     "// generated scene in C++, hosts it in a QQuickWindow, supports the offscreen --grab/--click.",
     '#include "generated.h"',
     "",
+    '#include "aot/sqbuild.h"',
     '#include "qmlcss/QMLCss.h"',
     '#include "qmlcss/csslayout.h"',
     '#include "qmlcss/csstheme.h"',
+    '#include "shims/tabstop.h"',
+    '#include "widgets/focusring.h"',
     '#include "widgets/solidwidgets.h"',
     "",
     "#include <QApplication>",
@@ -480,9 +527,11 @@ function emitMain(entryName: string, win: WindowMeta): string {
     "    QQmlEngine engine;",
     "    QmlCss::CssTheme theme;",
     "    QmlCss::CssLayoutEngine layout(&theme);",
+    "    SolidTabstop solidTabstop;",
     "    QQmlContext *ctx = engine.rootContext();",
     '    ctx->setContextProperty(QStringLiteral("cssTheme"), &theme);',
     '    ctx->setContextProperty(QStringLiteral("cssLayout"), &layout);',
+    '    ctx->setContextProperty(QStringLiteral("solidTabstop"), &solidTabstop);',
     '    theme.loadLayered(parser.values(QStringLiteral("css")));',
     "",
     "    QQuickWindow window;",
@@ -498,6 +547,18 @@ function emitMain(entryName: string, win: WindowMeta): string {
     "    root->setSize(QSizeF(w, h));",
     "    QObject::connect(&window, &QQuickWindow::widthChanged, root, [root, &window] { root->setWidth(window.width()); });",
     "    QObject::connect(&window, &QQuickWindow::heightChanged, root, [root, &window] { root->setHeight(window.height()); });",
+    "",
+    "    // Desktop tab-focus chrome (mirrors the generated Window's Tabstop + focus-on-load): the",
+    "    // Tabstop overlay tracks the focused control and paints the ::tab-stop ring.",
+    "    auto *tabstop = new SolidWidgets::Tabstop();",
+    "    sq::begin(tabstop, ctx);",
+    "    tabstop->setWindow(&window);",
+    "    tabstop->setParentItem(window.contentItem());",
+    "    sq::complete(tabstop);",
+    "    if (solidTabstop.enabled())",
+    "        QTimer::singleShot(0, &window, [&window] {",
+    "            if (auto *f = window.contentItem()->nextItemInFocusChain(true)) f->forceActiveFocus(Qt::TabFocusReason);",
+    "        });",
     "    window.show();",
     "",
     '    const int grabMs = qEnvironmentVariableIntValue("SQ_GRAB_MS") > 0 ? qEnvironmentVariableIntValue("SQ_GRAB_MS") : 1400;',
