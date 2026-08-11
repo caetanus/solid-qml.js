@@ -209,6 +209,27 @@ export function App() { return <Window width={100} height={100}><L /></Window>; 
   assert.match(source, /sq::get\(__item, "name"\)/);
 });
 
+test("cpp: controlled <input> — value binding + textEdited handler; special types fail loud", async () => {
+  const src = `
+import { createSignal } from "solid-js";
+import { div, input, Window } from "../../src/solid-qml/runtime";
+function C() {
+  const [name, setName] = createSignal("Ada");
+  return <div class="a"><input class="f" value={name()} onInput={(e) => setName(e.currentTarget.value)} placeholder="n" /></div>;
+}
+export function App() { return <Window width={100} height={100}><C /></Window>; }`;
+  const { source } = await generateCpp(src, "x.tsx");
+  assert.match(source, /new SolidWidgets::TextField\(\)/);
+  assert.match(source, /->setPlaceholder\(QStringLiteral\("n"\)\)/);
+  assert.match(source, /->setText\(sq::str\(state->name\(\)\)\)/);            // value → field
+  assert.match(source, /&SolidWidgets::TextField::textEdited, state, \[\w+, state\] \{ state->setName\(QVariant\(\w+->text\(\)\)\); \}/); // edit → signal
+
+  const checkbox = `
+import { div, input, Window } from "../../src/solid-qml/runtime";
+export function App() { return <Window width={100} height={100}><div class="a"><input type="checkbox" /></div></Window>; }`;
+  await assert.rejects(() => generateCpp(checkbox, "y.tsx"), /type="checkbox".*not supported/);
+});
+
 test("cpp: ternary binding → sq::truthy(...) ? a : b", async () => {
   const src = `
 import { createSignal } from "solid-js";

@@ -8,6 +8,7 @@
 #include "qmlcss/csstext.h"
 #include "widgets/button.h"
 #include "widgets/primitives.h"
+#include "widgets/textinputs.h"
 
 #include <QList>
 #include <QQmlContext>

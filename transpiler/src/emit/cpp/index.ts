@@ -385,6 +385,7 @@ function emitElement(node: t.CallExpression, c: Ctx): string {
     c.completes.push(v);
     return v;
   }
+  if (tagName === "input") { emitInput(propsArg, p, v, c); c.completes.push(v); return v; }
   if (TEXT_TAGS.has(tagName)) {
     out.push(`auto *${v} = new SolidWidgets::Text();`, `sq::begin(${v}, ctx);`, ...classLine(v, p.classes));
     if (tagName !== "text") out.push(`${v}->setCssPrimitive(${cppStr(tagName)});`);
@@ -412,6 +413,70 @@ function emitHandler(body: t.Expression, sc: Scope): string {
     }
   }
   throw new Error(`AOT: unsupported handler body "${body.type}" (only a signal setter call)`);
+}
+
+/** Is `node` an `<eventParam>.target.value` / `.currentTarget.value` read (the DOM idiom the input
+ *  handler uses to get the field's current text)? */
+function isEventValue(node: t.Node, eventParam: string | null): boolean {
+  return !!eventParam && t.isMemberExpression(node) && !node.computed && t.isIdentifier(node.property, { name: "value" })
+    && t.isMemberExpression(node.object) && !node.object.computed && t.isIdentifier(node.object.object, { name: eventParam })
+    && t.isIdentifier(node.object.property) && (node.object.property.name === "target" || node.object.property.name === "currentTarget");
+}
+
+/** A controlled `<input>`'s edit handler `(e) => setX(e.target.value)` → `state->setX(field->text())`
+ *  (the event's value read resolves to the field's live text). */
+function emitInputHandler(fn: t.ArrowFunctionExpression | t.FunctionExpression, fieldVar: string, sc: Scope): string {
+  if (t.isBlockStatement(fn.body)) throw new Error("AOT: block-bodied input handler not supported");
+  const ev = fn.params[0] && t.isIdentifier(fn.params[0]) ? fn.params[0].name : null;
+  const body = fn.body;
+  if (t.isCallExpression(body) && t.isIdentifier(body.callee)) {
+    const sym = sc.table.get(body.callee.name);
+    if (sym && sym.kind === "setter") {
+      const arg = body.arguments[0];
+      if (arg && isEventValue(arg, ev)) return `state->set${cap(sym.signal)}(QVariant(${fieldVar}->text()));`;
+      if (arg && t.isExpression(arg)) return `state->set${cap(sym.signal)}(${emitExpr(arg, sc)});`;
+    }
+  }
+  throw new Error("AOT: unsupported <input> handler (only setX(e.target.value))");
+}
+
+/** Controlled `<input>` → SolidWidgets::TextField: a value binding pushes the signal into the field,
+ *  and textEdited runs the onInput handler back into the signal. Special input types (checkbox/radio/
+ *  range/number/date → dedicated widgets) fail loud for now. */
+function emitInput(propsArg: t.Node | undefined, p: ElemProps, v: string, c: Ctx): void {
+  let value: t.Expression | null = null, onInput: t.Node | undefined, placeholder: string | null = null;
+  let type = "text", disabled = false, readOnly = false;
+  if (propsArg && t.isObjectExpression(propsArg))
+    for (const pr of propsArg.properties) {
+      if (!t.isObjectProperty(pr) || !t.isIdentifier(pr.key)) continue;
+      const k = pr.key.name;
+      if (k === "value" && t.isExpression(pr.value)) value = pr.value;
+      else if (k === "onInput" || k === "onChange") onInput = pr.value;
+      else if (k === "placeholder" && t.isStringLiteral(pr.value)) placeholder = pr.value.value;
+      else if (k === "type" && t.isStringLiteral(pr.value)) type = pr.value.value;
+      else if (k === "disabled") disabled = true;
+      else if (k === "readOnly" || k === "readonly") readOnly = true;
+    }
+  if (["checkbox", "radio", "range", "number", "date"].includes(type))
+    throw new Error(`AOT: <input type="${type}"> not supported yet (needs the dedicated widget)`);
+
+  c.out.push(`auto *${v} = new SolidWidgets::TextField();`, `sq::begin(${v}, ctx);`, ...classLine(v, p.classes));
+  if (type === "password") c.out.push(`${v}->setEchoMode(2);`); // TextInput.Password
+  if (placeholder) c.out.push(`${v}->setPlaceholder(${cppStr(placeholder)});`);
+  if (readOnly) c.out.push(`${v}->setReadOnly(true);`);
+  if (disabled) c.out.push(`${v}->setEnabled(false);`);
+  // Controlled value: re-assert the signal into the field on change (setText emits textChanged, not
+  // textEdited, so this never re-triggers the edit handler — no loop).
+  if (value) {
+    c.out.push(`{ auto __sync = [${v}, state] { ${v}->setText(sq::str(${emitExpr(value, c.sc)})); };`);
+    const deps = new Set<string>(); collectDeps(value, c.sc, deps);
+    for (const d of deps) c.out.push(`  QObject::connect(state, &${c.sc.stateClass}::${d}Changed, ${v}, __sync);`);
+    c.out.push(`  __sync(); }`);
+  }
+  if (onInput) {
+    if (!t.isArrowFunctionExpression(onInput) && !t.isFunctionExpression(onInput)) throw new Error("AOT: onInput must be an inline arrow");
+    c.out.push(`QObject::connect(${v}, &SolidWidgets::TextField::textEdited, state, [${v}, state] { ${emitInputHandler(onInput, v, c.sc)} });`);
+  }
 }
 
 interface WindowMeta { width: number; height: number; title: string; child: t.CallExpression }
@@ -574,6 +639,7 @@ export async function generateCpp(source: string, filename: string): Promise<Gen
     '#include "qmlcss/csstext.h"',
     '#include "widgets/button.h"',
     '#include "widgets/primitives.h"',
+    '#include "widgets/textinputs.h"',
     "",
     "#include <QList>",
     "#include <QQmlContext>",
