@@ -230,6 +230,28 @@ export function App() { return <Window width={100} height={100}><div class="a"><
   await assert.rejects(() => generateCpp(checkbox, "y.tsx"), /type="checkbox".*not supported/);
 });
 
+test("cpp: follows relative imports across files (multi-file graph)", async () => {
+  const files: Record<string, string> = {
+    "/app/badge.tsx": `
+import { createSignal } from "solid-js";
+import { div, text } from "./solid-qml/runtime";
+export function Badge(props: { label: string }) {
+  const [n] = createSignal(0);
+  return <div class="badge"><text>{props.label}: {n()}</text></div>;
+}`,
+  };
+  const entry = `
+import { div, Window } from "./solid-qml/runtime";
+import { Badge } from "./badge";
+export function App() { return <Window width={100} height={100}><div class="a"><Badge label="x" /></div></Window>; }`;
+  const { source, header } = await generateCpp(entry, "/app/main.tsx", {
+    readFile: async (p) => { if (files[p]) return files[p]; throw new Error("nope"); },
+  });
+  assert.match(header, /class BadgeState : public QObject/);            // the imported component's state
+  assert.match(source, /QQuickItem \*buildBadge\(QQmlContext \*ctx, BadgeState \*state\)/); // its build fn
+  assert.match(source, /auto \*\w+ = buildBadge\(ctx, /);               // instantiated from the entry
+});
+
 test("cpp: ternary binding → sq::truthy(...) ? a : b", async () => {
   const src = `
 import { createSignal } from "solid-js";

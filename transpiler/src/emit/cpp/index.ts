@@ -9,6 +9,8 @@
 //
 // The generated shape is proven pixel-identical to the QML back-end by examples/aot/proof — this
 // emitter reproduces that hand-written pattern from the AST.
+import * as path from "node:path";
+import { readFile as fsReadFile } from "node:fs/promises";
 import * as t from "@babel/types";
 import { normalize } from "../../babel/transform.ts";
 import { analyzeProps, analyzeSignals, type SymbolTable } from "../../model/symbols.ts";
@@ -56,6 +58,70 @@ function findComponents(ast: t.File): Map<string, CompInfo> {
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const cppStr = (s: string) => `QStringLiteral("${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n")}")`;
+
+// Built-in identifier tags (control flow + Window) that are NOT followed as author components.
+const BUILTIN_TAGS = new Set(["Show", "For", "Index", "Switch", "Match", "Suspense", "Dynamic", "Window", "Portal", "ErrorBoundary"]);
+
+/** local binding name → imported specifier + original name (named/default imports). */
+function collectImports(ast: t.File): Map<string, { spec: string; imported: string }> {
+  const out = new Map<string, { spec: string; imported: string }>();
+  for (const node of ast.program.body)
+    if (t.isImportDeclaration(node))
+      for (const s of node.specifiers) {
+        if (t.isImportSpecifier(s)) out.set(s.local.name, { spec: node.source.value, imported: t.isIdentifier(s.imported) ? s.imported.name : s.imported.value });
+        else if (t.isImportDefaultSpecifier(s)) out.set(s.local.name, { spec: node.source.value, imported: "default" });
+      }
+  return out;
+}
+
+/** Component-tag identifiers used anywhere in a render tree (excludes control-flow/built-in tags). */
+function usedComponentTags(render: t.CallExpression, out: Set<string>): void {
+  const walk = (n: t.Node): void => {
+    if (isHCall(n)) { const { tag } = hParts(n); if (t.isIdentifier(tag) && !BUILTIN_TAGS.has(tag.name)) out.add(tag.name); }
+    for (const key of Object.keys(n)) {
+      const v = (n as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(v)) { for (const cc of v) if (cc && typeof (cc as t.Node).type === "string") walk(cc as t.Node); }
+      else if (v && typeof (v as t.Node).type === "string") walk(v as t.Node);
+    }
+  };
+  walk(render);
+}
+
+/** Resolve a relative specifier to an on-disk module (null for npm/builtin specifiers). */
+async function resolveModule(dir: string, spec: string, readFile: (p: string) => Promise<string>): Promise<{ path: string; source: string } | null> {
+  if (!spec.startsWith(".")) return null;
+  const base = path.resolve(dir, spec);
+  for (const cand of [`${base}.tsx`, `${base}.ts`, path.join(base, "index.tsx"), path.join(base, "index.ts")])
+    try { return { path: cand, source: await readFile(cand) }; } catch { /* next */ }
+  return null;
+}
+
+/** Follow relative imports of used component tags, collecting every author component across the graph
+ *  into one name→component map (first definition wins on a name collision). */
+async function loadGraph(entrySource: string, entryFile: string, readFile: (p: string) => Promise<string>): Promise<Map<string, CompInfo>> {
+  const all = new Map<string, CompInfo>();
+  const visited = new Set<string>();
+  const load = async (absPath: string, src: string): Promise<void> => {
+    if (visited.has(absPath)) return;
+    visited.add(absPath);
+    const { ast } = await normalize(src, absPath);
+    if (!ast) return;
+    const local = findComponents(ast);
+    const imports = collectImports(ast);
+    for (const [n, ci] of local) if (!all.has(n)) all.set(n, ci);
+    const usedTags = new Set<string>();
+    for (const ci of local.values()) usedComponentTags(ci.render, usedTags);
+    for (const tagName of usedTags) {
+      if (local.has(tagName)) continue;
+      const imp = imports.get(tagName);
+      if (!imp) continue;
+      const resolved = await resolveModule(path.dirname(absPath), imp.spec, readFile);
+      if (resolved) await load(resolved.path, resolved.source);
+    }
+  };
+  await load(entryFile, entrySource);
+  return all;
+}
 
 /** Expression scope: which identifiers are the component's reactive cells / props / setters, plus the
  *  owning state class name (connect targets like `&CounterState::countChanged`). */
@@ -496,10 +562,16 @@ function readWindow(render: t.CallExpression): WindowMeta {
   return { width, height, title, child: child as t.CallExpression };
 }
 
-export async function generateCpp(source: string, filename: string): Promise<GeneratedCpp> {
-  const { ast } = await normalize(source, filename);
-  if (!ast) throw new Error("AOT: normalize produced no AST");
-  const comps = findComponents(ast);
+export interface GenerateCppOptions {
+  /** Read a module's source by absolute path (override in tests). Defaults to fs. */
+  readFile?: (absPath: string) => Promise<string>;
+}
+
+export async function generateCpp(source: string, filename: string, opts: GenerateCppOptions = {}): Promise<GeneratedCpp> {
+  const readFile = opts.readFile ?? ((p) => fsReadFile(p, "utf8"));
+  // Follow relative imports so an entry that composes components from other files (the real gallery
+  // shape) emits every author component across the graph — not just the entry file's.
+  const comps = await loadGraph(source, filename, readFile);
   if (comps.size === 0) throw new Error("AOT: no components found");
   const componentNames = new Set(comps.keys());
 
