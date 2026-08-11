@@ -268,8 +268,8 @@ export function App() { return <Window width={100} height={100}><R /></Window>; 
   assert.match(header, /QVariant m_row_loading = true;/);
   assert.match(header, /Q_PROPERTY\(QVariant row READ row/);
   // Suspense gates the child on "not loading" and the fallback on loading
-  assert.match(source, /setVisible\(\(!sq::truthy\(state->row_loading\(\)\)\)\)/);
-  assert.match(source, /setVisible\(\(sq::truthy\(state->row_loading\(\)\)\)\)/);
+  assert.match(source, /setVisible\(!sq::truthy\(state->row_loading\(\)\)\)/);
+  assert.match(source, /setVisible\(sq::truthy\(state->row_loading\(\)\)\)/);
   // the async fetcher runs on the QJSEngine sidecar with the state QObject bound
   assert.match(source, /QJSEngine \*__js = ctx->engine\(\);/);
   assert.match(source, /__js->newQObject\(state\)/);
@@ -296,6 +296,26 @@ export function App() { return <Window width={100} height={100}><C /></Window>; 
   assert.match(source, /&SolidWidgets::TextArea::textChanged, state/);         // textarea uses textChanged
   assert.match(source, /new SolidWidgets::Image\(\)/);
   assert.match(source, /->setSrc\(QUrl\(sq::str\(QVariant\(QStringLiteral\("\/abs\/logo\.png"\)\)\)\)\);/); // static src, one-shot (no `state`)
+});
+
+test("cpp: nested control flow combines guards (Suspense › Show)", async () => {
+  const src = `
+import { createSignal, createResource, Suspense, Show } from "solid-js";
+import { div, text, Window } from "../../src/solid-qml/runtime";
+const f = async (id) => ({ ok: id });
+function C() {
+  const [id] = createSignal("1");
+  const [r] = createResource(id, f);
+  return <div class="a">
+    <Suspense fallback={<text class="l">loading</text>}>
+      <Show when={r()} fallback={<text class="e">empty</text>}><text class="v">{r().ok}</text></Show>
+    </Suspense>
+  </div>;
+}
+export function App() { return <Window width={100} height={100}><C /></Window>; }`;
+  const { source } = await generateCpp(src, "x.tsx");
+  // the inner <Show> child is visible only when NOT loading AND the resource is truthy (guards AND'd)
+  assert.match(source, /setVisible\(\(!sq::truthy\(state->r_loading\(\)\)\) && \(sq::truthy\(state->r\(\)\)\)\)/);
 });
 
 test("cpp: ternary binding → sq::truthy(...) ? a : b", async () => {

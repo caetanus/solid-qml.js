@@ -304,22 +304,12 @@ function emitChildrenInto(parentVar: string, children: t.Node[], c: Ctx): void {
     }
     run = [];
   };
+  // Each element child (regular, component instance, or control flow) goes through emitControlChild,
+  // which dispatches Show/Suspense/For/Index (unguarded at this level) and plain elements uniformly.
   for (const n of children) {
     if (!isElement(n)) { run.push(n); continue; }
     flush();
-    const { tag } = hParts(n as t.CallExpression);
-    // <Show> is control flow, not an element: it appends each of its children to THIS container with a
-    // `visible` guard (an invisible box leaves the layout — the engine already handles it).
-    if (t.isIdentifier(tag, { name: "Show" })) { emitShowInto(parentVar, n as t.CallExpression, c); continue; }
-    if (t.isIdentifier(tag, { name: "Suspense" })) { emitSuspenseInto(parentVar, n as t.CallExpression, c); continue; }
-    // <For>/<Index> — a rebuild-on-change row factory appended to THIS container (Fase 1: destroy+
-    // rebuild over the array; keyed reconcile is Fase 1.5).
-    if (t.isIdentifier(tag, { name: "For" }) || t.isIdentifier(tag, { name: "Index" })) {
-      emitRepeaterInto(parentVar, n as t.CallExpression, c);
-      continue;
-    }
-    const cv = emitElement(n as t.CallExpression, c);
-    c.out.push(`sq::append(${parentVar}, ${cv});`);
+    emitControlChild(parentVar, n, null, c);
   }
   flush();
 }
@@ -337,60 +327,72 @@ function showProps(propsArg: t.Node | undefined): { when: t.Expression | null; f
 }
 
 /** Give a built child a reactive `visible` binding over the Show condition's dependencies. */
-function emitVisibleGuard(childVar: string, whenNode: t.Expression, invert: boolean, c: Ctx): void {
-  const cond = `sq::truthy(${emitExpr(whenNode, c.sc)})`;
-  const val = invert ? `!${cond}` : cond;
-  const deps = new Set<string>();
-  collectDeps(whenNode, c.sc, deps);
-  if (deps.size === 0) { c.out.push(`${childVar}->setVisible(${val});`); return; }
-  c.out.push(`{ auto __vis = [${childVar}, state] { ${childVar}->setVisible(${val}); };`);
-  for (const d of deps) c.out.push(`  QObject::connect(state, &${c.sc.stateClass}::${d}Changed, ${childVar}, __vis);`);
+/** A `visible` guard: a C++ bool condition + the state deps that re-evaluate it. Guards nest by AND
+ *  (a child of `<Show a><Show b>` is visible when a && b), matching the QML outerGuard threading. */
+interface Guard { cond: string; deps: string[] }
+function combineGuards(a: Guard | null, b: Guard): Guard {
+  return a ? { cond: `(${a.cond}) && (${b.cond})`, deps: [...new Set([...a.deps, ...b.deps])] } : b;
+}
+function guardFor(node: t.Expression, c: Ctx, invert = false): Guard {
+  const cond = `sq::truthy(${emitExpr(node, c.sc)})`;
+  const deps = new Set<string>(); collectDeps(node, c.sc, deps);
+  return { cond: invert ? `!${cond}` : cond, deps: [...deps] };
+}
+function applyGuard(childVar: string, g: Guard, c: Ctx): void {
+  if (g.deps.length === 0) { c.out.push(`${childVar}->setVisible(${g.cond});`); return; }
+  c.out.push(`{ auto __vis = [${childVar}, state] { ${childVar}->setVisible(${g.cond}); };`);
+  for (const d of g.deps) c.out.push(`  QObject::connect(state, &${c.sc.stateClass}::${d}Changed, ${childVar}, __vis);`);
   c.out.push(`  __vis(); }`);
 }
 
-/** Expand a <Show> into `parentVar`: each truthy-branch child guarded on `when`, each fallback child on
- *  its inverse. Children may be elements or component instances (a fragment fallback is unwrapped). */
-function emitShowInto(parentVar: string, showNode: t.CallExpression, c: Ctx): void {
+/** Emit one child into `parentVar`, applying the accumulated `outer` guard (if any). Dispatches nested
+ *  control flow (Show/Suspense/For/Index) so `<Suspense><Show>…` combines both guards. */
+function emitControlChild(parentVar: string, child: t.Node, outer: Guard | null, c: Ctx): void {
+  if (!isElement(child)) return;
+  const { tag } = hParts(child as t.CallExpression);
+  if (t.isIdentifier(tag, { name: "Show" })) return emitShowInto(parentVar, child as t.CallExpression, c, outer);
+  if (t.isIdentifier(tag, { name: "Suspense" })) return emitSuspenseInto(parentVar, child as t.CallExpression, c, outer);
+  if (t.isIdentifier(tag, { name: "For" }) || t.isIdentifier(tag, { name: "Index" })) return emitRepeaterInto(parentVar, child as t.CallExpression, c, outer);
+  const cv = emitElement(child as t.CallExpression, c);
+  c.out.push(`sq::append(${parentVar}, ${cv});`);
+  if (outer) applyGuard(cv, outer, c);
+}
+
+/** Expand a <Show> into `parentVar`: each truthy-branch child guarded on `when` (AND the outer guard),
+ *  each fallback child on its inverse. Children may be elements, components, or nested control flow. */
+function emitShowInto(parentVar: string, showNode: t.CallExpression, c: Ctx, outer: Guard | null = null): void {
   const { children } = hParts(showNode);
   const { when, fallback } = showProps(showNode.arguments[1]);
   if (!when) throw new Error("AOT: <Show> requires a `when` prop");
-  for (const child of children)
-    if (isElement(child)) { const cv = emitElement(child as t.CallExpression, c); c.out.push(`sq::append(${parentVar}, ${cv});`); emitVisibleGuard(cv, when, false, c); }
+  const g = combineGuards(outer, guardFor(when, c));
+  for (const child of children) emitControlChild(parentVar, child, g, c);
   if (fallback) {
     const fbNodes = t.isCallExpression(fallback) && isFragment(fallback) ? hParts(fallback).children : [fallback];
-    for (const fb of fbNodes)
-      if (isElement(fb)) { const cv = emitElement(fb as t.CallExpression, c); c.out.push(`sq::append(${parentVar}, ${cv});`); emitVisibleGuard(cv, when, true, c); }
+    const fg = combineGuards(outer, guardFor(when, c, true));
+    for (const fb of fbNodes) emitControlChild(parentVar, fb, fg, c);
   }
 }
 
 const isFragment = (n: t.Node): boolean => isElement(n) && (() => { const { tag } = hParts(n as t.CallExpression); return t.isIdentifier(tag, { name: "hFrag" }) || (t.isMemberExpression(tag) && t.isIdentifier(tag.property, { name: "Fragment" })); })();
 
-/** Give a built child a reactive `visible` binding over a raw C++ condition string + its state deps. */
-function emitRawGuard(childVar: string, condCpp: string, deps: string[], c: Ctx): void {
-  if (deps.length === 0) { c.out.push(`${childVar}->setVisible(${condCpp});`); return; }
-  c.out.push(`{ auto __vis = [${childVar}, state] { ${childVar}->setVisible(${condCpp}); };`);
-  for (const d of deps) c.out.push(`  QObject::connect(state, &${c.sc.stateClass}::${d}Changed, ${childVar}, __vis);`);
-  c.out.push(`  __vis(); }`);
-}
-
-/** <Suspense fallback={…}> — gate children on "no tracked resource is still loading", the fallback on
- *  the inverse. Reuses the Show mechanism; the condition is the component's resource loading flags. */
-function emitSuspenseInto(parentVar: string, node: t.CallExpression, c: Ctx): void {
+/** <Suspense fallback={…}> — gate children on "no tracked resource is still loading" (AND the outer
+ *  guard), the fallback on the inverse. The condition is the component's resource loading flags. */
+function emitSuspenseInto(parentVar: string, node: t.CallExpression, c: Ctx, outer: Guard | null = null): void {
   const { children } = hParts(node);
   const loadingDeps = (c.sc.resources ?? []).map((r) => `${r}_loading`);
-  const ready = loadingDeps.length ? loadingDeps.map((l) => `!sq::truthy(state->${l}())`).join(" && ") : "true";
-  const loading = loadingDeps.length ? loadingDeps.map((l) => `sq::truthy(state->${l}())`).join(" || ") : "false";
+  const ready: Guard = { cond: loadingDeps.length ? loadingDeps.map((l) => `!sq::truthy(state->${l}())`).join(" && ") : "true", deps: loadingDeps };
+  const loading: Guard = { cond: loadingDeps.length ? loadingDeps.map((l) => `sq::truthy(state->${l}())`).join(" || ") : "false", deps: loadingDeps };
   let fallback: t.Expression | null = null;
   const props = node.arguments[1];
   if (props && t.isObjectExpression(props))
     for (const p of props.properties)
       if (t.isObjectProperty(p) && t.isIdentifier(p.key, { name: "fallback" }) && t.isExpression(p.value)) fallback = p.value;
-  for (const child of children)
-    if (isElement(child)) { const cv = emitElement(child as t.CallExpression, c); c.out.push(`sq::append(${parentVar}, ${cv});`); emitRawGuard(cv, `(${ready})`, loadingDeps, c); }
+  const g = combineGuards(outer, ready);
+  for (const child of children) emitControlChild(parentVar, child, g, c);
   if (fallback) {
     const fbNodes = isFragment(fallback) ? hParts(fallback as t.CallExpression).children : [fallback];
-    for (const fb of fbNodes)
-      if (isElement(fb)) { const cv = emitElement(fb as t.CallExpression, c); c.out.push(`sq::append(${parentVar}, ${cv});`); emitRawGuard(cv, `(${loading})`, loadingDeps, c); }
+    const fg = combineGuards(outer, loading);
+    for (const fb of fbNodes) emitControlChild(parentVar, fb, fg, c);
   }
 }
 
@@ -430,7 +432,7 @@ function emitResourceSidecar(resources: { name: string; source: string; fetcher:
  *  element on every change to the model's dependencies. For/Index share the emit — the difference is
  *  purely how the delegate reads the row (`item` vs `item()`), which is the same local binding here.
  *  Fase 1 is destroy-and-rebuild (fine at config-panel scale); keyed reconcile is Fase 1.5. */
-function emitRepeaterInto(parentVar: string, node: t.CallExpression, c: Ctx): void {
+function emitRepeaterInto(parentVar: string, node: t.CallExpression, c: Ctx, outer: Guard | null = null): void {
   const { children } = hParts(node);
   let eachNode: t.Expression | null = null;
   const props = node.arguments[1];
@@ -456,6 +458,7 @@ function emitRepeaterInto(parentVar: string, node: t.CallExpression, c: Ctx): vo
   const rowVar = emitElement(body, sub);
   sub.out.push(`sq::append(${parentVar}, ${rowVar});`);
   for (const v of [...sub.completes].reverse()) sub.out.push(`sq::complete(${v});`);
+  if (outer) applyGuard(rowVar, outer, sub); // a <For> nested inside a <Show>/<Suspense> guards each row
   sub.out.push(`${rows}->append(${rowVar});`);
 
   c.out.push(
