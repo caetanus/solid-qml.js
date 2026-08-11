@@ -13,6 +13,15 @@ by the V4 engine (handler/expression JS interpreted); paint+layout by the CSS en
 browser APIs (localStorage/fetch/timers/…) via C++ shims.
 
 ## Release builds: TSX → QtQuick C++ 1:1 (template, no qmltc)  ⭐
+> **M-AOT-0 landed** (counter): the transpiler has a second back-end, `transpiler/src/emit/cpp/`,
+> that emits C++ from the same normalized AST the QML back-end uses. The generated `aot-counter`
+> binary renders **pixel-identical** to the interpreted QML render (twin-render: max diff 0) and its
+> clicks increment per-instance state — with **no V4 interpreter in the hot path**. Verify with
+> `npm run twin-render`; regenerate with `npm run gen:cpp`. State is a QVariant `QObject` (decision
+> #1: QVariant-first), bindings are connect-driven lambdas over NOTIFY signals, handlers are
+> `connect`s, and JS coercions live in a thin `src/aot/sqruntime.h` (not an interpreter). Next:
+> M-AOT-1 (all static gallery views; unsupported constructs already fail loudly — the gap queue).
+
 In release, **don't** load QML text at runtime or interpret in V4. Since **we** generate the
 QML (a controlled, simple subset), we don't need **qmltc** (which exists to compile
 *arbitrary* `.qml`): the transpiler itself emits **C++ directly, 1:1, via a template**. QML is

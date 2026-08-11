@@ -259,6 +259,33 @@ if get_option('examples').allowed()
 endif
 
 
+# `aot` feature — the C++ codegen (AOT) release path: the transpiler emits QtQuick C++ 1:1 instead
+# of interpreted QML, dropping V4 from the hot path. M-AOT-0 is the counter proof (a hand-written
+# scene that must render pixel-identical to the QML back-end; the emitter reproduces this pattern).
+if get_option('aot').allowed()
+  # The real deliverable: the counter compiled from generated C++ (transpiler cpp back-end).
+  # Regenerate with: node --import tsx scripts/gen-cpp.mjs examples/aot/counter.tsx examples/aot/generated
+  aot_gen_moc = qt6.preprocess(moc_headers: files('examples/aot/generated/generated.h'))
+  executable(
+    'aot-counter',
+    files('examples/aot/generated/main.cpp', 'examples/aot/generated/generated.cpp'),
+    aot_gen_moc,
+    include_directories: include_directories('src'),
+    dependencies: [solidqml_dep, qt6_widgets_dep],
+  )
+
+  # The hand-written proof the emitter was derived from — kept building so it stays honest.
+  aot_proof_moc = qt6.preprocess(moc_headers: files('examples/aot/proof/counterapp.h'))
+  executable(
+    'aot-counter-proof',
+    files('examples/aot/proof/main.cpp', 'examples/aot/proof/counterapp.cpp'),
+    aot_proof_moc,
+    include_directories: include_directories('src'),
+    dependencies: [solidqml_dep, qt6_widgets_dep],
+  )
+endif
+
+
 # `solidterm` feature — the real, installable terminal app (owner 2026-07-22). Its own C++ (pty +
 # libvterm TerminalView) registered as the SolidTerm module, UI in solid TSX, hosted via the embed
 # surface. libvterm is required only when solidterm is actually built, so a build on a platform

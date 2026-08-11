@@ -1,0 +1,23 @@
+/* Self-contained styling for the M-AOT-0 counter fixture. Simple, flat colors and integer metrics
+   so the QML render and the AOT C++ render can be compared pixel-for-pixel without antialiasing
+   ambiguity around gradients or sub-pixel radii. */
+.qml-window {
+  background: #1e2233;
+  color: #ffffff;
+  font-size: 16px;
+}
+
+.app {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  padding: 24px;
+}
+
+.counter button {
+  background: #41cd52;
+  color: #ffffff;
+  padding: 14px 22px;
+  border-radius: 8px;
+  font-size: 16px;
+}

@@ -39,3 +39,9 @@ option(
   value: 'auto',
   description: 'Build the <RichText> ODF widget. Pulls the private QZipReader (Qt Core private headers). Disable to drop that dependency.',
 )
+option(
+  'aot',
+  type: 'feature',
+  value: 'auto',
+  description: 'Build the AOT (C++ codegen) demos — the release path that emits QtQuick C++ 1:1 instead of interpreted QML. Currently the M-AOT-0 counter proof.',
+)

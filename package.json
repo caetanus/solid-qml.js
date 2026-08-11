@@ -17,6 +17,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p transpiler/tsconfig.json --noEmit",
     "typecheck:transpiler": "tsc -p transpiler/tsconfig.json --noEmit",
     "dev:native": "node --import tsx scripts/dev-native.mjs",
+    "gen:cpp": "node --import tsx scripts/gen-cpp.mjs",
+    "twin-render": "node --import tsx scripts/twin-render.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
