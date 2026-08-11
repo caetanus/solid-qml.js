@@ -298,6 +298,27 @@ export function App() { return <Window width={100} height={100}><C /></Window>; 
   assert.match(source, /->setSrc\(QUrl\(sq::str\(QVariant\(QStringLiteral\("\/abs\/logo\.png"\)\)\)\)\);/); // static src, one-shot (no `state`)
 });
 
+test("cpp: <Switch>/<Match> — first-match-wins guards + fallback", async () => {
+  const src = `
+import { createSignal, Switch, Match } from "solid-js";
+import { div, text, Window } from "../../src/solid-qml/runtime";
+function C() {
+  const [n] = createSignal(1);
+  return <div class="a"><Switch fallback={<text class="o">many</text>}>
+    <Match when={n() === 1}><text class="a">one</text></Match>
+    <Match when={n() === 2}><text class="b">two</text></Match>
+  </Switch></div>;
+}
+export function App() { return <Window width={100} height={100}><C /></Window>; }`;
+  const { source } = await generateCpp(src, "x.tsx");
+  // first match: just its when
+  assert.match(source, /setVisible\(sq::truthy\(sq::strictEq\(state->n\(\), QVariant\(1\)\)\)\)/);
+  // second match: its when AND NOT the first
+  assert.match(source, /setVisible\(\(!sq::truthy\(sq::strictEq\(state->n\(\), QVariant\(1\)\)\)\) && \(sq::truthy\(sq::strictEq\(state->n\(\), QVariant\(2\)\)\)\)\)/);
+  // fallback: NOT any match
+  assert.match(source, /setVisible\(\(!sq::truthy\(sq::strictEq\(state->n\(\), QVariant\(1\)\)\)\) && \(!sq::truthy\(sq::strictEq\(state->n\(\), QVariant\(2\)\)\)\)\)/);
+});
+
 test("cpp: nested control flow combines guards (Suspense › Show)", async () => {
   const src = `
 import { createSignal, createResource, Suspense, Show } from "solid-js";

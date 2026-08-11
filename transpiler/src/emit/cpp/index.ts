@@ -352,6 +352,7 @@ function emitControlChild(parentVar: string, child: t.Node, outer: Guard | null,
   const { tag } = hParts(child as t.CallExpression);
   if (t.isIdentifier(tag, { name: "Show" })) return emitShowInto(parentVar, child as t.CallExpression, c, outer);
   if (t.isIdentifier(tag, { name: "Suspense" })) return emitSuspenseInto(parentVar, child as t.CallExpression, c, outer);
+  if (t.isIdentifier(tag, { name: "Switch" })) return emitSwitchInto(parentVar, child as t.CallExpression, c, outer);
   if (t.isIdentifier(tag, { name: "For" }) || t.isIdentifier(tag, { name: "Index" })) return emitRepeaterInto(parentVar, child as t.CallExpression, c, outer);
   const cv = emitElement(child as t.CallExpression, c);
   c.out.push(`sq::append(${parentVar}, ${cv});`);
@@ -374,6 +375,39 @@ function emitShowInto(parentVar: string, showNode: t.CallExpression, c: Ctx, out
 }
 
 const isFragment = (n: t.Node): boolean => isElement(n) && (() => { const { tag } = hParts(n as t.CallExpression); return t.isIdentifier(tag, { name: "hFrag" }) || (t.isMemberExpression(tag) && t.isIdentifier(tag.property, { name: "Fragment" })); })();
+
+/** <Switch fallback={…}><Match when={c}>…</Match>…</Switch> — first-match-wins: each Match's children
+ *  are visible when its `when` holds AND no earlier Match's did; the fallback when none did (all AND'd
+ *  with the outer guard). Eager (all branches built, gated by visibility) — matches the Show model. */
+function emitSwitchInto(parentVar: string, switchNode: t.CallExpression, c: Ctx, outer: Guard | null = null): void {
+  const { children } = hParts(switchNode);
+  let priors: Guard | null = null; // AND of NOT-(every earlier when)
+  let fallback: t.Expression | null = null;
+  const sprops = switchNode.arguments[1];
+  if (sprops && t.isObjectExpression(sprops))
+    for (const p of sprops.properties)
+      if (t.isObjectProperty(p) && t.isIdentifier(p.key, { name: "fallback" }) && t.isExpression(p.value)) fallback = p.value;
+  for (const m of children) {
+    if (!isElement(m)) continue;
+    const { tag } = hParts(m as t.CallExpression);
+    if (!t.isIdentifier(tag, { name: "Match" })) continue;
+    let when: t.Expression | null = null;
+    const mp = (m as t.CallExpression).arguments[1];
+    if (mp && t.isObjectExpression(mp))
+      for (const p of mp.properties)
+        if (t.isObjectProperty(p) && t.isIdentifier(p.key, { name: "when" }) && t.isExpression(p.value)) when = p.value;
+    if (!when) throw new Error("AOT: <Match> requires a `when` prop");
+    const matchGuard = combineGuards(priors, guardFor(when, c));
+    const full = combineGuards(outer, matchGuard);
+    for (const mc of hParts(m as t.CallExpression).children) emitControlChild(parentVar, mc, full, c);
+    priors = combineGuards(priors, guardFor(when, c, true));
+  }
+  if (fallback && priors) {
+    const fbNodes = isFragment(fallback) ? hParts(fallback as t.CallExpression).children : [fallback];
+    const fg = combineGuards(outer, priors);
+    for (const fb of fbNodes) emitControlChild(parentVar, fb, fg, c);
+  }
+}
 
 /** <Suspense fallback={…}> — gate children on "no tracked resource is still loading" (AND the outer
  *  guard), the fallback on the inverse. The condition is the component's resource loading flags. */
