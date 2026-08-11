@@ -252,6 +252,33 @@ export function App() { return <Window width={100} height={100}><div class="a"><
   assert.match(source, /auto \*\w+ = buildBadge\(ctx, /);               // instantiated from the entry
 });
 
+test("cpp: createResource + Suspense — sidecar bridge + loading-gated visibility", async () => {
+  const src = `
+import { createSignal, createResource, Suspense } from "solid-js";
+import { div, text, Window } from "../../src/solid-qml/runtime";
+const fetchRow = async (id) => ({ label: "row " + id });
+function R() {
+  const [id] = createSignal("42");
+  const [row] = createResource(id, fetchRow);
+  return <div class="a"><Suspense fallback={<text class="b">loading</text>}><text class="h">{row().label}</text></Suspense></div>;
+}
+export function App() { return <Window width={100} height={100}><R /></Window>; }`;
+  const { header, source } = await generateCpp(src, "x.tsx");
+  // resource state props (loading starts true so the fallback shows first)
+  assert.match(header, /QVariant m_row_loading = true;/);
+  assert.match(header, /Q_PROPERTY\(QVariant row READ row/);
+  // Suspense gates the child on "not loading" and the fallback on loading
+  assert.match(source, /setVisible\(\(!sq::truthy\(state->row_loading\(\)\)\)\)/);
+  assert.match(source, /setVisible\(\(sq::truthy\(state->row_loading\(\)\)\)\)/);
+  // the async fetcher runs on the QJSEngine sidecar with the state QObject bound
+  assert.match(source, /QJSEngine \*__js = ctx->engine\(\);/);
+  assert.match(source, /__js->newQObject\(state\)/);
+  assert.match(source, /state\.row = v; state\.row_loading = false;/);
+  assert.match(source, /&RState::idChanged, state, \[__load_row\]\(\) mutable/); // re-fetch on source change
+  // resource value member access → safe lookup
+  assert.match(source, /sq::get\(state->row\(\), "label"\)/);
+});
+
 test("cpp: ternary binding → sq::truthy(...) ? a : b", async () => {
   const src = `
 import { createSignal } from "solid-js";

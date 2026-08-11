@@ -12,9 +12,12 @@
 import * as path from "node:path";
 import { readFile as fsReadFile } from "node:fs/promises";
 import * as t from "@babel/types";
+import _generate from "@babel/generator";
 import { normalize } from "../../babel/transform.ts";
-import { analyzeProps, analyzeSignals, type SymbolTable } from "../../model/symbols.ts";
+import { analyzeProps, analyzeResources, analyzeSignals, collectFetcherDeps, type SymbolTable } from "../../model/symbols.ts";
 import { hParts, isHCall } from "../../ast/h.ts";
+
+const generate: typeof _generate = (_generate as unknown as { default?: typeof _generate }).default ?? _generate;
 
 export interface GeneratedCpp {
   /** State classes (Q_OBJECT) — needs moc. */
@@ -33,6 +36,8 @@ interface CompInfo {
   name: string;
   fn: t.Function;
   render: t.CallExpression;
+  /** The module AST the component lives in (to inline a createResource fetcher's decls). */
+  file: t.File;
 }
 
 /** Every top-level component function (returns an h() call). */
@@ -42,7 +47,7 @@ function findComponents(ast: t.File): Map<string, CompInfo> {
     if (!fn || !name || !t.isBlockStatement(fn.body)) return;
     for (const s of fn.body.body)
       if (t.isReturnStatement(s) && isHCall(s.argument)) {
-        out.set(name, { name, fn, render: s.argument });
+        out.set(name, { name, fn, render: s.argument, file: ast });
         return;
       }
   };
@@ -137,12 +142,15 @@ interface Scope {
   propAliases?: Set<string>;
   /** Component names that own a state class (built as `buildX(ctx, new XState())` vs `buildX(ctx)`). */
   stateful: Set<string>;
+  /** createResource names in this component (each owns state props r/r_loading/r_error). */
+  resources?: string[];
 }
 
 /** Is `name` a state-backed reactive/prop cell (→ `state->name()`)? */
 function isStateRead(name: string, sc: Scope): boolean {
   const sym = sc.table.get(name);
-  return sc.props.has(name) || (!!sym && (sym.kind === "signal" || sym.kind === "memo" || sym.kind === "store"));
+  return sc.props.has(name) || sc.resources?.includes(name) === true
+    || (!!sym && (sym.kind === "signal" || sym.kind === "memo" || sym.kind === "store" || sym.kind === "resource"));
 }
 
 /** Translate a JS expression to a C++ QVariant expression (the sq:: runtime carries JS coercions). */
@@ -193,6 +201,9 @@ function emitExpr(node: t.Node, sc: Scope): string {
     }).filter(Boolean).join(" ");
     return `[&]{ QVariantList __l; ${stmts} return QVariant::fromValue(__l); }()`;
   }
+  // General `<expr>.member` (e.g. a resource accessor `user().avatar_url`) → safe QVariantMap lookup.
+  if (t.isMemberExpression(node) && !node.computed && t.isIdentifier(node.property) && t.isExpression(node.object))
+    return `sq::get(${emitExpr(node.object, sc)}, "${node.property.name}")`;
   if (t.isLogicalExpression(node)) {
     const fn = { "&&": "and_", "||": "or_", "??": "nullish" }[node.operator];
     return `sq::${fn}(${emitExpr(node.left, sc)}, ${emitExpr(node.right, sc)})`;
@@ -300,6 +311,7 @@ function emitChildrenInto(parentVar: string, children: t.Node[], c: Ctx): void {
     // <Show> is control flow, not an element: it appends each of its children to THIS container with a
     // `visible` guard (an invisible box leaves the layout — the engine already handles it).
     if (t.isIdentifier(tag, { name: "Show" })) { emitShowInto(parentVar, n as t.CallExpression, c); continue; }
+    if (t.isIdentifier(tag, { name: "Suspense" })) { emitSuspenseInto(parentVar, n as t.CallExpression, c); continue; }
     // <For>/<Index> — a rebuild-on-change row factory appended to THIS container (Fase 1: destroy+
     // rebuild over the array; keyed reconcile is Fase 1.5).
     if (t.isIdentifier(tag, { name: "For" }) || t.isIdentifier(tag, { name: "Index" })) {
@@ -352,6 +364,67 @@ function emitShowInto(parentVar: string, showNode: t.CallExpression, c: Ctx): vo
 }
 
 const isFragment = (n: t.Node): boolean => isElement(n) && (() => { const { tag } = hParts(n as t.CallExpression); return t.isIdentifier(tag, { name: "hFrag" }) || (t.isMemberExpression(tag) && t.isIdentifier(tag.property, { name: "Fragment" })); })();
+
+/** Give a built child a reactive `visible` binding over a raw C++ condition string + its state deps. */
+function emitRawGuard(childVar: string, condCpp: string, deps: string[], c: Ctx): void {
+  if (deps.length === 0) { c.out.push(`${childVar}->setVisible(${condCpp});`); return; }
+  c.out.push(`{ auto __vis = [${childVar}, state] { ${childVar}->setVisible(${condCpp}); };`);
+  for (const d of deps) c.out.push(`  QObject::connect(state, &${c.sc.stateClass}::${d}Changed, ${childVar}, __vis);`);
+  c.out.push(`  __vis(); }`);
+}
+
+/** <Suspense fallback={…}> — gate children on "no tracked resource is still loading", the fallback on
+ *  the inverse. Reuses the Show mechanism; the condition is the component's resource loading flags. */
+function emitSuspenseInto(parentVar: string, node: t.CallExpression, c: Ctx): void {
+  const { children } = hParts(node);
+  const loadingDeps = (c.sc.resources ?? []).map((r) => `${r}_loading`);
+  const ready = loadingDeps.length ? loadingDeps.map((l) => `!sq::truthy(state->${l}())`).join(" && ") : "true";
+  const loading = loadingDeps.length ? loadingDeps.map((l) => `sq::truthy(state->${l}())`).join(" || ") : "false";
+  let fallback: t.Expression | null = null;
+  const props = node.arguments[1];
+  if (props && t.isObjectExpression(props))
+    for (const p of props.properties)
+      if (t.isObjectProperty(p) && t.isIdentifier(p.key, { name: "fallback" }) && t.isExpression(p.value)) fallback = p.value;
+  for (const child of children)
+    if (isElement(child)) { const cv = emitElement(child as t.CallExpression, c); c.out.push(`sq::append(${parentVar}, ${cv});`); emitRawGuard(cv, `(${ready})`, loadingDeps, c); }
+  if (fallback) {
+    const fbNodes = isFragment(fallback) ? hParts(fallback as t.CallExpression).children : [fallback];
+    for (const fb of fbNodes)
+      if (isElement(fb)) { const cv = emitElement(fb as t.CallExpression, c); c.out.push(`sq::append(${parentVar}, ${cv});`); emitRawGuard(cv, `(${loading})`, loadingDeps, c); }
+  }
+}
+
+/** Emit the QJSEngine sidecar for a component's createResource(s): the fetcher decls + a per-resource
+ *  loader (`state.<r>_loading = true; Promise.resolve(fetcher(state.<src>)).then(v => state.<r> = v)…`)
+ *  evaluated on the app engine with the state QObject bound, then run and re-run on source change. */
+function emitResourceSidecar(resources: { name: string; source: string; fetcher: string }[], file: t.File, compName: string, out: string[]): void {
+  // Inline each distinct fetcher's module-level decls once, in source order (deduped by node).
+  const seen = new Set<t.Node>();
+  const decls: string[] = [];
+  for (const r of resources)
+    for (const node of collectFetcherDeps(file, r.fetcher))
+      if (!seen.has(node)) { seen.add(node); decls.push(generate(node, { concise: false }).code); }
+  const loaders = resources.map((r) => (
+    `function __load_${r.name}(){ state.${r.name}_loading = true; state.${r.name}_error = undefined; ` +
+    `Promise.resolve(${r.fetcher}(state.${r.source})).then(function(v){ state.${r.name} = v; state.${r.name}_loading = false; })` +
+    `.catch(function(e){ state.${r.name}_error = String(e); state.${r.name}_loading = false; }); }`
+  )).join("\n  ");
+  const returns = resources.map((r) => `${r.name}: __load_${r.name}`).join(", ");
+  const factory = `(function(state){\n  ${decls.join("\n  ")}\n  ${loaders}\n  return { ${returns} };\n})`;
+
+  out.push(
+    `{ QJSEngine *__js = ctx->engine();`,
+    `  QJSValue __loaders = __js->evaluate(QStringLiteral(R"SQJS(${factory})SQJS")).call(QJSValueList{ __js->newQObject(state) });`,
+  );
+  for (const r of resources) {
+    out.push(
+      `  QJSValue __load_${r.name} = __loaders.property(QStringLiteral("${r.name}"));`,
+      `  QObject::connect(state, &${compName}State::${r.source}Changed, state, [__load_${r.name}]() mutable { __load_${r.name}.call(); });`,
+      `  __load_${r.name}.call();`,
+    );
+  }
+  out.push(`}`);
+}
 
 /** Expand a <For>/<Index> into `parentVar`: a runtime closure that (re)builds one row per model
  *  element on every change to the model's dependencies. For/Index share the emit — the difference is
@@ -589,7 +662,7 @@ export async function generateCpp(source: string, filename: string, opts: Genera
     const table = analyzeSignals(info.fn);
     const propsInfo = analyzeProps(info.fn);
     const hasCells = [...table.values()].some((s) => s.kind === "signal" || s.kind === "store")
-      || propsInfo.used.some((n) => n !== "children");
+      || propsInfo.used.some((n) => n !== "children") || analyzeResources(info.fn).length > 0;
     if (hasCells) stateful.add(name);
   }
 
@@ -607,6 +680,15 @@ export async function generateCpp(source: string, filename: string, opts: Genera
     for (const sym of table.values())
       if (sym.kind === "signal" || sym.kind === "store") cells.set(sym.name, sym.init ?? null);
     for (const n of propNames) if (!cells.has(n)) cells.set(n, propsInfo.defaults[n] ?? null);
+    // Each createResource owns three state props: the value, a loading flag (starts true so the
+    // Suspense fallback shows first), and an error slot. The async fetcher runs on the QJSEngine
+    // sidecar and writes these back through the QObject (the C++ bindings react via NOTIFY).
+    const resources = analyzeResources(info.fn);
+    for (const r of resources) {
+      cells.set(r.name, null);
+      cells.set(`${r.name}_loading`, t.booleanLiteral(true));
+      cells.set(`${r.name}_error`, null);
+    }
 
     const sc: Scope & { table: SymbolTable; propsParam: string | null; props: Set<string>; components: Set<string> } = {
       stateClass: `${name}State`,
@@ -615,6 +697,7 @@ export async function generateCpp(source: string, filename: string, opts: Genera
       props: new Set(propNames),
       components: componentNames,
       stateful,
+      ...(resources.length ? { resources: resources.map((r) => r.name) } : {}),
       ...(propsInfo.aliases.length ? { propAliases: new Set(propsInfo.aliases) } : {}),
     };
 
@@ -672,6 +755,10 @@ export async function generateCpp(source: string, filename: string, opts: Genera
     }
     // Complete the fully-assembled tree bottom-up (reverse creation order).
     for (const v of [...completes].reverse()) out.push(`sq::complete(${v});`);
+    // createResource: the async fetcher is genuinely dynamic JS (fetch/await/closures) — the "dynamic
+    // frontier". It runs UNCHANGED on the QJSEngine sidecar (V4 stays in the binary for QtQml anyway),
+    // with the state QObject exposed so the blob's writes flow back through NOTIFY into the C++ bindings.
+    if (resources.length) emitResourceSidecar(resources, info.file, name, out);
     out.push(`return ${retVar};`);
     forwards.push(`${signature};`);
     sources.push(`${signature}\n{\n    ${out.join("\n    ")}\n}\n`);
@@ -713,8 +800,11 @@ export async function generateCpp(source: string, filename: string, opts: Genera
     '#include "widgets/primitives.h"',
     '#include "widgets/textinputs.h"',
     "",
+    "#include <QJSEngine>",
+    "#include <QJSValue>",
     "#include <QList>",
     "#include <QQmlContext>",
+    "#include <QQmlEngine>",
     "",
     "namespace aot {",
     "",
@@ -726,7 +816,8 @@ export async function generateCpp(source: string, filename: string, opts: Genera
     "",
   ].join("\n");
 
-  const main = emitMain(entryName, win);
+  const anyResources = [...comps.values()].some((ci) => analyzeResources(ci.fn).length > 0);
+  const main = emitMain(entryName, win, anyResources);
   return { header, source: src, main, entry: { buildFn: `build${entryName}`, width: win.width, height: win.height, title: win.title } };
 }
 
@@ -749,7 +840,7 @@ function emitInitLiteral(node: t.Expression): string {
   return ""; // undefined default
 }
 
-function emitMain(entryName: string, win: WindowMeta): string {
+function emitMain(entryName: string, win: WindowMeta, installShims: boolean): string {
   return [
     "// Generated by the AOT (C++) back-end. Do not edit by hand.",
     "// app_main: mirrors src/loader.cpp minus QML loading — wires engine/theme/layout, builds the",
@@ -761,6 +852,12 @@ function emitMain(entryName: string, win: WindowMeta): string {
     '#include "qmlcss/csslayout.h"',
     '#include "qmlcss/csstheme.h"',
     '#include "shims/tabstop.h"',
+    ...(installShims ? [
+      '#include "shims/jspolyfill.h"',
+      '#include "shims/webfetch.h"',
+      '#include "shims/webplatform.h"',
+      '#include "shims/webtimers.h"',
+    ] : []),
     '#include "widgets/focusring.h"',
     '#include "widgets/solidwidgets.h"',
     "",
@@ -800,6 +897,14 @@ function emitMain(entryName: string, win: WindowMeta): string {
     '    ctx->setContextProperty(QStringLiteral("cssTheme"), &theme);',
     '    ctx->setContextProperty(QStringLiteral("cssLayout"), &layout);',
     '    ctx->setContextProperty(QStringLiteral("solidTabstop"), &solidTabstop);',
+    ...(installShims ? [
+      "    // Browser shims for the createResource sidecar's residual JS (fetch/timers/TextDecoder).",
+      "    engine.installExtensions(QJSEngine::ConsoleExtension);",
+      "    JsPolyfill::install(&engine);",
+      "    WebPlatform::install(&engine);",
+      "    WebTimers::install(&engine);",
+      "    WebFetch::install(&engine);",
+    ] : []),
     '    theme.loadLayered(parser.values(QStringLiteral("css")));',
     "",
     "    QQuickWindow window;",

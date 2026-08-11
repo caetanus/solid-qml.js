@@ -10,8 +10,11 @@
 #include "widgets/primitives.h"
 #include "widgets/textinputs.h"
 
+#include <QJSEngine>
+#include <QJSValue>
 #include <QList>
 #include <QQmlContext>
+#include <QQmlEngine>
 
 namespace aot {
 
