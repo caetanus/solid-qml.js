@@ -38,7 +38,7 @@ test("cpp: reactive binding connects an update lambda to each dependency's NOTIF
 
 test("cpp: onClick handler becomes a connect to Button::clicked calling the setter", async () => {
   const { source } = await generateCpp(COUNTER, "counter.tsx");
-  assert.match(source, /connect\(v1, &SolidWidgets::Button::clicked, state, \[state\] \{ state->setCount\(sq::add\(state->count\(\), QVariant\(1\)\)\); \}\)/);
+  assert.match(source, /connect\(v1, &SolidWidgets::Button::clicked, v1, \[=\] \{ state->setCount\(sq::add\(state->count\(\), QVariant\(1\)\)\); \}\)/);
 });
 
 test("cpp: nested instances set props then build; Window root emits app_main", async () => {
@@ -327,6 +327,34 @@ export function App() { return <Window width={100} height={100}><C /></Window>; 
   assert.match(source, /QQuickItem \*buildCard\(QQmlContext \*ctx, const QList<QQuickItem \*> &__slot\)/); // slot param
   assert.match(source, /for \(auto \*__s : __slot\) sq::append\(\w+, __s\);/);                            // slotted at the marker
   assert.match(source, /QList<QQuickItem \*> __slot_\w+;[\s\S]*buildCard\(ctx, __slot_\w+\)/);            // kids collected + passed
+});
+
+test("cpp: createContext/useContext — provider method + injected consumer, reactive across the boundary", async () => {
+  const src = `
+import { createContext, useContext, createSignal } from "solid-js";
+import { div, text, button, Window } from "../../src/solid-qml/runtime";
+const Ctx = createContext();
+function Provider(props) {
+  const [count, setCount] = createSignal(props.count || 0);
+  const counter = { count, increment: () => setCount(count() + 1) };
+  return <Ctx.Provider value={counter}>{props.children}</Ctx.Provider>;
+}
+function Display() { const c = useContext(Ctx); return <text class="d">Count: {c.count()}</text>; }
+function Bump() { const c = useContext(Ctx); return <button class="b" onClick={c.increment}>+</button>; }
+function Demo() { return <Provider count={5}><div class="a"><Display /><Bump /></div></Provider>; }
+export function App() { return <Window width={100} height={100}><Demo /></Window>; }`;
+  const { header, source } = await generateCpp(src, "x.tsx");
+  // provider exposes increment as a Q_INVOKABLE method operating on its own state (bare `this`)
+  assert.match(header, /Q_INVOKABLE void increment\(\) \{ setCount\(sq::add\(count\(\), QVariant\(1\)\)\); \}/);
+  // consumers take the injected provider State pointer
+  assert.match(source, /QQuickItem \*buildDisplay\(QQmlContext \*ctx, ProviderState \*__ctx_Ctx\)/);
+  // consumer reads go through the injected pointer, and the binding reacts to the provider's NOTIFY
+  assert.match(source, /__ctx_Ctx->count\(\)/);
+  assert.match(source, /QObject::connect\(__ctx_Ctx, &ProviderState::countChanged, \w+, __upd\)/);
+  assert.match(source, /__ctx_Ctx->increment\(\);/);                          // button handler
+  // ContextDemo creates the provider State, injects it into both consumers
+  assert.match(source, /buildDisplay\(ctx, \w+_st\)/);
+  assert.match(source, /buildBump\(ctx, \w+_st\)/);
 });
 
 test("cpp: <Switch>/<Match> — first-match-wins guards + fallback", async () => {

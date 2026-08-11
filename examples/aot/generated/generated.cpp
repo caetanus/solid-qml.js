@@ -21,53 +21,52 @@
 namespace aot {
 
 // Forward declarations (build order independent of component declaration order).
-QQuickItem *buildCounter(QQmlContext *ctx, CounterState *state);
-QQuickItem *buildCounterApp(QQmlContext *ctx);
+QQuickItem *buildCard(QQmlContext *ctx, const QList<QQuickItem *> &__slot);
+QQuickItem *buildChildrenDemo(QQmlContext *ctx);
+QQuickItem *buildChildrenApp(QQmlContext *ctx);
 
-QQuickItem *buildCounter(QQmlContext *ctx, CounterState *state)
+QQuickItem *buildCard(QQmlContext *ctx, const QList<QQuickItem *> &__slot)
 {
     auto *v0 = new SolidWidgets::Div();
     sq::begin(v0, ctx);
-    v0->setCssClass(sq::classes({"counter"}));
-    auto *v1 = new SolidWidgets::Button();
-    sq::begin(v1, ctx);
-    QObject::connect(v1, &SolidWidgets::Button::clicked, state, [state] { state->setCount(sq::add(state->count(), QVariant(1))); });
-    { auto __upd = [v1, state] { v1->setText(sq::str(sq::add(sq::add(sq::add(QVariant(QString()), state->label()), QVariant(QStringLiteral(": "))), state->count()))); };
-      QObject::connect(state, &CounterState::labelChanged, v1, __upd);
-      QObject::connect(state, &CounterState::countChanged, v1, __upd);
-      __upd(); }
-    sq::append(v0, v1);
+    v0->setCssClass(sq::classes({"card"}));
+    for (auto *__s : __slot) sq::append(v0, __s);
     sq::complete(v0);
-    sq::complete(v1);
     return v0;
 }
 
-QQuickItem *buildCounterApp(QQmlContext *ctx)
+QQuickItem *buildChildrenDemo(QQmlContext *ctx)
+{
+    auto *v0 = new SolidWidgets::Div();
+    sq::begin(v0, ctx);
+    v0->setCssClass(sq::classes({"app"}));
+    QList<QQuickItem *> __slot_v1;
+    auto *v2 = new SolidWidgets::Text();
+    sq::begin(v2, ctx);
+    v2->setCssClass(sq::classes({"h1"}));
+    v2->setText(sq::str(sq::add(QVariant(QString()), QVariant(QStringLiteral("Inside the card")))));
+    __slot_v1.append(v2);
+    auto *v3 = new SolidWidgets::Text();
+    sq::begin(v3, ctx);
+    v3->setCssClass(sq::classes({"bio"}));
+    v3->setText(sq::str(sq::add(QVariant(QString()), QVariant(QStringLiteral("slotted via props.children")))));
+    __slot_v1.append(v3);
+    auto *v1 = buildCard(ctx, __slot_v1);
+    sq::append(v0, v1);
+    sq::complete(v0);
+    sq::complete(v3);
+    sq::complete(v2);
+    return v0;
+}
+
+QQuickItem *buildChildrenApp(QQmlContext *ctx)
 {
     auto *winBox = new QmlCss::CssRect();
     sq::begin(winBox, ctx);
     winBox->setCssPrimitive(QStringLiteral("window"));
     winBox->setCssClass(sq::classes({"qml-window"}));
-    auto *v0 = new SolidWidgets::Div();
-    sq::begin(v0, ctx);
-    v0->setCssClass(sq::classes({"app"}));
-    auto *v1_st = new CounterState();
-    v1_st->setLabel(QVariant(QStringLiteral("A")));
-    auto *v1 = buildCounter(ctx, v1_st);
-    v1_st->setParent(v1); // lifetime tied to the built item
-    sq::append(v0, v1);
-    auto *v2_st = new CounterState();
-    v2_st->setLabel(QVariant(QStringLiteral("B")));
-    auto *v2 = buildCounter(ctx, v2_st);
-    v2_st->setParent(v2); // lifetime tied to the built item
-    sq::append(v0, v2);
-    auto *v3_st = new CounterState();
-    v3_st->setLabel(QVariant(QStringLiteral("C")));
-    auto *v3 = buildCounter(ctx, v3_st);
-    v3_st->setParent(v3); // lifetime tied to the built item
-    sq::append(v0, v3);
+    auto *v0 = buildChildrenDemo(ctx);
     sq::append(winBox, v0);
-    sq::complete(v0);
     sq::complete(winBox);
     return winBox;
 }

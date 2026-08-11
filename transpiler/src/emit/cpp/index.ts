@@ -14,7 +14,7 @@ import { readFile as fsReadFile } from "node:fs/promises";
 import * as t from "@babel/types";
 import _generate from "@babel/generator";
 import { normalize } from "../../babel/transform.ts";
-import { analyzeProps, analyzeResources, analyzeSignals, collectFetcherDeps, type SymbolTable } from "../../model/symbols.ts";
+import { analyzeContexts, analyzeProps, analyzeProvider, analyzeResources, analyzeSignals, analyzeUseContext, collectFetcherDeps, type ProviderInfo, type SymbolTable } from "../../model/symbols.ts";
 import { hParts, isHCall } from "../../ast/h.ts";
 
 const generate: typeof _generate = (_generate as unknown as { default?: typeof _generate }).default ?? _generate;
@@ -146,6 +146,17 @@ interface Scope {
   slotted: Set<string>;
   /** createResource names in this component (each owns state props r/r_loading/r_error). */
   resources?: string[];
+  /** This component's useContext bindings: local var name → context name (`counter` → CounterContext).
+   *  A `local.member` read resolves to `__ctx_<ctx>-><member>` (the injected provider State). */
+  consumes?: Record<string, string>;
+  /** ctx name → the providing component's State class (the injected pointer's type). */
+  providerStateClass?: Record<string, string>;
+  /** Component names that consume a context (their build fn takes injected provider-State pointers). */
+  consumers?: Map<string, string[]>;
+  /** Component name → the context it provides (its instance's State is injected into its descendants). */
+  provides?: Map<string, string>;
+  /** True while emitting a provider State's own method body — state members are `x()`, not `state->x()`. */
+  selfMethod?: boolean;
 }
 
 /** Is `name` a state-backed reactive/prop cell (→ `state->name()`)? */
@@ -155,6 +166,10 @@ function isStateRead(name: string, sc: Scope): boolean {
     || (!!sym && (sym.kind === "signal" || sym.kind === "memo" || sym.kind === "store" || sym.kind === "resource"));
 }
 
+/** How a state member is referenced: `state->x()` in a build function, or `x()` (bare `this`) inside a
+ *  provider State's own method (e.g. the exposed `increment`). */
+const stateRef = (sc: Scope) => (sc.selfMethod ? "" : "state->");
+
 /** Translate a JS expression to a C++ QVariant expression (the sq:: runtime carries JS coercions). */
 function emitExpr(node: t.Node, sc: Scope): string {
   if (t.isParenthesizedExpression(node)) return emitExpr(node.expression, sc);
@@ -163,7 +178,7 @@ function emitExpr(node: t.Node, sc: Scope): string {
   if (t.isBooleanLiteral(node)) return `QVariant(${node.value})`;
   if (t.isIdentifier(node)) {
     if (sc.locals && node.name in sc.locals) return sc.locals[node.name];
-    if (isStateRead(node.name, sc)) return `state->${node.name}()`;
+    if (isStateRead(node.name, sc)) return `${stateRef(sc)}${node.name}()`;
     throw new Error(`AOT: unsupported identifier "${node.name}" (not a signal/prop of the component)`);
   }
   if (t.isConditionalExpression(node))
@@ -171,12 +186,16 @@ function emitExpr(node: t.Node, sc: Scope): string {
   if (t.isUnaryExpression(node) && node.operator === "!") return `sq::not_(${emitExpr(node.argument, sc)})`;
   if (t.isUnaryExpression(node) && node.operator === "-" && t.isNumericLiteral(node.argument))
     return `QVariant(-${node.argument.value})`;
+  // `counter.count()` — a call on a useContext member → the injected provider State's accessor.
+  if (t.isCallExpression(node) && t.isMemberExpression(node.callee) && !node.callee.computed
+      && t.isIdentifier(node.callee.object) && sc.consumes && node.callee.object.name in sc.consumes && t.isIdentifier(node.callee.property))
+    return `__ctx_${sc.consumes[node.callee.object.name]}->${node.callee.property.name}(${node.arguments.filter((a): a is t.Expression => t.isExpression(a)).map((a) => emitExpr(a, sc)).join(", ")})`;
   if (t.isCallExpression(node) && t.isIdentifier(node.callee)) {
     const sym = sc.table.get(node.callee.name);
     // A local accessor call `item()` (a <For>/<Index> row param) → its bound value.
     if (node.arguments.length === 0 && sc.locals && node.callee.name in sc.locals) return sc.locals[node.callee.name];
     // `count()` — a signal/memo/store accessor call with no args → the state getter.
-    if (node.arguments.length === 0 && isStateRead(node.callee.name, sc)) return `state->${node.callee.name}()`;
+    if (node.arguments.length === 0 && isStateRead(node.callee.name, sc)) return `${stateRef(sc)}${node.callee.name}()`;
     // `doubleCount()` — a derived (a plain zero/param accessor) → inline its expression body, binding
     // any params to the call args (JS derived are just functions; we inline rather than emit a method).
     if (sym && sym.kind === "derived" && t.isExpression(sym.body)) {
@@ -189,6 +208,10 @@ function emitExpr(node: t.Node, sc: Scope): string {
   if (t.isMemberExpression(node) && !node.computed && t.isIdentifier(node.object) && t.isIdentifier(node.property)
       && (node.object.name === sc.propsParam || sc.propAliases?.has(node.object.name)))
     return `state->${node.property.name}()`;
+  // `counter.increment` — a bare useContext member (a fn), e.g. used as an onClick → the provider method.
+  if (t.isMemberExpression(node) && !node.computed && t.isIdentifier(node.object) && t.isIdentifier(node.property)
+      && sc.consumes && node.object.name in sc.consumes)
+    return `__ctx_${sc.consumes[node.object.name]}->${node.property.name}`;
   // `item.name` — member access on a <For> row local (an object item) → safe QVariantMap lookup.
   if (t.isMemberExpression(node) && !node.computed && t.isIdentifier(node.object) && t.isIdentifier(node.property)
       && sc.locals && node.object.name in sc.locals)
@@ -266,15 +289,38 @@ function emitTextBinding(children: t.Node[], targetVar: string, sc: Scope, out: 
   let expr = "QVariant(QString())";
   for (const p of parts) expr = `sq::add(${expr}, ${p})`;
   const setText = `${targetVar}->setText(sq::str(${expr}));`;
-  const deps = new Set<string>();
-  for (const c of children) if (!isElement(c) && typeof (c as t.Node).type === "string") collectDeps(c, sc, deps);
-  if (deps.size === 0) {
-    out.push(setText);
-    return;
+  const deps = new Set<string>(), ctxDeps = new Set<string>();
+  for (const c of children) if (!isElement(c) && typeof (c as t.Node).type === "string") { collectDeps(c, sc, deps); collectCtxDeps(c, sc, ctxDeps); }
+  if (deps.size === 0 && ctxDeps.size === 0) { out.push(setText); return; }
+  emitReactiveBinding(setText, deps, ctxDeps, targetVar, sc, out);
+}
+
+/** Collect `local.member` reads on a useContext binding (`counter.count()`) as `<ctx>.<member>` keys —
+ *  the dep on the injected provider State's NOTIFY that a consumer's binding must react to. */
+function collectCtxDeps(node: t.Node, sc: Scope, out: Set<string>): void {
+  if (!sc.consumes) return;
+  const consider = (m: t.Node) => {
+    if (t.isMemberExpression(m) && !m.computed && t.isIdentifier(m.object) && t.isIdentifier(m.property) && m.object.name in sc.consumes!)
+      out.add(`${sc.consumes![m.object.name]}.${m.property.name}`);
+  };
+  if (t.isCallExpression(node) && t.isMemberExpression(node.callee)) consider(node.callee);
+  consider(node);
+  for (const key of Object.keys(node)) {
+    const v = (node as unknown as Record<string, unknown>)[key];
+    if (Array.isArray(v)) { for (const cc of v) if (cc && typeof (cc as t.Node).type === "string") collectCtxDeps(cc as t.Node, sc, out); }
+    else if (v && typeof (v as t.Node).type === "string") collectCtxDeps(v as t.Node, sc, out);
   }
-  // A connect-driven update lambda over each dependency's NOTIFY signal.
-  out.push(`{ auto __upd = [${targetVar}, state] { ${setText} };`);
+}
+
+/** Emit a connect-driven update lambda: `state` deps fire on `state::<dep>Changed`, context deps on the
+ *  injected provider's `<ctx-state>::<member>Changed`. `[=]` captures state and/or the __ctx_* pointers. */
+function emitReactiveBinding(setter: string, deps: Set<string>, ctxDeps: Set<string>, targetVar: string, sc: Scope, out: string[]): void {
+  out.push(`{ auto __upd = [=] { ${setter} };`);
   for (const d of deps) out.push(`  QObject::connect(state, &${sc.stateClass}::${d}Changed, ${targetVar}, __upd);`);
+  for (const cd of ctxDeps) {
+    const [cx, member] = cd.split(".");
+    out.push(`  QObject::connect(__ctx_${cx}, &${sc.providerStateClass?.[cx]}::${member}Changed, ${targetVar}, __upd);`);
+  }
   out.push(`  __upd(); }`);
 }
 
@@ -283,7 +329,11 @@ function emitTextBinding(children: t.Node[], targetVar: string, sc: Scope, out: 
  *  end (bottom-up), so each node's style resolution and layout see the fully-assembled tree — exactly
  *  the QML engine's build-then-complete lifecycle. (Inheritance relies on the parent link existing
  *  before a child completes.) */
-interface Ctx { sc: Scope; ctx: string; out: string[]; fresh: () => string; completes: string[] }
+interface Ctx { sc: Scope; ctx: string; out: string[]; fresh: () => string; completes: string[];
+  /** In scope while building a provider's slot children: ctx name → the provider State var to inject
+   *  into consumer instances mounted within. */
+  providers?: Record<string, string>;
+}
 
 const classLine = (v: string, classes: string[]) =>
   classes.length ? [`${v}->setCssClass(sq::classes({${classes.map((c) => `"${c}"`).join(", ")}}));`] : [];
@@ -554,28 +604,49 @@ function emitElement(node: t.CallExpression, c: Ctx): string {
   // Nested component instance: `<Counter label="A" />`. buildX returns an already-complete subtree.
   if (t.isIdentifier(tag) && sc.components.has(tag.name)) {
     const v = c.fresh();
-    // A component that slots props.children receives its (parent-built) kids as a QList<QQuickItem*>.
+    const compName = tag.name;
+    const isStateful = sc.stateful.has(compName);
+    const providedCtx = sc.provides?.get(compName); // this component provides a context to its subtree
+    // State must exist before its slot children so a provider can inject it into consumers within.
+    let stateVar = "";
+    if (isStateful) {
+      stateVar = `${v}_st`;
+      out.push(`auto *${stateVar} = new ${compName}State();`);
+      if (propsArg && t.isObjectExpression(propsArg))
+        for (const p of propsArg.properties)
+          if (t.isObjectProperty(p) && t.isIdentifier(p.key) && p.key.name !== "children" && t.isExpression(p.value))
+            out.push(`${stateVar}->set${cap(p.key.name)}(${emitExpr(p.value, sc)});`);
+    }
+    // Slot children — built with the provider's State exposed so consumers within get it injected.
     let slotArg = "";
-    if (sc.slotted.has(tag.name)) {
+    if (sc.slotted.has(compName)) {
       const slotVar = `__slot_${v}`;
       out.push(`QList<QQuickItem *> ${slotVar};`);
+      const savedProviders = c.providers;
+      if (providedCtx && stateVar) c.providers = { ...(c.providers ?? {}), [providedCtx]: stateVar };
       emitSlotChildren(slotVar, children, c);
+      c.providers = savedProviders;
       slotArg = `, ${slotVar}`;
     }
-    // A stateless component (no signals/props) has no state class → `buildX(ctx[, slot])`.
-    if (!sc.stateful.has(tag.name)) {
-      out.push(`auto *${v} = build${tag.name}(ctx${slotArg});`);
-      return v;
-    }
-    const stateVar = `${v}_st`;
-    out.push(`auto *${stateVar} = new ${tag.name}State();`);
-    if (propsArg && t.isObjectExpression(propsArg)) {
-      for (const p of propsArg.properties)
-        if (t.isObjectProperty(p) && t.isIdentifier(p.key) && p.key.name !== "children" && t.isExpression(p.value))
-          out.push(`${stateVar}->set${cap(p.key.name)}(${emitExpr(p.value, sc)});`);
-    }
-    out.push(`auto *${v} = build${tag.name}(ctx, ${stateVar}${slotArg});`, `${stateVar}->setParent(${v}); // lifetime tied to the built item`);
+    // A consumer receives one injected provider-State pointer per context it consumes (from scope).
+    const injArgs = (sc.consumers?.get(compName) ?? []).map((cx) => {
+      const provVar = c.providers?.[cx];
+      if (!provVar) throw new Error(`AOT: <${compName}> consumes ${cx} with no provider in scope`);
+      return `, ${provVar}`;
+    }).join("");
+    if (!isStateful) { out.push(`auto *${v} = build${compName}(ctx${slotArg}${injArgs});`); return v; }
+    out.push(`auto *${v} = build${compName}(ctx, ${stateVar}${slotArg}${injArgs});`, `${stateVar}->setParent(${v}); // lifetime tied to the built item`);
     return v;
+  }
+  // `<Ctx.Provider value={…}>children</Ctx.Provider>` (a provider component's render root) → a
+  // transparent container that slots its children. The value is structural (the provider's State
+  // carries it), so it emits nothing here.
+  if (t.isMemberExpression(tag) && !tag.computed && t.isIdentifier(tag.property, { name: "Provider" })) {
+    const pv = c.fresh();
+    out.push(`auto *${pv} = new SolidWidgets::Div();`, `sq::begin(${pv}, ctx);`);
+    emitChildrenInto(pv, children, c);
+    c.completes.push(pv);
+    return pv;
   }
   if (!t.isStringLiteral(tag)) throw new Error(`AOT: unsupported tag ${tag.type}`);
   const tagName = tag.value;
@@ -591,9 +662,16 @@ function emitElement(node: t.CallExpression, c: Ctx): string {
   if (tagName === "button") {
     out.push(`auto *${v} = new SolidWidgets::Button();`, `sq::begin(${v}, ctx);`, ...classLine(v, p.classes));
     if (p.onClick) {
-      if (!t.isArrowFunctionExpression(p.onClick) && !t.isFunctionExpression(p.onClick)) throw new Error("AOT: onClick must be an inline arrow");
-      if (t.isBlockStatement(p.onClick.body)) throw new Error("AOT: block-bodied onClick not supported");
-      out.push(`QObject::connect(${v}, &SolidWidgets::Button::clicked, state, [state] { ${emitHandler(p.onClick.body, sc)} });`);
+      // Either an inline arrow (`() => setCount(...)`) or a bare callable reference (a context method,
+      // `counter.increment`). `[=]` captures whatever the body needs (state and/or injected __ctx_*).
+      let stmt: string;
+      if (t.isArrowFunctionExpression(p.onClick) || t.isFunctionExpression(p.onClick)) {
+        if (t.isBlockStatement(p.onClick.body)) throw new Error("AOT: block-bodied onClick not supported");
+        stmt = emitHandler(p.onClick.body, sc);
+      } else if (t.isExpression(p.onClick)) {
+        stmt = `${emitExpr(p.onClick, sc)}();`;
+      } else throw new Error("AOT: unsupported onClick");
+      out.push(`QObject::connect(${v}, &SolidWidgets::Button::clicked, ${v}, [=] { ${stmt} });`);
     }
     // Match the QML declaration order: the `text` property first, then the element children.
     emitTextBinding(children, v, sc, out);
@@ -625,10 +703,10 @@ function emitHandler(body: t.Expression, sc: Scope): string {
       // Functional-updater form `setX(prev => expr)` → inline with prev bound to the current getter.
       if ((t.isArrowFunctionExpression(arg) || t.isFunctionExpression(arg)) && !t.isBlockStatement(arg.body)) {
         const param = arg.params[0] && t.isIdentifier(arg.params[0]) ? arg.params[0].name : null;
-        const inner: Scope = param ? { ...sc, locals: { ...(sc.locals ?? {}), [param]: `state->${sym.signal}()` } } : sc;
-        return `state->set${cap(sym.signal)}(${emitExpr(arg.body, inner)});`;
+        const inner: Scope = param ? { ...sc, locals: { ...(sc.locals ?? {}), [param]: `${stateRef(sc)}${sym.signal}()` } } : sc;
+        return `${stateRef(sc)}set${cap(sym.signal)}(${emitExpr(arg.body, inner)});`;
       }
-      return `state->set${cap(sym.signal)}(${emitExpr(arg, sc)});`;
+      return `${stateRef(sc)}set${cap(sym.signal)}(${emitExpr(arg, sc)});`;
     }
   }
   throw new Error(`AOT: unsupported handler body "${body.type}" (only a signal setter call)`);
@@ -816,13 +894,24 @@ export async function generateCpp(source: string, filename: string, opts: Genera
   // state), and which slot props.children (their build fn takes a __slot list).
   const stateful = new Set<string>();
   const slotted = new Set<string>();
+  // createContext names across the graph; per-component provider/consumer roles.
+  const contexts = new Set<string>();
+  for (const info of comps.values()) for (const c of analyzeContexts(info.file)) contexts.add(c);
+  const providerInfos = new Map<string, ProviderInfo>(); // comp → its provider role
+  const componentConsumes = new Map<string, string[]>();  // comp → contexts it useContext()s
+  const providerStateClass: Record<string, string> = {};  // ctx → the providing component's State class
   for (const [name, info] of comps) {
     const table = analyzeSignals(info.fn);
     const propsInfo = analyzeProps(info.fn);
     const hasCells = [...table.values()].some((s) => s.kind === "signal" || s.kind === "store")
       || propsInfo.used.some((n) => n !== "children") || analyzeResources(info.fn).length > 0;
-    if (hasCells) stateful.add(name);
-    if (propsInfo.used.includes("children")) slotted.add(name);
+    const provider = contexts.size ? analyzeProvider(info.fn, table, contexts) : null;
+    const consumes = contexts.size ? analyzeUseContext(info.fn, contexts) : [];
+    if (provider) { providerInfos.set(name, provider); providerStateClass[provider.ctx] = `${name}State`; }
+    if (consumes.length) componentConsumes.set(name, consumes.map((u) => u.ctx));
+    // A provider holds state (its value's accessors are signals) and slots the Provider's children.
+    if (hasCells || provider) stateful.add(name);
+    if (propsInfo.used.includes("children") || provider) slotted.add(name);
   }
 
   const headers: string[] = [];
@@ -859,10 +948,18 @@ export async function generateCpp(source: string, filename: string, opts: Genera
       slotted,
       ...(resources.length ? { resources: resources.map((r) => r.name) } : {}),
       ...(propsInfo.aliases.length ? { propAliases: new Set(propsInfo.aliases) } : {}),
+      ...(contexts.size ? { providerStateClass, consumers: componentConsumes, provides: new Map([...providerInfos].map(([n, pi]) => [n, pi.ctx])) } : {}),
     };
+    // Consumer bindings: `const counter = useContext(Ctx)` → local `counter` resolves to the injected
+    // provider State pointer `__ctx_<Ctx>`.
+    const useCtx = contexts.size ? analyzeUseContext(info.fn, contexts) : [];
+    if (useCtx.length) sc.consumes = Object.fromEntries(useCtx.map((u) => [u.local, u.ctx]));
 
     const isEntry = name === entryName;
-    const hasState = cells.size > 0;
+    // A provider component always owns a State (its context value's accessors are its signals) even
+    // when it has no plain cells; consumers with no cells stay stateless (only injected).
+    const provider = providerInfos.get(name) ?? null;
+    const hasState = cells.size > 0 || provider != null;
 
     // ── State class ────────────────────────────────────────────────────────────────────────────
     if (hasState) {
@@ -880,11 +977,23 @@ export async function generateCpp(source: string, filename: string, opts: Genera
         const initExpr = init ? emitInitLiteral(init) : "";
         members.push(`    QVariant m_${cell}${initExpr ? ` = ${initExpr}` : ""};`);
       }
+      // A provider exposes its context value's fn members as Q_INVOKABLE methods (e.g. `increment`),
+      // callable from a consumer's injected pointer. State members inside them are bare `this` refs.
+      const methods: string[] = [];
+      if (provider) {
+        const mScope: Scope = { ...sc, selfMethod: true };
+        for (const [mName, node] of Object.entries(provider.fnMembers)) {
+          if (!t.isArrowFunctionExpression(node) && !t.isFunctionExpression(node)) throw new Error(`AOT: context fn member ${mName} must be an arrow`);
+          if (t.isBlockStatement(node.body)) throw new Error(`AOT: block-bodied context fn member ${mName} not supported`);
+          methods.push(`    Q_INVOKABLE void ${mName}() { ${emitHandler(node.body, mScope)} }`);
+        }
+      }
       headers.push(
         `class ${name}State : public QObject\n{\n    Q_OBJECT`,
         props.join("\n"),
         `public:\n    explicit ${name}State(QObject *parent = nullptr) : QObject(parent) {}`,
         getset.join("\n"),
+        ...(methods.length ? [methods.join("\n")] : []),
         `signals:\n${signals.join("\n")}`,
         `private:\n${members.join("\n")}\n};\n`,
       );
@@ -910,9 +1019,11 @@ export async function generateCpp(source: string, filename: string, opts: Genera
     } else {
       retVar = emitElement(info.render, c);
       const slotParam = slotted.has(name) ? `, const QList<QQuickItem *> &__slot` : "";
+      // A consumer receives one injected provider-State pointer per context it useContext()s.
+      const injParams = (componentConsumes.get(name) ?? []).map((cx) => `, ${providerStateClass[cx]} *__ctx_${cx}`).join("");
       signature = hasState
-        ? `QQuickItem *build${name}(QQmlContext *ctx, ${name}State *state${slotParam})`
-        : `QQuickItem *build${name}(QQmlContext *ctx${slotParam})`;
+        ? `QQuickItem *build${name}(QQmlContext *ctx, ${name}State *state${slotParam}${injParams})`
+        : `QQuickItem *build${name}(QQmlContext *ctx${slotParam}${injParams})`;
     }
     // Complete the fully-assembled tree bottom-up (reverse creation order).
     for (const v of [...completes].reverse()) out.push(`sq::complete(${v});`);
@@ -935,6 +1046,9 @@ export async function generateCpp(source: string, filename: string, opts: Genera
     "#include <QObject>",
     "#include <QVariant>",
     "#include <QtQml/qqml.h>",
+    "",
+    // A provider State's exposed methods (increment, …) use sq:: coercions inline.
+    '#include "aot/sqruntime.h"',
     "",
     "class QQmlContext;",
     "class QQuickItem;",

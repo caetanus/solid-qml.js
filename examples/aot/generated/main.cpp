@@ -31,7 +31,7 @@ int main(int argc, char **argv)
     parser.addHelpOption();
     parser.addOption({ QStringLiteral("css"), QStringLiteral("CSS file(s), layered."), QStringLiteral("path") });
     parser.addOption({ QStringLiteral("width"), QStringLiteral("Window width."), QStringLiteral("px"), QStringLiteral("420") });
-    parser.addOption({ QStringLiteral("height"), QStringLiteral("Window height."), QStringLiteral("px"), QStringLiteral("180") });
+    parser.addOption({ QStringLiteral("height"), QStringLiteral("Window height."), QStringLiteral("px"), QStringLiteral("220") });
     parser.addOption({ QStringLiteral("grab"), QStringLiteral("Render one frame to PNG and exit."), QStringLiteral("png") });
     parser.addOption({ QStringLiteral("click"), QStringLiteral("Synthesize a left click at \"x,y\" (repeatable)."), QStringLiteral("x,y") });
     parser.process(app);
@@ -52,12 +52,12 @@ int main(int argc, char **argv)
     QQuickWindow window;
     window.setWidth(w);
     window.setHeight(h);
-    window.setTitle(QStringLiteral("AOT Counter"));
+    window.setTitle(QStringLiteral("Children"));
     theme.setViewport(w, h);
     QObject::connect(&window, &QQuickWindow::widthChanged, &theme, [&] { theme.setViewport(window.width(), window.height()); });
     QObject::connect(&window, &QQuickWindow::heightChanged, &theme, [&] { theme.setViewport(window.width(), window.height()); });
 
-    QQuickItem *root = aot::buildCounterApp(ctx);
+    QQuickItem *root = aot::buildChildrenApp(ctx);
     root->setParentItem(window.contentItem());
     root->setSize(QSizeF(w, h));
     QObject::connect(&window, &QQuickWindow::widthChanged, root, [root, &window] { root->setWidth(window.width()); });
