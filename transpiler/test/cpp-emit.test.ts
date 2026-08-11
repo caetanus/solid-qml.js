@@ -279,6 +279,25 @@ export function App() { return <Window width={100} height={100}><R /></Window>; 
   assert.match(source, /sq::get\(state->row\(\), "label"\)/);
 });
 
+test("cpp: <textarea> → TextArea (textChanged); <img> → Image (setSrc), static src no state capture", async () => {
+  const src = `
+import { createSignal } from "solid-js";
+import { div, img, textarea, Window } from "../../src/solid-qml/runtime";
+function C() {
+  const [n, setN] = createSignal("x");
+  return <div class="a">
+    <textarea value={n()} onInput={(e) => setN(e.target.value)} />
+    <img class="l" src="/abs/logo.png" />
+  </div>;
+}
+export function App() { return <Window width={100} height={100}><C /></Window>; }`;
+  const { source } = await generateCpp(src, "x.tsx");
+  assert.match(source, /new SolidWidgets::TextArea\(\)/);
+  assert.match(source, /&SolidWidgets::TextArea::textChanged, state/);         // textarea uses textChanged
+  assert.match(source, /new SolidWidgets::Image\(\)/);
+  assert.match(source, /->setSrc\(QUrl\(sq::str\(QVariant\(QStringLiteral\("\/abs\/logo\.png"\)\)\)\)\);/); // static src, one-shot (no `state`)
+});
+
 test("cpp: ternary binding → sq::truthy(...) ? a : b", async () => {
   const src = `
 import { createSignal } from "solid-js";

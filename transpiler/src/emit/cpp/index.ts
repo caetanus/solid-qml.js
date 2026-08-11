@@ -524,7 +524,9 @@ function emitElement(node: t.CallExpression, c: Ctx): string {
     c.completes.push(v);
     return v;
   }
-  if (tagName === "input") { emitInput(propsArg, p, v, c); c.completes.push(v); return v; }
+  if (tagName === "input") { emitTextControl(propsArg, p, v, c, false); c.completes.push(v); return v; }
+  if (tagName === "textarea") { emitTextControl(propsArg, p, v, c, true); c.completes.push(v); return v; }
+  if (tagName === "img") { emitImage(propsArg, p, v, c); c.completes.push(v); return v; }
   if (TEXT_TAGS.has(tagName)) {
     out.push(`auto *${v} = new SolidWidgets::Text();`, `sq::begin(${v}, ctx);`, ...classLine(v, p.classes));
     if (tagName !== "text") out.push(`${v}->setCssPrimitive(${cppStr(tagName)});`);
@@ -582,7 +584,8 @@ function emitInputHandler(fn: t.ArrowFunctionExpression | t.FunctionExpression, 
 /** Controlled `<input>` → SolidWidgets::TextField: a value binding pushes the signal into the field,
  *  and textEdited runs the onInput handler back into the signal. Special input types (checkbox/radio/
  *  range/number/date → dedicated widgets) fail loud for now. */
-function emitInput(propsArg: t.Node | undefined, p: ElemProps, v: string, c: Ctx): void {
+/** Controlled `<input>` (TextField, textEdited) or `<textarea>` (TextArea, textChanged). */
+function emitTextControl(propsArg: t.Node | undefined, p: ElemProps, v: string, c: Ctx, isTextArea: boolean): void {
   let value: t.Expression | null = null, onInput: t.Node | undefined, placeholder: string | null = null;
   let type = "text", disabled = false, readOnly = false;
   if (propsArg && t.isObjectExpression(propsArg))
@@ -596,26 +599,46 @@ function emitInput(propsArg: t.Node | undefined, p: ElemProps, v: string, c: Ctx
       else if (k === "disabled") disabled = true;
       else if (k === "readOnly" || k === "readonly") readOnly = true;
     }
-  if (["checkbox", "radio", "range", "number", "date"].includes(type))
+  if (!isTextArea && ["checkbox", "radio", "range", "number", "date"].includes(type))
     throw new Error(`AOT: <input type="${type}"> not supported yet (needs the dedicated widget)`);
 
-  c.out.push(`auto *${v} = new SolidWidgets::TextField();`, `sq::begin(${v}, ctx);`, ...classLine(v, p.classes));
-  if (type === "password") c.out.push(`${v}->setEchoMode(2);`); // TextInput.Password
+  const cls = isTextArea ? "TextArea" : "TextField";
+  // TextArea has no textEdited (it extends TextEdit) — onInput/onChange map to textChanged. The
+  // controlled re-assert (setText) is change-gated (`if (m_text == v) return`), so it never loops.
+  const editSignal = isTextArea ? "textChanged" : "textEdited";
+  c.out.push(`auto *${v} = new SolidWidgets::${cls}();`, `sq::begin(${v}, ctx);`, ...classLine(v, p.classes));
+  if (!isTextArea && type === "password") c.out.push(`${v}->setEchoMode(2);`); // TextInput.Password
   if (placeholder) c.out.push(`${v}->setPlaceholder(${cppStr(placeholder)});`);
   if (readOnly) c.out.push(`${v}->setReadOnly(true);`);
   if (disabled) c.out.push(`${v}->setEnabled(false);`);
-  // Controlled value: re-assert the signal into the field on change (setText emits textChanged, not
-  // textEdited, so this never re-triggers the edit handler — no loop).
-  if (value) {
-    c.out.push(`{ auto __sync = [${v}, state] { ${v}->setText(sq::str(${emitExpr(value, c.sc)})); };`);
-    const deps = new Set<string>(); collectDeps(value, c.sc, deps);
-    for (const d of deps) c.out.push(`  QObject::connect(state, &${c.sc.stateClass}::${d}Changed, ${v}, __sync);`);
-    c.out.push(`  __sync(); }`);
-  }
+  if (value) emitReactiveSet(`${v}->setText(sq::str(EXPR))`, value, v, c);
   if (onInput) {
     if (!t.isArrowFunctionExpression(onInput) && !t.isFunctionExpression(onInput)) throw new Error("AOT: onInput must be an inline arrow");
-    c.out.push(`QObject::connect(${v}, &SolidWidgets::TextField::textEdited, state, [${v}, state] { ${emitInputHandler(onInput, v, c.sc)} });`);
+    c.out.push(`QObject::connect(${v}, &SolidWidgets::${cls}::${editSignal}, state, [${v}, state] { ${emitInputHandler(onInput, v, c.sc)} });`);
   }
+}
+
+/** `<img src={u} />` → SolidWidgets::Image (QUrl src); the src is a (possibly reactive) string. */
+function emitImage(propsArg: t.Node | undefined, p: ElemProps, v: string, c: Ctx): void {
+  let src: t.Expression | null = null;
+  if (propsArg && t.isObjectExpression(propsArg))
+    for (const pr of propsArg.properties)
+      if (t.isObjectProperty(pr) && t.isIdentifier(pr.key, { name: "src" }) && t.isExpression(pr.value)) src = pr.value;
+  c.out.push(`auto *${v} = new SolidWidgets::Image();`, `sq::begin(${v}, ctx);`, ...classLine(v, p.classes));
+  if (src) emitReactiveSet(`${v}->setSrc(QUrl(sq::str(EXPR)))`, src, v, c);
+}
+
+/** Emit a property set that reacts to a value expression's deps. `setterTpl` has `EXPR` where the
+ *  emitted value goes. With no deps it's a one-shot set (no `state` capture — works in stateless
+ *  components); with deps it's a connect-driven lambda re-run on each dependency's NOTIFY. */
+function emitReactiveSet(setterTpl: string, node: t.Expression, targetVar: string, c: Ctx): void {
+  const setter = setterTpl.replace("EXPR", emitExpr(node, c.sc));
+  const deps = new Set<string>();
+  collectDeps(node, c.sc, deps);
+  if (deps.size === 0) { c.out.push(`${setter};`); return; }
+  c.out.push(`{ auto __set = [${targetVar}, state] { ${setter}; };`);
+  for (const d of deps) c.out.push(`  QObject::connect(state, &${c.sc.stateClass}::${d}Changed, ${targetVar}, __set);`);
+  c.out.push(`  __set(); }`);
 }
 
 interface WindowMeta { width: number; height: number; title: string; child: t.CallExpression }
@@ -805,6 +828,7 @@ export async function generateCpp(source: string, filename: string, opts: Genera
     "#include <QList>",
     "#include <QQmlContext>",
     "#include <QQmlEngine>",
+    "#include <QUrl>",
     "",
     "namespace aot {",
     "",

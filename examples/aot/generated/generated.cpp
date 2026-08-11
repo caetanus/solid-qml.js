@@ -15,6 +15,7 @@
 #include <QList>
 #include <QQmlContext>
 #include <QQmlEngine>
+#include <QUrl>
 
 namespace aot {
 
