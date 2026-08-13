@@ -33,26 +33,26 @@ export function Gallery() {
       <Show when={view() === "hello"}>
         <div class="hero-bg" />
       </Show>
-      <div class="nav">
-        <button classList={{ active: view() === "hello" }} onClick={() => setView("hello")}>Hello</button>
-        <button classList={{ active: view() === "counters" }} onClick={() => setView("counters")}>Counters</button>
-        <button classList={{ active: view() === "counter" }} onClick={() => setView("counter")}>Counter (timer)</button>
-        <button classList={{ active: view() === "children" }} onClick={() => setView("children")}>props.children</button>
-        <button classList={{ active: view() === "derived" }} onClick={() => setView("derived")}>Derived</button>
-        <button classList={{ active: view() === "index" }} onClick={() => setView("index")}>Index</button>
-        <button classList={{ active: view() === "dynamic" }} onClick={() => setView("dynamic")}>Dynamic</button>
-        <button classList={{ active: view() === "props" }} onClick={() => setView("props")}>Prop helpers</button>
-        <button classList={{ active: view() === "context" }} onClick={() => setView("context")}>Context</button>
-        <button classList={{ active: view() === "refs" }} onClick={() => setView("refs")}>Refs</button>
-        <button classList={{ active: view() === "fetch" }} onClick={() => setView("fetch")}>Fetch</button>
-        <button classList={{ active: view() === "todomvc" }} onClick={() => setView("todomvc")}>TodoMVC</button>
-        <button classList={{ active: view() === "nodeimports" }} onClick={() => setView("nodeimports")}>Node imports</button>
-        <button classList={{ active: view() === "cssgaps" }} onClick={() => setView("cssgaps")}>CSS gaps</button>
-        <button classList={{ active: view() === "dashboard" }} onClick={() => setView("dashboard")}>Dashboard</button>
-        <button classList={{ active: view() === "widgets" }} onClick={() => setView("widgets")}>Widgets</button>
-        <button classList={{ active: view() === "native" }} onClick={() => setView("native")}>Native</button>
-        <button classList={{ active: view() === "charts3d" }} onClick={() => setView("charts3d")}>Charts &amp; 3D</button>
-      </div>
+      <ToolBar class="nav">
+        <ToolButton classList={{ active: view() === "hello" }} onClick={() => setView("hello")}>Hello</ToolButton>
+        <ToolButton classList={{ active: view() === "counters" }} onClick={() => setView("counters")}>Counters</ToolButton>
+        <ToolButton classList={{ active: view() === "counter" }} onClick={() => setView("counter")}>Counter (timer)</ToolButton>
+        <ToolButton classList={{ active: view() === "children" }} onClick={() => setView("children")}>props.children</ToolButton>
+        <ToolButton classList={{ active: view() === "derived" }} onClick={() => setView("derived")}>Derived</ToolButton>
+        <ToolButton classList={{ active: view() === "index" }} onClick={() => setView("index")}>Index</ToolButton>
+        <ToolButton classList={{ active: view() === "dynamic" }} onClick={() => setView("dynamic")}>Dynamic</ToolButton>
+        <ToolButton classList={{ active: view() === "props" }} onClick={() => setView("props")}>Prop helpers</ToolButton>
+        <ToolButton classList={{ active: view() === "context" }} onClick={() => setView("context")}>Context</ToolButton>
+        <ToolButton classList={{ active: view() === "refs" }} onClick={() => setView("refs")}>Refs</ToolButton>
+        <ToolButton classList={{ active: view() === "fetch" }} onClick={() => setView("fetch")}>Fetch</ToolButton>
+        <ToolButton classList={{ active: view() === "todomvc" }} onClick={() => setView("todomvc")}>TodoMVC</ToolButton>
+        <ToolButton classList={{ active: view() === "nodeimports" }} onClick={() => setView("nodeimports")}>Node imports</ToolButton>
+        <ToolButton classList={{ active: view() === "cssgaps" }} onClick={() => setView("cssgaps")}>CSS gaps</ToolButton>
+        <ToolButton classList={{ active: view() === "dashboard" }} onClick={() => setView("dashboard")}>Dashboard</ToolButton>
+        <ToolButton classList={{ active: view() === "widgets" }} onClick={() => setView("widgets")}>Widgets</ToolButton>
+        <ToolButton classList={{ active: view() === "native" }} onClick={() => setView("native")}>Native</ToolButton>
+        <ToolButton classList={{ active: view() === "charts3d" }} onClick={() => setView("charts3d")}>Charts &amp; 3D</ToolButton>
+      </ToolBar>
       <Switch>
         <Match when={view() === "hello"}><Hello /></Match>
         <Match when={view() === "counters"}><Counters /></Match>

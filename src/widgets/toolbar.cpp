@@ -13,6 +13,12 @@ T.ToolBar {
     anchors.fill: parent
     background: null
     contentItem: Item { }
+    // Semantics only — the toolbar's CHILDREN are laid out and painted by the CSS engine in the
+    // content slot, which sits above this item. Left at the default z (and accepting input) the
+    // filled template swallowed every press meant for the buttons inside it, so a toolbar's
+    // buttons were dead. Behind the content, and transparent to the pointer.
+    z: -1
+    enabled: false
 }
 )";
 

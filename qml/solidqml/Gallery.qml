@@ -12,97 +12,97 @@ W.Div {
         cssClass: ["hero-bg"]
         visible: !!(view === "hello")
     }
-    W.Div {
+    W.ToolBar {
         cssClass: ["nav"]
-        W.Button {
-            cssClass: [].concat(view === "hello" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "hello" ? ["active"] : [])
             text: "Hello"
-            onClicked: view = "hello"
+            onClicked: { __self.view = "hello" }
         }
-        W.Button {
-            cssClass: [].concat(view === "counters" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "counters" ? ["active"] : [])
             text: "Counters"
-            onClicked: view = "counters"
+            onClicked: { __self.view = "counters" }
         }
-        W.Button {
-            cssClass: [].concat(view === "counter" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "counter" ? ["active"] : [])
             text: "Counter (timer)"
-            onClicked: view = "counter"
+            onClicked: { __self.view = "counter" }
         }
-        W.Button {
-            cssClass: [].concat(view === "children" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "children" ? ["active"] : [])
             text: "props.children"
-            onClicked: view = "children"
+            onClicked: { __self.view = "children" }
         }
-        W.Button {
-            cssClass: [].concat(view === "derived" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "derived" ? ["active"] : [])
             text: "Derived"
-            onClicked: view = "derived"
+            onClicked: { __self.view = "derived" }
         }
-        W.Button {
-            cssClass: [].concat(view === "index" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "index" ? ["active"] : [])
             text: "Index"
-            onClicked: view = "index"
+            onClicked: { __self.view = "index" }
         }
-        W.Button {
-            cssClass: [].concat(view === "dynamic" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "dynamic" ? ["active"] : [])
             text: "Dynamic"
-            onClicked: view = "dynamic"
+            onClicked: { __self.view = "dynamic" }
         }
-        W.Button {
-            cssClass: [].concat(view === "props" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "props" ? ["active"] : [])
             text: "Prop helpers"
-            onClicked: view = "props"
+            onClicked: { __self.view = "props" }
         }
-        W.Button {
-            cssClass: [].concat(view === "context" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "context" ? ["active"] : [])
             text: "Context"
-            onClicked: view = "context"
+            onClicked: { __self.view = "context" }
         }
-        W.Button {
-            cssClass: [].concat(view === "refs" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "refs" ? ["active"] : [])
             text: "Refs"
-            onClicked: view = "refs"
+            onClicked: { __self.view = "refs" }
         }
-        W.Button {
-            cssClass: [].concat(view === "fetch" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "fetch" ? ["active"] : [])
             text: "Fetch"
-            onClicked: view = "fetch"
+            onClicked: { __self.view = "fetch" }
         }
-        W.Button {
-            cssClass: [].concat(view === "todomvc" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "todomvc" ? ["active"] : [])
             text: "TodoMVC"
-            onClicked: view = "todomvc"
+            onClicked: { __self.view = "todomvc" }
         }
-        W.Button {
-            cssClass: [].concat(view === "nodeimports" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "nodeimports" ? ["active"] : [])
             text: "Node imports"
-            onClicked: view = "nodeimports"
+            onClicked: { __self.view = "nodeimports" }
         }
-        W.Button {
-            cssClass: [].concat(view === "cssgaps" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "cssgaps" ? ["active"] : [])
             text: "CSS gaps"
-            onClicked: view = "cssgaps"
+            onClicked: { __self.view = "cssgaps" }
         }
-        W.Button {
-            cssClass: [].concat(view === "dashboard" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "dashboard" ? ["active"] : [])
             text: "Dashboard"
-            onClicked: view = "dashboard"
+            onClicked: { __self.view = "dashboard" }
         }
-        W.Button {
-            cssClass: [].concat(view === "widgets" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "widgets" ? ["active"] : [])
             text: "Widgets"
-            onClicked: view = "widgets"
+            onClicked: { __self.view = "widgets" }
         }
-        W.Button {
-            cssClass: [].concat(view === "native" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "native" ? ["active"] : [])
             text: "Native"
-            onClicked: view = "native"
+            onClicked: { __self.view = "native" }
         }
-        W.Button {
-            cssClass: [].concat(view === "charts3d" ? ["active"] : [])
+        W.ToolButton {
+            cssClass: ["tool"].concat(view === "charts3d" ? ["active"] : [])
             text: "Charts & 3D"
-            onClicked: view = "charts3d"
+            onClicked: { __self.view = "charts3d" }
         }
     }
     Css.CssIncubator {
