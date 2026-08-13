@@ -15,6 +15,15 @@ they were raised. Nothing here is a regression from the native-behavior pass unl
 
 ## Open
 
+- **[ ] Emboss makes the text look badly kerned.** Confirmed by reading the draw path
+  (`terminalview.cpp:428-434`): emboss pushes a dark glyph copy at (x+1, y+1) and a light one at
+  (x-1, y-1). Those copies are FULL-CELL quads, so each one bleeds a pixel into the NEIGHBOURING
+  cell — with adjacent characters the shadow of one glyph lands on the next, which reads as broken
+  spacing. Fixes to weigh: clip the emboss quads to their own cell (adjust rect AND uv together),
+  bake the engrave into the atlas glyph instead of drawing copies, or drop to a single +1 shadow at
+  lower alpha (halves the bleed). MUST be verified on a real GPU — the custom QSGMaterial does not
+  render under the offscreen/software backend.
+
 - **[ ] Config panel: black font on a dark theme.** Unreadable. `term.css` deliberately sets no
   colors for `.cfg-*` — they come from the system-theme layer
   (`sysTheme->styleSheet()`, loaded in `apps/solidterm/main.cpp:95`). So either that layer has no
