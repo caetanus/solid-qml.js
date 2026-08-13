@@ -54,7 +54,14 @@
 .cfg-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 13px 16px; }
 .cfg-l { font-size: 14px; }
 .cfg-div { height: 1px; border: none; }
-.cfg-in, .cfg-num, .cfg-sel { border-radius: 8px; padding: 7px 11px; font-size: 13px; }
+/* Controls need an EXPLICIT height, and a Select's inner value/chevron need their own font-size
+   and height — they are separate text nodes that do not pick up the control's, so without this the
+   text renders at the default size and overflows the pill (the gallery styles .value/.chevron for
+   exactly this reason). */
+.cfg-in, .cfg-num, .cfg-sel { border-radius: 8px; padding: 7px 11px; font-size: 13px; height: 34px; }
+.cfg-sel .value { font-size: 13px; height: 32px; padding-left: 4px; }
+.cfg-sel .chevron { font-size: 11px; height: 32px; padding-right: 10px; }
+.cfg-browse, .cfg-close { height: 34px; }
 .cfg-in { width: 240px; }
 .cfg-imgrow { display: flex; flex-direction: row; align-items: center; }
 .cfg-in-img { width: 150px; border-radius: 8px; padding: 7px 11px; font-size: 13px; }

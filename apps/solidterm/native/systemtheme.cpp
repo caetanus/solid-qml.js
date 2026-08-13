@@ -176,6 +176,10 @@ QString SystemTheme::styleSheet() const
 /* text inputs = inset (view shade); dropdowns/browse = raised button (popover shade) */
 .cfg-in, .cfg-num, .cfg-in-img { background: %2; color: %6; border: 1px solid %8; }
 .cfg-sel, .cfg-browse { background: %5; color: %6; border: 1px solid %8; }
+/* A button's label is a text NODE inside it: colour on the button alone does not reach it, so the
+   label needs its own scoped rule (the same reason the gallery writes `.nav button.active text`). */
+.cfg-browse text { color: %6; }
+.cfg-close text { color: %10; }
 .cfg-sel:hover, .cfg-browse:hover { background: %3; }
 .cfg-in:focus, .cfg-num:focus, .cfg-sel:focus, .cfg-in-img:focus { border: 1px solid %9; }
 .cfg-slideval { color: %6; }
