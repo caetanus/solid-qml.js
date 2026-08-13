@@ -33,3 +33,18 @@ select {
 button {
   cursor: pointer;
 }
+
+/* Keyboard focus ring. The block above deliberately strips the user-agent chrome (including the
+   browser's own `outline`) so the shared stylesheet is the single source of truth on both targets —
+   which means the ring has to be re-declared HERE, or focused controls show nothing.
+
+   It rides the `focus` state every focusable control already reports, and is painted with CSS
+   `outline` (drawn outside the box, no layout impact), so it moves with the control instead of
+   needing a window-level tracker. Lives in the reset, not in base.css, because base.css is only
+   loaded by the dev loader — an embedded app (SolidQmlEmbed) bundles just this sheet.
+
+   Apps restyle it by overriding `:focus`, or drop it with `:focus { outline: none }`. */
+:focus {
+  outline: 1px dotted #52616e;
+  outline-offset: 2px;
+}
