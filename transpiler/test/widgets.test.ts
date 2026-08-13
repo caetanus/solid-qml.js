@@ -1469,12 +1469,14 @@ test("calendar: MonthGrid.qml day label carries the day states (sibling slots �
 // Templates 6.8+) so they escape the app window, and they flip ABOVE the control when
 // opening below would overflow the screen. ---
 
-test("popups: Select.qml popup is a Popup.Window (overflows the app window) and flips above on overflow", async () => {
-  // Popup.Window: the dropdown escapes the app window (esp. the small Preferences dialog) instead of
-  // clipping. A ComboBox opens its popup via popup->open() and RESPECTS the declarative y below (it
-  // anchors to the ComboBox control, which is a real non-zero rect — unlike a Menu), so the flip holds.
-  assert.match(SELECT_QML, /popup: T\.Popup \{[\s\S]*?popupType: T\.Popup\.Window/);
-  assert.match(SELECT_QML, /y: \(ctl\.mapToItem\(null, 0, ctl\.height \+ 2\)\.y \+ height > \(ctl\.Window\.height \|\| Screen\.height\)\) \? -\(height \+ 2\) : ctl\.height \+ 2/);
+test("popups: Select.qml popup follows the platform — plain y, no forced Popup.Window, no hand-rolled flip", async () => {
+  // Native-by-default (owner directive): the dropdown opens below the control and QQuickComboBox's
+  // own positioner flips it above on window overflow (allowVerticalFlip=true + QQuickPopupPositioner
+  // ::reposition, in scene coords). Forcing Popup.Window made the position come from the anchor's
+  // mapToGlobal — a chain the CSS layout skews — which is what mispositioned the dropdown.
+  assert.match(SELECT_QML, /popup: T\.Popup \{[\s\S]*?y: ctl\.height \+ 2/);
+  assert.doesNotMatch(SELECT_QML, /popupType: T\.Popup\.Window/);
+  assert.doesNotMatch(SELECT_QML, /mapToItem\(null, 0, ctl\.height \+ 2\)/); // no hand-computed flip
 });
 
 test("popups: DateField.qml popup is an in-scene item popup and flips above on window overflow", async () => {
