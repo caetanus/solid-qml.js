@@ -89,3 +89,8 @@
 .pane-leave { animation: paneOut 190ms ease-in; }
 @keyframes paneIn { from { transform: scale(0.88); } to { transform: scale(1); } }
 @keyframes paneOut { from { transform: scale(1); } to { transform: scale(0.80); } }
+
+/* Opacity control: a live slider with its current value beside it. */
+.cfg-slide { display: flex; flex-direction: row; align-items: center; }
+.cfg-range { width: 170px; }
+.cfg-slideval { width: 42px; font-size: 13px; text-align: right; margin-left: 10px; }

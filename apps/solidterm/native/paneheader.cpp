@@ -97,16 +97,25 @@ void PaneHeader::paint(QPainter *p)
         p->drawArc(QRectF(b.left() + 1.5, b.top() - 4, 5, 6), 0, 180 * 16); // shackle
     }
 
-    // Maximize/restore (⤡) and close (×) on the right.
+    // Maximize/restore, drawn as Tilix's zoom glyph: TWO SEPARATE arrows pointing out to opposite
+    // corners with a gap between them — not one continuous diagonal (that reads as a resize cursor).
+    // Each arrow is a short stem plus a proper arrowhead at the corner end.
     const QRectF mr = maximizeRect();
-    p->setPen(QPen(m_foreground.darker(120), 1.4));
-    const qreal m = 3.5;
-    // two opposing corner brackets — the tilix zoom glyph
-    p->drawLine(mr.left() + m, mr.top() + m + 3, mr.left() + m, mr.top() + m);
-    p->drawLine(mr.left() + m, mr.top() + m, mr.left() + m + 3, mr.top() + m);
-    p->drawLine(mr.right() - m, mr.bottom() - m - 3, mr.right() - m, mr.bottom() - m);
-    p->drawLine(mr.right() - m, mr.bottom() - m, mr.right() - m - 3, mr.bottom() - m);
-    p->drawLine(mr.left() + m, mr.top() + m, mr.right() - m, mr.bottom() - m);
+    p->setPen(QPen(m_foreground.darker(120), 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    const qreal m = 3.0;   // inset from the button box
+    const qreal head = 3.4; // arrowhead leg length
+    const qreal gap = 1.8;  // half the empty space at the centre
+    const QPointF c = mr.center();
+    // ↙ arrow: stem toward the bottom-left corner, head opening left+down.
+    const QPointF bl(mr.left() + m, mr.bottom() - m);
+    p->drawLine(QPointF(c.x() - gap, c.y() + gap), bl);
+    p->drawLine(bl, bl + QPointF(head, 0));
+    p->drawLine(bl, bl + QPointF(0, -head));
+    // ↗ arrow: stem toward the top-right corner, head opening right+up.
+    const QPointF tr(mr.right() - m, mr.top() + m);
+    p->drawLine(QPointF(c.x() + gap, c.y() - gap), tr);
+    p->drawLine(tr, tr + QPointF(-head, 0));
+    p->drawLine(tr, tr + QPointF(0, head));
 
     const QRectF cr = closeRect();
     p->drawLine(cr.topLeft() + QPointF(4, 4), cr.bottomRight() - QPointF(4, 4));

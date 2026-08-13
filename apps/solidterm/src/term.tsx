@@ -295,16 +295,13 @@ export function Term() {
             <hr class="cfg-div" />
             <div class="cfg-row">
               <text class="cfg-l">Opacity</text>
-              <select class="cfg-sel" value={"" + opacity()}
-                      onChange={(v) => { setOpacity(parseInt(v)); termConfig.set("opacity", parseInt(v)); sysTheme.setUiOpacity(parseInt(v) / 100); }}>
-                <option value="100">100% (opaque)</option>
-                <option value="95">95%</option>
-                <option value="90">90%</option>
-                <option value="85">85%</option>
-                <option value="75">75%</option>
-                <option value="65">65%</option>
-                <option value="50">50%</option>
-              </select>
+              {/* A live slider, not a fixed list: opacity is a continuous value and the window
+                  updates as you drag, so you see the result while choosing it. */}
+              <div class="cfg-slide">
+                <input class="cfg-range" type="range" min="40" max="100" step="1" value={"" + opacity()}
+                       onInput={(v) => { setOpacity(parseInt(v)); termConfig.set("opacity", parseInt(v)); sysTheme.setUiOpacity(parseInt(v) / 100); }} />
+                <text class="cfg-slideval">{opacity()}%</text>
+              </div>
             </div>
             <hr class="cfg-div" />
             <div class="cfg-row">

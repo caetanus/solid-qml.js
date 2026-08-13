@@ -431,17 +431,25 @@ W.Div {
                             cssClass: ["cfg-l"]
                             text: "Opacity"
                         }
-                        W.Select {
-                            id: __input8
-                            cssClass: ["cfg-sel"]
-                            model: ["100% (opaque)", "95%", "90%", "85%", "75%", "65%", "50%"]
-                            values: ["100", "95", "90", "85", "75", "65", "50"]
-                            onActivated: (index) => { opacity_ = parseInt(__input8.values[index]); termConfig.set("opacity", parseInt(__input8.values[index])); sysTheme.setUiOpacity(parseInt(__input8.values[index]) / 100); }
-                            Binding {
-                                target: __input8
-                                property: "currentIndex"
-                                value: __input8.values.indexOf("" + opacity_)
-                                restoreMode: Binding.RestoreNone
+                        W.Div {
+                            cssClass: ["cfg-slide"]
+                            W.Slider {
+                                id: __input8
+                                cssClass: ["cfg-range"]
+                                from: 40
+                                to: 100
+                                stepSize: 1
+                                onMoved: { opacity_ = parseInt(__input8.value); termConfig.set("opacity", parseInt(__input8.value)); sysTheme.setUiOpacity(parseInt(__input8.value) / 100); }
+                                Binding {
+                                    target: __input8
+                                    property: "value"
+                                    value: "" + opacity_
+                                    restoreMode: Binding.RestoreNone
+                                }
+                            }
+                            W.Text {
+                                cssClass: ["cfg-slideval"]
+                                text: "" + (opacity_) + "%"
                             }
                         }
                     }
