@@ -11,7 +11,7 @@ const char *kTabBackground = R"(import qmlcss 1.0 as Css
 Css.CssFill {
     cssPrimitive: "div"
     cssClass: ["tab"]
-    cssState: (root.checked ? ["selected"] : []).concat(root.hovered ? ["hover"] : [])
+    cssState: (root.checked ? ["selected"] : []).concat(root.hovered ? ["hover"] : []).concat(root.activeFocus ? ["focus"] : [])
 }
 )";
 
@@ -19,7 +19,7 @@ const char *kTabLabel = R"(import qmlcss 1.0 as Css
 Css.CssText {
     cssPrimitive: ""
     cssClass: ["tab-label"]
-    cssState: (root.checked ? ["selected"] : []).concat(root.hovered ? ["hover"] : [])
+    cssState: (root.checked ? ["selected"] : []).concat(root.hovered ? ["hover"] : []).concat(root.activeFocus ? ["focus"] : [])
     text: root.text
 }
 )";

@@ -111,6 +111,9 @@ QtQ.Item {
             // Keyboard: Up/Down move currentIndex (selection follows focus), Enter re-commits.
             focus: true
             activeFocusOnTab: true
+            // The CSS box is the wrapper; the tab stop is this inner control — mirror its focus
+            // into the root so `:focus` (and the focus ring) applies to the visible box.
+            onActiveFocusChanged: root.cssState = activeFocus ? ["focus"] : []
             keyNavigationEnabled: true
             highlightMoveDuration: 0
             boundsBehavior: QtQ.Flickable.StopAtBounds

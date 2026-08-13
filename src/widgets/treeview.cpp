@@ -13,6 +13,9 @@ Item {
     id: kb
     anchors.fill: parent
     activeFocusOnTab: true
+    // The CSS box is the wrapper; the tab stop is this inner control — mirror its focus
+    // into the root so `:focus` (and the focus ring) applies to the visible box.
+    onActiveFocusChanged: root.cssState = activeFocus ? ["focus"] : []
 
     // Expansion state: collapsed row paths ("0", "0/2", …) in a plain object. Mutating a var
     // property's innards doesn't notify bindings — `_rev` is bumped on every toggle so

@@ -27,6 +27,5 @@ Window {
         Gallery {
         }
     }
-    W.Tabstop { window: __self }
     Component.onCompleted: if (solidTabstop.enabled) Qt.callLater(function() { var f = __self.contentItem.nextItemInFocusChain(true); if (f) f.forceActiveFocus(Qt.TabFocusReason) })
 }
