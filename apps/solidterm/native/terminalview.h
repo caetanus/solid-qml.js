@@ -171,8 +171,11 @@ private:
     int m_rows = 24, m_cols = 80;
     QColor m_background = QColor("#161a21");
     QColor m_foreground = QColor("#d4dae3");
+    void rebuildBackgroundImage();          // re-derives m_bgImage from source + the emboss flag
+
     QString m_bgImagePath;
-    QImage m_bgImage;                       // loaded background image (empty = none)
+    QImage m_bgImageSource;                 // the file as loaded (never modified)
+    QImage m_bgImage;                       // what is uploaded: source, or its embossed relief
     bool m_bgImageDirty = false;            // reupload the image texture next frame
     qreal m_bgOpacity = 1.0;                // terminal background alpha (1 = solid, 0 = fully see-through)
     bool m_emboss = false;                  // engraved glyphs

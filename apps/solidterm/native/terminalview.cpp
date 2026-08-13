@@ -425,31 +425,6 @@ QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
             if (!cluster.isEmpty() && cluster != QLatin1String(" ")) {
                 const GlyphCache::Entry e = m_glyphs.glyph(cluster, cell.attrs.bold, cell.attrs.italic, cw);
                 if (e.valid) {
-                    // Emboss: a dark copy down-right + a light copy up-left behind the glyph → engraved
-                    // (coverage-tinted; skip for colour glyphs so emoji aren't shadowed).
-                    //
-                    // Each copy is CLIPPED to its own cell. Drawn as plain ±1px-offset full-cell
-                    // quads they spilled one pixel into the neighbouring cell, so every glyph wore a
-                    // slice of its neighbour's shadow — which reads as broken kerning. Clipping the
-                    // rect alone would stretch the glyph, so the uv is trimmed by the same fraction.
-                    if (m_emboss && !e.color) {
-                        const auto pushEmboss = [&](qreal dx, qreal dy, const QColor &c) {
-                            const qreal vx = qMax(x + dx, x), vy = qMax(y + dy, y);
-                            const qreal vr = qMin(x + dx + w, x + w);
-                            const qreal vb = qMin(y + dy + m_cellH, y + m_cellH);
-                            const qreal vw = vr - vx, vh = vb - vy;
-                            if (vw <= 0 || vh <= 0)
-                                return;
-                            const qreal cutL = (vx - (x + dx)) / w, cutR = ((x + dx + w) - vr) / w;
-                            const qreal cutT = (vy - (y + dy)) / m_cellH, cutB = ((y + dy + m_cellH) - vb) / m_cellH;
-                            QRectF uv = e.uv;
-                            uv.adjust(uv.width() * cutL, uv.height() * cutT,
-                                      -uv.width() * cutR, -uv.height() * cutB);
-                            pushGlyphQuad(glyphs, vx, vy, vw, vh, uv, c, false);
-                        };
-                        pushEmboss(1, 1, QColor(0, 0, 0, 150));
-                        pushEmboss(-1, -1, QColor(255, 255, 255, 80));
-                    }
                     pushGlyphQuad(glyphs, x, y, w, m_cellH, e.uv, fg, e.color);
                 }
             }
@@ -1187,11 +1162,43 @@ void TerminalView::setBackgroundImage(const QString &path)
         QString p = path;
         if (p.startsWith(QLatin1String("file://")))
             p = QUrl(p).toLocalFile();
-        m_bgImage.load(p);
+        m_bgImageSource.load(p);
+    } else {
+        m_bgImageSource = QImage();
     }
-    m_bgImageDirty = true;
+    rebuildBackgroundImage();
     emit decorChanged();
     update();
+}
+
+// Classic emboss over the BACKGROUND: each pixel becomes its difference from the up-left
+// neighbour, biased to mid-grey — a carved-stone relief. Applied to the image ONCE (here, not per
+// frame) and only when the option is on; the glyphs are never touched, so text stays crisp.
+static QImage embossImage(const QImage &src)
+{
+    const QImage in = src.convertToFormat(QImage::Format_ARGB32);
+    QImage out(in.size(), QImage::Format_ARGB32);
+    for (int y = 0; y < in.height(); ++y) {
+        const QRgb *row = reinterpret_cast<const QRgb *>(in.constScanLine(y));
+        const QRgb *prev = reinterpret_cast<const QRgb *>(in.constScanLine(qMax(0, y - 1)));
+        QRgb *dst = reinterpret_cast<QRgb *>(out.scanLine(y));
+        for (int x = 0; x < in.width(); ++x) {
+            const QRgb c = row[x], d = prev[qMax(0, x - 1)];
+            // Relief from the luminance gradient, so colour noise does not fight the effect.
+            const int lum = (qRed(c) * 299 + qGreen(c) * 587 + qBlue(c) * 114) / 1000;
+            const int lumD = (qRed(d) * 299 + qGreen(d) * 587 + qBlue(d) * 114) / 1000;
+            const int v = qBound(0, 128 + lum - lumD, 255);
+            dst[x] = qRgba(v, v, v, qAlpha(c));
+        }
+    }
+    return out;
+}
+
+void TerminalView::rebuildBackgroundImage()
+{
+    m_bgImage = (m_emboss && !m_bgImageSource.isNull()) ? embossImage(m_bgImageSource)
+                                                        : m_bgImageSource;
+    m_bgImageDirty = true;
 }
 
 void TerminalView::setBackgroundOpacity(qreal v)
@@ -1209,6 +1216,7 @@ void TerminalView::setEmboss(bool v)
     if (m_emboss == v)
         return;
     m_emboss = v;
+    rebuildBackgroundImage(); // the effect lives on the background image, not on the glyphs
     emit decorChanged();
     update();
 }

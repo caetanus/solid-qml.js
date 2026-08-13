@@ -309,7 +309,7 @@ export function Term() {
             </div>
             <hr class="cfg-div" />
             <div class="cfg-row">
-              <text class="cfg-l">Emboss text</text>
+              <text class="cfg-l">Emboss background</text>
               <select class="cfg-sel" value={"" + uiEmboss()}
                       onChange={(v) => { setUiEmboss(parseInt(v)); termConfig.set("emboss", parseInt(v)); }}>
                 <option value="0">Off</option>

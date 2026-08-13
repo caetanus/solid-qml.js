@@ -463,7 +463,7 @@ W.Div {
                             cssClass: ["cfg-row"]
                             W.Text {
                                 cssClass: ["cfg-l"]
-                                text: "Emboss text"
+                                text: "Emboss background"
                             }
                             W.Select {
                                 id: __input9
