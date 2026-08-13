@@ -1,5 +1,8 @@
 #include "webplatform.h"
 
+#include <QClipboard>
+#include <QGuiApplication>
+
 #include <QDateTime>
 #include <QDebug>
 #include <QJSEngine>
@@ -106,6 +109,18 @@ QVariantMap WebPlatform::namedCaptureGroups(const QString &pattern) const
     return out;
 }
 
+QString WebPlatform::clipboardText() const
+{
+    QClipboard *cb = QGuiApplication::clipboard();
+    return cb ? cb->text() : QString();
+}
+
+void WebPlatform::setClipboardText(const QString &text) const
+{
+    if (QClipboard *cb = QGuiApplication::clipboard())
+        cb->setText(text);
+}
+
 // WHATWG layer on the C++ backend. Typed arrays / ArrayBuffer are native; QByteArray returned
 // from C++ surfaces as an ArrayBuffer in V4 (and an ArrayBuffer argument converts back).
 static const char *kPlatformShim = R"JS(
@@ -117,6 +132,14 @@ static const char *kPlatformShim = R"JS(
             return String(input).split("").map(function (segment) { return { segment: segment }; });
         };
     }
+
+    // navigator.clipboard — the WHATWG async surface over the system clipboard. Promise-based
+    // like the web API, so app code is portable between the web and native targets.
+    var navigatorObject = typeof navigator === "undefined" ? {} : navigator;
+    navigatorObject.clipboard = {
+        readText: function () { return Promise.resolve(B.clipboardText()); },
+        writeText: function (text) { B.setClipboardText(String(text)); return Promise.resolve(); }
+    };
 
     function viewBuffer(input) {
         if (input instanceof ArrayBuffer) return input;
@@ -205,6 +228,7 @@ static const char *kPlatformShim = R"JS(
     }
 
     return {
+        navigator: navigatorObject,
         btoa: function (s) { return B.btoa(String(s)); },
         atob: function (s) { return B.atob(String(s)); },
         TextEncoder: TextEncoder,
@@ -233,7 +257,8 @@ void WebPlatform::install(QQmlEngine *engine)
         qWarning().noquote() << "platform shim failed:" << api.toString();
         return;
     }
-    for (const QString &name : { QStringLiteral("btoa"), QStringLiteral("atob"),
+    for (const QString &name : { QStringLiteral("navigator"),
+                                 QStringLiteral("btoa"), QStringLiteral("atob"),
                                  QStringLiteral("TextEncoder"), QStringLiteral("TextDecoder"),
                                  QStringLiteral("crypto"), QStringLiteral("Intl"),
                                  QStringLiteral("performance"),

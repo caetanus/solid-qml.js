@@ -34,6 +34,12 @@ public:
     // this map to synthesise it. Empty if the pattern has no named groups or PCRE2 can't parse it.
     Q_INVOKABLE QVariantMap namedCaptureGroups(const QString &pattern) const;
 
+    // Clipboard — the system clipboard via QClipboard (there was no app-level clipboard path at
+    // all: cut/copy/paste worked only INSIDE the native text controls). Exposed to JS as the
+    // WHATWG `navigator.clipboard` (async), so app code reads like it does on the web.
+    Q_INVOKABLE QString clipboardText() const;
+    Q_INVOKABLE void setClipboardText(const QString &text) const;
+
 private:
     QElapsedTimer m_timer;
     qint64 m_originMs = 0;
