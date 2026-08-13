@@ -427,9 +427,28 @@ QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
                 if (e.valid) {
                     // Emboss: a dark copy down-right + a light copy up-left behind the glyph → engraved
                     // (coverage-tinted; skip for colour glyphs so emoji aren't shadowed).
+                    //
+                    // Each copy is CLIPPED to its own cell. Drawn as plain ±1px-offset full-cell
+                    // quads they spilled one pixel into the neighbouring cell, so every glyph wore a
+                    // slice of its neighbour's shadow — which reads as broken kerning. Clipping the
+                    // rect alone would stretch the glyph, so the uv is trimmed by the same fraction.
                     if (m_emboss && !e.color) {
-                        pushGlyphQuad(glyphs, x + 1, y + 1, w, m_cellH, e.uv, QColor(0, 0, 0, 150), false);
-                        pushGlyphQuad(glyphs, x - 1, y - 1, w, m_cellH, e.uv, QColor(255, 255, 255, 80), false);
+                        const auto pushEmboss = [&](qreal dx, qreal dy, const QColor &c) {
+                            const qreal vx = qMax(x + dx, x), vy = qMax(y + dy, y);
+                            const qreal vr = qMin(x + dx + w, x + w);
+                            const qreal vb = qMin(y + dy + m_cellH, y + m_cellH);
+                            const qreal vw = vr - vx, vh = vb - vy;
+                            if (vw <= 0 || vh <= 0)
+                                return;
+                            const qreal cutL = (vx - (x + dx)) / w, cutR = ((x + dx + w) - vr) / w;
+                            const qreal cutT = (vy - (y + dy)) / m_cellH, cutB = ((y + dy + m_cellH) - vb) / m_cellH;
+                            QRectF uv = e.uv;
+                            uv.adjust(uv.width() * cutL, uv.height() * cutT,
+                                      -uv.width() * cutR, -uv.height() * cutB);
+                            pushGlyphQuad(glyphs, vx, vy, vw, vh, uv, c, false);
+                        };
+                        pushEmboss(1, 1, QColor(0, 0, 0, 150));
+                        pushEmboss(-1, -1, QColor(255, 255, 255, 80));
                     }
                     pushGlyphQuad(glyphs, x, y, w, m_cellH, e.uv, fg, e.color);
                 }

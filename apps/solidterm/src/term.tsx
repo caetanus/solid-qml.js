@@ -247,6 +247,10 @@ export function Term() {
       <dialog open={cfgOpen()} title="Preferences" class="cfg" onClose={() => setCfgOpen(false)}>
         <div class="cfg-body">
           <div class="cfg-scroll">
+          {/* Two explicit columns: the tall Appearance group on the left, the shorter Behavior +
+              Keyboard groups on the right — halves the scrolling without relying on grid
+              auto-placement (which would drop Keyboard under the tall left column). */}
+          <div class="cfg-col">
           <text class="cfg-group">Appearance</text>
           <div class="cfg-card">
             <div class="cfg-row">
@@ -341,6 +345,9 @@ export function Term() {
             </div>
           </div>
 
+          </div>
+
+          <div class="cfg-col">
           <text class="cfg-group">Behavior</text>
           <div class="cfg-card">
             <div class="cfg-row">
@@ -374,6 +381,7 @@ export function Term() {
                 </div>
               )}
             </For>
+          </div>
           </div>
           <text class="cfg-path">Saved to {termConfig.path}</text>
           </div>

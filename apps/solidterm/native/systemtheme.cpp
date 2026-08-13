@@ -173,7 +173,9 @@ QString SystemTheme::styleSheet() const
 .cfg-sel:hover, .cfg-browse:hover { background: %3; }
 .cfg-in:focus, .cfg-num:focus, .cfg-sel:focus, .cfg-in-img:focus { border: 1px solid %9; }
 .cfg-slideval { color: %6; }
-.cfg-range { background: %5; }
+.cfg-range .track { background: %8; }
+.cfg-range .track-fill { background: %9; }
+.cfg-range .handle { background: %9; }
 .cfg-actions { background: %1; border-top: 1px solid %8; }
 .cfg-close { background: %9; color: %10; }
 .cfg-close:hover { background: %9; }

@@ -45,8 +45,10 @@
 
 /* preferences window — GNOME Settings geometry (grouped cards of label→control rows).
    Fixed-height scroll body + pinned footer so the window stays a sane size and the list scrolls. */
-.cfg-body { display: flex; flex-direction: column; width: 620px; }
-.cfg-scroll { display: flex; flex-direction: column; height: 520px; overflow-y: auto; padding: 20px 24px; }
+.cfg-body { display: flex; flex-direction: column; width: 980px; }
+.cfg-scroll { display: flex; flex-direction: row; flex-wrap: wrap; height: 520px; overflow-y: auto; padding: 20px 24px; gap: 0 22px; }
+/* Each column takes half the row; the groups inside stack as before. */
+.cfg-col { display: flex; flex-direction: column; width: 452px; }
 .cfg-group { font-size: 12px; font-weight: 700; margin: 8px 2px 6px; letter-spacing: 0.4px; }
 .cfg-card { display: flex; flex-direction: column; border-radius: 12px; margin-bottom: 18px; }
 .cfg-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 13px 16px; }
@@ -91,6 +93,10 @@
 @keyframes paneOut { from { transform: scale(1); } to { transform: scale(0.80); } }
 
 /* Opacity control: a live slider with its current value beside it. */
+/* Slider geometry (colours live in the theme layer). A Slider collapses to zero height without an
+   explicit one — the track/handle sizes are fixed in the widget, CSS gives colour and radius. */
 .cfg-slide { display: flex; flex-direction: row; align-items: center; }
-.cfg-range { width: 170px; }
+.cfg-range { width: 170px; height: 28px; }
+.cfg-range .track, .cfg-range .track-fill { height: 5px; border-radius: 3px; }
+.cfg-range .handle { width: 16px; height: 16px; border-radius: 8px; }
 .cfg-slideval { width: 42px; font-size: 13px; text-align: right; margin-left: 10px; }
