@@ -168,3 +168,15 @@ select .value {
   font-size: 11px;
   color: #4a5766;
 }
+
+/* Keyboard focus ring — NATIVE BY DEFAULT (owner directive: the platform behavior is the default,
+   custom is an explicit override). Every focusable control carries its own ring through the `focus`
+   cssState it already emits, painted with CSS `outline` (drawn outside the box, no layout impact).
+   This replaces the app-level overlay that polled the window's activeFocusItem at 60fps: the ring
+   now moves WITH the control (immune to ancestor scroll) and needs no timer. Apps restyle it by
+   overriding `:focus` — e.g. `:focus { outline: 2px solid #06c; outline-offset: 2px }` — or drop it
+   entirely with `:focus { outline: none }`. */
+:focus {
+  outline: 1px dotted #52616e;
+  outline-offset: 2px;
+}

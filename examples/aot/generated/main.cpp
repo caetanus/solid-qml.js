@@ -8,7 +8,6 @@
 #include "qmlcss/csslayout.h"
 #include "qmlcss/csstheme.h"
 #include "shims/tabstop.h"
-#include "widgets/focusring.h"
 #include "widgets/solidwidgets.h"
 
 #include <QApplication>
@@ -63,13 +62,8 @@ int main(int argc, char **argv)
     QObject::connect(&window, &QQuickWindow::widthChanged, root, [root, &window] { root->setWidth(window.width()); });
     QObject::connect(&window, &QQuickWindow::heightChanged, root, [root, &window] { root->setHeight(window.height()); });
 
-    // Desktop tab-focus chrome (mirrors the generated Window's Tabstop + focus-on-load): the
-    // Tabstop overlay tracks the focused control and paints the ::tab-stop ring.
-    auto *tabstop = new SolidWidgets::Tabstop();
-    sq::begin(tabstop, ctx);
-    tabstop->setWindow(&window);
-    tabstop->setParentItem(window.contentItem());
-    sq::complete(tabstop);
+    // Focus ring: none here — each control paints its own `:focus { outline }` from the shared
+    // reset (native by default), so no window-level focus tracker is needed.
     if (solidTabstop.enabled())
         QTimer::singleShot(0, &window, [&window] {
             if (auto *f = window.contentItem()->nextItemInFocusChain(true)) f->forceActiveFocus(Qt::TabFocusReason);

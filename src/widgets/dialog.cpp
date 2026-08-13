@@ -81,10 +81,8 @@ Window {
         Keys.onEnterPressed: (event) => { var b = dlg.__findDefault(rootBox); if (b) { b.clicked(); event.accepted = true; } }
     }
 
-    // The keyboard tab-focus ring, scoped to THIS window's focus chain (the dialog is a
-    // separate Window, so the app-root Tabstop can't see items in here). Same `::tab-stop`
-    // styling; a sibling of the Css root so it overlays on top.
-    W.Tabstop { window: dlg }
+    // No focus-ring overlay here either: controls inside the dialog paint their own
+    // `:focus { outline }` ring, so a per-window tracker is unnecessary.
 
     // Controlled open state: survives the imperative visible=false a window self-close performs.
     Binding {

@@ -6,7 +6,6 @@
 #include "button.h"
 #include "calendar.h"
 #include "datefield.h"
-#include "focusring.h"
 #include "listview.h"
 #include "menuwidgets.h"
 #include "indicators.h"
@@ -37,7 +36,6 @@ void registerTypes()
     qmlRegisterType<Div>("solidqml.Widgets", 1, 0, "Div");
     qmlRegisterType<Text>("solidqml.Widgets", 1, 0, "Text");
     qmlRegisterType<Image>("solidqml.Widgets", 1, 0, "Image");
-    qmlRegisterType<Tabstop>("solidqml.Widgets", 1, 0, "Tabstop");
     qmlRegisterType<Button>("solidqml.Widgets", 1, 0, "Button");
     qmlRegisterType<RoundButton>("solidqml.Widgets", 1, 0, "RoundButton");
     qmlRegisterType<Fieldset>("solidqml.Widgets", 1, 0, "Fieldset");

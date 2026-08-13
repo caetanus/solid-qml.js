@@ -10,14 +10,8 @@
   font-size: 16px;
 }
 
-/* Keyboard tab-focus ring (study §6). Styled via the `::tab-stop` pseudo-element — the W.Tabstop
-   marker is a decorative overlay (`cssPart: "tab-stop"`), and a pseudo-element is valid CSS that
-   doesn't break editors/linters. The classic desktop focus rect: a thin dotted line. */
-::tab-stop {
-  background: transparent;
-  border: 1px dotted #52616e;
-  border-radius: 3px;
-}
+/* The keyboard focus ring now comes from the shared reset (base.css `:focus { outline }`) — each
+   control paints its own, natively. Override `:focus` here to restyle it app-wide. */
 
 .gallery {
   position: relative;

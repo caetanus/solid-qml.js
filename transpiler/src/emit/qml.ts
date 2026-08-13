@@ -335,10 +335,9 @@ function emitWindow(propsArg: t.Node | undefined, children: t.Node[], scope: Sco
     `${i(2)}cssPrimitive: "window"`,
     ...emitChildren(children, scope, level + 2),
     `${i(1)}}`,
-    // Global keyboard tab-focus marker (study §6): W.Tabstop follows the window's activeFocusItem and
-    // frames whatever holds keyboard focus — universal, no per-widget CSS. Styled via the `::tab-stop`
-    // pseudo-element (a decoration, like `::before`; distinct from `:focus`, the element's own state).
-    `${i(1)}W.Tabstop { window: __self }`,
+    // No focus-ring overlay: each control paints its OWN ring from the shared reset's
+    // `:focus { outline }` (native by default — the ring moves with the control and needs no
+    // window-level tracker). Apps restyle it by overriding `:focus`.
     // Tab-stop is born by default: on load, put keyboard focus on the first focusable so Tab works
     // immediately and the ring is visible without a click first (study §6; honors the opt-out).
     `${i(1)}Component.onCompleted: if (solidTabstop.enabled) Qt.callLater(function() { var f = __self.contentItem.nextItemInFocusChain(true); if (f) f.forceActiveFocus(Qt.TabFocusReason) })`,
