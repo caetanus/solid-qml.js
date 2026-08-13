@@ -68,11 +68,14 @@ T.ComboBox {
     // have NO implicit-size policy of their own (that's the style's job, and we ARE the style) —
     // without the implicitHeight line the popup opens 0px tall.
     popup: T.Popup {
-        // Popup.Window: a real popup surface so the dropdown OVERFLOWS the window (esp. the small
-        // Preferences dialog) instead of clipping. ComboBox opens it via popup->open() and respects
-        // the declarative y below (unlike Menu, which clobbers x/y) — so the flip-up still works.
-        popupType: T.Popup.Window
-        y: (ctl.mapToItem(null, 0, ctl.height + 2).y + height > (ctl.Window.height || Screen.height)) ? -(height + 2) : ctl.height + 2
+        // Native positioning by default (owner: "por padrão segue do Qt"): a plain Item popup opens
+        // below the control and ComboBox's own positioner FLIPS it above when it would overflow the
+        // window (QQuickComboBox sets allowVerticalFlip=true; QQuickPopupPositioner::reposition does
+        // the flip in scene coords — the CSS layout can't skew that, unlike a Window popup whose
+        // mapToGlobal chain the engine's item nesting broke, which forced the old hand-computed y).
+        // NOTE: an Item popup CLIPS to the app window (a tall dropdown in a small dialog is cut). If
+        // window-overflow is ever needed, it becomes an EXPLICIT opt-in override, not the default.
+        y: ctl.height + 2
         width: ctl.width
         implicitHeight: contentHeight + topPadding + bottomPadding
         padding: 1
