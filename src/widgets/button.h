@@ -5,10 +5,12 @@
 
 #include <QPointer>
 
-// Button — the <button> component (port of Button.qml). Extends the engine's CssFill so it
-// participates in CSS layout/paint; hover, focus, click and Space/Enter activation are native
-// C++ event handlers now — no MouseArea/Keys objects. The C++ root takes keyboard focus itself
-// (setActiveFocusOnTab is a plain QQuickItem call here; only the QML registration hid it).
+// Button — the <button> component. The CssFill root owns CSS identity, layout and paint; the
+// BEHAVIOR comes from a real QtQuick.Templates Button composed inside it (background/contentItem
+// nulled, filling the root): click, Space/Enter activation, press/hover/focus states, auto-repeat
+// and — crucially — the Button accessibility role/name all come from QQuickAbstractButton instead
+// of being re-derived here. This is the same "native behavior + CSS visuals" split every other
+// widget in this library uses (Checkbox wraps T.CheckBox, DelayButton wraps T.DelayButton, …).
 //
 // The transpiler emits:  W.Button { cssClass: […]; text: "Save"; onClicked: <handler>; <children> }
 namespace SolidWidgets {
@@ -37,8 +39,11 @@ public:
     void setDisabled(bool v);
 
     // Move keyboard focus onto the button — Dialog focuses the default button on open, so
-    // Enter confirms it (study §6).
-    Q_INVOKABLE void takeFocus() { forceActiveFocus(Qt::TabFocusReason); }
+    // Enter confirms it (study §6). Focus lives on the composed control (it is the tab stop).
+    Q_INVOKABLE void takeFocus();
+
+    // Called by the composed control whenever one of its states changes (hovered/down/activeFocus).
+    Q_INVOKABLE void syncState();
 
 signals:
     void textChanged();
@@ -48,25 +53,16 @@ signals:
 
 protected:
     void componentComplete() override;
-    void hoverEnterEvent(QHoverEvent *event) override;
-    void hoverLeaveEvent(QHoverEvent *event) override;
-    void mousePressEvent(QMouseEvent *event) override;
-    void mouseReleaseEvent(QMouseEvent *event) override;
-    void keyPressEvent(QKeyEvent *event) override;
-    void itemChange(QQuickItem::ItemChange change, const QQuickItem::ItemChangeData &data) override;
 
 private:
-    Q_SLOT void syncTabstop();
-    void syncState();
     void ensureLabel();
+    void ensureControl();
 
     QString m_text;
     bool m_isDefault = false;
     bool m_disabled = false;
-    bool m_hovered = false;
-    bool m_pressed = false;
     QPointer<QmlCss::CssText> m_label;
-    QObject *m_tabstop = nullptr; // the loader's solidTabstop switch
+    QPointer<QQuickItem> m_control; // the composed T.Button: all interaction + a11y
 };
 
 // RoundButton — same interaction surface as Button (the "round" class comes from the emit);
@@ -79,7 +75,7 @@ public:
 };
 
 // ToolButton — same interaction surface as Button (the "tool" class comes from the emit); the
-// T.ToolButton the QML wrapped supplied the semantic role only, which the native handlers cover.
+// T.ToolButton the QML wrapped supplied the semantic role only, which the control covers.
 class ToolButton : public Button {
     Q_OBJECT
 

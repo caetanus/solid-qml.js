@@ -1,5 +1,7 @@
 #include "button.h"
 
+#include "snippetwidget.h"
+
 #include "qmlcss/componentcache.h"
 
 #include <QCursor>
@@ -10,12 +12,48 @@
 
 namespace SolidWidgets {
 
+namespace {
+
+// The behavior half of <button>: a real T.Button filling the CssFill root, with its own visuals
+// nulled (the root paints via CSS). It owns click, Space/Enter activation, auto-repeat, the
+// press/hover/focus states and the Button accessibility role/name — everything this widget used
+// to re-derive from raw mouse/key/hover events.
+//
+// `activeFocusOnTab` follows the app-wide switch (the desktop model: a button IS a tab stop), and
+// every state change is mirrored back into the root's cssState so `:hover`/`:active`/`:focus`
+// cascade exactly as before.
+const char *kButtonBody = R"QML(
+import QtQuick
+import QtQuick.Templates as T
+
+T.Button {
+    // Sized off `root` (the context property), NOT `anchors.fill: parent`: this snippet is created
+    // before its parentItem is assigned, so an anchor to `parent` would bind to null and leave the
+    // control 0x0 — it would take focus but never receive a click.
+    x: 0
+    y: 0
+    width: root.width
+    height: root.height
+    background: null
+    contentItem: null
+    // Drives the ACCESSIBLE NAME (QQuickAbstractButton exposes text to QAccessible); the visible
+    // label is the root's own CssText in the layout slot, so nothing is painted twice.
+    text: root.text
+    enabled: root.enabled
+    activeFocusOnTab: typeof solidTabstop !== "undefined" && solidTabstop ? solidTabstop.enabled : true
+    onClicked: root.clicked()
+    onHoveredChanged: root.syncState()
+    onDownChanged: root.syncState()
+    onActiveFocusChanged: root.syncState()
+}
+)QML";
+
+} // namespace
+
 Button::Button(QQuickItem *parent)
     : QmlCss::CssFill(parent)
 {
     setCssPrimitive(QStringLiteral("button"));
-    setAcceptHoverEvents(true);
-    setAcceptedMouseButtons(Qt::LeftButton);
 #if QT_CONFIG(cursor)
     setCursor(QCursor(Qt::PointingHandCursor));
 #endif
@@ -52,23 +90,31 @@ void Button::setDisabled(bool v)
     syncState();
 }
 
+void Button::takeFocus()
+{
+    if (m_control)
+        m_control->forceActiveFocus(Qt::TabFocusReason);
+    else
+        forceActiveFocus(Qt::TabFocusReason);
+}
+
 void Button::componentComplete()
 {
     QmlCss::CssFill::componentComplete();
     ensureLabel();
-
-    // Desktop model (study §6): a button IS a tab stop, gated by the app-wide switch.
-    if (QQmlContext *ctx = qmlContext(this))
-        m_tabstop = ctx->contextProperty(QStringLiteral("solidTabstop")).value<QObject *>();
-    if (m_tabstop)
-        connect(m_tabstop, SIGNAL(enabledChanged()), this, SLOT(syncTabstop()));
-    syncTabstop();
+    ensureControl();
     syncState();
 }
 
-void Button::syncTabstop()
+void Button::ensureControl()
 {
-    setActiveFocusOnTab(!m_tabstop || m_tabstop->property("enabled").toBool());
+    if (m_control)
+        return;
+    // A PLAIN child (not a layout participant): it fills the root and only handles input.
+    QObject *o = composeInternalPlain(this, QStringLiteral("solidwidgets-button-ctl"), kButtonBody);
+    m_control = qobject_cast<QQuickItem *>(o);
+    if (m_control)
+        m_control->setZ(1); // above the label, so it receives the pointer events
 }
 
 void Button::ensureLabel()
@@ -96,72 +142,23 @@ void Button::ensureLabel()
 
 void Button::syncState()
 {
+    // States come from the composed control (it owns the interaction); the root only cascades them.
+    const bool hovered = m_control && m_control->property("hovered").toBool();
+    const bool down = m_control && m_control->property("down").toBool();
+    const bool focused = m_control && m_control->property("activeFocus").toBool();
+
     QVariantList state;
-    if (m_hovered)
+    if (hovered)
         state << QStringLiteral("hover");
-    if (m_pressed)
+    if (down)
         state << QStringLiteral("active");
-    if (hasActiveFocus())
+    if (focused)
         state << QStringLiteral("focus");
     if (m_isDefault)
         state << QStringLiteral("default");
     if (m_disabled)
         state << QStringLiteral("disabled");
     setCssState(state);
-}
-
-void Button::hoverEnterEvent(QHoverEvent *event)
-{
-    QmlCss::CssFill::hoverEnterEvent(event);
-    m_hovered = true;
-    syncState();
-}
-
-void Button::hoverLeaveEvent(QHoverEvent *event)
-{
-    QmlCss::CssFill::hoverLeaveEvent(event);
-    m_hovered = false;
-    syncState();
-}
-
-void Button::mousePressEvent(QMouseEvent *event)
-{
-    // Clicking a control also FOCUSES it (the tab anchor moves to the clicked button).
-    if (activeFocusOnTab())
-        forceActiveFocus(Qt::MouseFocusReason);
-    m_pressed = true;
-    syncState();
-    event->accept();
-}
-
-void Button::mouseReleaseEvent(QMouseEvent *event)
-{
-    event->accept();
-    m_pressed = false;
-    syncState();
-    if (boundingRect().contains(event->position()))
-        emit clicked();
-}
-
-void Button::keyPressEvent(QKeyEvent *event)
-{
-    switch (event->key()) {
-    case Qt::Key_Space:
-    case Qt::Key_Return:
-    case Qt::Key_Enter:
-        event->accept();
-        emit clicked();
-        return;
-    default:
-        QmlCss::CssFill::keyPressEvent(event);
-    }
-}
-
-void Button::itemChange(QQuickItem::ItemChange change, const QQuickItem::ItemChangeData &data)
-{
-    QmlCss::CssFill::itemChange(change, data);
-    if (change == ItemActiveFocusHasChanged)
-        syncState();
 }
 
 } // namespace SolidWidgets
