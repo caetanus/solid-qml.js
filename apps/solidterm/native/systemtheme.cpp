@@ -166,6 +166,12 @@ QString SystemTheme::styleSheet() const
 .cfg-path { color: %7; }
 .cfg-card { background: %4; border: 1px solid %8; }
 .cfg-l { color: %6; }
+/* The controls' INNER parts: a TextField paints with the colour it INHERITS (falling back to a
+   dark default), and a Select's value/chevron are their own text nodes — so the rows must carry an
+   inheritable colour and the parts need explicit rules, or both render near-black on a dark theme. */
+.cfg-card, .cfg-row, .cfg-krow, .cfg-slide { color: %6; }
+.cfg-sel .value, .cfg-sel .chevron { color: %6; }
+.cfg-num .value, .cfg-in .value { color: %6; }
 .cfg-div { background: %8; }
 /* text inputs = inset (view shade); dropdowns/browse = raised button (popover shade) */
 .cfg-in, .cfg-num, .cfg-in-img { background: %2; color: %6; border: 1px solid %8; }
