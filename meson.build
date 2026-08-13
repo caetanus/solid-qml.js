@@ -127,6 +127,7 @@ solidqml_sources = files(
     'src/shims/nodeshims.cpp',
     'src/shims/notifications.cpp',
     'src/shims/codeeditor.cpp',
+    'src/widgets/a11y.cpp',
     'src/widgets/solidwidgets.cpp',
     'src/widgets/button.cpp',
     'src/widgets/indicators.cpp',

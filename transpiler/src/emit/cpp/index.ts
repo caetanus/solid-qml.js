@@ -874,12 +874,16 @@ function emitCheckbox(propsArg: t.Node | undefined, p: ElemProps, v: string, c: 
 
 /** `<img src={u} />` → SolidWidgets::Image (QUrl src); the src is a (possibly reactive) string. */
 function emitImage(propsArg: t.Node | undefined, p: ElemProps, v: string, c: Ctx): void {
-  let src: t.Expression | null = null;
+  let src: t.Expression | null = null, alt: t.Expression | null = null;
   if (propsArg && t.isObjectExpression(propsArg))
-    for (const pr of propsArg.properties)
-      if (t.isObjectProperty(pr) && t.isIdentifier(pr.key, { name: "src" }) && t.isExpression(pr.value)) src = pr.value;
+    for (const pr of propsArg.properties) {
+      if (!t.isObjectProperty(pr) || !t.isIdentifier(pr.key) || !t.isExpression(pr.value)) continue;
+      if (pr.key.name === "src") src = pr.value;
+      else if (pr.key.name === "alt") alt = pr.value; // the accessible name (Graphic role)
+    }
   c.out.push(`auto *${v} = new SolidWidgets::Image();`, `sq::begin(${v}, ctx);`, ...classLine(v, p.classes));
   if (src) emitReactiveSet(`${v}->setSrc(QUrl(sq::str(EXPR)))`, src, v, c);
+  if (alt) emitReactiveSet(`${v}->setAlt(sq::str(EXPR))`, alt, v, c);
 }
 
 /** Emit a property set that reacts to a value expression's deps. `setterTpl` has `EXPR` where the

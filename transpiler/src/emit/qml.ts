@@ -399,12 +399,16 @@ function emitImage(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
   const i = (n: number) => INDENT.repeat(level + n);
   const classLine = buildCssClassLine(props, scope, i(1));
   if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
-  // Resolve the `src` prop via emitExpr in binding mode.
+  // Resolve the `src` prop via emitExpr in binding mode; `alt` becomes the ACCESSIBLE NAME
+  // (SolidWidgets::Image maps it to the Graphic role's name — HTML's contract, and an image with
+  // no alt stays unnamed, i.e. decorative, which AT skips).
   let src = '""';
+  let alt: string | null = null;
   if (propsArg && t.isObjectExpression(propsArg)) {
     for (const p of propsArg.properties) {
-      if (t.isObjectProperty(p) && t.isIdentifier(p.key, { name: "src" }) && t.isExpression(p.value))
-        src = emitExpr(p.value, { ...scope, mode: "binding" });
+      if (!t.isObjectProperty(p) || !t.isIdentifier(p.key) || !t.isExpression(p.value)) continue;
+      if (p.key.name === "src") src = emitExpr(p.value, { ...scope, mode: "binding" });
+      else if (p.key.name === "alt") alt = emitExpr(p.value, { ...scope, mode: "binding" });
     }
   }
   return [
@@ -412,6 +416,7 @@ function emitImage(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
     ...classLine,
     ...guardLine(guard, level),
     `${i(1)}src: ${src} || ""`,
+    ...(alt !== null ? [`${i(1)}alt: ${alt}`] : []),
     `${pad}}`,
   ];
 }
