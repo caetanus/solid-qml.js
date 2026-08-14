@@ -51,3 +51,34 @@ they were raised. Nothing here is a regression from the native-behavior pass unl
   property". The tray never composes. (`src/widgets/tray.cpp:18`; untouched by the native pass.)
 - **TextArea anchor loop**: the widgets view logs "QML TextArea: Possible anchor loop detected on
   fill" ×4–5. (`src/widgets/textinputs.cpp`; also untouched.)
+
+## Backdrop effects (emboss/blur behind the window) — SPEC, agreed 2026-08-13
+
+The goal that started this: with a translucent window, make what shows THROUGH it carved/blurred.
+The effect must act on the real backdrop, not on a background image the user has to pick.
+
+**Design (owner's):**
+1. **An overlay window behind everything** — a `wlr-layer-shell` surface on the BACKGROUND layer
+   (what swaybg uses), so it sits above the wallpaper and below every window. Qt can drive this
+   directly: `LayerShellQt::Window::get(qwindow)->setLayer(LayerBackground)` —
+   `libLayerShellQtInterface.so.6` is installed, no raw protocol needed for this half.
+2. **Source = what is visible in the overlay window's region** (owner: not the wallpaper file):
+   a region capture via `wlr-screencopy-unstable-v1`. Verified available on this machine — a `grim`
+   capture returned 3840×2160 under Sway, and both Sway and Hyprland are wlroots-based.
+3. **The effect runs in the GL pipeline** (owner), not on the CPU: the captured texture goes through
+   a fragment shader (emboss/blur) as a custom `QSGMaterial` — the same path the glyph atlas already
+   uses (`shaders.qrc`, `glyph.{vert,frag}.qsb`). Note the project's known trap: a custom material's
+   vertex shader must be compiled with `qsb --batchable`, and the software/offscreen backend does not
+   render custom materials, so this needs a real-GPU check.
+4. **Refresh policy** (owner): when the overlay window changes, re-enter the GL pipeline — i.e. drive
+   it off the overlay's geometry/output changes, not a timer.
+
+**Open detail:** the region capture composites everything above that region, so a naive refresh while
+our own windows are on top would feed them back. The background layer keeps the OVERLAY itself out of
+the shot, but the terminal window is above it — so the capture step needs the terminal excluded
+(capture before showing / hide for the capture frame / capture on the compositor's pre-window layer).
+Settle this while building; it decides the refresh cadence.
+
+**Slices:** (a) layer-shell background window that renders a solid colour — proves the window type;
+(b) region capture into it — proves the source; (c) the effect as a shader material — proves the
+pipeline; (d) refresh wiring.
