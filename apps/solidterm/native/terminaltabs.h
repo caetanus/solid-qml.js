@@ -27,7 +27,7 @@ class TerminalTabs : public QQuickItem {
     Q_PROPERTY(QColor handleColor READ handleColor WRITE setHandleColor NOTIFY styleChanged)
     Q_PROPERTY(QString backgroundImage READ backgroundImage WRITE setBackgroundImage NOTIFY styleChanged)
     Q_PROPERTY(qreal backgroundOpacity READ backgroundOpacity WRITE setBackgroundOpacity NOTIFY styleChanged)
-    Q_PROPERTY(bool emboss READ emboss WRITE setEmboss NOTIFY styleChanged)
+    Q_PROPERTY(int emboss READ emboss WRITE setEmboss NOTIFY styleChanged)
     Q_PROPERTY(bool animateSplits READ animateSplits WRITE setAnimateSplits NOTIFY styleChanged)
     Q_PROPERTY(QStringList reservedSequences READ reservedSequences WRITE setReservedSequences NOTIFY reservedChanged)
     Q_PROPERTY(int count READ count NOTIFY tabsChanged)
@@ -52,8 +52,8 @@ public:
     void setBackgroundImage(const QString &v);
     qreal backgroundOpacity() const { return m_bgOpacity; }
     void setBackgroundOpacity(qreal v);
-    bool emboss() const { return m_emboss; }
-    void setEmboss(bool v);
+    int emboss() const { return m_emboss; }
+    void setEmboss(int v);
     bool animateSplits() const { return m_animateSplits; }
     void setAnimateSplits(bool v);
     QStringList reservedSequences() const { return m_reserved; }
@@ -133,7 +133,7 @@ private:
     QColor m_handleColor = QColor("#151515");
     QString m_bgImage;
     qreal m_bgOpacity = 1.0;
-    bool m_emboss = false;
+    int m_emboss = 0;                       // 0-100 relief strength on the background image
     bool m_animateSplits = true;
     QStringList m_reserved;
 };

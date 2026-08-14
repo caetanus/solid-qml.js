@@ -217,7 +217,7 @@ W.Div {
                 scrollbackLimit: scrollback
                 backgroundImage: bgImage
                 backgroundOpacity: opacity_ / 100
-                emboss: uiEmboss !== 0
+                emboss: uiEmboss
                 animateSplits: animSplits !== 0
                 handleColor: sysTheme.window
                 reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, kZoomPane, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]
@@ -465,17 +465,25 @@ W.Div {
                                 cssClass: ["cfg-l"]
                                 text: "Emboss background"
                             }
-                            W.Select {
-                                id: __input9
-                                cssClass: ["cfg-sel"]
-                                model: ["Off", "On"]
-                                values: ["0", "1"]
-                                onActivated: (index) => { uiEmboss = parseInt(__input9.values[index]); termConfig.set("emboss", parseInt(__input9.values[index])); }
-                                Binding {
-                                    target: __input9
-                                    property: "currentIndex"
-                                    value: __input9.values.indexOf("" + uiEmboss)
-                                    restoreMode: Binding.RestoreNone
+                            W.Div {
+                                cssClass: ["cfg-slide"]
+                                W.Slider {
+                                    id: __input9
+                                    cssClass: ["cfg-range"]
+                                    from: 0
+                                    to: 100
+                                    stepSize: 5
+                                    onMoved: { uiEmboss = parseInt(__input9.value); termConfig.set("emboss", parseInt(__input9.value)); }
+                                    Binding {
+                                        target: __input9
+                                        property: "value"
+                                        value: "" + uiEmboss
+                                        restoreMode: Binding.RestoreNone
+                                    }
+                                }
+                                W.Text {
+                                    cssClass: ["cfg-slideval"]
+                                    text: "" + (uiEmboss) + "%"
                                 }
                             }
                         }

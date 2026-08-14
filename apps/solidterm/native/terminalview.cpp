@@ -1174,8 +1174,9 @@ void TerminalView::setBackgroundImage(const QString &path)
 // Classic emboss over the BACKGROUND: each pixel becomes its difference from the up-left
 // neighbour, biased to mid-grey — a carved-stone relief. Applied to the image ONCE (here, not per
 // frame) and only when the option is on; the glyphs are never touched, so text stays crisp.
-static QImage embossImage(const QImage &src)
+static QImage embossImage(const QImage &src, int strength)
 {
+    const qreal k = qBound(0, strength, 100) / 100.0; // 0 = untouched, 1 = full relief
     const QImage in = src.convertToFormat(QImage::Format_ARGB32);
     QImage out(in.size(), QImage::Format_ARGB32);
     for (int y = 0; y < in.height(); ++y) {
@@ -1187,8 +1188,13 @@ static QImage embossImage(const QImage &src)
             // Relief from the luminance gradient, so colour noise does not fight the effect.
             const int lum = (qRed(c) * 299 + qGreen(c) * 587 + qBlue(c) * 114) / 1000;
             const int lumD = (qRed(d) * 299 + qGreen(d) * 587 + qBlue(d) * 114) / 1000;
-            const int v = qBound(0, 128 + lum - lumD, 255);
-            dst[x] = qRgba(v, v, v, qAlpha(c));
+            const int relief = qBound(0, 128 + lum - lumD, 255);
+            // Blend the relief over the ORIGINAL by the strength: partway keeps the image's colour
+            // and just carves it, full strength is the classic grey engraving.
+            const int r = int(qRed(c) * (1 - k) + relief * k);
+            const int g = int(qGreen(c) * (1 - k) + relief * k);
+            const int b = int(qBlue(c) * (1 - k) + relief * k);
+            dst[x] = qRgba(r, g, b, qAlpha(c));
         }
     }
     return out;
@@ -1196,8 +1202,9 @@ static QImage embossImage(const QImage &src)
 
 void TerminalView::rebuildBackgroundImage()
 {
-    m_bgImage = (m_emboss && !m_bgImageSource.isNull()) ? embossImage(m_bgImageSource)
-                                                        : m_bgImageSource;
+    m_bgImage = (m_emboss > 0 && !m_bgImageSource.isNull())
+        ? embossImage(m_bgImageSource, m_emboss)
+        : m_bgImageSource;
     m_bgImageDirty = true;
 }
 
@@ -1211,8 +1218,9 @@ void TerminalView::setBackgroundOpacity(qreal v)
     update();
 }
 
-void TerminalView::setEmboss(bool v)
+void TerminalView::setEmboss(int v)
 {
+    v = qBound(0, v, 100);
     if (m_emboss == v)
         return;
     m_emboss = v;

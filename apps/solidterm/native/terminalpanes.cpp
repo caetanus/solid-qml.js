@@ -1015,7 +1015,7 @@ STYLE_SETTER(setForeground, m_foreground, const QColor &)
 STYLE_SETTER(setScrollbackLimit, m_scrollbackLimit, int)
 STYLE_SETTER(setBackgroundImage, m_bgImage, const QString &)
 STYLE_SETTER(setBackgroundOpacity, m_bgOpacity, qreal)
-STYLE_SETTER(setEmboss, m_emboss, bool)
+STYLE_SETTER(setEmboss, m_emboss, int)
 #undef STYLE_SETTER
 
 void TerminalPanes::setReservedSequences(const QStringList &v)

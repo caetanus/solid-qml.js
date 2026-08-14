@@ -44,7 +44,7 @@ class TerminalView : public QQuickItem {
     // desktop/image shows through the terminal's own colour, and an engraved "emboss" on the glyphs.
     Q_PROPERTY(QString backgroundImage READ backgroundImage WRITE setBackgroundImage NOTIFY decorChanged)
     Q_PROPERTY(qreal backgroundOpacity READ backgroundOpacity WRITE setBackgroundOpacity NOTIFY decorChanged)
-    Q_PROPERTY(bool emboss READ emboss WRITE setEmboss NOTIFY decorChanged)
+    Q_PROPERTY(int emboss READ emboss WRITE setEmboss NOTIFY decorChanged)
 
 public:
     explicit TerminalView(QQuickItem *parent = nullptr);
@@ -67,8 +67,8 @@ public:
     void setBackgroundImage(const QString &path);
     qreal backgroundOpacity() const { return m_bgOpacity; }
     void setBackgroundOpacity(qreal v);
-    bool emboss() const { return m_emboss; }
-    void setEmboss(bool v);
+    int emboss() const { return m_emboss; }
+    void setEmboss(int v);
 
     // C++-created panes (TerminalPanes uses `new`, so componentComplete never fires) call this
     // once sized to boot the pty+vterm; idempotent (m_started guard).
@@ -178,7 +178,7 @@ private:
     QImage m_bgImage;                       // what is uploaded: source, or its embossed relief
     bool m_bgImageDirty = false;            // reupload the image texture next frame
     qreal m_bgOpacity = 1.0;                // terminal background alpha (1 = solid, 0 = fully see-through)
-    bool m_emboss = false;                  // engraved glyphs
+    int m_emboss = 0;                       // 0-100 relief strength on the background image                  // engraved glyphs
     bool m_dimmed = false;                  // dark overlay for an unfocused split pane
     bool m_bellActive = false;              // visual bell flash in progress (short-timer cleared)
     bool m_readOnly = false;                // block keyboard + paste to the pty

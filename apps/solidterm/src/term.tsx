@@ -213,7 +213,7 @@ export function Term() {
           scrollbackLimit={scrollback()}
           backgroundImage={bgImage()}
           backgroundOpacity={opacity() / 100}
-          emboss={uiEmboss() !== 0}
+          emboss={uiEmboss()}
           animateSplits={animSplits() !== 0}
           handleColor={sysTheme.window}
           reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), kZoomPane(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]}
@@ -310,11 +310,13 @@ export function Term() {
             <hr class="cfg-div" />
             <div class="cfg-row">
               <text class="cfg-l">Emboss background</text>
-              <select class="cfg-sel" value={"" + uiEmboss()}
-                      onChange={(v) => { setUiEmboss(parseInt(v)); termConfig.set("emboss", parseInt(v)); }}>
-                <option value="0">Off</option>
-                <option value="1">On</option>
-              </select>
+              {/* Strength, not on/off: 0 leaves the image alone, partway carves it while keeping its
+                  colour, 100 is the classic grey engraving. Live, like the opacity slider. */}
+              <div class="cfg-slide">
+                <input class="cfg-range" type="range" min="0" max="100" step="5" value={"" + uiEmboss()}
+                       onInput={(v) => { setUiEmboss(parseInt(v)); termConfig.set("emboss", parseInt(v)); }} />
+                <text class="cfg-slideval">{uiEmboss()}%</text>
+              </div>
             </div>
             <hr class="cfg-div" />
             <div class="cfg-row">
