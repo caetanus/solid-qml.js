@@ -300,14 +300,20 @@ if not solidterm_opt.disabled()
 endif
 if build_solidterm
   util_dep = meson.get_compiler('cpp').find_library('util', required: false)
+  # Backdrop effects: the overlay lives on a wlr-layer-shell BACKGROUND surface, which
+  # LayerShellQt turns a QWindow into. Optional — without it the backdrop is unavailable and
+  # SolidTerm simply runs without the effect.
+  layershell_dep = meson.get_compiler('cpp').find_library('LayerShellQtInterface', required: false)
+  layershell_args = layershell_dep.found() ? ['-DHAVE_LAYERSHELL'] : []
   solidterm_moc = qt6.preprocess(
-    moc_headers: files('apps/solidterm/native/ptysession.h', 'apps/solidterm/native/terminalview.h', 'apps/solidterm/native/terminalpanes.h', 'apps/solidterm/native/terminaltabs.h', 'apps/solidterm/native/systemtheme.h', 'apps/solidterm/native/keyrecorder.h', 'apps/solidterm/native/termconfig.h', 'apps/solidterm/native/paneheader.h'),
+    moc_headers: files('apps/solidterm/native/ptysession.h', 'apps/solidterm/native/terminalview.h', 'apps/solidterm/native/terminalpanes.h', 'apps/solidterm/native/terminaltabs.h', 'apps/solidterm/native/systemtheme.h', 'apps/solidterm/native/keyrecorder.h', 'apps/solidterm/native/termconfig.h', 'apps/solidterm/native/paneheader.h', 'apps/solidterm/native/backdrop.h'),
     qresources: files('apps/solidterm/shaders.qrc'),
   )
   executable(
     'solidterm',
     files(
       'apps/solidterm/main.cpp',
+      'apps/solidterm/native/backdrop.cpp',
       'apps/solidterm/native/ptysession.cpp',
       'apps/solidterm/native/terminalview.cpp',
       'apps/solidterm/native/glyphcache.cpp',
@@ -319,9 +325,9 @@ if build_solidterm
       'apps/solidterm/native/paneheader.cpp',
     ),
     solidterm_moc,
-    cpp_args: notify_args + ['-DSOLIDTERM_DEV_DIR="' + meson.current_source_dir() + '/apps/solidterm/qml"'],
+    cpp_args: notify_args + layershell_args + ['-DSOLIDTERM_DEV_DIR="' + meson.current_source_dir() + '/apps/solidterm/qml"'],
     include_directories: include_directories('src', 'apps/solidterm'),
-    dependencies: [solidqml_dep, qt6_widgets_dep, vterm_dep, util_dep],
+    dependencies: [solidqml_dep, qt6_widgets_dep, vterm_dep, util_dep, layershell_dep],
     install_rpath: '$ORIGIN/../lib',
     install: true,
   )
