@@ -334,7 +334,11 @@ namespace {
 inline void pushBgQuad(std::vector<QSGGeometry::ColoredPoint2D> &v, qreal x, qreal y, qreal w,
                        qreal h, const QColor &c)
 {
-    const uchar r = uchar(c.red()), g = uchar(c.green()), b = uchar(c.blue()), a = uchar(c.alpha());
+    // QSGVertexColorMaterial blends PREMULTIPLIED, so premultiply here — a straight (255,255,255,179)
+    // adds to the backdrop instead of blending, saturating translucent white to opaque white.
+    const int ca = c.alpha();
+    const uchar r = uchar(c.red() * ca / 255), g = uchar(c.green() * ca / 255),
+                b = uchar(c.blue() * ca / 255), a = uchar(ca);
     const float x0 = float(x), y0 = float(y), x1 = float(x + w), y1 = float(y + h);
     QSGGeometry::ColoredPoint2D tl, tr, bl, br;
     tl.set(x0, y0, r, g, b, a);
@@ -476,13 +480,10 @@ QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 
     // Visual bell: a brief bright wash over the pane (audible bells are jarring; tilix defaults to a
     // visual flash). m_bellActive is raised on BEL and cleared by a short timer (see the ctor).
-    // The cursor node's material blends PREMULTIPLIED, so premultiply the fg tint by its alpha here —
-    // otherwise a partial-alpha white washes out to fully opaque.
     if (m_bellActive) {
-        const qreal fa = 0.30;
-        pushBgQuad(cursor, 0, 0, width(), height(),
-                   QColor(int(m_foreground.red() * fa), int(m_foreground.green() * fa),
-                          int(m_foreground.blue() * fa), int(255 * fa)));
+        QColor flash = m_foreground;
+        flash.setAlphaF(0.30);
+        pushBgQuad(cursor, 0, 0, width(), height(), flash);
     }
 
     // Search highlights: every match on a visible row (current match brighter).
