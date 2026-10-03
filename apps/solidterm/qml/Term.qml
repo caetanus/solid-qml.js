@@ -14,7 +14,7 @@ W.Div {
     property var scrollback: termConfig.getInt("scrollback", 8000)
     property var bgImage: termConfig.getString("bgImage", "")
     property var opacity_: termConfig.getInt("opacity", 100)
-    property var uiEmboss: termConfig.getInt("emboss", 0)
+    property var uiBlur: termConfig.getInt("blur", 0)
     property var showHeader: termConfig.getInt("showHeader", 1)
     property var showStatus: termConfig.getInt("showStatus", 1)
     property var animSplits: termConfig.getInt("animSplits", 1)
@@ -217,7 +217,7 @@ W.Div {
                 scrollbackLimit: scrollback
                 backgroundImage: bgImage
                 backgroundOpacity: opacity_ / 100
-                emboss: uiEmboss
+                blur: uiBlur
                 animateSplits: animSplits !== 0
                 handleColor: sysTheme.window
                 reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, kZoomPane, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]
@@ -463,7 +463,7 @@ W.Div {
                             cssClass: ["cfg-row"]
                             W.Text {
                                 cssClass: ["cfg-l"]
-                                text: "Emboss background"
+                                text: "Blur background"
                             }
                             W.Div {
                                 cssClass: ["cfg-slide"]
@@ -473,17 +473,17 @@ W.Div {
                                     from: 0
                                     to: 100
                                     stepSize: 5
-                                    onMoved: { uiEmboss = parseInt(__input9.value); termConfig.set("emboss", parseInt(__input9.value)); }
+                                    onMoved: { uiBlur = parseInt(__input9.value); termConfig.set("blur", parseInt(__input9.value)); }
                                     Binding {
                                         target: __input9
                                         property: "value"
-                                        value: "" + uiEmboss
+                                        value: "" + uiBlur
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
                                 W.Text {
                                     cssClass: ["cfg-slideval"]
-                                    text: "" + (uiEmboss) + "%"
+                                    text: "" + (uiBlur) + "%"
                                 }
                             }
                         }

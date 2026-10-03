@@ -33,7 +33,7 @@ class TerminalPanes : public QQuickItem {
     // Decorations forwarded to every pane (per-window eye candy).
     Q_PROPERTY(QString backgroundImage READ backgroundImage WRITE setBackgroundImage NOTIFY styleChanged)
     Q_PROPERTY(qreal backgroundOpacity READ backgroundOpacity WRITE setBackgroundOpacity NOTIFY styleChanged)
-    Q_PROPERTY(int emboss READ emboss WRITE setEmboss NOTIFY styleChanged)
+    Q_PROPERTY(int blur READ blur WRITE setBlur NOTIFY styleChanged)
 
 public:
     explicit TerminalPanes(QQuickItem *parent = nullptr);
@@ -59,8 +59,8 @@ public:
     void setBackgroundImage(const QString &v);
     qreal backgroundOpacity() const { return m_bgOpacity; }
     void setBackgroundOpacity(qreal v);
-    int emboss() const { return m_emboss; }
-    void setEmboss(int v);
+    int blur() const { return m_blur; }
+    void setBlur(int v);
     bool animateSplits() const { return m_animateSplits; }
     void setAnimateSplits(bool v) { m_animateSplits = v; }
 
@@ -196,6 +196,6 @@ private:
     QStringList m_reserved;
     QString m_bgImage;
     qreal m_bgOpacity = 1.0;
-    int m_emboss = 0;                       // 0-100 relief strength on the background image
+    int m_blur = 0;                         // 0-100 blur strength on the background image
     bool m_animateSplits = true;
 };

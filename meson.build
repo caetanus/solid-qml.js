@@ -300,20 +300,38 @@ if not solidterm_opt.disabled()
 endif
 if build_solidterm
   util_dep = meson.get_compiler('cpp').find_library('util', required: false)
-  # Backdrop effects: the overlay lives on a wlr-layer-shell BACKGROUND surface, which
-  # LayerShellQt turns a QWindow into. Optional — without it the backdrop is unavailable and
-  # SolidTerm simply runs without the effect.
-  layershell_dep = meson.get_compiler('cpp').find_library('LayerShellQtInterface', required: false)
-  layershell_args = layershell_dep.found() ? ['-DHAVE_LAYERSHELL'] : []
+  # Background blur: SolidTerm asks the COMPOSITOR to blur what shows through its translucent window,
+  # via the standard `ext-background-effect-v1` (wayland-protocols staging). Needs wayland-client,
+  # wayland-scanner, the protocol XML and Qt's private QWaylandWindow interface (the window's
+  # wl_surface); without any of them the blur option is simply unavailable.
+  wlclient_dep = dependency('wayland-client', required: false)
+  wlscanner = find_program('wayland-scanner', required: false)
+  wlprotocols_dep = dependency('wayland-protocols', version: '>= 1.45', required: false)
+  blur_src = []
+  blur_deps = []
+  blur_args = []
+  if wlclient_dep.found() and wlscanner.found() and wlprotocols_dep.found() and add_languages('c', native: false, required: false)
+    blur_xml = wlprotocols_dep.get_variable('pkgdatadir') / 'staging/ext-background-effect/ext-background-effect-v1.xml'
+    blur_src = [
+      custom_target('background-effect-client-header', input: blur_xml,
+        output: 'ext-background-effect-v1-client-protocol.h',
+        command: [wlscanner, 'client-header', '@INPUT@', '@OUTPUT@']),
+      custom_target('background-effect-private-code', input: blur_xml,
+        output: 'ext-background-effect-v1-protocol.c',
+        command: [wlscanner, 'private-code', '@INPUT@', '@OUTPUT@']),
+      files('apps/solidterm/native/windowblur.cpp'),
+    ]
+    blur_deps = [wlclient_dep, dependency('qt6', modules: ['Core', 'Gui'], private_headers: true)]
+    blur_args = ['-DHAVE_BACKGROUND_EFFECT']
+  endif
   solidterm_moc = qt6.preprocess(
-    moc_headers: files('apps/solidterm/native/ptysession.h', 'apps/solidterm/native/terminalview.h', 'apps/solidterm/native/terminalpanes.h', 'apps/solidterm/native/terminaltabs.h', 'apps/solidterm/native/systemtheme.h', 'apps/solidterm/native/keyrecorder.h', 'apps/solidterm/native/termconfig.h', 'apps/solidterm/native/paneheader.h', 'apps/solidterm/native/backdrop.h'),
+    moc_headers: (blur_src.length() > 0 ? files('apps/solidterm/native/windowblur.h') : []) + files('apps/solidterm/native/ptysession.h', 'apps/solidterm/native/terminalview.h', 'apps/solidterm/native/terminalpanes.h', 'apps/solidterm/native/terminaltabs.h', 'apps/solidterm/native/systemtheme.h', 'apps/solidterm/native/keyrecorder.h', 'apps/solidterm/native/termconfig.h', 'apps/solidterm/native/paneheader.h'),
     qresources: files('apps/solidterm/shaders.qrc'),
   )
   executable(
     'solidterm',
     files(
       'apps/solidterm/main.cpp',
-      'apps/solidterm/native/backdrop.cpp',
       'apps/solidterm/native/ptysession.cpp',
       'apps/solidterm/native/terminalview.cpp',
       'apps/solidterm/native/glyphcache.cpp',
@@ -324,10 +342,11 @@ if build_solidterm
       'apps/solidterm/native/termconfig.cpp',
       'apps/solidterm/native/paneheader.cpp',
     ),
+    blur_src,
     solidterm_moc,
-    cpp_args: notify_args + layershell_args + ['-DSOLIDTERM_DEV_DIR="' + meson.current_source_dir() + '/apps/solidterm/qml"'],
+    cpp_args: notify_args + blur_args + ['-DSOLIDTERM_DEV_DIR="' + meson.current_source_dir() + '/apps/solidterm/qml"'],
     include_directories: include_directories('src', 'apps/solidterm'),
-    dependencies: [solidqml_dep, qt6_widgets_dep, vterm_dep, util_dep, layershell_dep],
+    dependencies: [solidqml_dep, qt6_widgets_dep, vterm_dep, util_dep] + blur_deps,
     install_rpath: '$ORIGIN/../lib',
     install: true,
   )

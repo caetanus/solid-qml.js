@@ -8,6 +8,9 @@
 // App dir resolution: $SOLIDTERM_DIR > <bindir>/../share/solidterm > the source tree (dev).
 #include "embed/solidqmlembed.h"
 #include "native/systemtheme.h"
+#ifdef HAVE_BACKGROUND_EFFECT
+#include "native/windowblur.h"
+#endif
 #include "native/keyrecorder.h"
 #include "native/paneheader.h"
 #include "native/termconfig.h"
@@ -115,6 +118,20 @@ int main(int argc, char **argv)
         };
         retint();
         QObject::connect(sysTheme, &SystemTheme::changed, window, retint);
+
+#ifdef HAVE_BACKGROUND_EFFECT
+        // Blur behind the translucent window, done by the compositor (ext-background-effect-v1).
+        // On while the "blur" strength (the preferences slider) is above 0, live; inert on a
+        // compositor without the protocol.
+        auto *blur = new WindowBlur(window);
+        blur->setEnabled(config->getInt(QStringLiteral("blur"), 0) > 0);
+        QObject::connect(config, &TermConfig::changed, blur, [blur, config](const QString &key) {
+            if (key == QLatin1String("blur"))
+                blur->setEnabled(config->getInt(QStringLiteral("blur"), 0) > 0);
+        });
+        if (qEnvironmentVariableIsSet("SOLIDTERM_BLURINFO"))
+            qInfo("solidterm: background blur %s", blur->isSupported() ? "supported" : "NOT supported by the compositor");
+#endif
     }
 
     // Debug/CI screenshot: SOLIDTERM_SHOT=<prefix> opens preferences + the context menu after a

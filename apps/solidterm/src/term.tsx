@@ -41,10 +41,10 @@ export function Term() {
   const browseBg = () => { const p = termConfig.pickImage(); if (p) { setBgImage(p); termConfig.set("bgImage", p); } };
   const clearBg = () => { setBgImage(""); termConfig.set("bgImage", ""); };
   const [opacity, setOpacity] = createSignal(termConfig.getInt("opacity", 100));
-  // NB: name it uiEmboss, NOT emboss — a bare `emboss` collides with TerminalTabs' own `emboss`
-  // property, so QML resolves the binding RHS to the local prop → self-referential binding loop
-  // (emboss stuck ON, config ignored). Same ui*/*_ disambiguation the other style signals use.
-  const [uiEmboss, setUiEmboss] = createSignal(termConfig.getInt("emboss", 0));
+  // NB: name it uiBlur, NOT blur — a bare `blur` collides with TerminalTabs' own `blur` property,
+  // so QML resolves the binding RHS to the local prop → self-referential binding loop (stuck value,
+  // config ignored). Same ui*/*_ disambiguation the other style signals use.
+  const [uiBlur, setUiBlur] = createSignal(termConfig.getInt("blur", 0));
   const [showHeader, setShowHeader] = createSignal(termConfig.getInt("showHeader", 1));
   const [showStatus, setShowStatus] = createSignal(termConfig.getInt("showStatus", 1));
   const [animSplits, setAnimSplits] = createSignal(termConfig.getInt("animSplits", 1));
@@ -213,7 +213,7 @@ export function Term() {
           scrollbackLimit={scrollback()}
           backgroundImage={bgImage()}
           backgroundOpacity={opacity() / 100}
-          emboss={uiEmboss()}
+          blur={uiBlur()}
           animateSplits={animSplits() !== 0}
           handleColor={sysTheme.window}
           reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), kZoomPane(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]}
@@ -309,13 +309,14 @@ export function Term() {
             </div>
             <hr class="cfg-div" />
             <div class="cfg-row">
-              <text class="cfg-l">Emboss background</text>
-              {/* Strength, not on/off: 0 leaves the image alone, partway carves it while keeping its
-                  colour, 100 is the classic grey engraving. Live, like the opacity slider. */}
+              <text class="cfg-l">Blur background</text>
+              {/* 0 = off. Above 0 the native side asks the COMPOSITOR to blur what shows through the
+                  translucent window (ext-background-effect-v1 — on/off only, its radius is compositor
+                  policy) and blurs our own background image by this strength. Live, like opacity. */}
               <div class="cfg-slide">
-                <input class="cfg-range" type="range" min="0" max="100" step="5" value={"" + uiEmboss()}
-                       onInput={(v) => { setUiEmboss(parseInt(v)); termConfig.set("emboss", parseInt(v)); }} />
-                <text class="cfg-slideval">{uiEmboss()}%</text>
+                <input class="cfg-range" type="range" min="0" max="100" step="5" value={"" + uiBlur()}
+                       onInput={(v) => { setUiBlur(parseInt(v)); termConfig.set("blur", parseInt(v)); }} />
+                <text class="cfg-slideval">{uiBlur()}%</text>
               </div>
             </div>
             <hr class="cfg-div" />

@@ -351,8 +351,8 @@ inline void pushBgQuad(std::vector<QSGGeometry::ColoredPoint2D> &v, qreal x, qre
 inline void pushGlyphQuad(std::vector<GlyphVertex> &v, qreal x, qreal y, qreal w, qreal h,
                           const QRectF &uv, const QColor &c, bool colorGlyph)
 {
-    // The glyph fragment shader is premultiplied (vColor × coverage), so premultiply here — lets the
-    // emboss shadow/highlight copies carry alpha < 1 correctly (opaque fg keeps alpha 1, unchanged).
+    // The glyph fragment shader is premultiplied (vColor × coverage), so premultiply here — lets a
+    // translucent foreground carry alpha < 1 correctly (opaque fg keeps alpha 1, unchanged).
     const float al = float(c.alphaF());
     const float r = float(c.redF()) * al, g = float(c.greenF()) * al, b = float(c.blueF()) * al, a = al;
     const float ic = colorGlyph ? 1.0f : 0.0f;
@@ -1172,39 +1172,64 @@ void TerminalView::setBackgroundImage(const QString &path)
     update();
 }
 
-// Classic emboss over the BACKGROUND: each pixel becomes its difference from the up-left
-// neighbour, biased to mid-grey — a carved-stone relief. Applied to the image ONCE (here, not per
-// frame) and only when the option is on; the glyphs are never touched, so text stays crisp.
-static QImage embossImage(const QImage &src, int strength)
+namespace {
+
+// One box-blur pass of radius r along rows (horizontal) or columns, with a sliding sum — O(pixels),
+// independent of r. Premultiplied ARGB, so translucent pixels do not bleed dark fringes.
+void boxBlurPass(QImage &img, int r, bool horizontal)
 {
-    const qreal k = qBound(0, strength, 100) / 100.0; // 0 = untouched, 1 = full relief
-    const QImage in = src.convertToFormat(QImage::Format_ARGB32);
-    QImage out(in.size(), QImage::Format_ARGB32);
-    for (int y = 0; y < in.height(); ++y) {
-        const QRgb *row = reinterpret_cast<const QRgb *>(in.constScanLine(y));
-        const QRgb *prev = reinterpret_cast<const QRgb *>(in.constScanLine(qMax(0, y - 1)));
-        QRgb *dst = reinterpret_cast<QRgb *>(out.scanLine(y));
-        for (int x = 0; x < in.width(); ++x) {
-            const QRgb c = row[x], d = prev[qMax(0, x - 1)];
-            // Relief from the luminance gradient, so colour noise does not fight the effect.
-            const int lum = (qRed(c) * 299 + qGreen(c) * 587 + qBlue(c) * 114) / 1000;
-            const int lumD = (qRed(d) * 299 + qGreen(d) * 587 + qBlue(d) * 114) / 1000;
-            const int relief = qBound(0, 128 + lum - lumD, 255);
-            // Blend the relief over the ORIGINAL by the strength: partway keeps the image's colour
-            // and just carves it, full strength is the classic grey engraving.
-            const int r = int(qRed(c) * (1 - k) + relief * k);
-            const int g = int(qGreen(c) * (1 - k) + relief * k);
-            const int b = int(qBlue(c) * (1 - k) + relief * k);
-            dst[x] = qRgba(r, g, b, qAlpha(c));
+    const int w = img.width(), h = img.height();
+    const int len = horizontal ? w : h, lines = horizontal ? h : w;
+    const qsizetype stride = img.bytesPerLine() / 4;
+    QRgb *base = reinterpret_cast<QRgb *>(img.bits());
+    const qsizetype step = horizontal ? 1 : stride;
+    std::vector<QRgb> line(static_cast<size_t>(len));
+    const int win = 2 * r + 1;
+    for (int l = 0; l < lines; ++l) {
+        QRgb *p = horizontal ? base + l * stride : base + l;
+        for (int i = 0; i < len; ++i)
+            line[size_t(i)] = p[i * step];
+        // Edge pixels are repeated (clamp), so the border does not darken.
+        int sa = 0, sr = 0, sg = 0, sb = 0;
+        for (int i = -r; i <= r; ++i) {
+            const QRgb c = line[size_t(qBound(0, i, len - 1))];
+            sa += qAlpha(c); sr += qRed(c); sg += qGreen(c); sb += qBlue(c);
+        }
+        for (int i = 0; i < len; ++i) {
+            p[i * step] = qRgba(sr / win, sg / win, sb / win, sa / win);
+            const QRgb out = line[size_t(qBound(0, i - r, len - 1))];
+            const QRgb in = line[size_t(qBound(0, i + r + 1, len - 1))];
+            sa += qAlpha(in) - qAlpha(out); sr += qRed(in) - qRed(out);
+            sg += qGreen(in) - qGreen(out); sb += qBlue(in) - qBlue(out);
         }
     }
-    return out;
+}
+
+} // namespace
+
+// Blur over the BACKGROUND image: three box passes each way ≈ a gaussian. Applied ONCE per change
+// (not per frame) and never to the glyphs, so text stays crisp. The image is first reduced — a blur
+// discards detail anyway, so a smaller texture loses nothing and keeps a large radius cheap; the
+// cover-fit draw scales it back up smoothly.
+static QImage blurImage(const QImage &src, int strength)
+{
+    const qreal k = qBound(0, strength, 100) / 100.0;
+    constexpr int kWorkSize = 960;   // longest side the blur runs at
+    constexpr qreal kMaxRadius = 32; // at full strength, in work-size pixels (~3% of the width)
+    QImage img = src.scaled(QSize(kWorkSize, kWorkSize), Qt::KeepAspectRatio, Qt::SmoothTransformation)
+                     .convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    const int r = qMax(1, int(kMaxRadius * k));
+    for (int pass = 0; pass < 3; ++pass) {
+        boxBlurPass(img, r, true);
+        boxBlurPass(img, r, false);
+    }
+    return img;
 }
 
 void TerminalView::rebuildBackgroundImage()
 {
-    m_bgImage = (m_emboss > 0 && !m_bgImageSource.isNull())
-        ? embossImage(m_bgImageSource, m_emboss)
+    m_bgImage = (m_blur > 0 && !m_bgImageSource.isNull())
+        ? blurImage(m_bgImageSource, m_blur)
         : m_bgImageSource;
     m_bgImageDirty = true;
 }
@@ -1219,12 +1244,12 @@ void TerminalView::setBackgroundOpacity(qreal v)
     update();
 }
 
-void TerminalView::setEmboss(int v)
+void TerminalView::setBlur(int v)
 {
     v = qBound(0, v, 100);
-    if (m_emboss == v)
+    if (m_blur == v)
         return;
-    m_emboss = v;
+    m_blur = v;
     rebuildBackgroundImage(); // the effect lives on the background image, not on the glyphs
     emit decorChanged();
     update();

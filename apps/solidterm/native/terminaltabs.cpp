@@ -241,7 +241,7 @@ void TerminalTabs::applyStyle(TerminalPanes *p)
     p->setHandleColor(m_handleColor);
     p->setBackgroundImage(m_bgImage);
     p->setBackgroundOpacity(m_bgOpacity);
-    p->setEmboss(m_emboss);
+    p->setBlur(m_blur);
     p->setAnimateSplits(m_animateSplits);
     p->setReservedSequences(m_reserved);
 }
@@ -261,7 +261,7 @@ TABS_STYLE_SETTER(setScrollbackLimit, m_scrollbackLimit, int, setScrollbackLimit
 TABS_STYLE_SETTER(setHandleColor, m_handleColor, const QColor &, setHandleColor)
 TABS_STYLE_SETTER(setBackgroundImage, m_bgImage, const QString &, setBackgroundImage)
 TABS_STYLE_SETTER(setBackgroundOpacity, m_bgOpacity, qreal, setBackgroundOpacity)
-TABS_STYLE_SETTER(setEmboss, m_emboss, int, setEmboss)
+TABS_STYLE_SETTER(setBlur, m_blur, int, setBlur)
 TABS_STYLE_SETTER(setAnimateSplits, m_animateSplits, bool, setAnimateSplits)
 #undef TABS_STYLE_SETTER
 

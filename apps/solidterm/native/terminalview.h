@@ -41,10 +41,10 @@ class TerminalView : public QQuickItem {
     Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY selectionChanged)
     Q_PROPERTY(bool readOnly READ readOnly WRITE setReadOnly NOTIFY readOnlyChanged) // ignore keyboard/paste
     // Eye candy (owner): a background image behind the text (cover-fit), a background opacity so the
-    // desktop/image shows through the terminal's own colour, and an engraved "emboss" on the glyphs.
+    // desktop/image shows through the terminal's own colour, and a blur of that background image.
     Q_PROPERTY(QString backgroundImage READ backgroundImage WRITE setBackgroundImage NOTIFY decorChanged)
     Q_PROPERTY(qreal backgroundOpacity READ backgroundOpacity WRITE setBackgroundOpacity NOTIFY decorChanged)
-    Q_PROPERTY(int emboss READ emboss WRITE setEmboss NOTIFY decorChanged)
+    Q_PROPERTY(int blur READ blur WRITE setBlur NOTIFY decorChanged)
 
 public:
     explicit TerminalView(QQuickItem *parent = nullptr);
@@ -67,8 +67,8 @@ public:
     void setBackgroundImage(const QString &path);
     qreal backgroundOpacity() const { return m_bgOpacity; }
     void setBackgroundOpacity(qreal v);
-    int emboss() const { return m_emboss; }
-    void setEmboss(int v);
+    int blur() const { return m_blur; }
+    void setBlur(int v);
 
     // C++-created panes (TerminalPanes uses `new`, so componentComplete never fires) call this
     // once sized to boot the pty+vterm; idempotent (m_started guard).
@@ -171,14 +171,14 @@ private:
     int m_rows = 24, m_cols = 80;
     QColor m_background = QColor("#161a21");
     QColor m_foreground = QColor("#d4dae3");
-    void rebuildBackgroundImage();          // re-derives m_bgImage from source + the emboss flag
+    void rebuildBackgroundImage();          // re-derives m_bgImage from source + the blur strength
 
     QString m_bgImagePath;
     QImage m_bgImageSource;                 // the file as loaded (never modified)
-    QImage m_bgImage;                       // what is uploaded: source, or its embossed relief
+    QImage m_bgImage;                       // what is uploaded: source, or its blurred copy
     bool m_bgImageDirty = false;            // reupload the image texture next frame
     qreal m_bgOpacity = 1.0;                // terminal background alpha (1 = solid, 0 = fully see-through)
-    int m_emboss = 0;                       // 0-100 relief strength on the background image                  // engraved glyphs
+    int m_blur = 0;                         // 0-100 blur strength on the background image
     bool m_dimmed = false;                  // dark overlay for an unfocused split pane
     bool m_bellActive = false;              // visual bell flash in progress (short-timer cleared)
     bool m_readOnly = false;                // block keyboard + paste to the pty
