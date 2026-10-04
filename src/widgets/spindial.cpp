@@ -52,7 +52,7 @@ T.SpinBox {
         readOnly: !ctl.editable
         color: cssTheme.parseColor(root.inheritedColor || "#2b2b2b")
         font.family: cssTheme.resolveFontFamily(root.inheritedFontFamily || "Sans Serif")
-        font.pixelSize: cssTheme.parseFontSize(root.inheritedFontSize || "13px", 13)
+        font.pointSize: cssTheme.parseFontSize(root.inheritedFontSize || "13px", 13)
         horizontalAlignment: Qt.AlignHCenter
         verticalAlignment: Qt.AlignVCenter
         selectByMouse: true

@@ -49,7 +49,7 @@ Item {
         Keys.onRightPressed: { if (pop.visible) host.__step(1) }
         color: cssTheme.parseColor(root.inheritedColor || "#2b2b2b")
         font.family: cssTheme.resolveFontFamily(root.inheritedFontFamily || "Sans Serif")
-        font.pixelSize: cssTheme.parseFontSize(root.inheritedFontSize || "13px", 13)
+        font.pointSize: cssTheme.parseFontSize(root.inheritedFontSize || "13px", 13)
         leftPadding: 12
         rightPadding: 36
         verticalAlignment: TextInput.AlignVCenter
