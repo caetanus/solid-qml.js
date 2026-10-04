@@ -163,3 +163,16 @@ test("emitExpr: getter-only createSignal destructure is a reactive read", async 
   const scope = await scopeFor(`export function C(){ const [cache]=createSignal({}); return <div></div>; }`, "binding");
   assert.equal(emitExpr(await expr("cache()"), scope), "cache");
 });
+
+test("emitExpr: a unary operator keeps the grouping of a compound operand", async () => {
+  // The AST carries no parentheses: `!(a && b)` flattened to `!a && b` (a different value —
+  // a <Show when={!(x() && y)}> silently inverted), `-(a + b)` to `-a + b`.
+  const s = await scopeFor(`export function C(){ const [a,setA]=createSignal(1); const [b,setB]=createSignal(2); return null; }`, "binding");
+  assert.equal(emitExpr(await expr(`!(a() && b())`), s), "!(a && b)");
+  assert.equal(emitExpr(await expr(`-(a() + b())`), s), "-(a + b)");
+  assert.equal(emitExpr(await expr(`!(a() ? b() : 0)`), s), "!(a ? b : 0)");
+  assert.equal(emitExpr(await expr(`typeof (a() + "")`), s), `typeof (a + "")`);
+  // ...and a simple operand stays bare.
+  assert.equal(emitExpr(await expr(`!a()`), s), "!a");
+  assert.equal(emitExpr(await expr(`!obj.y`), s), "!obj.y");
+});

@@ -254,7 +254,12 @@ export function emitExpr(node: t.Node, scope: Scope): string {
   // (typeof/void/delete) need the separating space — `typeof process` emitted as
   // `typeofprocess` (an undefined identifier) without it.
   if (t.isUnaryExpression(node)) {
-    const arg = emitExpr(node.argument, scope);
+    // The AST has no parens: a compound operand must be regrouped, or `!(a && b)` emits as
+    // `!a && b` and `-(a + b)` as `-a + b` — a different value, silently.
+    const a = node.argument;
+    const compound = t.isBinaryExpression(a) || t.isLogicalExpression(a) || t.isConditionalExpression(a)
+      || t.isAssignmentExpression(a) || t.isSequenceExpression(a) || t.isArrowFunctionExpression(a);
+    const arg = compound ? `(${emitExpr(a, scope)})` : emitExpr(a, scope);
     const sep = /^[a-z]/.test(node.operator) ? " " : "";
     return node.prefix ? `${node.operator}${sep}${arg}` : `${arg}${sep}${node.operator}`;
   }
