@@ -116,7 +116,10 @@ function emitMediaPlayer(propsArg: t.Node | undefined, _children: t.Node[], scop
 }
 
 /** <WebView src> → WWeb.WebView (opt-in module solidqml.Widgets.Web — QtWebEngine loads only
- *  when the tag is used; the loader pre-sets AA_ShareOpenGLContexts, dependency-free). */
+ *  when the tag is used; the loader pre-sets AA_ShareOpenGLContexts, dependency-free).
+ *  <WebView html={s} remoteContent={b}> loads an UNTRUSTED HTML string instead (an e-mail body):
+ *  the widget wraps it under a Content-Security-Policy — nothing remote unless `remoteContent` —
+ *  with scripts off and navigation pinned (see WebView.qml). */
 function emitWebView(propsArg: t.Node | undefined, _children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
@@ -128,6 +131,10 @@ function emitWebView(propsArg: t.Node | undefined, _children: t.Node[], scope: S
   if (guard) lines.push(`${i(1)}visible: !!(${guard})`);
   const src = props.get("src");
   if (src) lines.push(`${i(1)}src: Qt.resolvedUrl(${bind(src)})`);
+  const html = props.get("html");
+  if (html) lines.push(`${i(1)}html: ${bind(html)}`);
+  const remote = props.get("remoteContent");
+  if (remote) lines.push(`${i(1)}remoteContent: ${bind(remote)}`);
   lines.push(`${pad}}`);
   return lines;
 }

@@ -46,6 +46,14 @@ test("dataviz: <WebView> instantiates the opt-in Web module with a resolved src"
   assert.match(out, /src: Qt\.resolvedUrl\("assets\/page\.html"\)/);
 });
 
+test("dataviz: <WebView html> binds the HTML string and the remote-content switch", async () => {
+  const out = await qmlType(`export function F(){ const [ok,setOk]=createSignal(false); const [h,setH]=createSignal("<p>x</p>"); return <WebView class="wv" html={h()} remoteContent={ok()} />; }`);
+  assert.match(out, /WWeb\.WebView \{/);
+  assert.match(out, /html: h\b/);
+  assert.match(out, /remoteContent: ok\b/);
+  assert.doesNotMatch(out, /src:/);
+});
+
 test("dataviz: <RichText> instantiates the opt-in RichText module", async () => {
   const out = await qmlType(`export function F(){ return <RichText class="ed" />; }`);
   assert.match(out, /import solidqml\.Widgets\.RichText 1\.0 as WRich/);
