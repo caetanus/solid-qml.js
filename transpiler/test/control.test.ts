@@ -36,6 +36,32 @@ test("For: becomes a Repeater whose delegate binds item to modelData", async () 
   assert.match(out, /W\.Text \{[\s\S]*text: "" \+ \(modelData\)/);
 });
 
+test("For nested in For: the outer item stays reachable inside the inner delegate", async () => {
+  // Both delegates bind their row to `modelData`, so the inner one used to SHADOW the outer:
+  // `g.name` inside the inner delegate read the inner row instead.
+  const out = await qml(`import { For } from "solid-js"; export function C(){ const [groups,setGroups]=createSignal([]); return <For each={groups()}>{(g)=><div><For each={g.items}>{(it)=><text>{g.name}: {it}</text>}</For></div>}</For>; }`);
+  // The outer delegate root publishes its row under an id the inner delegate can see.
+  const id = out.match(/id: (__for\d+)\n\s*property var __forItem: modelData/);
+  assert.ok(id, out);
+  assert.match(out, new RegExp(`model: ${id![1]}\\.__forItem\\.items`));
+  assert.match(out, new RegExp(`text: "" \\+ \\(${id![1]}\\.__forItem\\.name\\) \\+ ": " \\+ \\(modelData\\)`));
+});
+
+test("For nested in For: a delegate root that already has an id (ref) publishes the row under it", async () => {
+  const out = await qml(`import { For } from "solid-js"; export function C(){ const [groups,setGroups]=createSignal([]); let box; return <For each={groups()}>{(g)=><div ref={box}><For each={g.items}>{(it)=><text>{g.name}</text>}</For></div>}</For>; }`);
+  const ids = out.match(/^\s*id: \S+$/gm) ?? [];
+  assert.equal(ids.length, 1, out);   // one object, one id: the ref's
+  assert.match(out, /id: _ref_box/);
+  assert.match(out, /property var __forItem: modelData/);
+  assert.match(out, /text: "" \+ \(_ref_box\.__forItem\.name\)/);
+  assert.doesNotMatch(out, /__for\d+/);
+});
+
+test("For without a nested loop is emitted exactly as before (no id, no extra property)", async () => {
+  const out = await qml(`import { For } from "solid-js"; export function C(){ const [items,setItems]=createSignal([]); return <For each={items()}>{(item)=><div><text>{item}</text></div>}</For>; }`);
+  assert.doesNotMatch(out, /__forItem|id: __for/);
+});
+
 test("Switch: each Match branch is LAZY and ASYNC (a CssIncubator gated by its when minus the priors)", async () => {
   const out = await qml(`import { Switch, Match } from "solid-js"; export function C(){ const [n,setN]=createSignal(0); return <Switch><Match when={n() === 0}><text>zero</text></Match><Match when={n() === 1}><text>one</text></Match></Switch>; }`);
   // Each branch INCUBATES its content only while its guard holds (async page mount).

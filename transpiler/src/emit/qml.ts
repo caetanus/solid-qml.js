@@ -1513,15 +1513,65 @@ function emitFor(propsArg: t.Node | undefined, children: t.Node[], scope: Scope,
   if (delegate) {
     const param = delegate.params[0];
     const itemName = param && t.isIdentifier(param) ? param.name : null;
-    const inner: Scope = { ...scope, locals: { ...(scope.locals ?? {}), ...(itemName ? { [itemName]: "modelData" } : {}) } };
     const body = delegate.body;
     if (!isHCall(body)) throw new Error("For delegate must return a single element in this plan");
+    // Every delegate binds its row to `modelData`, so a loop nested in this one SHADOWS it. When
+    // the row is used inside a nested <For>/<Index>, the delegate root publishes it as a property
+    // under an id, and every use goes through that id — QML resolves ids up the context chain,
+    // so the inner delegate still sees it. Without a nested use the emission is unchanged.
+    let rowRef = "modelData";
+    let publish: string | null = null;
+    if (itemName && usedInNestedLoop(body, itemName)) {
+      const counter = scope.hoverCounter ?? { n: 0 };
+      publish = `__for${counter.n++}`;
+      rowRef = `${publish}.__forItem`;
+    }
+    const inner: Scope = { ...scope, locals: { ...(scope.locals ?? {}), ...(itemName ? { [itemName]: rowRef } : {}) } };
+    const rows = emitQml(body, inner, level + 2);
+    if (publish) {
+      // The delegate is ONE h() call, so rows[0] is its root's `Type {` line; the publish lines go
+      // right under it. Fail loud if that ever stops being true.
+      if (!rows[0]?.trimEnd().endsWith("{")) throw new Error("For delegate root: expected `Type {` as the first emitted line");
+      // Reuse the root's own id if it has one (a ref / drag source): an object takes only one.
+      const rootPad = INDENT.repeat(level + 3);
+      const own = rows.find((l) => l.startsWith(`${rootPad}id: `));
+      if (own) {
+        const id = own.slice(`${rootPad}id: `.length).trim();
+        const fixed = rows.map((l) => l.split(`${publish}.__forItem`).join(`${id}.__forItem`));
+        rows.splice(0, rows.length, ...fixed);
+        rows.splice(1, 0, `${rootPad}property var __forItem: modelData`);
+      } else {
+        rows.splice(1, 0, `${rootPad}id: ${publish}`, `${rootPad}property var __forItem: modelData`);
+      }
+    }
     lines.push(`${pad}${INDENT}delegate: Component {`);
-    lines.push(...emitQml(body, inner, level + 2));
+    lines.push(...rows);
     lines.push(`${pad}${INDENT}}`);
   }
   lines.push(`${pad}}`);
   return lines;
+}
+
+/** Is `name` referenced inside a <For>/<Index> nested somewhere in `node`? (A shallow AST walk:
+ *  any identifier with that name under a nested loop's h() call counts — shadowing by an inner
+ *  parameter of the same name is rare enough to over-approximate, and only costs an id.) */
+function usedInNestedLoop(node: t.Node, name: string): boolean {
+  let found = false;
+  const walk = (n: unknown, nested: boolean) => {
+    if (found || !n || typeof n !== "object") return;
+    if (Array.isArray(n)) { for (const x of n) walk(x, nested); return; }
+    const nn = n as t.Node;
+    if (!(nn as { type?: string }).type) return;
+    if (nested && t.isIdentifier(nn) && nn.name === name) { found = true; return; }
+    let isLoop = false;
+    if (isHCall(nn)) {
+      const tag = (nn as t.CallExpression).arguments[0];
+      isLoop = t.isIdentifier(tag) && (tag.name === "For" || tag.name === "Index");
+    }
+    for (const key of t.VISITOR_KEYS[nn.type] ?? []) walk((nn as unknown as Record<string, unknown>)[key], nested || isLoop);
+  };
+  walk(node, false);
+  return found;
 }
 
 /** <Index each={E}>{(item, i) => …}</Index> → Repeater { model: E; delegate }. Unlike <For>, the
