@@ -107,7 +107,7 @@ test("widgets: TextField.qml has a T.TextField with background null", async () =
 test("widgets: TextField.qml bridges CSS colour and font from the wrapper's inherited properties", async () => {
   assert.match(TEXTFIELD_QML, /color: cssTheme\.parseColor\(root\.inheritedColor \|\| "#2b2b2b"\)/);
   assert.match(TEXTFIELD_QML, /font\.family: cssTheme\.resolveFontFamily\(root\.inheritedFontFamily/);
-  assert.match(TEXTFIELD_QML, /font\.pixelSize: cssTheme\.parseFontSize\(root\.inheritedFontSize/);
+  assert.match(TEXTFIELD_QML, /font\.pointSize: cssTheme\.parseFontSize\(root\.inheritedFontSize/);
 });
 
 test("widgets: <input class='x'> passes the class to the wrapper cssClass", async () => {
@@ -922,7 +922,7 @@ test("widgets: SpinBox.qml contentItem is TextInput with displayText and validat
 test("widgets: SpinBox.qml contentItem bridges color/font from the CssFill wrapper (root)", async () => {
   assert.match(SPINBOX_QML, /color: cssTheme\.parseColor\(root\.inheritedColor \|\| "#2b2b2b"\)/);
   assert.match(SPINBOX_QML, /font\.family: cssTheme\.resolveFontFamily\(root\.inheritedFontFamily/);
-  assert.match(SPINBOX_QML, /font\.pixelSize: cssTheme\.parseFontSize\(root\.inheritedFontSize/);
+  assert.match(SPINBOX_QML, /font\.pointSize: cssTheme\.parseFontSize\(root\.inheritedFontSize/);
 });
 
 test("widgets: SpinBox.qml up.indicator is CssFill cssClass ['spin-up'] at top-right", async () => {
