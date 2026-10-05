@@ -18,6 +18,7 @@ interface Props {
   draggable: boolean;
   dragData: t.Expression | undefined;
   onDrop: t.Node | undefined;
+  title?: t.Expression; // the HTML `title` attribute → a hover tooltip (W.ToolTip)
 }
 
 /** Build the cssClass property line(s) for a native element.
@@ -119,9 +120,10 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
   const clickLines: string[] = [];
   const stateLine: string[] = [];
   const clickHandler = emitHandler(props.onClick, scope);
+  let maId: string | null = null;
   if (clickHandler) {
     const counter = scope.hoverCounter ?? { n: 0 };
-    const maId = `__hover${counter.n++}`;
+    maId = `__hover${counter.n++}`;
     stateLine.push(`${pad}${INDENT}cssState: ${maId}.containsMouse ? ["hover"] : []`);
     clickLines.push(
       `${pad}${INDENT}MouseArea {`,
@@ -187,6 +189,24 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
       `${pad}${INDENT}}`,
     );
   }
+  // title="…" → a hover tooltip (W.ToolTip: Templates behaviour, CSS look). It follows the click
+  // area's hover when there is one; otherwise a passive HoverHandler, which takes no clicks.
+  const tipLines: string[] = [];
+  if (props.title) {
+    let hover = maId ? `${maId}.containsMouse` : "";
+    if (!maId) {
+      const counter = scope.hoverCounter ?? { n: 0 };
+      const hid = `__tip${counter.n++}`;
+      tipLines.push(`${pad}${INDENT}HoverHandler {`, `${pad}${INDENT}${INDENT}id: ${hid}`, `${pad}${INDENT}}`);
+      hover = `${hid}.hovered`;
+    }
+    tipLines.push(
+      `${pad}${INDENT}W.ToolTip {`,
+      `${pad}${INDENT}${INDENT}text: ${emitExpr(props.title, { ...scope, mode: "binding" })}`,
+      `${pad}${INDENT}${INDENT}shown: ${hover}`,
+      `${pad}${INDENT}}`,
+    );
+  }
   // Block primitive → the cached W.Div component (compile once, reuse/AOT — see Div.qml). Omit
   // cssPrimitive for <div> (the component default); set it for section/article/etc. Interactive
   // variants keep their MouseArea/Drag/DropArea as children of the instance (stateLine/clickLines).
@@ -200,6 +220,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
     ...(tag !== "div" ? [`${pad}${INDENT}cssPrimitive: ${JSON.stringify(tag)}`] : []),
     ...emitChildren(children as t.Node[], scope, level + 1),
     ...clickLines,
+    ...tipLines,
     `${pad}}`,
   ];
 }
@@ -1399,6 +1420,7 @@ function readProps(propsArg: t.Node | undefined): Props {
     if (p.key.name === "dragData" && t.isExpression(p.value)) props.dragData = p.value;
     if (p.key.name === "onDrop") props.onDrop = p.value;
     if (p.key.name === "ref" && t.isIdentifier(p.value)) props.ref = p.value.name;
+    if (p.key.name === "title" && t.isExpression(p.value)) props.title = p.value;
   }
   return props;
 }

@@ -55,14 +55,14 @@ qml /tmp/m.qml    # click "Open"
 - **Also mispositions** → the problem is deeper (coordinate mapping through the CSS layout) and
   needs its own investigation.
 
-**A2. Tooltips (`title` → platform tooltip).** *Mechanism proven, wiring not shipped.*
-The `ToolTip` attached type works on our widgets (verified: `b.ToolTip.visible === true`, text set,
-the style's box appears). What blocked shipping: offscreen renders the tooltip as a narrow strip with
-no text — **and it does the same on a plain `Item` with no CSS engine involved**, i.e. a harness
-artifact, not our bug. Remaining work: map the HTML `title` attribute to `ToolTip.text` +
-`ToolTip.visible: <hover>` in both back-ends, then verify on a real desktop. Decide there whether the
-tooltip visuals come from `QtQuick.Controls` (platform-styled, the native default) or a CSS-styled
-`contentItem`.
+**A2. Tooltips (`title` → tooltip).** *Shipped in the QML back-end (2026-10-05).* Owner's decision:
+QtQuick.Templates behaviour, CSS look — `W.ToolTip` (`src/widgets/tooltip.{h,cpp}`) is a `T.ToolTip`
+(600 ms delay, in-scene `Popup.Item`, below the element, flipped above at the window's bottom,
+`margins: 6`) styled by `.tooltip` / `.tooltip-text` (factory look in `base.css`). The transpiler maps
+`title={…}` on a generic element to it, shown on the element's hover — its click area's
+`containsMouse`, or a passive `HoverHandler`. Verified under Xvfb with a real pointer (solid-mail's
+toolbar). Still open: the AOT back-end (`emit/cpp` ignores `title`), `title` on text tags and
+`<button>` (only the generic element path carries it today).
 
 ### Pending — doable headless (no live session needed)
 

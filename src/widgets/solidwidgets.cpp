@@ -22,6 +22,7 @@
 #include "tableview.h"
 #include "textinputs.h"
 #include "toolbar.h"
+#include "tooltip.h"
 #include "treeview.h"
 #include "tray.h"
 #include "tumbler.h"
@@ -60,6 +61,7 @@ void registerTypes()
     qmlRegisterType<SwipeView>("solidqml.Widgets", 1, 0, "SwipeView");
     qmlRegisterType<PageIndicator>("solidqml.Widgets", 1, 0, "PageIndicator");
     qmlRegisterType<Drawer>("solidqml.Widgets", 1, 0, "Drawer");
+    qmlRegisterType<ToolTip>("solidqml.Widgets", 1, 0, "ToolTip");
     qmlRegisterType<Details>("solidqml.Widgets", 1, 0, "Details");
     qmlRegisterType<Dialog>("solidqml.Widgets", 1, 0, "Dialog");
     qmlRegisterType<Select>("solidqml.Widgets", 1, 0, "Select");

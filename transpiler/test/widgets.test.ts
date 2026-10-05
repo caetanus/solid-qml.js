@@ -58,6 +58,7 @@ const TEXTFIELD_QML = TEXTINPUTS_CPP.slice(0, TEXTINPUTS_CPP.indexOf("T.TextArea
 // Button is C++ now (widgets-to-cpp batch 2) — assertions read the C++ surface.
 const BUTTON_CPP = await readFile(fileURLToPath(new URL("../../src/widgets/button.h", import.meta.url)), "utf8")
   + await readFile(fileURLToPath(new URL("../../src/widgets/button.cpp", import.meta.url)), "utf8");
+const TOOLTIP_CPP = await readFile(fileURLToPath(new URL("../../src/widgets/tooltip.cpp", import.meta.url)), "utf8");
 const DIALOG_QML = await readFile(fileURLToPath(new URL("../../src/widgets/dialog.cpp", import.meta.url)), "utf8");
 
 test("default button: <button type=\"submit\"> emits isDefault; a plain button does not", async () => {
@@ -1544,4 +1545,15 @@ test("tabstop: a radio group is ONE tab stop — checked radio (or first) only",
   assert.match(out, /activeFocusOnTab: solidTabstop\.enabled && \(__input0\.checked \|\| \(!__group_g\.checkedButton && __group_g\.buttons\.length > 0 && __group_g\.buttons\[0\] === __input0\)\)/);
   const bare = await qml(`export function F(){ return <input type="radio" />; }`);
   assert.match(bare, /activeFocusOnTab: solidTabstop\.enabled\n/);
+});
+
+test("ToolTip: Templates behaviour, CSS look, anchored at the titled element", () => {
+  assert.match(TOOLTIP_CPP, /T\.ToolTip \{/);
+  assert.match(TOOLTIP_CPP, /parent: root\.parent/);
+  assert.match(TOOLTIP_CPP, /visible: root\.shown && root\.text\.length > 0/);
+  assert.match(TOOLTIP_CPP, /delay: 600/);
+  assert.match(TOOLTIP_CPP, /popupType: T\.Popup\.Item/);
+  assert.match(TOOLTIP_CPP, /cssClass: \["tooltip"\]/);
+  assert.match(TOOLTIP_CPP, /cssClass: \["tooltip-text"\]/);
+  assert.match(TOOLTIP_CPP, /property Item cssAncestor: root\.parent/);
 });

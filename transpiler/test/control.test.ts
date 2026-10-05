@@ -123,3 +123,21 @@ test("onClick without an interactive descendant keeps the default stacking", asy
   const out = await qml(`export function C(){ const [n,setN]=createSignal(0); return <div class="row" onClick={() => setN(1)}><text>t</text></div>; }`);
   assert.doesNotMatch(out, /z: -1/);
 });
+
+test("title: a clickable element's tooltip follows its click area's hover", async () => {
+  const out = await qml(`export function C(){ const [n,setN]=createSignal(0); return <div class="tool" title="Arquivar" onClick={() => setN(1)}><text>▣</text></div>; }`);
+  const id = out.match(/MouseArea \{\s*\n\s*id: (__hover\d+)/)![1];
+  assert.match(out, new RegExp(`W\\.ToolTip \\{\\s*\\n\\s*text: "Arquivar"\\s*\\n\\s*shown: ${id}\\.containsMouse`));
+  assert.doesNotMatch(out, /HoverHandler/);
+});
+
+test("title: a plain element gets a passive HoverHandler for its tooltip", async () => {
+  const out = await qml(`export function C(){ const [t,setT]=createSignal("dica"); return <div class="x" title={t()}><text>a</text></div>; }`);
+  const id = out.match(/HoverHandler \{\s*\n\s*id: (__tip\d+)/)![1];
+  assert.match(out, new RegExp(`W\\.ToolTip \\{\\s*\\n\\s*text: t\\s*\\n\\s*shown: ${id}\\.hovered`));
+});
+
+test("title: an element without one gets no tooltip", async () => {
+  const out = await qml(`export function C(){ return <div class="x"><text>a</text></div>; }`);
+  assert.doesNotMatch(out, /ToolTip|HoverHandler/);
+});
