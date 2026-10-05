@@ -105,3 +105,21 @@ test("lowercase <h> is an intrinsic tag from Babel output, not a component", asy
   assert.match(out, /cssPrimitive: "h"/);
   assert.match(out, /cssClass: \["headline"\]/);
 });
+
+test("onClick nested in onClick: the outer click area sits beneath the content", async () => {
+  // A filling MouseArea is declared after the children, so it lay ON TOP of every descendant and
+  // swallowed the inner element's click (a chip inside a clickable list row never fired). On the
+  // web the innermost target gets the click; the outer area goes under the content instead.
+  const out = await qml(`export function C(){ const [n,setN]=createSignal(0); return <div class="row" onClick={() => setN(1)}><text>t</text><div class="chip" onClick={() => setN(2)}><text>c</text></div></div>; }`);
+  const areas = out.split("MouseArea {").slice(1);
+  assert.equal(areas.length, 2, out);
+  // the row's area is the LAST one emitted (after its children) and is lowered...
+  assert.match(areas[1], /^\s*id: __hover\d+\s*\n\s*z: -1/);
+  // ...the chip's own area keeps the default stacking.
+  assert.doesNotMatch(areas[0].split("}")[0], /z: -1/);
+});
+
+test("onClick without an interactive descendant keeps the default stacking", async () => {
+  const out = await qml(`export function C(){ const [n,setN]=createSignal(0); return <div class="row" onClick={() => setN(1)}><text>t</text></div>; }`);
+  assert.doesNotMatch(out, /z: -1/);
+});

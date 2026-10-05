@@ -126,6 +126,11 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
     clickLines.push(
       `${pad}${INDENT}MouseArea {`,
       `${pad}${INDENT}${INDENT}id: ${maId}`,
+      // Declared after the children, a filling area lies ON TOP of them and swallowed an inner
+      // element's own click (a chip inside a clickable row never fired). With an interactive
+      // descendant, the area goes beneath the content, so — as on the web — the innermost target
+      // gets the click and plain content (text, fills) still passes it down to this one.
+      ...(hasInteractiveDescendant(children as t.Node[]) ? [`${pad}${INDENT}${INDENT}z: -1`] : []),
       `${pad}${INDENT}${INDENT}anchors.fill: parent`,
       `${pad}${INDENT}${INDENT}hoverEnabled: true`,
       `${pad}${INDENT}${INDENT}cursorShape: Qt.PointingHandCursor`,
@@ -1550,6 +1555,31 @@ function emitFor(propsArg: t.Node | undefined, children: t.Node[], scope: Scope,
   }
   lines.push(`${pad}}`);
   return lines;
+}
+
+/** Does a subtree hold an element that takes clicks itself — its own onClick, or a native
+ *  control (<button>, <input>, <textarea>, <select>)? A shallow AST walk over the h() calls. */
+function hasInteractiveDescendant(nodes: t.Node[]): boolean {
+  const NATIVE = new Set(["button", "input", "textarea", "select"]);
+  let found = false;
+  const walk = (n: unknown) => {
+    if (found || !n || typeof n !== "object") return;
+    if (Array.isArray(n)) { for (const x of n) walk(x); return; }
+    const nn = n as t.Node;
+    if (!(nn as { type?: string }).type) return;
+    if (isHCall(nn)) {
+      const [tag, props] = (nn as t.CallExpression).arguments;
+      if (t.isStringLiteral(tag) && NATIVE.has(tag.value)) { found = true; return; }
+      if (props && t.isObjectExpression(props)
+          && props.properties.some((p) => t.isObjectProperty(p) && t.isIdentifier(p.key, { name: "onClick" }))) {
+        found = true;
+        return;
+      }
+    }
+    for (const key of t.VISITOR_KEYS[nn.type] ?? []) walk((nn as unknown as Record<string, unknown>)[key]);
+  };
+  walk(nodes);
+  return found;
 }
 
 /** Is `name` referenced inside a <For>/<Index> nested somewhere in `node`? (A shallow AST walk:
