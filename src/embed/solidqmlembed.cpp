@@ -124,6 +124,21 @@ void attachWindow(QQmlEngine *engine, QQuickWindow *window)
     QObject::connect(window, &QQuickWindow::heightChanged, &rt->theme, sync);
 }
 
+MountBatch::MountBatch(QQmlEngine *engine)
+    : m_layout(nullptr)
+{
+    if (EngineRuntime *rt = engine ? runtimeFor(engine) : nullptr) {
+        m_layout = &rt->layout;
+        rt->layout.beginBatch();
+    }
+}
+
+MountBatch::~MountBatch()
+{
+    if (m_layout)
+        static_cast<QmlCss::CssLayoutEngine *>(m_layout)->endBatch();
+}
+
 SolidIsland::SolidIsland(QQuickItem *parent)
     : QQuickItem(parent)
 {
@@ -199,20 +214,25 @@ void SolidIsland::build()
         emit error(component.errorString());
         return;
     }
-    // Root context: the generated components resolve cssTheme/solidTabstop/… from it.
-    QObject *o = component.create(engine->rootContext());
-    auto *item = qobject_cast<QQuickItem *>(o);
-    if (!item) {
-        delete o;
-        emit error(QStringLiteral("island root is not an Item: ") + resolved.toString());
-        return;
+    QQuickItem *item = nullptr;
+    {
+        // One layout for the whole island, once it is created, parented and sized.
+        MountBatch mount(engine);
+        // Root context: the generated components resolve cssTheme/solidTabstop/… from it.
+        QObject *o = component.create(engine->rootContext());
+        item = qobject_cast<QQuickItem *>(o);
+        if (!item) {
+            delete o;
+            emit error(QStringLiteral("island root is not an Item: ") + resolved.toString());
+            return;
+        }
+        item->setParent(this);
+        item->setParentItem(this);
+        item->setSize(size());
     }
-    item->setParent(this);
-    item->setParentItem(this);
-    item->setSize(size());
     m_root = item;
     emit rootItemChanged();
-    emit ready();
+    emit ready(); // laid out by now: a ready handler reads final geometry
 }
 
 } // namespace SolidQmlEmbed

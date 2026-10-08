@@ -48,6 +48,23 @@ void loadCss(QQmlEngine *engine, const QUrl &cssFile);
 void loadCssString(QQmlEngine *engine, const QString &css);
 void attachWindow(QQmlEngine *engine, QQuickWindow *window);
 
+// Brackets the creation of a solid tree (an engine.load(), a component create) so its layout runs
+// ONCE when the tree is complete instead of once per element as each one completes:
+//
+//     { SolidQmlEmbed::MountBatch mount(&engine); engine.load(url); }
+//
+// No-op on an engine init() was not called on. SolidIsland already does this for its source.
+class MountBatch {
+public:
+    explicit MountBatch(QQmlEngine *engine);
+    ~MountBatch();
+    MountBatch(const MountBatch &) = delete;
+    MountBatch &operator=(const MountBatch &) = delete;
+
+private:
+    QObject *m_layout; // the engine's QmlCss::CssLayoutEngine, or null
+};
+
 class SolidIsland : public QQuickItem {
     Q_OBJECT
     Q_PROPERTY(QUrl source READ source WRITE setSource NOTIFY sourceChanged)

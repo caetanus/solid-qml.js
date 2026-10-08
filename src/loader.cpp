@@ -290,7 +290,10 @@ int main(int argc, char **argv)
     SolidWorkers::WebWorkerFactory::install(&engine, QUrl::fromLocalFile(QFileInfo(qmlPath).absolutePath() + QLatin1Char('/')));
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,
                      &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
+    // One layout for the whole tree once it is built, not one per element as each completes.
+    cssLayout.beginBatch();
     engine.load(url);
+    cssLayout.endBatch();
 
     if (engine.rootObjects().isEmpty()) {
         qWarning().noquote() << "solid-qml-loader: no root object loaded";

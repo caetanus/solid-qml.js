@@ -105,7 +105,10 @@ int main(int argc, char **argv)
 
     const QUrl windowUrl = appDir.resolved(QUrl(QStringLiteral("App.generated.qml")));
     TerminalPanes::setWindowUrl(windowUrl); // so a pane detach can spawn a full new solidterm window
-    engine.load(windowUrl);
+    {
+        SolidQmlEmbed::MountBatch mount(&engine); // one layout for the whole UI, not one per element
+        engine.load(windowUrl);
+    }
     if (engine.rootObjects().isEmpty())
         return 1;
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
