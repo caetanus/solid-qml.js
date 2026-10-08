@@ -575,8 +575,10 @@ function emitInput(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
   // Unique id for this control; shared counter keeps ids monotonically unique across the component.
   // The id is kept on the W.<Name> instance so the controlled Binding (target __inputN) and any
   // handler value-reads resolve against the component's two-way aliases across the boundary.
+  // A ref={x} names the control itself (its id IS the ref), so `x.forceActiveFocus()` reaches it.
   const counter = scope.inputCounter ?? { n: 0 };
-  const ctlId = `__input${counter.n++}`;
+  const ctlId = props.ref ? `_ref_${safeName(props.ref)}` : `__input${counter.n++}`;
+  if (props.ref && scope.refs) scope.refs.push(props.ref);
 
   const wp = readWidgetProps(propsArg, scope);
   const { type, role } = wp;
@@ -652,7 +654,8 @@ function emitTextarea(propsArg: t.Node | undefined, props: Props, scope: Scope, 
   const classLine = buildCssClassLine(props, scope, i(1));
 
   const counter = scope.inputCounter ?? { n: 0 };
-  const ctlId = `__input${counter.n++}`;
+  const ctlId = props.ref ? `_ref_${safeName(props.ref)}` : `__input${counter.n++}`;
+  if (props.ref && scope.refs) scope.refs.push(props.ref);
 
   // One .qml per component: instantiate W.TextArea (the T.TextArea + wrap + placeholder + CSS-bridged
   // colour/font live in TextArea.qml). Keep the id so the controlled Binding resolves.
