@@ -31,7 +31,7 @@ const ACTIONS = [
   { key: "focusPrev", label: "Focus previous pane", def: "Alt+Left" },
 ];
 
-export function Term() {
+export function Term(props: { onTitle: (t: string) => void }) {
   const [uiFontFamily, setUiFontFamily] = createSignal(termConfig.getString("fontFamily", "monospace"));
   const [uiFontSize, setUiFontSize] = createSignal(termConfig.getInt("fontSize", 15));
   const [scheme, setScheme] = createSignal(termConfig.getString("scheme", "system"));
@@ -218,7 +218,7 @@ export function Term() {
           handleColor={sysTheme.window}
           reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), kZoomPane(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]}
           onAccelerator={(seq) => onAccel(seq)}
-          onTitleChanged={(t) => setTitle(t)}
+          onTitleChanged={(t) => { setTitle(t); props.onTitle(t); }}
         />
         <ContextMenu class="tmenu">
           <MenuItem onClick={() => term.copyFocused()}>&Copy</MenuItem>
