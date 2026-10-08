@@ -116,6 +116,10 @@ protected:
     void itemChange(ItemChange change, const ItemChangeData &data) override;
     void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
     void keyPressEvent(QKeyEvent *event) override;
+    // Composed text (dead keys: ´ + a → á, Compose sequences, IMEs) arrives as an input-method
+    // COMMIT, not as a key press — and only for an item that accepts input methods.
+    void inputMethodEvent(QInputMethodEvent *event) override;
+    QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;

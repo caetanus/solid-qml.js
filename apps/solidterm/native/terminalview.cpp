@@ -5,6 +5,7 @@
 #include <QGuiApplication>
 #include <QHoverEvent>
 #include <QKeyEvent>
+#include <QInputMethodEvent>
 #include <QKeySequence>
 #include <QRegularExpression>
 #include <QTimer>
@@ -111,6 +112,9 @@ TerminalView::TerminalView(QQuickItem *parent)
     setActiveFocusOnTab(true);
     setAcceptHoverEvents(true);               // hover to detect/underline links
     setFlag(ItemHasContents, true);
+    // Without this Qt's compose/IME layer never engages for the terminal: a dead key is dropped
+    // and the next letter arrives bare (pt-BR ´ + a typed "a", not "á").
+    setFlag(ItemAcceptsInputMethod, true);
 
     m_blinkTimer = new QTimer(this);
     m_blinkTimer->setInterval(530);
@@ -658,6 +662,37 @@ void TerminalView::keyToVTerm(QKeyEvent *event)
         const auto ucs4 = text.toUcs4();
         for (const char32_t c : ucs4)
             vterm_keyboard_unichar(m_vt, c, event->modifiers() & Qt::AltModifier ? VTERM_MOD_ALT : VTERM_MOD_NONE);
+    }
+}
+
+void TerminalView::inputMethodEvent(QInputMethodEvent *event)
+{
+    const QString commit = event->commitString();
+    // Pre-edit (the pending dead key / IME composition) is not drawn in the grid; only the
+    // committed text reaches the shell, exactly as a typed character would.
+    if (m_vt && !m_readOnly && !commit.isEmpty()) {
+        if (m_scrollOffset > 0) {
+            m_scrollOffset = 0;
+            update();
+        }
+        resetBlink();
+        for (const char32_t c : commit.toUcs4())
+            vterm_keyboard_unichar(m_vt, c, VTERM_MOD_NONE);
+    }
+    event->accept();
+}
+
+QVariant TerminalView::inputMethodQuery(Qt::InputMethodQuery query) const
+{
+    switch (query) {
+    case Qt::ImEnabled:
+        return true;
+    case Qt::ImCursorRectangle: // where an IME candidate popup should appear: the cursor cell
+        return QRectF(m_cursor.col * m_cellW, m_cursor.row * m_cellH, m_cellW, m_cellH);
+    case Qt::ImHints: // a shell, not prose: no auto-capitalisation / prediction
+        return int(Qt::ImhNoAutoUppercase | Qt::ImhNoPredictiveText | Qt::ImhPreferLatin);
+    default:
+        return QQuickItem::inputMethodQuery(query);
     }
 }
 
