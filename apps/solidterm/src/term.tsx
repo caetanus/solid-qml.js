@@ -22,6 +22,13 @@ const SCHEMES: Record<string, { bg: string; fg: string; palette?: string[] }> = 
     palette: ["#3b4252", "#ff8590", "#8ee6a0", "#f5d27a", "#7cb8ff", "#d9a2ff", "#6fe0ea", "#d4dae3",
               "#8a93a6", "#ff9aa3", "#aaf0b8", "#ffe39c", "#a3ceff", "#e6bfff", "#97ecf2", "#f4f7fb"],
   },
+  // Monokai: the classic normal colours (its pink #f92672 is 3.9:1 — kept, it IS Monokai); the
+  // bright half lifted so it reads as brighter, and bright black (comments) lifted to 4.9:1.
+  monokai: {
+    bg: "#272822", fg: "#f8f8f2",
+    palette: ["#3e3d32", "#f92672", "#a6e22e", "#f4bf75", "#66d9ef", "#ae81ff", "#a1efe4", "#f8f8f2",
+              "#9a9580", "#ff6b98", "#c1f04e", "#ffd699", "#8ce5f7", "#c4a3ff", "#c2f7ef", "#f9f8f5"],
+  },
   solarized: { bg: "#002b36", fg: "#93a1a1" },
   gruvbox: { bg: "#282828", fg: "#ebdbb2" },
   paper: { bg: "#f7f2e9", fg: "#3a3532" },
@@ -320,6 +327,7 @@ export function Term(props: { onTitle: (t: string) => void }) {
                 <option value="system">System</option>
                 <option value="midnight">Midnight</option>
                 <option value="midnight-hc">Midnight (high contrast)</option>
+                <option value="monokai">Monokai</option>
                 <option value="solarized">Solarized Dark</option>
                 <option value="gruvbox">Gruvbox</option>
                 <option value="paper">Paper (light)</option>
