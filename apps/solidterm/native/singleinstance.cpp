@@ -65,15 +65,37 @@ bool standaloneRequested(int argc, char **argv)
     return false;
 }
 
+// "inode:mtime" of a file, or empty. Part of the socket identity: see socketPath().
+std::string fileStamp(const std::string &path)
+{
+    struct stat st;
+    if (::stat(path.c_str(), &st) != 0)
+        return {};
+    return std::to_string(st.st_ino) + ':' + std::to_string(st.st_mtim.tv_sec) + '.'
+        + std::to_string(st.st_mtim.tv_nsec);
+}
+
 std::string socketPath()
 {
     char exe[PATH_MAX] = {};
     const ssize_t n = ::readlink("/proc/self/exe", exe, sizeof exe - 1);
-    std::string key = n > 0 ? std::string(exe, size_t(n)) : std::string("solidterm");
+    const std::string exePath = n > 0 ? std::string(exe, size_t(n)) : std::string("solidterm");
+    std::string key = exePath;
     for (const char *v : { "SOLIDTERM_DIR", "WAYLAND_DISPLAY", "DISPLAY", "QT_QPA_PLATFORM" }) {
         key += '\n';
         key += env(v);
     }
+    // The BUILD is part of the identity too: after an install a still-running instance keeps the
+    // old code (and its already-compiled old UI), so forwarding to it would hand out stale windows
+    // forever. A new binary or a regenerated UI gets its own socket; the old instance keeps serving
+    // only the windows it already has until they close.
+    key += '\n';
+    key += fileStamp(exePath);
+    std::string appDir = env("SOLIDTERM_DIR");
+    if (appDir.empty())
+        appDir = exePath.substr(0, exePath.rfind('/')) + "/../share/solidterm";
+    key += '\n';
+    key += fileStamp(appDir + "/App.generated.qml");
     std::string dir = env("XDG_RUNTIME_DIR");
     if (dir.empty())
         dir = "/tmp";
