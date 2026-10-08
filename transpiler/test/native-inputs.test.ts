@@ -404,12 +404,12 @@ test("native-inputs: multiple widgets in one tree get distinct control ids", asy
   assert.match(out, /id: __input2/);
 });
 
-test("native-inputs: guard (Show) gates the wrapper visibility", async () => {
+test("native-inputs: a control under Show mounts only while shown", async () => {
   const out = await qmlType(`
     export function F() {
       const [open, setOpen] = createSignal(true);
       return <div><Show when={open()}><Dial /></Show></div>;
     }
   `);
-  assert.match(out, /visible: !!\(open\)/);
+  assert.match(out, /Repeater \{\s*model: \(open\) \? 1 : 0\s*W\.Dial \{/);
 });

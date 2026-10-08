@@ -95,8 +95,9 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     };
     walk(render);
   }
+  const lazyRefs = new Set<string>();
   const scope: Scope = {
-    table, mode: "binding", propsParam: props.param ?? undefined, propAliases, components, contexts, refs: collectedRefs, foreignQml, foreignImports,
+    table, mode: "binding", propsParam: props.param ?? undefined, propAliases, components, contexts, refs: collectedRefs, lazyRefs, foreignQml, foreignImports,
     inputCounter, hoverCounter, usedWidgets, buttonGroups, resources: resources.map((r) => r.name), jsImports,
     ...((moduleConstDecls.size > 0 || Object.keys(refAliases).length > 0) ? { locals: { ...constAliases, ...refAliases } } : {}),
     ...(mutableLocals ? { mutableLocals } : {}),
@@ -146,6 +147,8 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     }
   }
   const decls: string[] = rootHasId ? [] : [`${INDENT}id: __self`];
+  // Refs inside a lazily mounted <Show>: the element publishes itself here while it is mounted.
+  for (const name of lazyRefs) decls.push(`${INDENT}property var ${name}: null`);
   // Prop reads inside reactive initializers (e.g. createSignal(props.x || 0)) resolve through the
   // props param to the sibling prop property. (init mode is non-self-qualified → bare property ref.)
   const initScope: Scope = { table, mode: "init", propsParam: props.param ?? undefined, propAliases, jsImports };

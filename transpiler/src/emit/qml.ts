@@ -1441,32 +1441,57 @@ function isChildrenMarker(n: t.Node, scope: Scope): boolean {
     t.isIdentifier(n.object, { name: scope.propsParam }) && t.isIdentifier(n.property, { name: "children" });
 }
 
-/** <Show when={C} fallback={F}>children</Show>: emit the children gated by `visible: !!(C)`, and the
- *  fallback element(s) gated by the inverted guard `visible: !(C)`. A fragment fallback (h(hFrag,...))
- *  has each of its children individually inverted-gated. */
+/** <Show when={C} fallback={F}>children</Show> → LAZY, like Solid's Show: the children exist only
+ *  while C is truthy (created when it turns true, destroyed when it turns false) and the fallback
+ *  only while it is falsy. Each child becomes `Repeater { model: (C) ? 1 : 0 }` whose delegate is
+ *  the child — the mechanism <Index> uses: the Repeater parents its delegate to the containing box's
+ *  content holder, so it is a DIRECT layout child exactly as before, and creation is SYNCHRONOUS (a
+ *  handler that opens a Show and then focuses a ref inside it still finds the element). The old
+ *  emission only toggled `visible`, so every hidden subtree — dialogs, toolbars, whole panels — was
+ *  built at startup anyway. */
 function emitShow(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, outerGuard?: string): string[] {
   const when = readWhen(propsArg, scope);
   const guard = outerGuard ? `(${outerGuard}) && (${when})` : when;
+  const inverse = outerGuard ? `(${outerGuard}) && !(${when})` : `!(${when})`;
   const out: string[] = [];
-  for (const child of children) {
-    if (isHCall(child)) out.push(...emitQml(child, scope, level, guard));
-  }
-  // Emit fallback element(s) with the inverted guard
-  const fallback = readFallback(propsArg, scope);
-  for (const fb of fallback) {
-    if (isHCall(fb)) {
-      // Check for a fragment: h(hFrag, null, ...kids)
-      const { tag: tagArg, children: fbKids } = hParts(fb);
-      if (isFragmentTag(tagArg)) {
-        for (const kid of fbKids) {
-          if (isHCall(kid)) {
-            out.push(...emitWithInvertedGuard(kid, scope, level, when, outerGuard));
-          }
-        }
-      } else {
-        out.push(...emitWithInvertedGuard(fb, scope, level, when, outerGuard));
-      }
+  for (const child of children) out.push(...lazyGate(child, guard, scope, level));
+  for (const fb of readFallback(propsArg, scope)) out.push(...lazyGate(fb, inverse, scope, level));
+  return out;
+}
+
+/** One `Repeater { model: (cond) ? 1 : 0 }` per element (a fragment gates each of its children). */
+function lazyGate(node: t.Node, cond: string, scope: Scope, level: number): string[] {
+  if (!isHCall(node)) return [];
+  const { tag } = hParts(node);
+  if (isFragmentTag(tag)) return hParts(node).children.flatMap((k) => lazyGate(k as t.Node, cond, scope, level));
+  const pad = INDENT.repeat(level);
+  const body = publishLazyRefs(emitQml(node, scope, level + 1), scope);
+  if (!body.length) return [];
+  return [`${pad}Repeater {`, `${pad}${INDENT}model: (${cond}) ? 1 : 0`, ...body, `${pad}}`];
+}
+
+/** A ref'd element inside a lazy delegate: its id is local to the delegate, so it publishes itself
+ *  into the component-root property `_ref_<x>` (declared by emitComponentType) while it lives. Uses
+ *  inside the delegate switch to the local id; uses elsewhere read the root property unchanged. */
+function publishLazyRefs(lines: string[], scope: Scope): string[] {
+  let out = lines;
+  for (let i = 0; i < out.length; i++) {
+    const m = /^(\s*)id: (_ref_\w+)\s*$/.exec(out[i]);
+    if (!m || m[2].endsWith("__lazy")) continue;
+    const [, ws, name] = m;
+    if (!scope.lazyRefs) throw new Error(`ref ${name} inside <Show>: no component root to publish it on`);
+    // The element must not already carry its own completion handler (one per object in QML).
+    for (let j = i + 1; j < out.length && out[j].startsWith(ws) && !/^\s*\}/.test(out[j].slice(0, ws.length + 1)); j++) {
+      if (out[j].startsWith(`${ws}Component.onCompleted:`) || out[j].startsWith(`${ws}Component.onDestruction:`))
+        throw new Error(`ref ${name} inside <Show>: its element already has a Component completion handler`);
     }
+    const local = `${name}__lazy`;
+    const word = new RegExp(`\\b${name}\\b`, "g");
+    out = out.map((l) => l.replace(word, local));
+    out.splice(i + 1, 0,
+      `${ws}Component.onCompleted: ${name} = ${local}`,
+      `${ws}Component.onDestruction: if (${name} === ${local}) ${name} = null`);
+    scope.lazyRefs.add(name);
   }
   return out;
 }

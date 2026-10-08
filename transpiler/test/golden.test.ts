@@ -126,13 +126,13 @@ test("golden: context.CounterProvider.tsx emits provider with folded init (Optio
   assert.match(app.entry, /cssPrimitive: "div"/);             // provider root is transparent div
 });
 
-test("golden: show-fallback.tsx emits child with positive guard and fallback with inverted guard", async () => {
+test("golden: show-fallback.tsx mounts the child while `when` holds and the fallback otherwise", async () => {
   const src = await readFile(`${dir}show-fallback.tsx`, "utf8");
   const got = (await generate(src, "show-fallback.tsx")).entry;
   const want = await readFile(`${dir}show-fallback.expected.qml`, "utf8");
   assert.equal(got.trimEnd(), want.trimEnd());
-  assert.match(got, /visible: !!\(ok\)[\s\S]*text: "yes"/);
-  assert.match(got, /visible: !\(ok\)[\s\S]*text: "none"/);
+  assert.match(got, /model: \(ok\) \? 1 : 0\s*W\.Text \{\s*text: "yes"/);
+  assert.match(got, /model: \(!\(ok\)\) \? 1 : 0\s*W\.Text \{\s*text: "none"/);
 });
 
 test("golden: img-demo.tsx emits W.Image with src binding", async () => {

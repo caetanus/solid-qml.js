@@ -27,6 +27,10 @@ export interface Scope {
    *  ref={x} is encountered). Read by emitComponentType after emitting the render tree to populate
    *  setupScope.locals so onMount bodies resolve the ref to its QML id. */
   refs?: string[];
+  /** Collector: refs whose element lives inside a lazily mounted subtree (<Show>). Their QML id is
+   *  not reachable from outside the delegate, so the element PUBLISHES itself into a root property
+   *  of the same name; emitComponentType declares one `property var _ref_<x>` per entry. */
+  lazyRefs?: Set<string>;
   /** Zero-arg "accessor" names whose call resolves to a fixed QML expression — e.g. an <Index>
    *  row accessor `item()` → `modelData`. Distinct from `locals` (which substitutes the bare
    *  identifier) because here the CALL `name()` is what maps. */

@@ -78,9 +78,9 @@ test("containers: the C++ ToolBar hosts the T.ToolBar chrome internals in its sn
   assert.match(src, /contentItem: Item \{ \}/);
 });
 
-test("containers: <ToolBar> under <Show> carries the visible guard", async () => {
+test("containers: <ToolBar> under <Show> mounts only while shown", async () => {
   const out = await qml(`export function F(){ const [shown, setShown] = createSignal(true); return <Show when={shown()}><ToolBar /></Show>; }`);
-  assert.match(out, /visible: !!\(shown\)/);
+  assert.match(out, /Repeater \{\s*model: \(shown\) \? 1 : 0\s*W\.ToolBar \{/);
 });
 
 // ---------------------------------------------------------------------------
@@ -292,7 +292,7 @@ test("containers: <Drawer edge='bottom' size={0.5}> passes edge + size to the co
   assert.match(out, /size: 0\.5/);
 });
 
-test("containers: <Drawer> inside <Show> folds the guard into the open Binding", async () => {
+test("containers: <Drawer> inside <Show> exists only while shown; open stays its own binding", async () => {
   const out = await qml(`
     export function F() {
       const [shown, setShown] = createSignal(true);
@@ -300,7 +300,8 @@ test("containers: <Drawer> inside <Show> folds the guard into the open Binding",
       return <Show when={shown()}><Drawer open={open()}><text>Hi</text></Drawer></Show>;
     }
   `);
-  assert.match(out, /value: !!\(shown\) && !!\(open\)/);
+  assert.match(out, /Repeater \{\s*model: \(shown\) \? 1 : 0\s*W\.Drawer \{/);
+  assert.doesNotMatch(out, /!!\(shown\)/);
 });
 
 test("containers: the C++ Drawer's snippet hosts the T.Drawer + overlay/scrim/cssAncestor internals", async () => {

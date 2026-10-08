@@ -47,5 +47,5 @@ test("<Show> inside a <For> delegate gates on the item", async () => {
     wrap(`<div class="l"><For each={ITEMS}>{(it) => <div class="row"><Show when={it.hot}><div class="flag" /></Show></div>}</For></div>`,
          `const ITEMS = [{ hot: true }, { hot: false }];`),
     "t.tsx");
-  assert.match(app.entry, /visible: !!\(modelData\.hot\)/);
+  assert.match(app.entry, /model: \(modelData\.hot\) \? 1 : 0/);
 });

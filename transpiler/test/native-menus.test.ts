@@ -421,11 +421,10 @@ test("tray: icon prop maps to iconSource", async () => {
   assert.match(out, /iconSource: "assets\/tray\.png"/);
 });
 
-test("tray: a Show guard folds into the component's shown", async () => {
+test("tray: under Show the icon exists only while the guard holds", async () => {
   const out = await qml(`export function F(){ const [vis] = createSignal(true); return <Show when={vis()}><Tray tooltip="x" /></Show>; }`);
-  // Getter-only createSignal destructure is a real signal now: the guard is a reactive
-  // property READ (bare name), not a function call.
-  assert.match(out, /shown: !!\(vis\)/);
+  // Getter-only createSignal destructure is a real signal: the guard is a reactive property READ.
+  assert.match(out, /Repeater \{\s*model: \(vis\) \? 1 : 0\s*W\.Tray \{/);
 });
 
 test("tray: the C++ Tray hosts the zero-size SystemTrayIcon shell", async () => {

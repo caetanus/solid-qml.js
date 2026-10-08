@@ -8,12 +8,16 @@ W.Div {
     id: __self
     property var ok: true
     cssClass: ["wrap"]
-    W.Text {
-        visible: !!(ok)
-        text: "yes"
+    Repeater {
+        model: (ok) ? 1 : 0
+        W.Text {
+            text: "yes"
+        }
     }
-    W.Text {
-        visible: !(ok)
-        text: "none"
+    Repeater {
+        model: (!(ok)) ? 1 : 0
+        W.Text {
+            text: "none"
+        }
     }
 }

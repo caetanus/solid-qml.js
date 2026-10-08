@@ -6,6 +6,7 @@ import { findRender } from "../src/ast/find.ts";
 import { analyzeSignals } from "../src/model/symbols.ts";
 import { emitQml } from "../src/emit/qml.ts";
 import type { Scope } from "../src/emit/expr.ts";
+import { generate } from "../src/index.ts";
 
 async function qml(src: string): Promise<string> {
   const { ast } = await normalize(src, "f.tsx");
@@ -19,14 +20,32 @@ async function qml(src: string): Promise<string> {
   return emitQml(render, scope).join("\n");
 }
 
-test("Show: a child element gets a visible guard from when", async () => {
+test("Show: the child is LAZY — a Repeater mounts it only while `when` holds", async () => {
   const out = await qml(`import { Show } from "solid-js"; export function C(){ const [ok,setOk]=createSignal(true); return <Show when={ok()}><text>hi</text></Show>; }`);
-  assert.match(out, /W\.Text \{[\s\S]*visible: !!\(ok\)[\s\S]*text: "hi"/);
+  assert.match(out, /Repeater \{\s*model: \(ok\) \? 1 : 0\s*W\.Text \{\s*text: "hi"/);
+  assert.doesNotMatch(out, /visible: !!\(ok\)/); // not built-and-hidden any more
 });
 
-test("Show: with a wrapper element, only the wrapper carries the guard", async () => {
+test("Show: a wrapper element is the delegate; its subtree comes and goes with it", async () => {
   const out = await qml(`import { Show } from "solid-js"; export function C(){ const [ok,setOk]=createSignal(true); return <Show when={ok()}><div class="box"><text>hi</text></div></Show>; }`);
-  assert.match(out, /W\.Div \{[\s\S]*visible: !!\(ok\)/);
+  assert.match(out, /Repeater \{\s*model: \(ok\) \? 1 : 0\s*W\.Div \{\s*cssClass: \["box"\]\s*W\.Text/);
+  assert.equal(out.match(/Repeater \{/g)?.length, 1); // one gate, not one per descendant
+});
+
+test("Show: a ref inside is published on the component root while mounted", async () => {
+  // Full component path: the root (emitComponentType) declares the holder property.
+  const app = await generate(`import { createSignal, Show } from "solid-js"; export function C(){ let box; const [ok,setOk]=createSignal(false); const go = () => { setOk(true); box.forceActiveFocus(); }; return <div><button onClick={() => go()}>go</button><Show when={ok()}><div ref={box} class="b" /></Show></div>; }`, "c.tsx");
+  const out = Object.values(app.components)[0] ?? app.entry;
+  assert.match(out, /property var _ref_box: null/);                       // root holder
+  assert.match(out, /id: _ref_box__lazy\s*Component\.onCompleted: _ref_box = _ref_box__lazy/);
+  assert.match(out, /Component\.onDestruction: if \(_ref_box === _ref_box__lazy\) _ref_box = null/);
+  assert.match(out, /_ref_box\.forceActiveFocus\(\)/);                   // outside uses read the root prop
+  assert.doesNotMatch(out, /id: _ref_box\s*$/m);
+});
+
+test("Show: nested Shows gate independently (inner Repeater inside the outer delegate)", async () => {
+  const out = await qml(`import { Show } from "solid-js"; export function C(){ const [a,setA]=createSignal(true); const [b,setB]=createSignal(true); return <div><Show when={a()}><div class="o"><Show when={b()}><text>in</text></Show></div></Show></div>; }`);
+  assert.match(out, /model: \(a\) \? 1 : 0\s*W\.Div \{\s*cssClass: \["o"\]\s*Repeater \{\s*model: \(b\) \? 1 : 0/);
 });
 
 test("For: becomes a Repeater whose delegate binds item to modelData", async () => {
@@ -72,12 +91,10 @@ test("Switch: each Match branch is LAZY and ASYNC (a CssIncubator gated by its w
   assert.doesNotMatch(out, /visible: !!\(n === 0\)/);
 });
 
-test("Show: fallback element is gated with the inverted guard", async () => {
+test("Show: the fallback is mounted only while `when` does NOT hold", async () => {
   const out = await qml(`import { Show } from "solid-js"; export function C(){ const [c,setC]=createSignal(true); return <Show when={c()} fallback={<text>none</text>}><text>yes</text></Show>; }`);
-  // child carries the positive guard immediately before its text
-  assert.match(out, /visible: !!\(c\)\s*\n\s*text: "yes"/);
-  // fallback carries the inverted guard immediately before its text
-  assert.match(out, /visible: !\(c\)\s*\n\s*text: "none"/);
+  assert.match(out, /model: \(c\) \? 1 : 0\s*W\.Text \{\s*text: "yes"/);
+  assert.match(out, /model: \(!\(c\)\) \? 1 : 0\s*W\.Text \{\s*text: "none"/);
 });
 
 test("Dynamic over a text tag emits a CssText with a reactive cssPrimitive", async () => {

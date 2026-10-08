@@ -314,14 +314,14 @@ test("emitQml: <></> fragment children emit inline into the parent (no node of i
   assert.equal(out.match(/W\.Div \{/g)?.length, 1);
 });
 
-test("emitQml: fragment under Show inherits the guard on each child", async () => {
+test("emitQml: fragment under Show gates each child with its own lazy Repeater", async () => {
   const out = await qml(`
     export function F() {
       const [flag, setFlag] = createSignal(false);
       return <div><Show when={flag()}><><text>x</text><text>y</text></></Show></div>;
     }
   `);
-  assert.equal(out.match(/visible: !!\(flag\)/g)?.length, 2);
+  assert.equal(out.match(/model: \(flag\) \? 1 : 0/g)?.length, 2);
 });
 
 test("emitComponentType: root <></> fragment wraps in a primitive-less box hosting the children", async () => {
