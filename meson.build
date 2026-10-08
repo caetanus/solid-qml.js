@@ -348,12 +348,13 @@ if build_solidterm
       'apps/solidterm/native/keyrecorder.cpp',
       'apps/solidterm/native/termconfig.cpp',
       'apps/solidterm/native/paneheader.cpp',
+      'apps/solidterm/native/singleinstance.cpp',
     ),
     blur_src,
     solidterm_moc,
     cpp_args: notify_args + blur_args + ['-DSOLIDTERM_DEV_DIR="' + meson.current_source_dir() + '/apps/solidterm/qml"'],
     include_directories: include_directories('src', 'apps/solidterm'),
-    dependencies: [solidqml_dep, qt6_widgets_dep, vterm_dep, util_dep] + blur_deps,
+    dependencies: [solidqml_dep, qt6_widgets_dep, qt6_network_dep, vterm_dep, util_dep] + blur_deps, # Network: QLocalServer (single instance)
     install_rpath: '$ORIGIN/../' + get_option('libdir'),
     install: true,
   )

@@ -7,6 +7,7 @@
 //
 // App dir resolution: $SOLIDTERM_DIR > <bindir>/../share/solidterm > the source tree (dev).
 #include "embed/solidqmlembed.h"
+#include "native/singleinstance.h"
 #include "native/systemtheme.h"
 #ifdef HAVE_BACKGROUND_EFFECT
 #include "native/windowblur.h"
@@ -21,6 +22,7 @@
 #include <QApplication>
 #include <QDir>
 #include <QQmlApplicationEngine>
+#include <QQmlComponent>
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QKeyEvent>
@@ -30,12 +32,13 @@
 #include <QClipboard>
 #include <QSurfaceFormat>
 
-// App-level key filter: F11 toggles fullscreen. Installed on the QApplication so it's caught before
-// the focused TerminalView consumes it (no Q_OBJECT → no moc; eventFilter is a plain virtual).
+// App-level key filter: F11 toggles fullscreen on the FOCUSED window (one process serves every
+// window). Installed on the QApplication so it's caught before the focused TerminalView consumes it
+// (no Q_OBJECT → no moc; eventFilter is a plain virtual).
 class KeyFilter : public QObject {
 public:
-    QQuickWindow *window = nullptr;
     bool eventFilter(QObject *obj, QEvent *event) override {
+        auto *window = qobject_cast<QQuickWindow *>(QGuiApplication::focusWindow());
         if (event->type() == QEvent::KeyPress && window) {
             auto *ke = static_cast<QKeyEvent *>(event);
             if (ke->key() == Qt::Key_F11) {
@@ -50,8 +53,84 @@ public:
     }
 };
 
+// Process-wide pieces every window shares (one process, N windows).
+struct AppCtx {
+    QQmlApplicationEngine *engine = nullptr;
+    SystemTheme *sysTheme = nullptr;
+    TermConfig *config = nullptr;
+    QQmlComponent *windowComponent = nullptr; // compiled once; every further window instantiates it
+};
+static AppCtx g_app;
+
+// Per-window wiring: the clear colour follows translucency, and the compositor blur follows the
+// "blur" preference. Applied to the first window, forwarded windows and detached-pane windows alike.
+static void wireWindow(QQuickWindow *window)
+{
+    // Closing a window (title-bar ✕, compositor kill) only HIDES a QQuickWindow. With one process
+    // serving every window that would leave its shells running invisibly — destroy it instead: the
+    // panes go with it and each PtySession hangs up its shell. (The engine drops a destroyed root
+    // from rootObjects() by itself; the app still quits when the last window goes.)
+    QObject::connect(window, &QQuickWindow::closing, window, [window] { window->deleteLater(); });
+    SystemTheme *sysTheme = g_app.sysTheme;
+    // Clear to transparent only when translucent (uiOpacity < 1) so the desktop shows through the
+    // transparent app root; otherwise clear to the solid window colour. Tracks live changes.
+    const auto retint = [window, sysTheme] {
+        window->setColor(sysTheme->uiOpacity() < 1.0 ? QColor(Qt::transparent) : sysTheme->window());
+    };
+    retint();
+    QObject::connect(sysTheme, &SystemTheme::changed, window, retint);
+#ifdef HAVE_BACKGROUND_EFFECT
+    // Blur behind the translucent window, done by the compositor (ext-background-effect-v1).
+    // On while the "blur" strength (the preferences slider) is above 0, live; inert on a
+    // compositor without the protocol.
+    TermConfig *config = g_app.config;
+    auto *blur = new WindowBlur(window);
+    blur->setEnabled(config->getInt(QStringLiteral("blur"), 0) > 0);
+    QObject::connect(config, &TermConfig::changed, blur, [blur, config](const QString &key) {
+        if (key == QLatin1String("blur"))
+            blur->setEnabled(config->getInt(QStringLiteral("blur"), 0) > 0);
+    });
+    if (qEnvironmentVariableIsSet("SOLIDTERM_BLURINFO"))
+        qInfo("solidterm: background blur %s", blur->isSupported() ? "supported" : "NOT supported by the compositor");
+#endif
+}
+
+// A window for another `solidterm` invocation: its shells start in THAT caller's directory with
+// its environment (kept on the window, so later splits/tabs inherit them too).
+static void openForwardedWindow(const SingleInstance::Request &request, void *)
+{
+    QQmlComponent *comp = g_app.windowComponent;
+    const TerminalView::SpawnContext spawn { request.cwd, request.env };
+    QObject *o = nullptr;
+    {
+        SolidQmlEmbed::MountBatch mount(g_app.engine);
+        TerminalView::setPendingSpawn(&spawn);
+        o = comp->beginCreate(g_app.engine->rootContext());
+        if (o) {
+            o->setProperty("solidtermCwd", request.cwd);
+            o->setProperty("solidtermEnv", request.env);
+            comp->completeCreate();
+        }
+        TerminalView::setPendingSpawn(nullptr);
+    }
+    auto *window = qobject_cast<QQuickWindow *>(o);
+    if (!window) {
+        qWarning("solidterm: new window failed: %s", qPrintable(comp->errorString()));
+        delete o;
+        return;
+    }
+    o->setParent(g_app.engine); // keep the top-level window alive
+    wireWindow(window);
+}
+
 int main(int argc, char **argv)
 {
+    // Single instance: a later launch hands its cwd + environment to the running process and exits
+    // here, before any Qt/Wayland/GL start-up — only the first terminal pays the cold boot.
+    const SingleInstance::Role role = SingleInstance::negotiate(argc, argv);
+    if (role == SingleInstance::Role::Forwarded)
+        return 0;
+
     // Request an alpha channel on the window surface so translucent chrome (uiOpacity < 1) reveals
     // the desktop behind the whole window.
     {
@@ -93,6 +172,9 @@ int main(int argc, char **argv)
     auto *sysTheme = new SystemTheme(&engine);
     engine.rootContext()->setContextProperty(QStringLiteral("sysTheme"), sysTheme);
     auto *config = new TermConfig(&engine); // ~/.config/solidterm/config.json
+    g_app.engine = &engine;
+    g_app.sysTheme = sysTheme;
+    g_app.config = config;
     engine.rootContext()->setContextProperty(QStringLiteral("termConfig"), config);
     // The saved translucency goes in BEFORE the palette layer loads: set later (by the UI while it
     // is being built) it reloads the theme and re-styles every element created so far.
@@ -113,31 +195,16 @@ int main(int argc, char **argv)
         return 1;
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
     if (window) {
-        SolidQmlEmbed::attachWindow(&engine, window);
-        auto *keyFilter = new KeyFilter; // F11 → fullscreen (app-level, before the terminal)
-        keyFilter->window = window;
-        app.installEventFilter(keyFilter);
-        // Clear to transparent only when translucent (uiOpacity < 1) so the desktop shows through the
-        // transparent app root; otherwise clear to the solid window colour. Tracks live changes.
-        const auto retint = [window, sysTheme] {
-            window->setColor(sysTheme->uiOpacity() < 1.0 ? QColor(Qt::transparent) : sysTheme->window());
-        };
-        retint();
-        QObject::connect(sysTheme, &SystemTheme::changed, window, retint);
+        SolidQmlEmbed::attachWindow(&engine, window); // vw/vh follow the first window
+        app.installEventFilter(new KeyFilter);       // F11 → fullscreen (app-level, before the terminal)
+        wireWindow(window);
+    }
+    // Detached panes open their own windows: same per-window wiring.
+    TerminalPanes::setWindowCreatedHook(wireWindow);
 
-#ifdef HAVE_BACKGROUND_EFFECT
-        // Blur behind the translucent window, done by the compositor (ext-background-effect-v1).
-        // On while the "blur" strength (the preferences slider) is above 0, live; inert on a
-        // compositor without the protocol.
-        auto *blur = new WindowBlur(window);
-        blur->setEnabled(config->getInt(QStringLiteral("blur"), 0) > 0);
-        QObject::connect(config, &TermConfig::changed, blur, [blur, config](const QString &key) {
-            if (key == QLatin1String("blur"))
-                blur->setEnabled(config->getInt(QStringLiteral("blur"), 0) > 0);
-        });
-        if (qEnvironmentVariableIsSet("SOLIDTERM_BLURINFO"))
-            qInfo("solidterm: background blur %s", blur->isSupported() ? "supported" : "NOT supported by the compositor");
-#endif
+    if (role == SingleInstance::Role::Server) {
+        g_app.windowComponent = new QQmlComponent(&engine, windowUrl, &engine); // already compiled: cached
+        SingleInstance::listen(openForwardedWindow, nullptr);
     }
 
     // Debug/CI screenshot: SOLIDTERM_SHOT=<prefix> opens preferences + the context menu after a

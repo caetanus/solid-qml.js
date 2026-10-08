@@ -1,5 +1,7 @@
 #pragma once
 
+class QQuickWindow;
+
 #include <QQuickItem>
 #include <QStringList>
 #include <QUrl>
@@ -86,6 +88,8 @@ public:
     // The URL of the top-level solidterm Window component (App.generated.qml), set by main() — used to
     // spawn a full new window when a pane is detached.
     static void setWindowUrl(const QUrl &url);
+    // Called with every window a pane detach creates (the app wires it like its first window).
+    static void setWindowCreatedHook(void (*hook)(QQuickWindow *)) { s_windowCreated = hook; }
     static bool anyLive() { return !s_all.isEmpty(); } // any terminal pane alive in any window?
     // Paste/copy proxied to the focused pane (menu actions).
     Q_INVOKABLE void copyFocused();
@@ -179,6 +183,7 @@ private:
     // All live pane containers across every window (for cross-window drag hit-testing).
     static QVector<TerminalPanes *> s_all;
     static QUrl s_windowUrl;             // App.generated.qml Window component
+    static inline void (*s_windowCreated)(QQuickWindow *) = nullptr;
     static TerminalView *s_pendingAdopt; // a detached view the next new window should adopt as pane 1
 
     // Live drag state (a pane being dragged by its header).

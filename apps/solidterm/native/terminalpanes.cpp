@@ -688,6 +688,14 @@ void TerminalPanes::detachToNewWindow(TerminalView *v)
     }
     s_pendingAdopt = nullptr;
     win->setParent(eng);          // keep the new top-level window alive
+    // New panes in the detached window start where this window's do (single-instance spawn context).
+    if (QQuickWindow *src = window()) {
+        win->setProperty("solidtermCwd", src->property("solidtermCwd"));
+        win->setProperty("solidtermEnv", src->property("solidtermEnv"));
+    }
+    if (s_windowCreated)
+        if (auto *qw = qobject_cast<QQuickWindow *>(win))
+            s_windowCreated(qw);
 }
 
 void TerminalPanes::debugDetachFocused()

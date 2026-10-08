@@ -27,6 +27,22 @@ class QSGGeometryNode;
 // through the standard qml-module door (Direção B).
 class TerminalView : public QQuickItem {
     Q_OBJECT
+
+public:
+    // Where a new shell starts and with which environment. A window opened for ANOTHER `solidterm`
+    // invocation (single-instance) carries that caller's: as dynamic properties on the QQuickWindow
+    // (solidtermCwd / solidtermEnv), read by every session the window starts — including later
+    // splits and tabs. While that window is still being BUILT its first session may start before the
+    // item knows its window, so the builder also sets this process-wide pending context around it.
+    struct SpawnContext {
+        QString cwd;
+        QStringList env;
+    };
+    static void setPendingSpawn(const SpawnContext *ctx) { s_pendingSpawn = ctx; }
+
+private:
+    static inline const SpawnContext *s_pendingSpawn = nullptr;
+
     Q_PROPERTY(QString fontFamily READ fontFamily WRITE setFontFamily NOTIFY fontChanged)
     Q_PROPERTY(int fontSize READ fontSize WRITE setFontSize NOTIFY fontChanged)
     Q_PROPERTY(QColor background READ background WRITE setBackground NOTIFY colorsChanged)

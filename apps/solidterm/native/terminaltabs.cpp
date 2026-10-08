@@ -96,6 +96,9 @@ TerminalPanes *TerminalTabs::makePanes()
         return nullptr;
     }
     panes->setParentItem(this);
+    // QObject OWNER too: a parent item does not delete its children, so without this a closed
+    // window's panes — and their shells — outlived it (one process serves every window now).
+    panes->setParent(this);
     applyStyle(panes);
 
     connect(panes, &TerminalPanes::accelerator, this, &TerminalTabs::accelerator);

@@ -278,7 +278,17 @@ void TerminalView::ensureSession()
     vterm_state_set_default_colors(state, &fg, &bg);
     vterm_screen_reset(m_screen, 1);
 
-    m_pty.start(m_rows, m_cols);
+    QString cwd;
+    QStringList env;
+    if (QQuickWindow *w = window()) {
+        cwd = w->property("solidtermCwd").toString();
+        env = w->property("solidtermEnv").toStringList();
+    }
+    if (cwd.isEmpty() && env.isEmpty() && s_pendingSpawn) {
+        cwd = s_pendingSpawn->cwd;
+        env = s_pendingSpawn->env;
+    }
+    m_pty.start(m_rows, m_cols, QString(), cwd, env);
 }
 
 void TerminalView::componentComplete()
