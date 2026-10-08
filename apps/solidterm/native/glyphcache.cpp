@@ -198,12 +198,15 @@ bool drawCellGraphic(QPainter *p, char32_t cp, qreal x0, qreal y0, qreal w, qrea
 
 } // namespace
 
-void GlyphCache::setFont(const QString &family, int pixelSize)
+void GlyphCache::setFont(const QString &family, int pixelSize, qreal dpr)
 {
-    if (!m_atlas.isNull() && m_font.family() == family && m_font.pixelSize() == pixelSize)
+    dpr = dpr > 0 ? dpr : 1.0;
+    if (!m_atlas.isNull() && m_font.family() == family && m_logicalPx == pixelSize && qFuzzyCompare(m_dpr, dpr))
         return; // same font: keep the cached glyphs (resize must not throw away the atlas)
+    m_dpr = dpr;
+    m_logicalPx = pixelSize;
     m_font = QFont(family);
-    m_font.setPixelSize(pixelSize);
+    m_font.setPixelSize(qMax(1, qRound(pixelSize * dpr)));
     m_font.setStyleHint(QFont::Monospace);
     m_font.setHintingPreference(QFont::PreferFullHinting);
     m_bold = m_font; m_bold.setBold(true);

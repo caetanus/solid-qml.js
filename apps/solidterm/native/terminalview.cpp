@@ -208,6 +208,12 @@ void TerminalView::itemChange(ItemChange change, const ItemChangeData &data)
         update();
     }
     QQuickItem::itemChange(change, data);
+    // A new window (or the same window moved to a screen with another scale) changes the device
+    // pixel ratio the atlas must be rasterised at: rebuild the font + grid for it.
+    if ((change == ItemSceneChange && data.window) || change == ItemDevicePixelRatioHasChanged) {
+        applyGrid();
+        update();
+    }
 }
 
 int TerminalView::cbSbPushLine(int cols, const VTermScreenCell *cells, void *user)
@@ -291,7 +297,8 @@ void TerminalView::applyGrid()
 {
     // The grid uses the GlyphCache's (integer) cell metrics, so every cell lands exactly on an
     // atlas tile — glyphs stay crisp (no fractional placement). setFont is a no-op when unchanged.
-    m_glyphs.setFont(m_font.family(), m_font.pixelSize());
+    // Rasterised at the window's device pixel ratio (crisp on HiDPI); cell metrics stay logical.
+    m_glyphs.setFont(m_font.family(), m_font.pixelSize(), window() ? window()->effectiveDevicePixelRatio() : 1.0);
     m_cellW = m_glyphs.cellWidth();
     m_cellH = m_glyphs.cellHeight();
     const int cols = qMax(2, int(width() / m_cellW));

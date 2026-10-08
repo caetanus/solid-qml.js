@@ -22,9 +22,13 @@ public:
         bool valid = false;
     };
 
-    void setFont(const QString &family, int pixelSize);
-    qreal cellWidth() const { return m_cellW; }
-    qreal cellHeight() const { return m_cellH; }
+    // `pixelSize` is in LOGICAL pixels; `dpr` is the window's device pixel ratio. Glyphs are
+    // rasterised at physical resolution (pixelSize × dpr) so the atlas maps 1:1 onto the screen —
+    // rasterising at 1× and letting the GPU scale it up blurred every glyph on a HiDPI output.
+    void setFont(const QString &family, int pixelSize, qreal dpr = 1.0);
+    // Cell metrics in LOGICAL pixels (a whole number of PHYSICAL pixels, so cells stay pixel-aligned).
+    qreal cellWidth() const { return m_cellW / m_dpr; }
+    qreal cellHeight() const { return m_cellH / m_dpr; }
 
     // Ensure a glyph is in the atlas; returns its atlas UV rect. `cluster` is the cell's text
     // (usually one char; combining marks / wide chars form a longer cluster).
@@ -50,7 +54,9 @@ private:
     Entry rasterize(const Key &k);
 
     QFont m_font, m_bold, m_italic, m_boldItalic;
-    qreal m_cellW = 8, m_cellH = 16, m_ascent = 12;
+    qreal m_cellW = 8, m_cellH = 16, m_ascent = 12; // PHYSICAL pixels (atlas tile size, baseline)
+    qreal m_dpr = 1.0;
+    int m_logicalPx = 0;
     QImage m_atlas;
     int m_penX = 0, m_penY = 0, m_rowH = 0; // shelf packer
     QHash<Key, Entry> m_cache;
