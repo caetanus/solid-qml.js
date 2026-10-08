@@ -43,5 +43,12 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    // Re-reads the desktop preferences. They used to be read on EVERY property access — each one a
+    // `gsettings` fork+exec — which cost ~150 process spawns (most of the startup time) as the UI
+    // bound base/text/window/styleSheet. Now: once at construction, again on a scheme change.
+    void refresh();
+
     qreal m_uiOpacity = 1.0;
+    bool m_dark = false;
+    QColor m_accent;
 };

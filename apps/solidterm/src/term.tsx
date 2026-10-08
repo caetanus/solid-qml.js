@@ -182,7 +182,7 @@ export function Term(props: { onTitle: (t: string) => void }) {
               <button class="tab-x" onClick={() => term.closeTab(i)}>✕</button>
             </div>
           }</Index>
-          <button class="tab-new" onClick={() => term.newTab()}>＋</button>
+          <button class="tab-new" onClick={() => term.newTab()}>+</button>
         </div>
       </Show>
 

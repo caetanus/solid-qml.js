@@ -77,34 +77,34 @@ Palette paletteFor(bool dark, const QColor &accent)
 SystemTheme::SystemTheme(QObject *parent)
     : QObject(parent)
 {
+    refresh();
     // Live re-theme when the desktop toggles dark/light (portal → styleHints).
     if (auto *hints = qApp ? qApp->styleHints() : nullptr)
-        connect(hints, &QStyleHints::colorSchemeChanged, this, [this] { emit changed(); });
+        connect(hints, &QStyleHints::colorSchemeChanged, this, [this] { refresh(); emit changed(); });
 }
 
-bool SystemTheme::dark() const
+void SystemTheme::refresh()
 {
+    m_accent = accentHex(gsetting(QStringLiteral("org.gnome.desktop.interface"), QStringLiteral("accent-color")));
     if (auto *hints = qApp ? qApp->styleHints() : nullptr) {
         const Qt::ColorScheme cs = hints->colorScheme();
-        if (cs != Qt::ColorScheme::Unknown)
-            return cs == Qt::ColorScheme::Dark;
+        if (cs != Qt::ColorScheme::Unknown) {
+            m_dark = cs == Qt::ColorScheme::Dark;
+            return;
+        }
     }
     // Fallbacks: the GNOME preference directly, then the palette lightness.
     const QString pref = gsetting(QStringLiteral("org.gnome.desktop.interface"), QStringLiteral("color-scheme"));
-    if (pref.contains(QLatin1String("dark")))
-        return true;
-    return qApp && qApp->palette().color(QPalette::Window).lightness() < 128;
+    m_dark = pref.contains(QLatin1String("dark"))
+        || (qApp && qApp->palette().color(QPalette::Window).lightness() < 128);
 }
 
-QColor SystemTheme::accent() const
-{
-    const QString name = gsetting(QStringLiteral("org.gnome.desktop.interface"), QStringLiteral("accent-color"));
-    return accentHex(name);
-}
+bool SystemTheme::dark() const { return m_dark; }
+QColor SystemTheme::accent() const { return m_accent; }
 
-QColor SystemTheme::base() const { return paletteFor(dark(), accent()).view; }
-QColor SystemTheme::text() const { return paletteFor(dark(), accent()).text; }
-QColor SystemTheme::window() const { return paletteFor(dark(), accent()).window; }
+QColor SystemTheme::base() const { return paletteFor(m_dark, m_accent).view; }
+QColor SystemTheme::text() const { return paletteFor(m_dark, m_accent).text; }
+QColor SystemTheme::window() const { return paletteFor(m_dark, m_accent).window; }
 
 bool SystemTheme::eventFilter(QObject *watched, QEvent *event)
 {
@@ -122,7 +122,7 @@ void SystemTheme::setUiOpacity(qreal v)
 
 QString SystemTheme::styleSheet() const
 {
-    const Palette p = paletteFor(dark(), accent());
+    const Palette p = paletteFor(m_dark, m_accent);
     const auto h = [](const QColor &c) { return c.name(QColor::HexRgb); };
     // When translucent, the app root goes transparent so the (alpha) window reveals the desktop
     // behind the terminal + gaps; the header/status chrome stay solid (tilix-style glass). At full

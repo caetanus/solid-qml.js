@@ -94,6 +94,9 @@ int main(int argc, char **argv)
     engine.rootContext()->setContextProperty(QStringLiteral("sysTheme"), sysTheme);
     auto *config = new TermConfig(&engine); // ~/.config/solidterm/config.json
     engine.rootContext()->setContextProperty(QStringLiteral("termConfig"), config);
+    // The saved translucency goes in BEFORE the palette layer loads: set later (by the UI while it
+    // is being built) it reloads the theme and re-styles every element created so far.
+    sysTheme->setUiOpacity(config->getInt(QStringLiteral("opacity"), 100) / 100.0);
     SolidQmlEmbed::loadCss(&engine, QUrl(QStringLiteral("App.generated.css"))); // structural
     SolidQmlEmbed::loadCssString(&engine, sysTheme->styleSheet());              // palette layer
     QObject::connect(sysTheme, &SystemTheme::changed, &engine, [&engine, sysTheme] {
