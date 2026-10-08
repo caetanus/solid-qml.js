@@ -8,6 +8,7 @@ import SolidTerm 1.0 as QM_SolidTerm
 import solidqml.Widgets 1.0 as W
 W.Div {
     id: __self
+    property var _ref_searchInput: null
     property var onTitle
     property var uiFontFamily: termConfig.getString("fontFamily", "monospace")
     property var uiFontSize: termConfig.getInt("fontSize", 15)
@@ -66,7 +67,7 @@ W.Div {
     function zoom(d) { var px = _ref_term.zoomFocused(d); if (px > 0) { termConfig.set("fontSize", px); } }
     function setKey(k, seq) { termConfig.set("keys." + k, seq); if (k === "splitRight") { kSplitRight = seq; } else { if (k === "splitDown") { kSplitDown = seq; } else { if (k === "closePane") { kClosePane = seq; } else { if (k === "focusNext") { kFocusNext = seq; } else { if (k === "focusPrev") { kFocusPrev = seq; } else { if (k === "newTab") { kNewTab = seq; } else { if (k === "nextTab") { kNextTab = seq; } else { if (k === "prevTab") { kPrevTab = seq; } else { if (k === "search") { kSearch = seq; } else { if (k === "zoomPane") { kZoomPane = seq; } } } } } } } } } } }
     property var __cleanups: []
-    Component.onCompleted: { sysTheme.setUiOpacity(opacity_ / 100); var searchInput = undefined; }
+    Component.onCompleted: { sysTheme.setUiOpacity(opacity_ / 100); }
     Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
     cssClass: ["term-root"]
     Item {
@@ -120,85 +121,93 @@ W.Div {
             }
         }
     }
-    W.Div {
-        cssClass: ["term-header"]
-        visible: !!(showHeader !== 0)
-        W.Text {
-            cssClass: ["term-title"]
-            text: "" + (title)
-        }
-        W.Button {
-            cssClass: ["term-gear"]
-            text: "⚙"
-            onClicked: cfgOpen = true
-        }
-    }
-    W.Div {
-        cssClass: ["tabbar"]
-        visible: !!(tabTitles.length > 1)
-        Repeater {
-            model: tabTitles
-            W.Div {
-                cssClass: ["tab"].concat(index === activeTab ? ["tab-active"] : [])
-                cssState: __hover0.containsMouse ? ["hover"] : []
-                W.Text {
-                    cssClass: ["tab-label"]
-                    text: "" + (tabLabel(modelData))
-                }
-                W.Button {
-                    cssClass: ["tab-x"]
-                    text: "✕"
-                    onClicked: _ref_term.closeTab(index)
-                }
-                MouseArea {
-                    id: __hover0
-                    z: -1
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: _ref_term.selectTab(index)
-                }
+    Repeater {
+        model: (showHeader !== 0) ? 1 : 0
+        W.Div {
+            cssClass: ["term-header"]
+            W.Text {
+                cssClass: ["term-title"]
+                text: "" + (title)
+            }
+            W.Button {
+                cssClass: ["term-gear"]
+                text: "⚙"
+                onClicked: cfgOpen = true
             }
         }
-        W.Button {
-            cssClass: ["tab-new"]
-            text: "+"
-            onClicked: _ref_term.newTab()
-        }
     }
-    W.Div {
-        cssClass: ["searchbar"]
-        visible: !!(searchOpen)
-        W.TextField {
-            id: __input1
-            cssClass: ["search-in"]
-            placeholder: "Find…"
-            onTextEdited: { searchQuery = text; _ref_term.searchFocused(text); }
-            Binding {
-                target: __input1
-                property: "text"
-                value: searchQuery
-                restoreMode: Binding.RestoreNone
+    Repeater {
+        model: (tabTitles.length > 1) ? 1 : 0
+        W.Div {
+            cssClass: ["tabbar"]
+            Repeater {
+                model: tabTitles
+                W.Div {
+                    cssClass: ["tab"].concat(index === activeTab ? ["tab-active"] : [])
+                    cssState: __hover0.containsMouse ? ["hover"] : []
+                    W.Text {
+                        cssClass: ["tab-label"]
+                        text: "" + (tabLabel(modelData))
+                    }
+                    W.Button {
+                        cssClass: ["tab-x"]
+                        text: "✕"
+                        onClicked: _ref_term.closeTab(index)
+                    }
+                    MouseArea {
+                        id: __hover0
+                        z: -1
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: _ref_term.selectTab(index)
+                    }
+                }
+            }
+            W.Button {
+                cssClass: ["tab-new"]
+                text: "+"
+                onClicked: _ref_term.newTab()
             }
         }
-        W.Text {
-            cssClass: ["search-count"]
-            text: "" + (searchCount > 0 ? searchIdx + " / " + searchCount : "0 / 0")
-        }
-        W.Button {
-            cssClass: ["search-btn"]
-            text: "‹"
-            onClicked: _ref_term.searchPrev()
-        }
-        W.Button {
-            cssClass: ["search-btn"]
-            text: "›"
-            onClicked: _ref_term.searchNext()
-        }
-        W.Button {
-            cssClass: ["search-btn"]
-            text: "✕"
-            onClicked: closeSearch()
+    }
+    Repeater {
+        model: (searchOpen) ? 1 : 0
+        W.Div {
+            cssClass: ["searchbar"]
+            W.TextField {
+                id: _ref_searchInput__lazy
+                Component.onCompleted: _ref_searchInput = _ref_searchInput__lazy
+                Component.onDestruction: if (_ref_searchInput === _ref_searchInput__lazy) _ref_searchInput = null
+                cssClass: ["search-in"]
+                placeholder: "Find…"
+                onTextEdited: { searchQuery = text; _ref_term.searchFocused(text); }
+                Binding {
+                    target: _ref_searchInput__lazy
+                    property: "text"
+                    value: searchQuery
+                    restoreMode: Binding.RestoreNone
+                }
+            }
+            W.Text {
+                cssClass: ["search-count"]
+                text: "" + (searchCount > 0 ? searchIdx + " / " + searchCount : "0 / 0")
+            }
+            W.Button {
+                cssClass: ["search-btn"]
+                text: "‹"
+                onClicked: _ref_term.searchPrev()
+            }
+            W.Button {
+                cssClass: ["search-btn"]
+                text: "›"
+                onClicked: _ref_term.searchNext()
+            }
+            W.Button {
+                cssClass: ["search-btn"]
+                text: "✕"
+                onClicked: closeSearch()
+            }
         }
     }
     W.Div {
@@ -230,21 +239,21 @@ W.Div {
             }
         }
         Item {
-            id: __menuHost2
+            id: __menuHost1
             anchors.fill: parent
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.RightButton
-                onClicked: function(mouse) { __ctxAnchor2.x = mouse.x; __ctxAnchor2.y = mouse.y; __menu2.popup(0, 0) }
+                onClicked: function(mouse) { __ctxAnchor1.x = mouse.x; __ctxAnchor1.y = mouse.y; __menu1.popup(0, 0) }
             }
             Item {
-                id: __ctxAnchor2
+                id: __ctxAnchor1
                 width: 1
                 height: 1
-                Window.onActiveChanged: if (!Window.active) __menu2.close()
+                Window.onActiveChanged: if (!Window.active) __menu1.close()
                 W.Menu {
-                    id: __menu2
-                    cssAncestor: __ctxAnchor2
+                    id: __menu1
+                    cssAncestor: __ctxAnchor1
                     authorClass: ["tmenu"]
                     W.MenuItem {
                         text: "&Copy"
@@ -296,455 +305,469 @@ W.Div {
             }
         }
     }
-    W.Div {
-        cssClass: ["term-status"]
-        visible: !!(showStatus !== 0)
-        W.Text {
-            cssClass: ["term-status-t"]
-            text: "solidterm"
-        }
-        W.Text {
-            cssClass: ["term-hint"]
-            text: "right-click for actions · shortcuts in Preferences"
+    Repeater {
+        model: (showStatus !== 0) ? 1 : 0
+        W.Div {
+            cssClass: ["term-status"]
+            W.Text {
+                cssClass: ["term-status-t"]
+                text: "solidterm"
+            }
+            W.Text {
+                cssClass: ["term-hint"]
+                text: "right-click for actions · shortcuts in Preferences"
+            }
         }
     }
-    W.Dialog {
-        open: !!(cfgOpen)
-        title: "Preferences"
-        cssClass: ["cfg"]
-        onDialogClosed: { cfgOpen = false }
-        W.Div {
-            cssClass: ["cfg-body"]
+    Repeater {
+        model: (cfgOpen) ? 1 : 0
+        W.Dialog {
+            open: !!(cfgOpen)
+            title: "Preferences"
+            cssClass: ["cfg"]
+            onDialogClosed: { cfgOpen = false }
             W.Div {
-                cssClass: ["cfg-scroll"]
+                cssClass: ["cfg-body"]
                 W.Div {
-                    cssClass: ["cfg-col"]
-                    W.Text {
-                        cssClass: ["cfg-group"]
-                        text: "Appearance"
-                    }
+                    cssClass: ["cfg-scroll"]
                     W.Div {
-                        cssClass: ["cfg-card"]
-                        W.Div {
-                            cssClass: ["cfg-row"]
-                            W.Text {
-                                cssClass: ["cfg-l"]
-                                text: "Font family"
-                            }
-                            W.TextField {
-                                id: __input4
-                                cssClass: ["cfg-in-img"]
-                                onTextEdited: { uiFontFamily = text; termConfig.set("fontFamily", text); }
-                                Binding {
-                                    target: __input4
-                                    property: "text"
-                                    value: uiFontFamily
-                                    restoreMode: Binding.RestoreNone
-                                }
-                            }
-                            W.Button {
-                                cssClass: ["cfg-browse"]
-                                text: "Choose…"
-                                onClicked: chooseFont()
-                            }
+                        cssClass: ["cfg-col"]
+                        W.Text {
+                            cssClass: ["cfg-group"]
+                            text: "Appearance"
                         }
                         W.Div {
-                            cssClass: ["cfg-div"]
-                            cssPrimitive: "hr"
-                        }
-                        W.Div {
-                            cssClass: ["cfg-row"]
-                            W.Text {
-                                cssClass: ["cfg-l"]
-                                text: "Font size"
-                            }
-                            W.Select {
-                                id: __input5
-                                cssClass: ["cfg-sel"]
-                                model: ["9 px", "10 px", "11 px", "12 px", "13 px", "14 px", "15 px", "16 px", "17 px", "18 px", "19 px", "20 px", "21 px", "22 px", "23 px", "24 px", "25 px", "26 px", "27 px", "28 px", "32 px", "36 px"]
-                                values: ["9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "32", "36"]
-                                onActivated: (index) => { uiFontSize = parseInt(__input5.values[index]); termConfig.set("fontSize", parseInt(__input5.values[index])); }
-                                Binding {
-                                    target: __input5
-                                    property: "currentIndex"
-                                    value: __input5.values.indexOf("" + uiFontSize)
-                                    restoreMode: Binding.RestoreNone
-                                }
-                            }
-                        }
-                        W.Div {
-                            cssClass: ["cfg-div"]
-                            cssPrimitive: "hr"
-                        }
-                        W.Div {
-                            cssClass: ["cfg-row"]
-                            W.Text {
-                                cssClass: ["cfg-l"]
-                                text: "Color scheme"
-                            }
-                            W.Select {
-                                id: __input6
-                                cssClass: ["cfg-sel"]
-                                model: ["System", "Midnight", "Solarized Dark", "Gruvbox", "Paper (light)"]
-                                values: ["system", "midnight", "solarized", "gruvbox", "paper"]
-                                onActivated: (index) => { scheme = __input6.values[index]; termConfig.set("scheme", __input6.values[index]); }
-                                Binding {
-                                    target: __input6
-                                    property: "currentIndex"
-                                    value: __input6.values.indexOf(scheme)
-                                    restoreMode: Binding.RestoreNone
-                                }
-                            }
-                        }
-                        W.Div {
-                            cssClass: ["cfg-div"]
-                            cssPrimitive: "hr"
-                        }
-                        W.Div {
-                            cssClass: ["cfg-row"]
-                            W.Text {
-                                cssClass: ["cfg-l"]
-                                text: "Background image"
-                            }
+                            cssClass: ["cfg-card"]
                             W.Div {
-                                cssClass: ["cfg-imgrow"]
-                                W.TextField {
-                                    id: __input7
-                                    cssClass: ["cfg-in-img"]
-                                    placeholder: "none"
-                                    onTextEdited: { bgImage = text; termConfig.set("bgImage", text); }
-                                    Binding {
-                                        target: __input7
-                                        property: "text"
-                                        value: bgImage
-                                        restoreMode: Binding.RestoreNone
-                                    }
-                                }
-                                W.Button {
-                                    cssClass: ["cfg-browse"]
-                                    text: "Browse…"
-                                    onClicked: browseBg()
-                                }
-                                W.Button {
-                                    cssClass: ["cfg-browse"]
-                                    text: "✕"
-                                    onClicked: clearBg()
-                                }
-                            }
-                        }
-                        W.Div {
-                            cssClass: ["cfg-div"]
-                            cssPrimitive: "hr"
-                        }
-                        W.Div {
-                            cssClass: ["cfg-row"]
-                            W.Text {
-                                cssClass: ["cfg-l"]
-                                text: "Opacity"
-                            }
-                            W.Div {
-                                cssClass: ["cfg-slide"]
-                                W.Slider {
-                                    id: __input8
-                                    cssClass: ["cfg-range"]
-                                    from: 40
-                                    to: 100
-                                    stepSize: 1
-                                    onMoved: { opacity_ = parseInt(__input8.value); termConfig.set("opacity", parseInt(__input8.value)); sysTheme.setUiOpacity(parseInt(__input8.value) / 100); }
-                                    Binding {
-                                        target: __input8
-                                        property: "value"
-                                        value: "" + opacity_
-                                        restoreMode: Binding.RestoreNone
-                                    }
-                                }
+                                cssClass: ["cfg-row"]
                                 W.Text {
-                                    cssClass: ["cfg-slideval"]
-                                    text: "" + (opacity_) + "%"
+                                    cssClass: ["cfg-l"]
+                                    text: "Font family"
+                                }
+                                W.TextField {
+                                    id: __input3
+                                    cssClass: ["cfg-in-img"]
+                                    onTextEdited: { uiFontFamily = text; termConfig.set("fontFamily", text); }
+                                    Binding {
+                                        target: __input3
+                                        property: "text"
+                                        value: uiFontFamily
+                                        restoreMode: Binding.RestoreNone
+                                    }
+                                }
+                                W.Button {
+                                    cssClass: ["cfg-browse"]
+                                    text: "Choose…"
+                                    onClicked: chooseFont()
                                 }
                             }
-                        }
-                        W.Div {
-                            cssClass: ["cfg-div"]
-                            cssPrimitive: "hr"
-                        }
-                        W.Div {
-                            cssClass: ["cfg-row"]
-                            W.Text {
-                                cssClass: ["cfg-l"]
-                                text: "Blur background"
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
                             }
                             W.Div {
-                                cssClass: ["cfg-slide"]
-                                W.Slider {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Font size"
+                                }
+                                W.Select {
+                                    id: __input4
+                                    cssClass: ["cfg-sel"]
+                                    model: ["9 px", "10 px", "11 px", "12 px", "13 px", "14 px", "15 px", "16 px", "17 px", "18 px", "19 px", "20 px", "21 px", "22 px", "23 px", "24 px", "25 px", "26 px", "27 px", "28 px", "32 px", "36 px"]
+                                    values: ["9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "32", "36"]
+                                    onActivated: (index) => { uiFontSize = parseInt(__input4.values[index]); termConfig.set("fontSize", parseInt(__input4.values[index])); }
+                                    Binding {
+                                        target: __input4
+                                        property: "currentIndex"
+                                        value: __input4.values.indexOf("" + uiFontSize)
+                                        restoreMode: Binding.RestoreNone
+                                    }
+                                }
+                            }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Color scheme"
+                                }
+                                W.Select {
+                                    id: __input5
+                                    cssClass: ["cfg-sel"]
+                                    model: ["System", "Midnight", "Solarized Dark", "Gruvbox", "Paper (light)"]
+                                    values: ["system", "midnight", "solarized", "gruvbox", "paper"]
+                                    onActivated: (index) => { scheme = __input5.values[index]; termConfig.set("scheme", __input5.values[index]); }
+                                    Binding {
+                                        target: __input5
+                                        property: "currentIndex"
+                                        value: __input5.values.indexOf(scheme)
+                                        restoreMode: Binding.RestoreNone
+                                    }
+                                }
+                            }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Background image"
+                                }
+                                W.Div {
+                                    cssClass: ["cfg-imgrow"]
+                                    W.TextField {
+                                        id: __input6
+                                        cssClass: ["cfg-in-img"]
+                                        placeholder: "none"
+                                        onTextEdited: { bgImage = text; termConfig.set("bgImage", text); }
+                                        Binding {
+                                            target: __input6
+                                            property: "text"
+                                            value: bgImage
+                                            restoreMode: Binding.RestoreNone
+                                        }
+                                    }
+                                    W.Button {
+                                        cssClass: ["cfg-browse"]
+                                        text: "Browse…"
+                                        onClicked: browseBg()
+                                    }
+                                    W.Button {
+                                        cssClass: ["cfg-browse"]
+                                        text: "✕"
+                                        onClicked: clearBg()
+                                    }
+                                }
+                            }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Opacity"
+                                }
+                                W.Div {
+                                    cssClass: ["cfg-slide"]
+                                    W.Slider {
+                                        id: __input7
+                                        cssClass: ["cfg-range"]
+                                        from: 40
+                                        to: 100
+                                        stepSize: 1
+                                        onMoved: { opacity_ = parseInt(__input7.value); termConfig.set("opacity", parseInt(__input7.value)); sysTheme.setUiOpacity(parseInt(__input7.value) / 100); }
+                                        Binding {
+                                            target: __input7
+                                            property: "value"
+                                            value: "" + opacity_
+                                            restoreMode: Binding.RestoreNone
+                                        }
+                                    }
+                                    W.Text {
+                                        cssClass: ["cfg-slideval"]
+                                        text: "" + (opacity_) + "%"
+                                    }
+                                }
+                            }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Blur background"
+                                }
+                                W.Div {
+                                    cssClass: ["cfg-slide"]
+                                    W.Slider {
+                                        id: __input8
+                                        cssClass: ["cfg-range"]
+                                        from: 0
+                                        to: 100
+                                        stepSize: 5
+                                        onMoved: { uiBlur = parseInt(__input8.value); termConfig.set("blur", parseInt(__input8.value)); }
+                                        Binding {
+                                            target: __input8
+                                            property: "value"
+                                            value: "" + uiBlur
+                                            restoreMode: Binding.RestoreNone
+                                        }
+                                    }
+                                    W.Text {
+                                        cssClass: ["cfg-slideval"]
+                                        text: "" + (uiBlur) + "%"
+                                    }
+                                }
+                            }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Header bar"
+                                }
+                                W.Select {
                                     id: __input9
-                                    cssClass: ["cfg-range"]
-                                    from: 0
-                                    to: 100
-                                    stepSize: 5
-                                    onMoved: { uiBlur = parseInt(__input9.value); termConfig.set("blur", parseInt(__input9.value)); }
+                                    cssClass: ["cfg-sel"]
+                                    model: ["Shown", "Hidden"]
+                                    values: ["1", "0"]
+                                    onActivated: (index) => { showHeader = parseInt(__input9.values[index]); termConfig.set("showHeader", parseInt(__input9.values[index])); }
                                     Binding {
                                         target: __input9
-                                        property: "value"
-                                        value: "" + uiBlur
+                                        property: "currentIndex"
+                                        value: __input9.values.indexOf("" + showHeader)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
+                            }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
                                 W.Text {
-                                    cssClass: ["cfg-slideval"]
-                                    text: "" + (uiBlur) + "%"
+                                    cssClass: ["cfg-l"]
+                                    text: "Status bar"
                                 }
-                            }
-                        }
-                        W.Div {
-                            cssClass: ["cfg-div"]
-                            cssPrimitive: "hr"
-                        }
-                        W.Div {
-                            cssClass: ["cfg-row"]
-                            W.Text {
-                                cssClass: ["cfg-l"]
-                                text: "Header bar"
-                            }
-                            W.Select {
-                                id: __input10
-                                cssClass: ["cfg-sel"]
-                                model: ["Shown", "Hidden"]
-                                values: ["1", "0"]
-                                onActivated: (index) => { showHeader = parseInt(__input10.values[index]); termConfig.set("showHeader", parseInt(__input10.values[index])); }
-                                Binding {
-                                    target: __input10
-                                    property: "currentIndex"
-                                    value: __input10.values.indexOf("" + showHeader)
-                                    restoreMode: Binding.RestoreNone
-                                }
-                            }
-                        }
-                        W.Div {
-                            cssClass: ["cfg-div"]
-                            cssPrimitive: "hr"
-                        }
-                        W.Div {
-                            cssClass: ["cfg-row"]
-                            W.Text {
-                                cssClass: ["cfg-l"]
-                                text: "Status bar"
-                            }
-                            W.Select {
-                                id: __input11
-                                cssClass: ["cfg-sel"]
-                                model: ["Shown", "Hidden"]
-                                values: ["1", "0"]
-                                onActivated: (index) => { showStatus = parseInt(__input11.values[index]); termConfig.set("showStatus", parseInt(__input11.values[index])); }
-                                Binding {
-                                    target: __input11
-                                    property: "currentIndex"
-                                    value: __input11.values.indexOf("" + showStatus)
-                                    restoreMode: Binding.RestoreNone
-                                }
-                            }
-                        }
-                        W.Div {
-                            cssClass: ["cfg-div"]
-                            cssPrimitive: "hr"
-                        }
-                        W.Div {
-                            cssClass: ["cfg-row"]
-                            W.Text {
-                                cssClass: ["cfg-l"]
-                                text: "Split animation"
-                            }
-                            W.Select {
-                                id: __input12
-                                cssClass: ["cfg-sel"]
-                                model: ["On", "Off"]
-                                values: ["1", "0"]
-                                onActivated: (index) => { animSplits = parseInt(__input12.values[index]); termConfig.set("animSplits", parseInt(__input12.values[index])); }
-                                Binding {
-                                    target: __input12
-                                    property: "currentIndex"
-                                    value: __input12.values.indexOf("" + animSplits)
-                                    restoreMode: Binding.RestoreNone
-                                }
-                            }
-                        }
-                    }
-                }
-                W.Div {
-                    cssClass: ["cfg-col"]
-                    W.Text {
-                        cssClass: ["cfg-group"]
-                        text: "Behavior"
-                    }
-                    W.Div {
-                        cssClass: ["cfg-card"]
-                        W.Div {
-                            cssClass: ["cfg-row"]
-                            W.Text {
-                                cssClass: ["cfg-l"]
-                                text: "Scrollback"
-                            }
-                            W.Select {
-                                id: __input13
-                                cssClass: ["cfg-sel"]
-                                model: ["1000 lines", "5000 lines", "8000 lines", "20000 lines", "100000 lines"]
-                                values: ["1000", "5000", "8000", "20000", "100000"]
-                                onActivated: (index) => { scrollback = parseInt(__input13.values[index]); termConfig.set("scrollback", parseInt(__input13.values[index])); }
-                                Binding {
-                                    target: __input13
-                                    property: "currentIndex"
-                                    value: __input13.values.indexOf("" + scrollback)
-                                    restoreMode: Binding.RestoreNone
-                                }
-                            }
-                        }
-                    }
-                    W.Text {
-                        cssClass: ["cfg-group"]
-                        text: "Keyboard"
-                    }
-                    W.Div {
-                        cssClass: ["cfg-card"]
-                        Css.CssRepeater {
-                            model: __const_ACTIONS
-                            delegate: Component {
-                                W.Div {
-                                    cssClass: ["cfg-krow"]
-                                    W.Text {
-                                        cssClass: ["cfg-l"]
-                                        text: "" + (modelData.label)
+                                W.Select {
+                                    id: __input10
+                                    cssClass: ["cfg-sel"]
+                                    model: ["Shown", "Hidden"]
+                                    values: ["1", "0"]
+                                    onActivated: (index) => { showStatus = parseInt(__input10.values[index]); termConfig.set("showStatus", parseInt(__input10.values[index])); }
+                                    Binding {
+                                        target: __input10
+                                        property: "currentIndex"
+                                        value: __input10.values.indexOf("" + showStatus)
+                                        restoreMode: Binding.RestoreNone
                                     }
-                                    Css.CssRect {
-                                        cssPrimitive: "div"
-                                        cssClass: ["cfg-rec"]
-                                        QM_SolidTerm.KeyRecorder {
-                                            anchors.fill: parent
-                                            sequence: getKey(modelData.key)
-                                            background: sysTheme.base
-                                            foreground: sysTheme.text
-                                            accent: sysTheme.accent
-                                            border: sysTheme.window
-                                            onSequenceChanged: function(s) { return setKey(modelData.key, s) }
+                                }
+                            }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Split animation"
+                                }
+                                W.Select {
+                                    id: __input11
+                                    cssClass: ["cfg-sel"]
+                                    model: ["On", "Off"]
+                                    values: ["1", "0"]
+                                    onActivated: (index) => { animSplits = parseInt(__input11.values[index]); termConfig.set("animSplits", parseInt(__input11.values[index])); }
+                                    Binding {
+                                        target: __input11
+                                        property: "currentIndex"
+                                        value: __input11.values.indexOf("" + animSplits)
+                                        restoreMode: Binding.RestoreNone
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    W.Div {
+                        cssClass: ["cfg-col"]
+                        W.Text {
+                            cssClass: ["cfg-group"]
+                            text: "Behavior"
+                        }
+                        W.Div {
+                            cssClass: ["cfg-card"]
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Scrollback"
+                                }
+                                W.Select {
+                                    id: __input12
+                                    cssClass: ["cfg-sel"]
+                                    model: ["1000 lines", "5000 lines", "8000 lines", "20000 lines", "100000 lines"]
+                                    values: ["1000", "5000", "8000", "20000", "100000"]
+                                    onActivated: (index) => { scrollback = parseInt(__input12.values[index]); termConfig.set("scrollback", parseInt(__input12.values[index])); }
+                                    Binding {
+                                        target: __input12
+                                        property: "currentIndex"
+                                        value: __input12.values.indexOf("" + scrollback)
+                                        restoreMode: Binding.RestoreNone
+                                    }
+                                }
+                            }
+                        }
+                        W.Text {
+                            cssClass: ["cfg-group"]
+                            text: "Keyboard"
+                        }
+                        W.Div {
+                            cssClass: ["cfg-card"]
+                            Css.CssRepeater {
+                                model: __const_ACTIONS
+                                delegate: Component {
+                                    W.Div {
+                                        cssClass: ["cfg-krow"]
+                                        W.Text {
+                                            cssClass: ["cfg-l"]
+                                            text: "" + (modelData.label)
+                                        }
+                                        Css.CssRect {
+                                            cssPrimitive: "div"
+                                            cssClass: ["cfg-rec"]
+                                            QM_SolidTerm.KeyRecorder {
+                                                anchors.fill: parent
+                                                sequence: getKey(modelData.key)
+                                                background: sysTheme.base
+                                                foreground: sysTheme.text
+                                                accent: sysTheme.accent
+                                                border: sysTheme.window
+                                                onSequenceChanged: function(s) { return setKey(modelData.key, s) }
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
                     }
+                    W.Text {
+                        cssClass: ["cfg-path"]
+                        text: "Saved to " + (termConfig.path)
+                    }
+                }
+                W.Div {
+                    cssClass: ["cfg-actions"]
+                    W.Button {
+                        cssClass: ["cfg-close"]
+                        isDefault: true
+                        text: "Done"
+                        onClicked: closeCfg()
+                    }
+                }
+            }
+        }
+    }
+    Repeater {
+        model: (overviewOpen) ? 1 : 0
+        W.Dialog {
+            open: !!(overviewOpen)
+            title: "Panes & tabs"
+            cssClass: ["cfg"]
+            onDialogClosed: { overviewOpen = false }
+            W.Div {
+                cssClass: ["ov-body"]
+                Repeater {
+                    model: overviewOpen ? _ref_term.overview() : []
+                    W.Div {
+                        cssClass: ["ov-row"].concat(modelData.active ? ["ov-active"] : [])
+                        cssState: __hover1.containsMouse ? ["hover"] : []
+                        W.Text {
+                            cssClass: ["ov-tab"]
+                            text: "Tab " + (modelData.tab + 1)
+                        }
+                        W.Text {
+                            cssClass: ["ov-title"]
+                            text: "" + ((modelData.panes > 1 ? modelData.pane + 1 + ": " : "") + (modelData.title || "terminal"))
+                        }
+                        MouseArea {
+                            id: __hover1
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: pickOverview(modelData)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Repeater {
+        model: (renameOpen) ? 1 : 0
+        W.Dialog {
+            open: !!(renameOpen)
+            title: "Rename tab"
+            cssClass: ["cfg"]
+            onDialogClosed: { renameOpen = false }
+            W.Div {
+                cssClass: ["cfg-body", "paste-body"]
+                W.Text {
+                    cssClass: ["paste-warn"]
+                    text: "Tab title"
+                }
+                W.TextField {
+                    id: __input15
+                    cssClass: ["cfg-in", "rename-in"]
+                    placeholder: "(empty = automatic)"
+                    onTextEdited: { renameValue = text }
+                    Binding {
+                        target: __input15
+                        property: "text"
+                        value: renameValue
+                        restoreMode: Binding.RestoreNone
+                    }
+                }
+                W.Div {
+                    cssClass: ["cfg-actions", "paste-actions"]
+                    W.Button {
+                        cssClass: ["paste-cancel"]
+                        text: "Cancel"
+                        onClicked: renameOpen = false
+                    }
+                    W.Button {
+                        cssClass: ["cfg-close"]
+                        isDefault: true
+                        text: "Set"
+                        onClicked: applyRename()
+                    }
+                }
+            }
+        }
+    }
+    Repeater {
+        model: (pastePrompt !== "") ? 1 : 0
+        W.Dialog {
+            open: !!(pastePrompt !== "")
+            title: "Paste"
+            cssClass: ["cfg"]
+            onDialogClosed: { pastePrompt = "" }
+            W.Div {
+                cssClass: ["cfg-body", "paste-body"]
+                W.Text {
+                    cssClass: ["paste-warn"]
+                    text: "Paste " + (pasteLineCount()) + " lines into the terminal?"
                 }
                 W.Text {
-                    cssClass: ["cfg-path"]
-                    text: "Saved to " + (termConfig.path)
+                    cssClass: ["paste-hint"]
+                    text: "Multi-line paste can run commands. Review before confirming."
                 }
-            }
-            W.Div {
-                cssClass: ["cfg-actions"]
-                W.Button {
-                    cssClass: ["cfg-close"]
-                    isDefault: true
-                    text: "Done"
-                    onClicked: closeCfg()
-                }
-            }
-        }
-    }
-    W.Dialog {
-        open: !!(overviewOpen)
-        title: "Panes & tabs"
-        cssClass: ["cfg"]
-        onDialogClosed: { overviewOpen = false }
-        W.Div {
-            cssClass: ["ov-body"]
-            Repeater {
-                model: overviewOpen ? _ref_term.overview() : []
                 W.Div {
-                    cssClass: ["ov-row"].concat(modelData.active ? ["ov-active"] : [])
-                    cssState: __hover1.containsMouse ? ["hover"] : []
-                    W.Text {
-                        cssClass: ["ov-tab"]
-                        text: "Tab " + (modelData.tab + 1)
+                    cssClass: ["cfg-actions", "paste-actions"]
+                    W.Button {
+                        cssClass: ["paste-cancel"]
+                        text: "Cancel"
+                        onClicked: cancelPaste()
                     }
-                    W.Text {
-                        cssClass: ["ov-title"]
-                        text: "" + ((modelData.panes > 1 ? modelData.pane + 1 + ": " : "") + (modelData.title || "terminal"))
+                    W.Button {
+                        cssClass: ["cfg-close"]
+                        isDefault: true
+                        text: "Paste"
+                        onClicked: confirmPaste()
                     }
-                    MouseArea {
-                        id: __hover1
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: pickOverview(modelData)
-                    }
-                }
-            }
-        }
-    }
-    W.Dialog {
-        open: !!(renameOpen)
-        title: "Rename tab"
-        cssClass: ["cfg"]
-        onDialogClosed: { renameOpen = false }
-        W.Div {
-            cssClass: ["cfg-body", "paste-body"]
-            W.Text {
-                cssClass: ["paste-warn"]
-                text: "Tab title"
-            }
-            W.TextField {
-                id: __input16
-                cssClass: ["cfg-in", "rename-in"]
-                placeholder: "(empty = automatic)"
-                onTextEdited: { renameValue = text }
-                Binding {
-                    target: __input16
-                    property: "text"
-                    value: renameValue
-                    restoreMode: Binding.RestoreNone
-                }
-            }
-            W.Div {
-                cssClass: ["cfg-actions", "paste-actions"]
-                W.Button {
-                    cssClass: ["paste-cancel"]
-                    text: "Cancel"
-                    onClicked: renameOpen = false
-                }
-                W.Button {
-                    cssClass: ["cfg-close"]
-                    isDefault: true
-                    text: "Set"
-                    onClicked: applyRename()
-                }
-            }
-        }
-    }
-    W.Dialog {
-        open: !!(pastePrompt !== "")
-        title: "Paste"
-        cssClass: ["cfg"]
-        onDialogClosed: { pastePrompt = "" }
-        W.Div {
-            cssClass: ["cfg-body", "paste-body"]
-            W.Text {
-                cssClass: ["paste-warn"]
-                text: "Paste " + (pasteLineCount()) + " lines into the terminal?"
-            }
-            W.Text {
-                cssClass: ["paste-hint"]
-                text: "Multi-line paste can run commands. Review before confirming."
-            }
-            W.Div {
-                cssClass: ["cfg-actions", "paste-actions"]
-                W.Button {
-                    cssClass: ["paste-cancel"]
-                    text: "Cancel"
-                    onClicked: cancelPaste()
-                }
-                W.Button {
-                    cssClass: ["cfg-close"]
-                    isDefault: true
-                    text: "Paste"
-                    onClicked: confirmPaste()
                 }
             }
         }

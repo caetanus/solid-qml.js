@@ -255,6 +255,8 @@ export function Term(props: { onTitle: (t: string) => void }) {
         </div>
       </Show>
 
+      {/* Dialogs exist only while open (lazy <Show>): nothing of them is built at startup. */}
+      <Show when={cfgOpen()}>
       <dialog open={cfgOpen()} title="Preferences" class="cfg" onClose={() => setCfgOpen(false)}>
         <div class="cfg-body">
           <div class="cfg-scroll">
@@ -419,7 +421,9 @@ export function Term(props: { onTitle: (t: string) => void }) {
           </div>
         </div>
       </dialog>
+      </Show>
 
+      <Show when={overviewOpen()}>
       <dialog open={overviewOpen()} title="Panes & tabs" class="cfg" onClose={() => setOverviewOpen(false)}>
         <div class="ov-body">
           <Index each={overviewOpen() ? term.overview() : []}>{(row) =>
@@ -430,7 +434,9 @@ export function Term(props: { onTitle: (t: string) => void }) {
           }</Index>
         </div>
       </dialog>
+      </Show>
 
+      <Show when={renameOpen()}>
       <dialog open={renameOpen()} title="Rename tab" class="cfg" onClose={() => setRenameOpen(false)}>
         <div class="cfg-body paste-body">
           <text class="paste-warn">Tab title</text>
@@ -442,7 +448,9 @@ export function Term(props: { onTitle: (t: string) => void }) {
           </div>
         </div>
       </dialog>
+      </Show>
 
+      <Show when={pastePrompt() !== ""}>
       <dialog open={pastePrompt() !== ""} title="Paste" class="cfg" onClose={() => setPastePrompt("")}>
         <div class="cfg-body paste-body">
           <text class="paste-warn">Paste {pasteLineCount()} lines into the terminal?</text>
@@ -453,6 +461,7 @@ export function Term(props: { onTitle: (t: string) => void }) {
           </div>
         </div>
       </dialog>
+      </Show>
     </div>
   );
 }
