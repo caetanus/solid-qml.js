@@ -47,6 +47,9 @@ private:
     Q_PROPERTY(int fontSize READ fontSize WRITE setFontSize NOTIFY fontChanged)
     Q_PROPERTY(QColor background READ background WRITE setBackground NOTIFY colorsChanged)
     Q_PROPERTY(QColor foreground READ foreground WRITE setForeground NOTIFY colorsChanged)
+    // The 16 ANSI colours (0–7 normal, 8–15 bright) as colour names; empty = libvterm's xterm
+    // defaults. Applied at draw time, so a scheme change recolours the screen AND the scrollback.
+    Q_PROPERTY(QStringList ansiPalette READ ansiPalette WRITE setAnsiPalette NOTIFY colorsChanged)
     // OSC 0/2 window title from the running program (prompt integration etc.).
     Q_PROPERTY(QString title READ title NOTIFY titleChanged)
     Q_PROPERTY(int scrollbackLimit READ scrollbackLimit WRITE setScrollbackLimit NOTIFY scrollbackLimitChanged)
@@ -74,6 +77,8 @@ public:
     void setBackground(const QColor &c);
     QColor foreground() const { return m_foreground; }
     void setForeground(const QColor &c);
+    QStringList ansiPalette() const { return m_paletteNames; }
+    void setAnsiPalette(const QStringList &names);
     QString title() const { return m_title; }
     int scrollbackLimit() const { return m_scrollbackLimit; }
     void setScrollbackLimit(int v);
@@ -191,6 +196,9 @@ private:
     int m_rows = 24, m_cols = 80;
     QColor m_background = QColor("#161a21");
     QColor m_foreground = QColor("#d4dae3");
+    QStringList m_paletteNames;
+    QColor m_palette[16];
+    bool m_hasPalette = false;
     void rebuildBackgroundImage();          // re-derives m_bgImage from source + the blur strength
 
     QString m_bgImagePath;

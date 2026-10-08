@@ -1004,6 +1004,7 @@ void TerminalPanes::applyStyle(TerminalView *v)
     v->setFontSize(m_fontSize);
     v->setBackground(m_background);
     v->setForeground(m_foreground);
+    v->setAnsiPalette(m_palette);
     v->setScrollbackLimit(m_scrollbackLimit);
     v->setBackgroundImage(m_bgImage);
     v->setBackgroundOpacity(m_bgOpacity);
@@ -1021,6 +1022,7 @@ STYLE_SETTER(setFontFamily, m_fontFamily, const QString &)
 STYLE_SETTER(setFontSize, m_fontSize, int)
 STYLE_SETTER(setBackground, m_background, const QColor &)
 STYLE_SETTER(setForeground, m_foreground, const QColor &)
+STYLE_SETTER(setAnsiPalette, m_palette, const QStringList &)
 STYLE_SETTER(setScrollbackLimit, m_scrollbackLimit, int)
 STYLE_SETTER(setBackgroundImage, m_bgImage, const QString &)
 STYLE_SETTER(setBlur, m_blur, int)

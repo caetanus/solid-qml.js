@@ -29,6 +29,7 @@ class TerminalPanes : public QQuickItem {
     Q_PROPERTY(int fontSize READ fontSize WRITE setFontSize NOTIFY styleChanged)
     Q_PROPERTY(QColor background READ background WRITE setBackground NOTIFY styleChanged)
     Q_PROPERTY(QColor foreground READ foreground WRITE setForeground NOTIFY styleChanged)
+    Q_PROPERTY(QStringList ansiPalette READ ansiPalette WRITE setAnsiPalette NOTIFY styleChanged)
     Q_PROPERTY(int scrollbackLimit READ scrollbackLimit WRITE setScrollbackLimit NOTIFY styleChanged)
     Q_PROPERTY(QColor handleColor READ handleColor WRITE setHandleColor NOTIFY styleChanged)
     Q_PROPERTY(QStringList reservedSequences READ reservedSequences WRITE setReservedSequences NOTIFY reservedChanged)
@@ -51,6 +52,8 @@ public:
     void setBackground(const QColor &v);
     QColor foreground() const { return m_foreground; }
     void setForeground(const QColor &v);
+    QStringList ansiPalette() const { return m_palette; }
+    void setAnsiPalette(const QStringList &v);
     int scrollbackLimit() const { return m_scrollbackLimit; }
     void setScrollbackLimit(int v);
     QColor handleColor() const { return m_handleColor; }
@@ -196,6 +199,7 @@ private:
     int m_fontSize = 15;
     QColor m_background = QColor("#1e1e1e");
     QColor m_foreground = QColor("#ffffff");
+    QStringList m_palette;
     int m_scrollbackLimit = 8000;
     // Pane title strip: the handle colour lifted a touch, as translucent as the terminal behind it
     // (an opaque strip over translucent panes read as a heavy black bar).

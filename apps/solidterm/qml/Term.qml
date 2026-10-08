@@ -43,7 +43,7 @@ W.Div {
     property var kPrevTab: termConfig.getString("keys.prevTab", "Ctrl+PgUp")
     property var kSearch: termConfig.getString("keys.search", "Ctrl+Shift+F")
     property var kZoomPane: termConfig.getString("keys.zoomPane", "Ctrl+Shift+X")
-    readonly property var __const_SCHEMES: ({ midnight: ({ bg: "#161a21", fg: "#d4dae3" }), solarized: ({ bg: "#002b36", fg: "#93a1a1" }), gruvbox: ({ bg: "#282828", fg: "#ebdbb2" }), paper: ({ bg: "#f7f2e9", fg: "#3a3532" }) })
+    readonly property var __const_SCHEMES: ({ midnight: ({ bg: "#161a21", fg: "#d4dae3" }), "midnight-hc": ({ bg: "#161a21", fg: "#d4dae3", palette: ["#3b4252", "#ff8590", "#8ee6a0", "#f5d27a", "#7cb8ff", "#d9a2ff", "#6fe0ea", "#d4dae3", "#8a93a6", "#ff9aa3", "#aaf0b8", "#ffe39c", "#a3ceff", "#e6bfff", "#97ecf2", "#f4f7fb"] }), solarized: ({ bg: "#002b36", fg: "#93a1a1" }), gruvbox: ({ bg: "#282828", fg: "#ebdbb2" }), paper: ({ bg: "#f7f2e9", fg: "#3a3532" }) })
     readonly property var __const_ACTIONS: [({ key: "newTab", label: "New tab", def: "Ctrl+Shift+T" }), ({ key: "nextTab", label: "Next tab", def: "Ctrl+PgDown" }), ({ key: "prevTab", label: "Previous tab", def: "Ctrl+PgUp" }), ({ key: "search", label: "Find", def: "Ctrl+Shift+F" }), ({ key: "zoomPane", label: "Zoom pane", def: "Ctrl+Shift+X" }), ({ key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" }), ({ key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" }), ({ key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" }), ({ key: "focusNext", label: "Focus next pane", def: "Alt+Right" }), ({ key: "focusPrev", label: "Focus previous pane", def: "Alt+Left" })]
     function browseBg() { var p = termConfig.pickImage(); if (p) { bgImage = p; termConfig.set("bgImage", p); } }
     function clearBg() { bgImage = ""; termConfig.set("bgImage", ""); }
@@ -227,6 +227,7 @@ W.Div {
                 fontSize: uiFontSize
                 background: scheme === "system" ? sysTheme.base : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).bg
                 foreground: scheme === "system" ? sysTheme.text : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).fg
+                ansiPalette: scheme === "system" ? [] : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).palette || []
                 scrollbackLimit: scrollback
                 backgroundImage: bgImage
                 backgroundOpacity: opacity_ / 100
@@ -398,8 +399,8 @@ W.Div {
                                 W.Select {
                                     id: __input5
                                     cssClass: ["cfg-sel"]
-                                    model: ["System", "Midnight", "Solarized Dark", "Gruvbox", "Paper (light)"]
-                                    values: ["system", "midnight", "solarized", "gruvbox", "paper"]
+                                    model: ["System", "Midnight", "Midnight (high contrast)", "Solarized Dark", "Gruvbox", "Paper (light)"]
+                                    values: ["system", "midnight", "midnight-hc", "solarized", "gruvbox", "paper"]
                                     onActivated: (index) => { scheme = __input5.values[index]; termConfig.set("scheme", __input5.values[index]); }
                                     Binding {
                                         target: __input5

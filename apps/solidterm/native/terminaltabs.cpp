@@ -240,6 +240,7 @@ void TerminalTabs::applyStyle(TerminalPanes *p)
     p->setFontSize(m_fontSize);
     p->setBackground(m_background);
     p->setForeground(m_foreground);
+    p->setAnsiPalette(m_palette);
     p->setScrollbackLimit(m_scrollbackLimit);
     p->setHandleColor(m_handleColor);
     p->setBackgroundImage(m_bgImage);
@@ -260,6 +261,7 @@ TABS_STYLE_SETTER(setFontFamily, m_fontFamily, const QString &, setFontFamily)
 TABS_STYLE_SETTER(setFontSize, m_fontSize, int, setFontSize)
 TABS_STYLE_SETTER(setBackground, m_background, const QColor &, setBackground)
 TABS_STYLE_SETTER(setForeground, m_foreground, const QColor &, setForeground)
+TABS_STYLE_SETTER(setAnsiPalette, m_palette, const QStringList &, setAnsiPalette)
 TABS_STYLE_SETTER(setScrollbackLimit, m_scrollbackLimit, int, setScrollbackLimit)
 TABS_STYLE_SETTER(setHandleColor, m_handleColor, const QColor &, setHandleColor)
 TABS_STYLE_SETTER(setBackgroundImage, m_bgImage, const QString &, setBackgroundImage)

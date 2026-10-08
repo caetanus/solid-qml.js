@@ -270,7 +270,8 @@ void TerminalView::ensureSession()
     vterm_screen_enable_altscreen(m_screen, 1);
     vterm_screen_set_damage_merge(m_screen, VTERM_DAMAGE_SCROLL);
 
-    // Default colours feed SGR-reset cells; the palette stays vterm's xterm-256 standard.
+    // Default colours feed SGR-reset cells. ANSI 0–15 come from the scheme palette at draw time
+    // (toQColor); without one they stay vterm's xterm-256 standard.
     VTermState *state = vterm_obtain_state(m_vt);
     VTermColor fg, bg;
     vterm_color_rgb(&fg, uint8_t(m_foreground.red()), uint8_t(m_foreground.green()), uint8_t(m_foreground.blue()));
@@ -340,6 +341,8 @@ QColor TerminalView::toQColor(VTermColor c, bool isFg) const
         return m_foreground;
     if (VTERM_COLOR_IS_DEFAULT_BG(&c))
         return m_background;
+    if (m_hasPalette && VTERM_COLOR_IS_INDEXED(&c) && c.indexed.idx < 16)
+        return m_palette[c.indexed.idx];
     vterm_screen_convert_color_to_rgb(m_screen, &c);
     return QColor(c.rgb.red, c.rgb.green, c.rgb.blue);
     Q_UNUSED(isFg);
@@ -1343,6 +1346,21 @@ void TerminalView::setForeground(const QColor &c)
     if (m_foreground == c)
         return;
     m_foreground = c;
+    emit colorsChanged();
+    update();
+}
+
+void TerminalView::setAnsiPalette(const QStringList &names)
+{
+    if (m_paletteNames == names)
+        return;
+    m_paletteNames = names;
+    // All-or-nothing: a partial or unparsable list falls back to the xterm defaults entirely.
+    m_hasPalette = names.size() == 16;
+    for (int i = 0; m_hasPalette && i < 16; ++i) {
+        m_palette[i] = QColor::fromString(names.at(i));
+        m_hasPalette = m_palette[i].isValid();
+    }
     emit colorsChanged();
     update();
 }

@@ -10,8 +10,18 @@ declare const termConfig: any;
 declare const Qt: any;
 declare const process: any;
 
-const SCHEMES: Record<string, { bg: string; fg: string }> = {
+// `palette` = the 16 ANSI colours (0–7, then bright 8–15). Without one, programs' colours (ls/exa
+// directories, prompts, diffs) use libvterm's xterm defaults — whose blue (#0000ee) is 1.9:1 on a
+// dark background, unreadable. midnight-hc's colours are each >= 7:1 against its background
+// (WCAG AAA; bright black >= 4.5 for comments); colour 0 stays near the background on purpose,
+// since programs use it as a fill.
+const SCHEMES: Record<string, { bg: string; fg: string; palette?: string[] }> = {
   midnight: { bg: "#161a21", fg: "#d4dae3" },
+  "midnight-hc": {
+    bg: "#161a21", fg: "#d4dae3",
+    palette: ["#3b4252", "#ff8590", "#8ee6a0", "#f5d27a", "#7cb8ff", "#d9a2ff", "#6fe0ea", "#d4dae3",
+              "#8a93a6", "#ff9aa3", "#aaf0b8", "#ffe39c", "#a3ceff", "#e6bfff", "#97ecf2", "#f4f7fb"],
+  },
   solarized: { bg: "#002b36", fg: "#93a1a1" },
   gruvbox: { bg: "#282828", fg: "#ebdbb2" },
   paper: { bg: "#f7f2e9", fg: "#3a3532" },
@@ -221,6 +231,7 @@ export function Term(props: { onTitle: (t: string) => void }) {
           fontSize={uiFontSize()}
           background={scheme() === "system" ? sysTheme.base : (SCHEMES[scheme()] || SCHEMES.midnight).bg}
           foreground={scheme() === "system" ? sysTheme.text : (SCHEMES[scheme()] || SCHEMES.midnight).fg}
+          ansiPalette={scheme() === "system" ? [] : ((SCHEMES[scheme()] || SCHEMES.midnight).palette || [])}
           scrollbackLimit={scrollback()}
           backgroundImage={bgImage()}
           backgroundOpacity={opacity() / 100}
@@ -308,6 +319,7 @@ export function Term(props: { onTitle: (t: string) => void }) {
                       onChange={(v) => { setScheme(v); termConfig.set("scheme", v); }}>
                 <option value="system">System</option>
                 <option value="midnight">Midnight</option>
+                <option value="midnight-hc">Midnight (high contrast)</option>
                 <option value="solarized">Solarized Dark</option>
                 <option value="gruvbox">Gruvbox</option>
                 <option value="paper">Paper (light)</option>
