@@ -5,6 +5,7 @@
 #include <QGuiApplication>
 #include <QHoverEvent>
 #include <QKeyEvent>
+#include <QFileInfo>
 #include <QInputMethodEvent>
 #include <QKeySequence>
 #include <QRegularExpression>
@@ -281,7 +282,10 @@ void TerminalView::ensureSession()
 
     QString cwd;
     QStringList env;
-    if (QQuickWindow *w = window()) {
+    if (m_hasStart) {
+        cwd = m_start.cwd;
+        env = m_start.env;
+    } else if (QQuickWindow *w = window()) {
         cwd = w->property("solidtermCwd").toString();
         env = w->property("solidtermEnv").toStringList();
     }
@@ -1348,6 +1352,15 @@ void TerminalView::setForeground(const QColor &c)
     m_foreground = c;
     emit colorsChanged();
     update();
+}
+
+QString TerminalView::currentDirectory() const
+{
+    const qint64 pid = m_pty.pid();
+    if (pid <= 0)
+        return {};
+    const QString cwd = QFileInfo(QStringLiteral("/proc/%1/cwd").arg(pid)).symLinkTarget();
+    return QFileInfo(cwd).isDir() ? cwd : QString();
 }
 
 void TerminalView::setAnsiPalette(const QStringList &names)

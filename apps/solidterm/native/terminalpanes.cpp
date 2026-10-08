@@ -122,7 +122,7 @@ TerminalPanes::~TerminalPanes()
 
 // ─── tree construction ──────────────────────────────────────────────────────────────────────────
 
-TerminalPanes::Node *TerminalPanes::makeLeaf(TerminalView *adopt)
+TerminalPanes::Node *TerminalPanes::makeLeaf(TerminalView *adopt, const QString &startCwd)
 {
     QQmlEngine *eng = qmlEngine(this);
     if (!eng)
@@ -146,9 +146,26 @@ TerminalPanes::Node *TerminalPanes::makeLeaf(TerminalView *adopt)
     // Adopt an existing view (a moved pane — pty rides along) or create a fresh one.
     TerminalView *view = adopt;
     if (!view) {
-        view = qobject_cast<TerminalView *>(m_viewComponent->create(qmlContext(this)));
+        // The shell starts when the view completes — before it is in a window — so hand it its
+        // start context explicitly: this window's caller cwd/env (single-instance), and for a split
+        // the focused pane's current directory.
+        QObject *o = m_viewComponent->beginCreate(qmlContext(this));
+        view = qobject_cast<TerminalView *>(o);
+        if (view) {
+            TerminalView::SpawnContext ctx;
+            if (QQuickWindow *w = window()) {
+                ctx.cwd = w->property("solidtermCwd").toString();
+                ctx.env = w->property("solidtermEnv").toStringList();
+            }
+            if (!startCwd.isEmpty())
+                ctx.cwd = startCwd;
+            if (!ctx.cwd.isEmpty() || !ctx.env.isEmpty())
+                view->setStartContext(ctx);
+        }
+        m_viewComponent->completeCreate();
         if (!view) {
             qWarning("solidterm: pane view failed: %s", qPrintable(m_viewComponent->errorString()));
+            delete o;
             cell->deleteLater();
             return nullptr;
         }
@@ -350,7 +367,8 @@ void TerminalPanes::split(int orient)
         return;
     m_zoomed = false; m_zoomLeaf = nullptr; // splitting exits zoom (tmux/tilix behaviour)
     Node *leaf = m_focused;
-    Node *newLeaf = makeLeaf();
+    // Like tilix: the new pane's shell starts where the focused pane's shell is now.
+    Node *newLeaf = makeLeaf(nullptr, leaf->view ? leaf->view->currentDirectory() : QString());
     if (!newLeaf)
         return;
 

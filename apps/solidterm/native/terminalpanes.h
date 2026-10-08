@@ -141,7 +141,9 @@ private:
         bool isLeaf() const { return children.isEmpty(); }
     };
 
-    Node *makeLeaf(TerminalView *adopt = nullptr); // compose a cell; adopt a moved view or make one
+    // `startCwd`: directory a FRESH view's shell starts in (a split passes the focused pane's);
+    // empty = the window's spawn context. Ignored when adopting a moved view.
+    Node *makeLeaf(TerminalView *adopt = nullptr, const QString &startCwd = QString()); // compose a cell; adopt a moved view or make one
     void wirePane(TerminalView *v, PaneHeader *header);
     void applyStyle(TerminalView *v);
 

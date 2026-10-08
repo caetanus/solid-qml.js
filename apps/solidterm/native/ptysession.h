@@ -22,6 +22,7 @@ public:
     void resize(int rows, int cols);
     void writeBytes(const QByteArray &bytes);
     bool running() const { return m_pid > 0; }
+    qint64 pid() const { return m_pid; }
 
 signals:
     void bytesRead(const QByteArray &bytes);

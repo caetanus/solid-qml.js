@@ -39,9 +39,17 @@ public:
         QStringList env;
     };
     static void setPendingSpawn(const SpawnContext *ctx) { s_pendingSpawn = ctx; }
+    // Explicit start context for THIS view, set between beginCreate and completeCreate (its shell
+    // starts at completion). Wins over the window's/pending context: a split starts in the focused
+    // pane's directory.
+    void setStartContext(const SpawnContext &ctx) { m_start = ctx; m_hasStart = true; }
+    // The shell's current working directory (/proc/<pid>/cwd), or empty if unknown.
+    QString currentDirectory() const;
 
 private:
     static inline const SpawnContext *s_pendingSpawn = nullptr;
+    SpawnContext m_start;
+    bool m_hasStart = false;
 
     Q_PROPERTY(QString fontFamily READ fontFamily WRITE setFontFamily NOTIFY fontChanged)
     Q_PROPERTY(int fontSize READ fontSize WRITE setFontSize NOTIFY fontChanged)
