@@ -319,12 +319,20 @@ if build_solidterm
   blur_args = []
   if wlclient_dep.found() and wlscanner.found() and wlprotocols_dep.found() and add_languages('c', native: false, required: false)
     blur_xml = wlprotocols_dep.get_variable('pkgdatadir') / 'staging/ext-background-effect/ext-background-effect-v1.xml'
+    # Our own strength extension (also in the owner's sway): scales the blur where offered.
+    strength_xml = files('apps/solidterm/protocols/background-effect-strength-unstable-v1.xml')
     blur_src = [
       custom_target('background-effect-client-header', input: blur_xml,
         output: 'ext-background-effect-v1-client-protocol.h',
         command: [wlscanner, 'client-header', '@INPUT@', '@OUTPUT@']),
       custom_target('background-effect-private-code', input: blur_xml,
         output: 'ext-background-effect-v1-protocol.c',
+        command: [wlscanner, 'private-code', '@INPUT@', '@OUTPUT@']),
+      custom_target('blur-strength-client-header', input: strength_xml,
+        output: 'background-effect-strength-unstable-v1-client-protocol.h',
+        command: [wlscanner, 'client-header', '@INPUT@', '@OUTPUT@']),
+      custom_target('blur-strength-private-code', input: strength_xml,
+        output: 'background-effect-strength-unstable-v1-protocol.c',
         command: [wlscanner, 'private-code', '@INPUT@', '@OUTPUT@']),
       files('apps/solidterm/native/windowblur.cpp'),
     ]

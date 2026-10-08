@@ -11,12 +11,14 @@
 
 #include <wayland-client.h>
 
+#include "background-effect-strength-unstable-v1-client-protocol.h"
 #include "ext-background-effect-v1-client-protocol.h"
 
 namespace {
 
 struct Bound {
     ext_background_effect_manager_v1 *manager = nullptr;
+    zbackground_effect_strength_manager_v1 *strength = nullptr;
     wl_compositor *compositor = nullptr;
 };
 
@@ -26,6 +28,9 @@ void registryGlobal(void *data, wl_registry *registry, uint32_t name, const char
     if (!std::strcmp(interface, ext_background_effect_manager_v1_interface.name))
         b->manager = static_cast<ext_background_effect_manager_v1 *>(
             wl_registry_bind(registry, name, &ext_background_effect_manager_v1_interface, 1));
+    else if (!std::strcmp(interface, zbackground_effect_strength_manager_v1_interface.name))
+        b->strength = static_cast<zbackground_effect_strength_manager_v1 *>(
+            wl_registry_bind(registry, name, &zbackground_effect_strength_manager_v1_interface, 1));
     else if (!std::strcmp(interface, wl_compositor_interface.name))
         b->compositor = static_cast<wl_compositor *>(wl_registry_bind(registry, name, &wl_compositor_interface, 1));
 }
@@ -82,6 +87,9 @@ WindowBlur::WindowBlur(QWindow *window)
     }
     if (m_compositor)
         wl_proxy_set_queue(reinterpret_cast<wl_proxy *>(m_compositor), nullptr);
+    m_strengthManager = bound.strength;
+    if (m_strengthManager)
+        wl_proxy_set_queue(reinterpret_cast<wl_proxy *>(m_strengthManager), nullptr);
     wl_registry_destroy(registry);
     wl_event_queue_destroy(queue);
 
@@ -98,6 +106,8 @@ WindowBlur::~WindowBlur()
     detach();
     if (m_manager)
         ext_background_effect_manager_v1_destroy(m_manager);
+    if (m_strengthManager)
+        zbackground_effect_strength_manager_v1_destroy(m_strengthManager);
     if (m_compositor)
         wl_compositor_destroy(m_compositor);
 }
@@ -121,6 +131,15 @@ void WindowBlur::setEnabled(bool on)
         apply();
 }
 
+void WindowBlur::setStrength(int strength)
+{
+    strength = qBound(0, strength, 100);
+    if (m_strength == strength)
+        return;
+    m_strength = strength;
+    apply();
+}
+
 void WindowBlur::attach()
 {
     if (!m_manager || m_effect || !m_enabled)
@@ -130,11 +149,17 @@ void WindowBlur::attach()
     if (!surface)
         return; // not created yet; surfaceCreated brings us back
     m_effect = ext_background_effect_manager_v1_get_background_effect(m_manager, surface);
+    if (m_strengthManager)
+        m_strengthObj = zbackground_effect_strength_manager_v1_get_blur_strength(m_strengthManager, surface);
     apply();
 }
 
 void WindowBlur::detach()
 {
+    if (m_strengthObj) {
+        zbackground_effect_strength_v1_destroy(m_strengthObj);
+        m_strengthObj = nullptr;
+    }
     if (m_effect) {
         ext_background_effect_surface_v1_destroy(m_effect);
         m_effect = nullptr;
@@ -155,7 +180,9 @@ void WindowBlur::apply()
     } else {
         ext_background_effect_surface_v1_set_blur_region(m_effect, nullptr);
     }
-    // The region is double-buffered: it takes effect on the surface's next commit, i.e. our next
+    if (m_strengthObj)
+        zbackground_effect_strength_v1_set_strength(m_strengthObj, uint32_t(m_strength));
+    // The region (and strength) are double-buffered: it takes effect on the surface's next commit, i.e. our next
     // frame.
     if (auto *qw = qobject_cast<QQuickWindow *>(m_window.data()))
         qw->update();

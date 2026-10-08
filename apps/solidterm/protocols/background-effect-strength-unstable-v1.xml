@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="background_effect_strength_unstable_v1">
+  <copyright>
+    Copyright © 2026 Marcelo A Caetano
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="strength of the background blur">
+    ext-background-effect-v1 lets a client ask for blur behind a surface but
+    leaves how strong it is to the compositor. This extension lets the client
+    hint a strength for that blur, per surface.
+
+    It only modulates a blur requested through ext-background-effect-v1: with
+    no blur region set, the strength has no effect. A compositor that does not
+    offer this global simply applies its own default strength.
+
+    Warning! The protocol described in this file is experimental and
+    backward incompatible changes may be made. Backward compatible changes
+    may be added together with the corresponding interface version bump.
+    Backward incompatible changes are done by bumping the version number in
+    the protocol and interface names and resetting the interface version.
+  </description>
+
+  <interface name="zbackground_effect_strength_manager_v1" version="1">
+    <description summary="blur strength factory"/>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Existing strength objects are not affected.
+      </description>
+    </request>
+
+    <enum name="error">
+      <entry name="already_exists" value="0"
+             summary="the surface already has a strength object"/>
+    </enum>
+
+    <request name="get_blur_strength">
+      <description summary="get the blur strength object of a surface">
+        Create a strength object for the surface. Raises already_exists if the
+        surface already has one.
+      </description>
+      <arg name="id" type="new_id" interface="zbackground_effect_strength_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+  </interface>
+
+  <interface name="zbackground_effect_strength_v1" version="1">
+    <description summary="blur strength of a surface">
+      If the surface is destroyed, this object becomes inert.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="remove the strength hint">
+        The compositor default applies again from the next commit.
+      </description>
+    </request>
+
+    <request name="set_strength">
+      <description summary="set the blur strength">
+        Strength from 0 (no blur) to 100 (the compositor's strongest blur);
+        larger values are clamped to 100. Double-buffered: applied on the next
+        wl_surface.commit.
+      </description>
+      <arg name="strength" type="uint"/>
+    </request>
+  </interface>
+</protocol>

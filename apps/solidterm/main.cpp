@@ -81,14 +81,19 @@ static void wireWindow(QQuickWindow *window)
     QObject::connect(sysTheme, &SystemTheme::changed, window, retint);
 #ifdef HAVE_BACKGROUND_EFFECT
     // Blur behind the translucent window, done by the compositor (ext-background-effect-v1).
-    // On while the "blur" strength (the preferences slider) is above 0, live; inert on a
-    // compositor without the protocol.
+    // On while the "blur" strength (the preferences slider) is above 0, live, with that
+    // strength where the compositor accepts one; inert on a compositor without the protocol.
     TermConfig *config = g_app.config;
     auto *blur = new WindowBlur(window);
-    blur->setEnabled(config->getInt(QStringLiteral("blur"), 0) > 0);
-    QObject::connect(config, &TermConfig::changed, blur, [blur, config](const QString &key) {
+    const auto applyBlur = [blur, config] {
+        const int strength = config->getInt(QStringLiteral("blur"), 0);
+        blur->setStrength(strength); // scales the blur where the compositor takes a strength
+        blur->setEnabled(strength > 0);
+    };
+    applyBlur();
+    QObject::connect(config, &TermConfig::changed, blur, [applyBlur](const QString &key) {
         if (key == QLatin1String("blur"))
-            blur->setEnabled(config->getInt(QStringLiteral("blur"), 0) > 0);
+            applyBlur();
     });
     if (qEnvironmentVariableIsSet("SOLIDTERM_BLURINFO"))
         qInfo("solidterm: background blur %s", blur->isSupported() ? "supported" : "NOT supported by the compositor");
