@@ -135,15 +135,19 @@ export function Term(props: { onTitle: (t: string) => void }) {
     else if (seq === kNextTab()) { const n = tabTitles().length; if (n > 1) term.selectTab((activeTab() + 1) % n); }
     else if (seq === kPrevTab()) { const n = tabTitles().length; if (n > 1) term.selectTab((activeTab() - 1 + n) % n); }
     else if (seq === kSearch()) openSearch();
-    else if (seq === "Ctrl+=" || seq === "Ctrl++") term.zoomFocused(1);
-    else if (seq === "Ctrl+-") term.zoomFocused(-1);
-    else if (seq === "Ctrl+0") term.zoomFocused(0);
+    else if (seq === "Ctrl+=" || seq === "Ctrl++") zoom(1);
+    else if (seq === "Ctrl+-") zoom(-1);
+    else if (seq === "Ctrl+0") zoom(0);
     else if (seq === "Ctrl+,") setCfgOpen(true);
     else if (seq === kZoomPane()) term.toggleZoom();
     else if (seq === "F12") toggleOverview();
   };
-  // Font zoom (Ctrl +/−/0 and Ctrl+wheel) is PER-PANE now → term.zoomFocused(); the pref font size
-  // (below) remains the shared default for all panes.
+  // Font zoom (Ctrl +/−/0 and Ctrl+wheel) is PER-PANE → term.zoomFocused(): the other open panes
+  // keep their size. The zoomed size is remembered as the font size the NEXT launch starts with.
+  const zoom = (d: number) => {
+    const px = term.zoomFocused(d);
+    if (px > 0) termConfig.set("fontSize", px);
+  };
   const setKey = (k: string, seq: string) => {
     termConfig.set("keys." + k, seq);
     if (k === "splitRight") setKSplitRight(seq);
@@ -211,7 +215,7 @@ export function Term(props: { onTitle: (t: string) => void }) {
           onTabsChanged={(titles, active) => { setTabTitles(titles); setActiveTab(active); }}
           onSearchChanged={(idx, count) => { setSearchIdx(idx); setSearchCount(count); }}
           onUnsafePasteRequested={(text) => setPastePrompt(text)}
-          onZoomRequested={(d) => term.zoomFocused(d)}
+          onZoomRequested={(d) => zoom(d)}
           onPaneMenuRequested={(x, y, ro) => openPaneMenu(x, y, ro)}
           fontFamily={uiFontFamily()}
           fontSize={uiFontSize()}

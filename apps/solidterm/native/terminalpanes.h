@@ -72,7 +72,7 @@ public:
     Q_INVOKABLE void focusPrev();
     Q_INVOKABLE void refocus(); // re-take keyboard focus on the current pane (tab switch)
     Q_INVOKABLE void toggleZoom(); // maximise the focused pane to fill the session; again restores
-    Q_INVOKABLE void zoomFocused(int delta); // per-pane FONT zoom (delta 0 = reset to the shared size)
+    Q_INVOKABLE int zoomFocused(int delta); // per-pane FONT zoom (delta 0 = reset to the shared size)
     QStringList paneTitles() const;         // leaf titles in order (for the F12 overview)
     int focusedPaneIndex() const;           // index of the focused leaf
     Q_INVOKABLE void focusLeafByIndex(int i);

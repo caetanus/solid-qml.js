@@ -970,14 +970,15 @@ void TerminalPanes::focusPrev()
 void TerminalPanes::copyFocused() { if (m_focused && m_focused->view) m_focused->view->copySelection(); }
 void TerminalPanes::pasteFocused() { if (m_focused && m_focused->view) m_focused->view->pasteClipboard(); }
 void TerminalPanes::pasteTextFocused(const QString &t) { if (m_focused && m_focused->view) m_focused->view->pasteText(t); }
-void TerminalPanes::zoomFocused(int delta)
+int TerminalPanes::zoomFocused(int delta)
 {
     if (!m_focused || !m_focused->view)
-        return;
+        return 0;
     // Per-pane: change ONLY the focused view's font size (delta 0 resets to the shared/pref size).
     // We deliberately don't touch m_fontSize, so the other panes and the saved pref are unaffected.
     TerminalView *v = m_focused->view;
     v->setFontSize(delta == 0 ? m_fontSize : qBound(6, v->fontSize() + delta, 40));
+    return v->fontSize();
 }
 void TerminalPanes::clearFocused() { if (m_focused && m_focused->view) m_focused->view->clearScrollback(); }
 void TerminalPanes::resetFocused() { if (m_focused && m_focused->view) m_focused->view->resetTerminal(); }
