@@ -1786,14 +1786,36 @@ function emitIndex(propsArg: t.Node | undefined, children: t.Node[], scope: Scop
     const [p0, p1] = delegate.params;
     const itemName = p0 && t.isIdentifier(p0) ? p0.name : null;
     const idxName = p1 && t.isIdentifier(p1) ? p1.name : null;
+    const body = delegate.body;
+    if (!isHCall(body)) throw new Error("Index delegate must return a single element in this plan");
+    // As in <For>: a nested Repeater (a loop, a lazy <Show>) shadows `modelData` and `index`, so
+    // a row or index used inside one is published on the delegate root and read through its id.
+    let publish: string | null = null;
+    if ((itemName && usedInNestedLoop(body, itemName)) || (idxName && usedInNestedLoop(body, idxName))) {
+      const counter = scope.hoverCounter ?? { n: 0 };
+      publish = `__for${counter.n++}`;
+    }
     const inner: Scope = {
       ...scope,
-      accessors: { ...(scope.accessors ?? {}), ...(itemName ? { [itemName]: "modelData" } : {}) },
-      locals: { ...(scope.locals ?? {}), ...(idxName ? { [idxName]: "index" } : {}) },
+      accessors: { ...(scope.accessors ?? {}), ...(itemName ? { [itemName]: publish ? `${publish}.__forItem` : "modelData" } : {}) },
+      locals: { ...(scope.locals ?? {}), ...(idxName ? { [idxName]: publish ? `${publish}.__forIndex` : "index" } : {}) },
     };
-    const body = delegate.body;
-    if (isHCall(body)) lines.push(...emitQml(body, inner, level + 1));
-    else throw new Error("Index delegate must return a single element in this plan");
+    const rows = emitQml(body, inner, level + 1);
+    if (publish) {
+      if (!rows[0]?.trimEnd().endsWith("{")) throw new Error("Index delegate root: expected `Type {` as the first emitted line");
+      const rootPad = INDENT.repeat(level + 2);
+      const own = rows.find((l) => l.startsWith(`${rootPad}id: `));
+      const props = [`${rootPad}property var __forItem: modelData`, `${rootPad}property int __forIndex: index`];
+      if (own) {
+        const id = own.slice(`${rootPad}id: `.length).trim();
+        const fixed = rows.map((l) => l.split(`${publish}.__for`).join(`${id}.__for`));
+        rows.splice(0, rows.length, ...fixed);
+        rows.splice(1, 0, ...props);
+      } else {
+        rows.splice(1, 0, `${rootPad}id: ${publish}`, ...props);
+      }
+    }
+    lines.push(...rows);
   }
   lines.push(`${pad}}`);
   return lines;

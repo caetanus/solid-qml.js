@@ -123,6 +123,27 @@ test("VirtualList: a reusing ListView in a CSS box, rows as wide as the list, th
   assert.match(out, /text: "" \+ \(__for\d+\.__forItem\.from\)/);
 });
 
+test("For with a Show whose FALLBACK uses the row: the fallback's delegate reaches it too", async () => {
+  const out = await qml(`import { For, Show } from "solid-js"; export function C(){ const [accs,setAccs]=createSignal([]); return <For each={accs()}>{(a)=><div><Show when={a.n > 0} fallback={<text>{a.name}</text>}><text>tem</text></Show></div>}</For>; }`);
+  const id = out.match(/id: (__for\d+)\n\s*property var __forItem: modelData/);
+  assert.ok(id, out);
+  assert.match(out, new RegExp(`text: "" \\+ \\(${id![1]}\\.__forItem\\.name\\)`));
+});
+
+test("Index with a lazy Show inside: the row and the index stay reachable", async () => {
+  const out = await qml(`import { Index, Show } from "solid-js"; export function C(){ const [xs,setXs]=createSignal([]); return <Index each={xs()}>{(x, i)=><div><Show when={i > 0}><text>{x()} #{i}</text></Show></div>}</Index>; }`);
+  const id = out.match(/id: (__for\d+)\n\s*property var __forItem: modelData\n\s*property int __forIndex: index/);
+  assert.ok(id, out);
+  assert.match(out, new RegExp(`model: \\(${id![1]}\\.__forIndex > 0\\) \\? 1 : 0`));
+  assert.match(out, new RegExp(`${id![1]}\\.__forItem\\) \\+ " #" \\+ \\(${id![1]}\\.__forIndex\\)`));
+});
+
+test("Index without a nested Repeater is emitted exactly as before", async () => {
+  const out = await qml(`import { Index } from "solid-js"; export function C(){ const [xs,setXs]=createSignal([]); return <Index each={xs()}>{(x, i)=><text>{x()} #{i}</text>}</Index>; }`);
+  assert.doesNotMatch(out, /__forItem|__forIndex|id: __for/);
+  assert.match(out, /text: "" \+ \(modelData\) \+ " #" \+ \(index\)/);
+});
+
 test("For without a nested loop is emitted exactly as before (no id, no extra property)", async () => {
   const out = await qml(`import { For } from "solid-js"; export function C(){ const [items,setItems]=createSignal([]); return <For each={items()}>{(item)=><div><text>{item}</text></div>}</For>; }`);
   assert.doesNotMatch(out, /__forItem|id: __for/);
