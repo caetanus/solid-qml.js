@@ -1,0 +1,24 @@
+<!-- The opt-in widget modules (solidqml.Widgets.X), compiled into libsolidqml under the Qt 6 default
+     QML import root qrc:/qt/qml, so an installed app resolves `import solidqml.Widgets.Chart` with no
+     import path. In dev, the app root import path the loader adds wins over qrc (live edits). -->
+<RCC>
+  <qresource prefix="/qt/qml/solidqml/Widgets">
+    <file>Chart/Chart.qml</file>
+    <file>Chart/qmldir</file>
+    <file>Code/CodeEditor.qml</file>
+    <file>Code/qmldir</file>
+    <file>Media/MediaPlayer.qml</file>
+    <file>Media/qmldir</file>
+    <file>qmldir</file>
+    <file>RichText/qmldir</file>
+    <file>RichText/RichText.qml</file>
+    <file>Scene3D/qmldir</file>
+    <file>Scene3D/Scene3D.qml</file>
+    <file>Scene3D/suzanne.mesh</file>
+    <file>Surface/qmldir</file>
+    <file>Surface/Surface.qml</file>
+    <file>Surface/walkerlake.png</file>
+    <file>Web/qmldir</file>
+    <file>Web/WebView.qml</file>
+  </qresource>
+</RCC>

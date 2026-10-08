@@ -204,13 +204,18 @@ int main(int argc, char **argv)
     // transpiler are appended on top later, from QML, via cssTheme.loadLayeredString().
     QStringList cssPaths = parser.values(QStringLiteral("css"));
     cssPaths.removeAll(QString());
-    if (cssPaths.isEmpty())
-        cssPaths << QStringLiteral("qml/solidqml/App.generated.css");
+    // Default: the generator's sidecar beside the root QML (App.generated.qml → .css).
+    if (cssPaths.isEmpty()) {
+        QString sidecar = parser.value(QStringLiteral("qml"));
+        if (sidecar.endsWith(QLatin1String(".qml")))
+            sidecar.chop(4);
+        cssPaths << sidecar + QStringLiteral(".css");
+    }
     // Shared base ("user-agent") layer first, so defaults (e.g. <hr>) match the web target;
-    // the app sheet layers on top. Skipped silently if not found (e.g. an installed binary).
-    const QString baseSheet = QStringLiteral("src/solid-qml/base.css");
-    if (QFileInfo::exists(baseSheet))
-        cssPaths.prepend(baseSheet);
+    // the app sheet layers on top. Run from the source tree, the on-disk copy is used so edits
+    // hot-reload; anywhere else, the copy baked into libsolidqml.
+    const QString devBaseSheet = QStringLiteral("src/solid-qml/base.css");
+    cssPaths.prepend(QFileInfo::exists(devBaseSheet) ? devBaseSheet : QStringLiteral(":/solidqml/base.css"));
     cssTheme.loadLayered(cssPaths);
 
     QSurfaceFormat format = QSurfaceFormat::defaultFormat();

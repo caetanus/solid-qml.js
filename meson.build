@@ -108,9 +108,13 @@ if build_richtext
   solidqml_moc_headers += files('src/shims/richtext.h')
 endif
 
-# No qresources: the generated app (App.generated.qml + its .js sidecar) and the stylesheet are
-# loaded from the filesystem at runtime, not baked into the binary.
-solid_qml_loader_qt_sources = qt6.preprocess(moc_headers: solidqml_moc_headers)
+# The generated app (App.generated.qml + its .js sidecar) and its stylesheet are loaded from the
+# filesystem at runtime. What the SDK itself ships — the user-agent base.css and the opt-in widget
+# modules — is baked into libsolidqml, so an installed host needs no data dir or import path.
+solid_qml_loader_qt_sources = qt6.preprocess(
+  moc_headers: solidqml_moc_headers,
+  qresources: files('src/solid-qml/base.qrc', 'qml/solidqml/Widgets/widgets.qrc'),
+)
 
 # ─── libsolidqml: the embeddable runtime (owner 2026-07-22: host pre-existing C++/QtQuick
 # apps). Everything except the loader main: widgets, shims, the embed surface. The loader links
@@ -216,6 +220,7 @@ if get_option('loader').allowed()
     cpp_args: notify_args + richtext_args,
     include_directories: include_directories('src'),
     dependencies: [solidqml_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep, qt6_templates_private_dep] + core_private_deps,
+    install_rpath: '$ORIGIN/../' + get_option('libdir'),
     install: true,
   )
 endif
@@ -349,7 +354,7 @@ if build_solidterm
     cpp_args: notify_args + blur_args + ['-DSOLIDTERM_DEV_DIR="' + meson.current_source_dir() + '/apps/solidterm/qml"'],
     include_directories: include_directories('src', 'apps/solidterm'),
     dependencies: [solidqml_dep, qt6_widgets_dep, vterm_dep, util_dep] + blur_deps,
-    install_rpath: '$ORIGIN/../lib',
+    install_rpath: '$ORIGIN/../' + get_option('libdir'),
     install: true,
   )
 

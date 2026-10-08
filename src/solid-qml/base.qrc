@@ -1,0 +1,7 @@
+<!-- The user-agent stylesheet, compiled into libsolidqml so every host (loader, apps) finds it at
+     :/solidqml/base.css regardless of the working directory. -->
+<RCC>
+  <qresource prefix="/solidqml">
+    <file>base.css</file>
+  </qresource>
+</RCC>
