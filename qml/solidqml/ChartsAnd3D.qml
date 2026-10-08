@@ -14,7 +14,7 @@ import solidqml.Widgets.Web 1.0 as WWeb
 import solidqml.Widgets 1.0 as W
 W.Div {
     id: __self
-    readonly property var isNative: typeof process !== "undefined" && !!process.versions && process.versions.solidQml
+    readonly property var isNative: typeof process !== "undefined" && !!(process.versions && process.versions.solidQml)
     cssClass: ["dv"]
     W.Text {
         cssClass: ["dv-h"]
@@ -24,94 +24,110 @@ W.Div {
         cssClass: ["dv-sub"]
         text: "Optional opt-in modules — QtGraphs & Qt Quick 3D, imported only when used."
     }
-    W.Div {
-        cssClass: ["dv-card"]
-        visible: !!(isNative)
-        W.Text {
-            cssClass: ["dv-label"]
-            text: "Complex plot — area · splines · scatter, hover for values (QtGraphs)"
-        }
-        WChart.Chart {
-            cssClass: ["dv-chart"]
-        }
-    }
-    W.Div {
-        cssClass: ["dv-card"]
-        visible: !!(isNative)
-        W.Text {
-            cssClass: ["dv-label"]
-            text: "Blender monkey · three-point lighting, spinning (Qt Quick 3D)"
-        }
-        WScene3D.Scene3D {
-            cssClass: ["dv-scene"]
+    Repeater {
+        model: (isNative) ? 1 : 0
+        W.Div {
+            cssClass: ["dv-card"]
+            W.Text {
+                cssClass: ["dv-label"]
+                text: "Complex plot — area · splines · scatter, hover for values (QtGraphs)"
+            }
+            WChart.Chart {
+                cssClass: ["dv-chart"]
+            }
         }
     }
-    W.Div {
-        cssClass: ["dv-card"]
-        visible: !!(isNative)
-        W.Text {
-            cssClass: ["dv-label"]
-            text: "Media player — click play; video + seek/clock + .srt subtitles (QtMultimedia)"
-        }
-        WMedia.MediaPlayer {
-            cssClass: ["dv-media"]
-            src: Qt.resolvedUrl("assets/media-demo.mp4")
-            subtitles: Qt.resolvedUrl("assets/media-demo.srt")
-        }
-    }
-    W.Div {
-        cssClass: ["dv-card"]
-        visible: !!(isNative)
-        W.Text {
-            cssClass: ["dv-label"]
-            text: "WebView — Chromium in a card (QtWebEngine)"
-        }
-        WWeb.WebView {
-            cssClass: ["dv-web"]
-            src: Qt.resolvedUrl("assets/web-demo.html")
+    Repeater {
+        model: (isNative) ? 1 : 0
+        W.Div {
+            cssClass: ["dv-card"]
+            W.Text {
+                cssClass: ["dv-label"]
+                text: "Blender monkey · three-point lighting, spinning (Qt Quick 3D)"
+            }
+            WScene3D.Scene3D {
+                cssClass: ["dv-scene"]
+            }
         }
     }
-    W.Div {
-        cssClass: ["dv-card"]
-        visible: !!(isNative)
-        W.Text {
-            cssClass: ["dv-label"]
-            text: "Rich text — word-like editing, opens & saves OpenDocument (.odt)"
-        }
-        WRich.RichText {
-            cssClass: ["dv-rich"]
-        }
-    }
-    W.Div {
-        cssClass: ["dv-card"]
-        visible: !!(isNative)
-        W.Text {
-            cssClass: ["dv-label"]
-            text: "Code editor — line gutter + built-in syntax highlighting (JS/QML/CSS/JSON)"
-        }
-        WCode.CodeEditor {
-            cssClass: ["dv-code"]
-            language: "JavaScript"
-            text: "// solid-qml code editor\nfunction greet(name) {\n\treturn `hello ${name}`;\n}\n\nconst who = \"qt\";\nconsole.log(greet(who));"
+    Repeater {
+        model: (isNative) ? 1 : 0
+        W.Div {
+            cssClass: ["dv-card"]
+            W.Text {
+                cssClass: ["dv-label"]
+                text: "Media player — click play; video + seek/clock + .srt subtitles (QtMultimedia)"
+            }
+            WMedia.MediaPlayer {
+                cssClass: ["dv-media"]
+                src: Qt.resolvedUrl("assets/media-demo.mp4")
+                subtitles: Qt.resolvedUrl("assets/media-demo.srt")
+            }
         }
     }
-    W.Div {
-        cssClass: ["dv-card"]
-        visible: !!(isNative)
-        W.Text {
-            cssClass: ["dv-label"]
-            text: "Walker Lake topography — heat-mapped 3D surface, mouse-driven (QtGraphs Surface3D)"
-        }
-        WSurface.Surface {
-            cssClass: ["dv-surface"]
+    Repeater {
+        model: (isNative) ? 1 : 0
+        W.Div {
+            cssClass: ["dv-card"]
+            W.Text {
+                cssClass: ["dv-label"]
+                text: "WebView — Chromium in a card (QtWebEngine)"
+            }
+            WWeb.WebView {
+                cssClass: ["dv-web"]
+                src: Qt.resolvedUrl("assets/web-demo.html")
+            }
         }
     }
-    W.Div {
-        visible: !(isNative)
-        cssClass: ["dv-fallback"]
-        W.Text {
-            cssClass: ["dv-fallback-t"]
-            text: "charts & 3D — run this view in the QML loader"
+    Repeater {
+        model: (isNative) ? 1 : 0
+        W.Div {
+            cssClass: ["dv-card"]
+            W.Text {
+                cssClass: ["dv-label"]
+                text: "Rich text — word-like editing, opens & saves OpenDocument (.odt)"
+            }
+            WRich.RichText {
+                cssClass: ["dv-rich"]
+            }
+        }
+    }
+    Repeater {
+        model: (isNative) ? 1 : 0
+        W.Div {
+            cssClass: ["dv-card"]
+            W.Text {
+                cssClass: ["dv-label"]
+                text: "Code editor — line gutter + built-in syntax highlighting (JS/QML/CSS/JSON)"
+            }
+            WCode.CodeEditor {
+                cssClass: ["dv-code"]
+                language: "JavaScript"
+                text: "// solid-qml code editor\nfunction greet(name) {\n\treturn `hello ${name}`;\n}\n\nconst who = \"qt\";\nconsole.log(greet(who));"
+            }
+        }
+    }
+    Repeater {
+        model: (isNative) ? 1 : 0
+        W.Div {
+            cssClass: ["dv-card"]
+            W.Text {
+                cssClass: ["dv-label"]
+                text: "Walker Lake topography — heat-mapped 3D surface, mouse-driven (QtGraphs Surface3D)"
+            }
+            WSurface.Surface {
+                cssClass: ["dv-surface"]
+            }
+        }
+    }
+    Repeater {
+        model: (!(isNative)) ? 1 : 0
+        W.Div {
+            cssClass: ["dv-fallback"]
+            W.Text {
+                cssClass: ["dv-fallback-t"]
+                text: "charts & 3D — run this view in the QML loader"
+            }
         }
     }
 }

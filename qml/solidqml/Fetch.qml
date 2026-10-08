@@ -35,30 +35,34 @@ W.Div {
             restoreMode: Binding.RestoreNone
         }
     }
-    W.Div {
-        cssClass: ["fetch-card"]
-        visible: !!((!(user_loading)) && (user))
-        W.Image {
-            cssClass: ["fetch-avatar"]
-            src: (user || ({})).avatar_url || ""
-        }
-        W.Text {
-            cssClass: ["fetch-name"]
-            text: "" + ((user || ({})).name)
-        }
-        W.Text {
-            cssClass: ["fetch-bio"]
-            text: "" + ((user || ({})).bio)
-        }
-        W.Text {
-            cssClass: ["fetch-repos"]
-            text: "" + ((user || ({})).public_repos) + " public repos"
+    Repeater {
+        model: ((!(user_loading)) && (user)) ? 1 : 0
+        W.Div {
+            cssClass: ["fetch-card"]
+            W.Image {
+                cssClass: ["fetch-avatar"]
+                src: (user || ({})).avatar_url || ""
+            }
+            W.Text {
+                cssClass: ["fetch-name"]
+                text: "" + ((user || ({})).name)
+            }
+            W.Text {
+                cssClass: ["fetch-bio"]
+                text: "" + ((user || ({})).bio)
+            }
+            W.Text {
+                cssClass: ["fetch-repos"]
+                text: "" + ((user || ({})).public_repos) + " public repos"
+            }
         }
     }
-    W.Text {
-        visible: (!(user_loading)) && !(user)
-        cssClass: ["fetch-empty"]
-        text: "no such user"
+    Repeater {
+        model: ((!(user_loading)) && !(user)) ? 1 : 0
+        W.Text {
+            cssClass: ["fetch-empty"]
+            text: "no such user"
+        }
     }
     W.Text {
         visible: !(!(user_loading))

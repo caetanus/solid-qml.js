@@ -45,51 +45,57 @@ W.Div {
             onClicked: add()
         }
     }
-    W.Div {
-        cssClass: ["todo-list"]
-        visible: !!(todos.length > 0)
-        Css.CssRepeater {
-            model: visible_
-            delegate: Component {
-                TodoRow {
-                    todo: modelData
-                    onToggle: toggle
-                    onRemove: remove
-                }
-            }
-        }
-    }
-    W.Div {
-        cssClass: ["todo-footer"]
-        visible: !!(todos.length > 0)
-        W.Text {
-            cssClass: ["todo-count"]
-            text: "" + (remaining) + " left"
-        }
+    Repeater {
+        model: (todos.length > 0) ? 1 : 0
         W.Div {
-            cssClass: ["todo-filters"]
-            Css.CssIncubator {
-                active: (remaining > 0 && remaining < todos.length) ? true : false
-                sourceComponent: Component {
-                    W.Button {
-                        text: "all"
-                        onClicked: selectAll()
+            cssClass: ["todo-list"]
+            Css.CssRepeater {
+                model: visible_
+                delegate: Component {
+                    TodoRow {
+                        todo: modelData
+                        onToggle: toggle
+                        onRemove: remove
                     }
                 }
             }
-            W.Button {
-                text: "active"
-                onClicked: filter = "active"
+        }
+    }
+    Repeater {
+        model: (todos.length > 0) ? 1 : 0
+        W.Div {
+            cssClass: ["todo-footer"]
+            W.Text {
+                cssClass: ["todo-count"]
+                text: "" + (remaining) + " left"
             }
-            W.Button {
-                text: "done"
-                onClicked: filter = "completed"
+            W.Div {
+                cssClass: ["todo-filters"]
+                Css.CssIncubator {
+                    active: (remaining > 0 && remaining < todos.length) ? true : false
+                    sourceComponent: Component {
+                        W.Button {
+                            text: "all"
+                            onClicked: selectAll()
+                        }
+                    }
+                }
+                W.Button {
+                    text: "active"
+                    onClicked: filter = "active"
+                }
+                W.Button {
+                    text: "done"
+                    onClicked: filter = "completed"
+                }
             }
         }
     }
-    W.Text {
-        visible: !(todos.length > 0)
-        cssClass: ["todo-empty"]
-        text: "no todos yet"
+    Repeater {
+        model: (!(todos.length > 0)) ? 1 : 0
+        W.Text {
+            cssClass: ["todo-empty"]
+            text: "no todos yet"
+        }
     }
 }

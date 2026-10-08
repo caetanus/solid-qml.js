@@ -60,12 +60,14 @@ W.Div {
                         cssClass: ["dash-label"]
                         text: "" + (modelData.label)
                     }
-                    W.Div {
-                        cssClass: ["dash-badge"]
-                        visible: !!(modelData.badge !== "")
-                        W.Text {
-                            cssClass: ["dash-badge-n"]
-                            text: "" + (modelData.badge)
+                    Repeater {
+                        model: (modelData.badge !== "") ? 1 : 0
+                        W.Div {
+                            cssClass: ["dash-badge"]
+                            W.Text {
+                                cssClass: ["dash-badge-n"]
+                                text: "" + (modelData.badge)
+                            }
                         }
                     }
                     MouseArea {
@@ -169,83 +171,86 @@ W.Div {
                     cssClass: ["dash-user-chev"]
                     text: "▾"
                 }
-                W.Div {
-                    cssClass: ["user-card"]
-                    visible: !!(userOpen)
+                Repeater {
+                    model: (userOpen) ? 1 : 0
                     W.Div {
-                        cssClass: ["user-card-head"]
+                        cssClass: ["user-card"]
                         W.Div {
-                            cssClass: ["user-card-avatar"]
-                            W.Text {
-                                cssClass: ["user-card-avatar-t"]
-                                text: "AL"
+                            cssClass: ["user-card-head"]
+                            W.Div {
+                                cssClass: ["user-card-avatar"]
+                                W.Text {
+                                    cssClass: ["user-card-avatar-t"]
+                                    text: "AL"
+                                }
                             }
-                        }
-                        W.Div {
-                            cssClass: ["user-card-id"]
-                            W.Text {
-                                cssClass: ["user-card-name"]
-                                text: "Ada Lovelace"
-                            }
-                            W.Text {
-                                cssClass: ["user-card-mail"]
-                                text: "ada@example.com"
-                            }
-                        }
-                    }
-                    W.Div {
-                        cssClass: ["user-card-tags"]
-                        W.Div {
-                            cssClass: ["user-tag"]
-                            W.Text {
-                                cssClass: ["user-tag-t"]
-                                text: "owner"
+                            W.Div {
+                                cssClass: ["user-card-id"]
+                                W.Text {
+                                    cssClass: ["user-card-name"]
+                                    text: "Ada Lovelace"
+                                }
+                                W.Text {
+                                    cssClass: ["user-card-mail"]
+                                    text: "ada@example.com"
+                                }
                             }
                         }
                         W.Div {
-                            cssClass: ["user-tag", "alt"]
-                            W.Text {
-                                cssClass: ["user-tag-t"]
-                                text: "engine dev"
+                            cssClass: ["user-card-tags"]
+                            W.Div {
+                                cssClass: ["user-tag"]
+                                W.Text {
+                                    cssClass: ["user-tag-t"]
+                                    text: "owner"
+                                }
+                            }
+                            W.Div {
+                                cssClass: ["user-tag", "alt"]
+                                W.Text {
+                                    cssClass: ["user-tag-t"]
+                                    text: "engine dev"
+                                }
                             }
                         }
-                    }
-                    W.Div {
-                        cssClass: ["user-card-row"]
-                        W.Text {
-                            cssClass: ["user-kv"]
-                            text: "Plan"
+                        W.Div {
+                            cssClass: ["user-card-row"]
+                            W.Text {
+                                cssClass: ["user-kv"]
+                                text: "Plan"
+                            }
+                            W.Text {
+                                cssClass: ["user-kv-v"]
+                                text: "Max 20×"
+                            }
                         }
-                        W.Text {
-                            cssClass: ["user-kv-v"]
-                            text: "Max 20×"
+                        W.Div {
+                            cssClass: ["user-card-row"]
+                            W.Text {
+                                cssClass: ["user-kv"]
+                                text: "Session"
+                            }
+                            W.Text {
+                                cssClass: ["user-kv-v"]
+                                text: "native · GPU"
+                            }
                         }
-                    }
-                    W.Div {
-                        cssClass: ["user-card-row"]
-                        W.Text {
-                            cssClass: ["user-kv"]
-                            text: "Session"
-                        }
-                        W.Text {
-                            cssClass: ["user-kv-v"]
-                            text: "native · GPU"
-                        }
-                    }
-                    W.Div {
-                        cssClass: ["user-card-actions"]
-                        W.Button {
-                            cssClass: ["user-btn"]
-                            text: "Profile"
-                        }
-                        W.Button {
-                            cssClass: ["user-btn", "ghost"]
-                            text: "Sign out"
+                        W.Div {
+                            cssClass: ["user-card-actions"]
+                            W.Button {
+                                cssClass: ["user-btn"]
+                                text: "Profile"
+                            }
+                            W.Button {
+                                cssClass: ["user-btn", "ghost"]
+                                text: "Sign out"
+                            }
                         }
                     }
                 }
                 MouseArea {
                     id: __hover4
+                    z: -1
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
@@ -367,12 +372,14 @@ W.Div {
                                             text: "" + (modelData.tag)
                                         }
                                     }
-                                    W.Div {
-                                        cssClass: ["feed-alert"]
-                                        visible: !!(!modelData.ok)
-                                        W.Text {
-                                            cssClass: ["feed-alert-t"]
-                                            text: "!"
+                                    Repeater {
+                                        model: (!modelData.ok) ? 1 : 0
+                                        W.Div {
+                                            cssClass: ["feed-alert"]
+                                            W.Text {
+                                                cssClass: ["feed-alert-t"]
+                                                text: "!"
+                                            }
                                         }
                                     }
                                     W.Text {
@@ -583,12 +590,14 @@ W.Div {
                                             text: "" + (modelData.tag)
                                         }
                                     }
-                                    W.Div {
-                                        cssClass: ["feed-alert"]
-                                        visible: !!(!modelData.ok)
-                                        W.Text {
-                                            cssClass: ["feed-alert-t"]
-                                            text: "!"
+                                    Repeater {
+                                        model: (!modelData.ok) ? 1 : 0
+                                        W.Div {
+                                            cssClass: ["feed-alert"]
+                                            W.Text {
+                                                cssClass: ["feed-alert-t"]
+                                                text: "!"
+                                            }
                                         }
                                     }
                                 }

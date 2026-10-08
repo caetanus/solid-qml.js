@@ -231,24 +231,26 @@ W.Div {
             cssClass: ["nv-label"]
             text: "Tray"
         }
-        W.Tray {
-            shown: !!(trayOn)
-            tooltip: "solid-qml gallery"
-            iconSource: "assets/logo.png"
-            onActivated: { trayEcho = "icon activated" }
-            menu: Platform.Menu {
-                Platform.MenuItem {
-                    text: "&Open gallery"
-                    onTriggered: { trayEcho = "tray menu: open" }
-                }
-                Platform.MenuItem {
-                    text: "&Notify"
-                    onTriggered: { notifyPlain() }
-                }
-                Platform.MenuItem { separator: true }
-                Platform.MenuItem {
-                    text: "&Remove icon"
-                    onTriggered: { trayOn = false }
+        Repeater {
+            model: (trayOn) ? 1 : 0
+            W.Tray {
+                tooltip: "solid-qml gallery"
+                iconSource: "assets/logo.png"
+                onActivated: { trayEcho = "icon activated" }
+                menu: Platform.Menu {
+                    Platform.MenuItem {
+                        text: "&Open gallery"
+                        onTriggered: { trayEcho = "tray menu: open" }
+                    }
+                    Platform.MenuItem {
+                        text: "&Notify"
+                        onTriggered: { notifyPlain() }
+                    }
+                    Platform.MenuItem { separator: true }
+                    Platform.MenuItem {
+                        text: "&Remove icon"
+                        onTriggered: { trayOn = false }
+                    }
                 }
             }
         }

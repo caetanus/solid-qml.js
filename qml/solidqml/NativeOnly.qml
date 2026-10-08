@@ -6,29 +6,41 @@ import qmlcss 1.0 as Css
 import solidqml.Widgets 1.0 as W
 W.Div {
     id: __self
-    readonly property var isNative: typeof process !== "undefined" && !!process.versions && process.versions.solidQml
+    readonly property var isNative: typeof process !== "undefined" && !!(process.versions && process.versions.solidQml)
     cssClass: ["native"]
-    HtmlWidgets {
-        visible: !!(isNative)
+    Repeater {
+        model: (isNative) ? 1 : 0
+        HtmlWidgets {
+        }
     }
-    Containers {
-        visible: !!(isNative)
+    Repeater {
+        model: (isNative) ? 1 : 0
+        Containers {
+        }
     }
-    ExtraInputs {
-        visible: !!(isNative)
+    Repeater {
+        model: (isNative) ? 1 : 0
+        ExtraInputs {
+        }
     }
-    MenusAndViews {
-        visible: !!(isNative)
+    Repeater {
+        model: (isNative) ? 1 : 0
+        MenusAndViews {
+        }
     }
-    CustomQml {
-        visible: !!(isNative)
+    Repeater {
+        model: (isNative) ? 1 : 0
+        CustomQml {
+        }
     }
-    W.Div {
-        visible: !(isNative)
-        cssClass: ["native-fallback"]
-        W.Text {
-            cssClass: ["native-fallback-t"]
-            text: "native-only widgets — run this view in the QML loader"
+    Repeater {
+        model: (!(isNative)) ? 1 : 0
+        W.Div {
+            cssClass: ["native-fallback"]
+            W.Text {
+                cssClass: ["native-fallback-t"]
+                text: "native-only widgets — run this view in the QML loader"
+            }
         }
     }
 }

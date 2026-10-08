@@ -8,9 +8,11 @@ W.Div {
     id: __self
     property var view: "hello"
     cssClass: ["gallery"]
-    W.Div {
-        cssClass: ["hero-bg"]
-        visible: !!(view === "hello")
+    Repeater {
+        model: (view === "hello") ? 1 : 0
+        W.Div {
+            cssClass: ["hero-bg"]
+        }
     }
     W.ToolBar {
         cssClass: ["nav"]
