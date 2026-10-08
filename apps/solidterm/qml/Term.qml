@@ -8,6 +8,7 @@ import SolidTerm 1.0 as QM_SolidTerm
 import solidqml.Widgets 1.0 as W
 W.Div {
     id: __self
+    property var onTitle
     property var uiFontFamily: termConfig.getString("fontFamily", "monospace")
     property var uiFontSize: termConfig.getInt("fontSize", 15)
     property var scheme: termConfig.getString("scheme", "system")
@@ -149,6 +150,7 @@ W.Div {
                 }
                 MouseArea {
                     id: __hover0
+                    z: -1
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
@@ -158,7 +160,7 @@ W.Div {
         }
         W.Button {
             cssClass: ["tab-new"]
-            text: "＋"
+            text: "+"
             onClicked: _ref_term.newTab()
         }
     }
@@ -222,7 +224,7 @@ W.Div {
                 handleColor: sysTheme.window
                 reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, kZoomPane, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]
                 onAccelerator: function(seq) { return onAccel(seq) }
-                onTitleChanged: function(t) { return title = t }
+                onTitleChanged: function(t) { title = t; onTitle(t); }
             }
         }
         Item {

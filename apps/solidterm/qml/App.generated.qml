@@ -5,11 +5,12 @@ import qmlcss 1.0 as Css
 
 import solidqml.Widgets 1.0 as W
 Window {
+    property var uiTitle: "solidterm"
     id: __self
     visible: true
     width: 1000
     height: 640
-    title: "solidterm"
+    title: uiTitle
     Shortcut {
         sequences: ["Ctrl+Tab"]
         enabled: solidTabstop.enabled
@@ -25,6 +26,7 @@ Window {
         cssClass: ["qml-window"]
         cssPrimitive: "window"
         Term {
+            onTitle: function(t) { return uiTitle = t || "solidterm" }
         }
     }
     Component.onCompleted: if (solidTabstop.enabled) Qt.callLater(function() { var f = __self.contentItem.nextItemInFocusChain(true); if (f) f.forceActiveFocus(Qt.TabFocusReason) })
