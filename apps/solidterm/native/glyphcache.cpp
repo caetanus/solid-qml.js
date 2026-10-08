@@ -1,6 +1,7 @@
 #include "glyphcache.h"
 
 #include <QFontMetricsF>
+#include <algorithm>
 #include <QPainter>
 
 size_t qHash(const GlyphCache::Key &k, size_t seed)
@@ -275,11 +276,18 @@ GlyphCache::Entry GlyphCache::rasterize(const Key &k)
         // drawn procedurally
     } else {
         // Nerd-Font / symbol glyphs are often wider (or taller) than one cell; the tile clip would cut
-        // them (the git/github/folder icons get chopped on the right). If the ink overflows the cell,
-        // uniform-scale it to fit and centre it (icons aren't baseline-aligned text). Normal glyphs
-        // keep the shared baseline so text lines up.
+        // them (the git/github/folder icons get chopped on the right). If an ICON's ink overflows the
+        // cell, uniform-scale it to fit and centre it (icons aren't baseline-aligned text). Text never
+        // takes this path: an italic letter's slant routinely overhangs the cell, and shrinking +
+        // centring it turned italic comments into tiny glyphs with x-height letters lifted to
+        // cap height (c/n/s read as C/N/S). Text keeps the shared baseline so lines up.
+        const auto isIcon = [](uint cp) {
+            return (cp >= 0xE000 && cp <= 0xF8FF) || cp >= 0xF0000 // Private Use Areas (Nerd Fonts)
+                || QChar::category(char32_t(cp)) == QChar::Symbol_Other;
+        };
         const QRectF br = QFontMetricsF(p.font()).boundingRect(k.cluster);
-        if (br.width() > tileW + 0.5 || br.height() > tileH + 0.5) {
+        if (std::any_of(cps.cbegin(), cps.cend(), isIcon)
+            && (br.width() > tileW + 0.5 || br.height() > tileH + 0.5)) {
             const qreal s = qMin(tileW / qMax<qreal>(1.0, br.width()), tileH / qMax<qreal>(1.0, br.height()));
             p.save();
             p.translate(m_penX + tileW / 2.0, m_penY + tileH / 2.0); // tile centre
