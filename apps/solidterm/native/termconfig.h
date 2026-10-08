@@ -2,6 +2,7 @@
 
 #include <QJsonObject>
 #include <QObject>
+#include <QVariantMap>
 #include <QVariant>
 
 // solidterm's own config store, at ~/.config/solidterm/config.json (owner: shortcuts + prefs
@@ -23,6 +24,9 @@ public:
     Q_INVOKABLE void set(const QString &key, const QVariant &value);
     // Native file picker for the background image (returns "" if cancelled).
     Q_INVOKABLE QString pickImage() const;
+    // Native font dialog (monospaced fonts), seeded with the configured family/size. Returns
+    // {family, size} with size in PIXELS (the terminal's unit), or an empty map on cancel.
+    Q_INVOKABLE QVariantMap pickFont() const;
 
 signals:
     void changed(const QString &key);

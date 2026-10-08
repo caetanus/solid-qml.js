@@ -46,6 +46,7 @@ W.Div {
     readonly property var __const_ACTIONS: [({ key: "newTab", label: "New tab", def: "Ctrl+Shift+T" }), ({ key: "nextTab", label: "Next tab", def: "Ctrl+PgDown" }), ({ key: "prevTab", label: "Previous tab", def: "Ctrl+PgUp" }), ({ key: "search", label: "Find", def: "Ctrl+Shift+F" }), ({ key: "zoomPane", label: "Zoom pane", def: "Ctrl+Shift+X" }), ({ key: "splitRight", label: "Split right", def: "Ctrl+Shift+E" }), ({ key: "splitDown", label: "Split down", def: "Ctrl+Shift+O" }), ({ key: "closePane", label: "Close pane", def: "Ctrl+Shift+W" }), ({ key: "focusNext", label: "Focus next pane", def: "Alt+Right" }), ({ key: "focusPrev", label: "Focus previous pane", def: "Alt+Left" })]
     function browseBg() { var p = termConfig.pickImage(); if (p) { bgImage = p; termConfig.set("bgImage", p); } }
     function clearBg() { bgImage = ""; termConfig.set("bgImage", ""); }
+    function chooseFont() { var f = termConfig.pickFont(); if (!f.family) { return undefined; } uiFontFamily = f.family; termConfig.set("fontFamily", f.family); uiFontSize = f.size; termConfig.set("fontSize", f.size); }
     function openSearch() { searchOpen = true; if (_ref_searchInput) { _ref_searchInput.forceActiveFocus(); } }
     function closeSearch() { searchOpen = false; _ref_term.clearSearch(); _ref_term.refocus(); }
     function pasteLineCount() { var p = pastePrompt; return p ? p.split("\n").length : 0; }
@@ -331,7 +332,7 @@ W.Div {
                             }
                             W.TextField {
                                 id: __input4
-                                cssClass: ["cfg-in"]
+                                cssClass: ["cfg-in-img"]
                                 onTextEdited: { uiFontFamily = text; termConfig.set("fontFamily", text); }
                                 Binding {
                                     target: __input4
@@ -339,6 +340,11 @@ W.Div {
                                     value: uiFontFamily
                                     restoreMode: Binding.RestoreNone
                                 }
+                            }
+                            W.Button {
+                                cssClass: ["cfg-browse"]
+                                text: "Choose…"
+                                onClicked: chooseFont()
                             }
                         }
                         W.Div {
@@ -354,8 +360,8 @@ W.Div {
                             W.Select {
                                 id: __input5
                                 cssClass: ["cfg-sel"]
-                                model: ["11 px", "12 px", "13 px", "14 px", "15 px", "16 px", "18 px", "20 px", "24 px"]
-                                values: ["11", "12", "13", "14", "15", "16", "18", "20", "24"]
+                                model: ["9 px", "10 px", "11 px", "12 px", "13 px", "14 px", "15 px", "16 px", "17 px", "18 px", "19 px", "20 px", "21 px", "22 px", "23 px", "24 px", "25 px", "26 px", "27 px", "28 px", "32 px", "36 px"]
+                                values: ["9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "32", "36"]
                                 onActivated: (index) => { uiFontSize = parseInt(__input5.values[index]); termConfig.set("fontSize", parseInt(__input5.values[index])); }
                                 Binding {
                                     target: __input5

@@ -40,6 +40,13 @@ export function Term(props: { onTitle: (t: string) => void }) {
   const [bgImage, setBgImage] = createSignal(termConfig.getString("bgImage", ""));
   const browseBg = () => { const p = termConfig.pickImage(); if (p) { setBgImage(p); termConfig.set("bgImage", p); } };
   const clearBg = () => { setBgImage(""); termConfig.set("bgImage", ""); };
+  // Native font dialog: family + size in one pick, applied live (size comes back in px).
+  const chooseFont = () => {
+    const f = termConfig.pickFont();
+    if (!f.family) return;
+    setUiFontFamily(f.family); termConfig.set("fontFamily", f.family);
+    setUiFontSize(f.size); termConfig.set("fontSize", f.size);
+  };
   const [opacity, setOpacity] = createSignal(termConfig.getInt("opacity", 100));
   // NB: name it uiBlur, NOT blur — a bare `blur` collides with TerminalTabs' own `blur` property,
   // so QML resolves the binding RHS to the local prop → self-referential binding loop (stuck value,
@@ -255,23 +262,37 @@ export function Term(props: { onTitle: (t: string) => void }) {
           <div class="cfg-card">
             <div class="cfg-row">
               <text class="cfg-l">Font family</text>
-              <input class="cfg-in" value={uiFontFamily()}
+              <input class="cfg-in-img" value={uiFontFamily()}
                      onInput={(e) => { setUiFontFamily(e.target.value); termConfig.set("fontFamily", e.target.value); }} />
+              <button class="cfg-browse" onClick={() => chooseFont()}>Choose…</button>
             </div>
             <hr class="cfg-div" />
             <div class="cfg-row">
               <text class="cfg-l">Font size</text>
               <select class="cfg-sel" value={"" + uiFontSize()}
                       onChange={(v) => { setUiFontSize(parseInt(v)); termConfig.set("fontSize", parseInt(v)); }}>
+                <option value="9">9 px</option>
+                <option value="10">10 px</option>
                 <option value="11">11 px</option>
                 <option value="12">12 px</option>
                 <option value="13">13 px</option>
                 <option value="14">14 px</option>
                 <option value="15">15 px</option>
                 <option value="16">16 px</option>
+                <option value="17">17 px</option>
                 <option value="18">18 px</option>
+                <option value="19">19 px</option>
                 <option value="20">20 px</option>
+                <option value="21">21 px</option>
+                <option value="22">22 px</option>
+                <option value="23">23 px</option>
                 <option value="24">24 px</option>
+                <option value="25">25 px</option>
+                <option value="26">26 px</option>
+                <option value="27">27 px</option>
+                <option value="28">28 px</option>
+                <option value="32">32 px</option>
+                <option value="36">36 px</option>
               </select>
             </div>
             <hr class="cfg-div" />

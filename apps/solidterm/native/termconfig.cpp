@@ -3,6 +3,9 @@
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
+#include <QFontDialog>
+#include <QGuiApplication>
+#include <QScreen>
 #include <QJsonDocument>
 #include <QStandardPaths>
 
@@ -67,4 +70,21 @@ QString TermConfig::pickImage() const
         nullptr, QStringLiteral("Choose background image"),
         start.isEmpty() ? QDir::homePath() : start,
         QStringLiteral("Images (*.png *.jpg *.jpeg *.webp *.bmp *.gif);;All files (*)"));
+}
+
+QVariantMap TermConfig::pickFont() const
+{
+    // The dialog speaks points, the terminal pixels: convert through the screen's logical DPI.
+    const QScreen *screen = QGuiApplication::primaryScreen();
+    const qreal dpi = screen ? screen->logicalDotsPerInchY() : 96.0;
+    QFont initial(getString(QStringLiteral("fontFamily"), QStringLiteral("monospace")));
+    initial.setPointSizeF(getInt(QStringLiteral("fontSize"), 13) * 72.0 / dpi);
+
+    bool ok = false;
+    const QFont chosen = QFontDialog::getFont(&ok, initial, nullptr, QStringLiteral("Terminal font"),
+                                              QFontDialog::MonospacedFonts);
+    if (!ok)
+        return {};
+    const int px = chosen.pixelSize() > 0 ? chosen.pixelSize() : qRound(chosen.pointSizeF() * dpi / 72.0);
+    return { { QStringLiteral("family"), chosen.family() }, { QStringLiteral("size"), px } };
 }
