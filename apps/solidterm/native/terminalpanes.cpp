@@ -168,7 +168,7 @@ TerminalPanes::Node *TerminalPanes::makeLeaf(TerminalView *adopt)
 void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
 {
     applyStyle(v);
-    header->setBackground(m_handleColor);
+    header->setBackground(headerColor());
     header->setForeground(m_foreground);
     header->setAccent(QColor("#3584e4"));
     header->setTitle(v->title());
@@ -1023,9 +1023,22 @@ STYLE_SETTER(setBackground, m_background, const QColor &)
 STYLE_SETTER(setForeground, m_foreground, const QColor &)
 STYLE_SETTER(setScrollbackLimit, m_scrollbackLimit, int)
 STYLE_SETTER(setBackgroundImage, m_bgImage, const QString &)
-STYLE_SETTER(setBackgroundOpacity, m_bgOpacity, qreal)
 STYLE_SETTER(setBlur, m_blur, int)
 #undef STYLE_SETTER
+
+void TerminalPanes::setBackgroundOpacity(qreal v)
+{
+    if (m_bgOpacity == v)
+        return;
+    m_bgOpacity = v;
+    emit styleChanged();
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    for (Node *l : std::as_const(leaves))
+        if (l->view)
+            applyStyle(l->view);
+    recolorHandles(); // the title strips follow the terminal's translucency
+}
 
 void TerminalPanes::setReservedSequences(const QStringList &v)
 {
@@ -1046,13 +1059,25 @@ void TerminalPanes::setHandleColor(const QColor &v)
         return;
     m_handleColor = v;
     emit styleChanged();
-    // Recolour every divider and header across the tree.
+    recolorHandles();
+}
+
+QColor TerminalPanes::headerColor() const
+{
+    QColor c = m_handleColor.lighter(135);
+    c.setAlphaF(float(qBound(0.0, m_bgOpacity, 1.0)));
+    return c;
+}
+
+void TerminalPanes::recolorHandles()
+{
+    const QColor header = headerColor();
     std::function<void(Node *)> walk = [&](Node *node) {
         if (!node) return;
         for (DividerItem *d : node->dividers)
-            if (d) { d->color = v; d->update(); }
+            if (d) { d->color = m_handleColor; d->update(); }
         if (node->header)
-            node->header->setBackground(v);
+            node->header->setBackground(header);
         for (Node *c : node->children)
             walk(c);
     };

@@ -197,6 +197,10 @@ private:
     QColor m_background = QColor("#1e1e1e");
     QColor m_foreground = QColor("#ffffff");
     int m_scrollbackLimit = 8000;
+    // Pane title strip: the handle colour lifted a touch, as translucent as the terminal behind it
+    // (an opaque strip over translucent panes read as a heavy black bar).
+    QColor headerColor() const;
+    void recolorHandles(); // dividers + headers across the tree
     QColor m_handleColor = QColor("#151515");
     QStringList m_reserved;
     QString m_bgImage;
