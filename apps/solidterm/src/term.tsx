@@ -226,7 +226,7 @@ export function Term(props: { onTitle: (t: string) => void }) {
           backgroundOpacity={opacity() / 100}
           blur={uiBlur()}
           animateSplits={animSplits() !== 0}
-          handleColor={sysTheme.window}
+          handleColor={scheme() === "system" ? sysTheme.window : (SCHEMES[scheme()] || SCHEMES.midnight).bg}
           reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), kZoomPane(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]}
           onAccelerator={(seq) => onAccel(seq)}
           onTitleChanged={(t) => { setTitle(t); props.onTitle(t); }}

@@ -232,7 +232,7 @@ W.Div {
                 backgroundOpacity: opacity_ / 100
                 blur: uiBlur
                 animateSplits: animSplits !== 0
-                handleColor: sysTheme.window
+                handleColor: scheme === "system" ? sysTheme.window : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).bg
                 reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, kZoomPane, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]
                 onAccelerator: function(seq) { return onAccel(seq) }
                 onTitleChanged: function(t) { title = t; onTitle(t); }

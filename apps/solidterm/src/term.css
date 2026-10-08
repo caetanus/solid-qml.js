@@ -2,7 +2,7 @@
    palette layer the app generates from QPalette (SystemTheme), so solidterm obeys the local
    desktop theme. Colours here are neutral fallbacks for a headless run without the layer. */
 
-.term-root { display: flex; flex-direction: column; height: 100vh; background: #242424; color: #dedede; }
+.term-root { display: flex; flex-direction: column; height: 100%; background: #242424; color: #dedede; }
 
 .term-header {
   display: flex; flex-direction: row; align-items: center; justify-content: space-between;
