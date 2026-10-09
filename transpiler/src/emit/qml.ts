@@ -1632,9 +1632,11 @@ function hasInteractiveDescendant(nodes: t.Node[]): boolean {
   return found;
 }
 
-/** Is `name` referenced inside a <For>/<Index> nested somewhere in `node`? (A shallow AST walk:
- *  any identifier with that name under a nested loop's h() call counts — shadowing by an inner
- *  parameter of the same name is rare enough to over-approximate, and only costs an id.) */
+/** Is `name` referenced inside a nested Repeater delegate somewhere in `node` — a <For>/<Index>,
+ *  or a lazy <Show>/<Switch> (each gates its children with `Repeater { model: (C) ? 1 : 0 }`,
+ *  whose delegate binds its OWN `modelData`, the number 0)? (A shallow AST walk: any identifier
+ *  with that name under such an h() call counts — shadowing by an inner parameter of the same
+ *  name is rare enough to over-approximate, and only costs an id.) */
 function usedInNestedLoop(node: t.Node, name: string): boolean {
   let found = false;
   const walk = (n: unknown, nested: boolean) => {
@@ -1646,7 +1648,7 @@ function usedInNestedLoop(node: t.Node, name: string): boolean {
     let isLoop = false;
     if (isHCall(nn)) {
       const tag = (nn as t.CallExpression).arguments[0];
-      isLoop = t.isIdentifier(tag) && (tag.name === "For" || tag.name === "Index");
+      isLoop = t.isIdentifier(tag) && ["For", "Index", "Show", "Switch"].includes(tag.name);
     }
     for (const key of t.VISITOR_KEYS[nn.type] ?? []) walk((nn as unknown as Record<string, unknown>)[key], nested || isLoop);
   };

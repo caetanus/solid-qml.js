@@ -76,6 +76,24 @@ test("For nested in For: a delegate root that already has an id (ref) publishes 
   assert.doesNotMatch(out, /__for\d+/);
 });
 
+test("For with a lazy Show inside: the item stays reachable inside the Show's delegate", async () => {
+  // <Show> gates its children with `Repeater { model: (C) ? 1 : 0 }`, whose delegate binds its own
+  // `modelData` (0): `m.id` inside it used to read 0's id — undefined — not the row's.
+  const out = await qml(`import { For, Show } from "solid-js"; export function C(){ const [ms,setMs]=createSignal([]); return <For each={ms()}>{(m)=><div><Show when={m.html}><text>{m.id}</text></Show></div>}</For>; }`);
+  const id = out.match(/id: (__for\d+)\n\s*property var __forItem: modelData/);
+  assert.ok(id, out);
+  assert.match(out, new RegExp(`model: \\(${id![1]}\\.__forItem\\.html\\) \\? 1 : 0`));
+  assert.match(out, new RegExp(`text: "" \\+ \\(${id![1]}\\.__forItem\\.id\\)`));
+  assert.doesNotMatch(out, /\(modelData\.id\)/);
+});
+
+test("For with a lazy Switch inside: the item stays reachable inside the Match's delegate", async () => {
+  const out = await qml(`import { For, Switch, Match } from "solid-js"; export function C(){ const [ms,setMs]=createSignal([]); return <For each={ms()}>{(m)=><div><Switch><Match when={m.a}><text>{m.id}</text></Match></Switch></div>}</For>; }`);
+  const id = out.match(/id: (__for\d+)\n\s*property var __forItem: modelData/);
+  assert.ok(id, out);
+  assert.match(out, new RegExp(`text: "" \\+ \\(${id![1]}\\.__forItem\\.id\\)`));
+});
+
 test("For without a nested loop is emitted exactly as before (no id, no extra property)", async () => {
   const out = await qml(`import { For } from "solid-js"; export function C(){ const [items,setItems]=createSignal([]); return <For each={items()}>{(item)=><div><text>{item}</text></div>}</For>; }`);
   assert.doesNotMatch(out, /__forItem|id: __for/);
