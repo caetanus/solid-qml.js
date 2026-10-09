@@ -94,6 +94,12 @@ test("For with a lazy Switch inside: the item stays reachable inside the Match's
   assert.match(out, new RegExp(`text: "" \\+ \\(${id![1]}\\.__forItem\\.id\\)`));
 });
 
+test("onScroll on a div: the box's scrollChanged, e.currentTarget.scroll* are its own properties", async () => {
+  const out = await qml(`export function C(){ const [n,setN]=createSignal(50); return <div class="list" onScroll={(e) => { if (e.currentTarget.scrollTop + e.currentTarget.clientHeight > e.currentTarget.scrollHeight - 400) setN(n() + 50); }}><text>x</text></div>; }`);
+  assert.match(out, /onScrollChanged: \{ if \(scrollTop \+ clientHeight > scrollHeight - 400\) \{?\s*n = n \+ 50/);
+  assert.doesNotMatch(out, /__ev/);
+});
+
 test("For without a nested loop is emitted exactly as before (no id, no extra property)", async () => {
   const out = await qml(`import { For } from "solid-js"; export function C(){ const [items,setItems]=createSignal([]); return <For each={items()}>{(item)=><div><text>{item}</text></div>}</For>; }`);
   assert.doesNotMatch(out, /__forItem|id: __for/);

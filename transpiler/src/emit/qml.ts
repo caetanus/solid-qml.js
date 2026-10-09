@@ -1,5 +1,6 @@
 import * as t from "@babel/types";
 import { emitExpr, type Scope } from "./expr.ts";
+import { emitStmt } from "./stmt.ts";
 import { safeName } from "../names/safe.ts";
 import { CONTROL_TAGS, hParts, isFragmentTag, isHCall } from "../ast/h.ts";
 import { nativeTags, requireImport } from "./native/index.ts";
@@ -19,6 +20,7 @@ interface Props {
   dragData: t.Expression | undefined;
   onDrop: t.Node | undefined;
   title?: t.Expression; // the HTML `title` attribute → a hover tooltip (W.ToolTip)
+  onScroll?: t.Node; // on an `overflow: auto` box: the engine's scrollChanged (see translateScrollHandler)
 }
 
 /** Build the cssClass property line(s) for a native element.
@@ -168,6 +170,14 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
       `${pad}${INDENT}${INDENT}onReleased: { ${rootId}.Drag.drop(); if (typeof cssLayout !== "undefined") cssLayout.notifyParentLayout(${rootId}) }`,
       `${pad}${INDENT}}`,
     );
+  }
+  // onScroll: the box's own scrollChanged (CssRect scrollTop/scrollHeight/clientHeight, the DOM's
+  // names) — a long list windows on it, loading more rows near the end.
+  if (props.onScroll) {
+    const fn = props.onScroll;
+    if (!(t.isArrowFunctionExpression(fn) || t.isFunctionExpression(fn)))
+      throw new Error("onScroll must be an inline function: (e) => …");
+    stateLine.push(`${pad}${INDENT}onScrollChanged: { ${translateScrollHandler(fn, scope)} }`);
   }
   // Drop target: a filling DropArea; the handler's parameter receives the source's dragData.
   if (props.onDrop) {
@@ -473,6 +483,20 @@ function translateInputHandler(fn: t.ArrowFunctionExpression | t.FunctionExpress
     .replace(/__ev\.key\s*===\s*"Enter"/g, "(event.key === Qt.Key_Return || event.key === Qt.Key_Enter)")
     .replace(/__ev\.key\s*===\s*"Escape"/g, "(event.key === Qt.Key_Escape)")
     .replace(/__ev\.key/g, "event.key");
+}
+
+/** An onScroll handler: `e.currentTarget.scrollTop` / `scrollHeight` / `clientHeight` (or
+ *  `e.target.…`) are the box's OWN properties — bare names, which an element's handler resolves
+ *  against the element first. */
+function translateScrollHandler(fn: t.ArrowFunctionExpression | t.FunctionExpression, scope: Scope): string {
+  const paramName = fn.params[0] && t.isIdentifier(fn.params[0]) ? fn.params[0].name : null;
+  const inner: Scope = { ...scope, mode: "handler", locals: { ...(scope.locals ?? {}), ...(paramName ? { [paramName]: "__ev" } : {}) } };
+  const body = t.isBlockStatement(fn.body)
+    ? fn.body.body.map((s) => emitStmt(s, inner)).join(" ")
+    : `${emitExpr(fn.body, inner)};`;
+  const out = body.replace(/__ev\.(?:currentTarget|target)\.(scrollTop|scrollHeight|clientHeight)\b/g, "$1");
+  if (/__ev\b/.test(out)) throw new Error("onScroll: only e.currentTarget.scrollTop / scrollHeight / clientHeight are supported");
+  return out;
 }
 
 /** Parse all widget-relevant attrs from a propsArg ObjectExpression into a plain record.
@@ -1424,6 +1448,7 @@ function readProps(propsArg: t.Node | undefined): Props {
     if (p.key.name === "onDrop") props.onDrop = p.value;
     if (p.key.name === "ref" && t.isIdentifier(p.value)) props.ref = p.value.name;
     if (p.key.name === "title" && t.isExpression(p.value)) props.title = p.value;
+    if (p.key.name === "onScroll") props.onScroll = p.value;
   }
   return props;
 }
