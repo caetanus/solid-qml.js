@@ -1484,11 +1484,16 @@ function emitShow(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
   return out;
 }
 
+/** Tags that are not Items (a Repeater can only create Items): under a <Show> they keep the guard
+ *  as their own `enabled` instead of being mounted lazily. */
+const NON_ITEM_TAGS = new Set(["Shortcut"]);
+
 /** One `Repeater { model: (cond) ? 1 : 0 }` per element (a fragment gates each of its children). */
 function lazyGate(node: t.Node, cond: string, scope: Scope, level: number): string[] {
   if (!isHCall(node)) return [];
   const { tag } = hParts(node);
   if (isFragmentTag(tag)) return hParts(node).children.flatMap((k) => lazyGate(k as t.Node, cond, scope, level));
+  if (t.isIdentifier(tag) && NON_ITEM_TAGS.has(tag.name)) return emitQml(node as t.CallExpression, scope, level, cond);
   const pad = INDENT.repeat(level);
   const body = publishLazyRefs(emitQml(node, scope, level + 1), scope);
   if (!body.length) return [];

@@ -100,6 +100,13 @@ test("onScroll on a div: the box's scrollChanged, e.currentTarget.scroll* are it
   assert.doesNotMatch(out, /__ev/);
 });
 
+test("Shortcut under a lazy Show keeps the guard as `enabled` (a Repeater cannot create a non-Item)", async () => {
+  const out = await qml(`import { Show } from "solid-js"; export function C(){ const [n,setN]=createSignal(0); return <div><Show when={n() > 0}><Shortcut keys="Escape" onActivated={() => setN(0)} /></Show><Shortcut keys="Ctrl+A" enabled={n() < 3} onActivated={() => setN(1)} /></div>; }`);
+  assert.doesNotMatch(out, /Repeater \{[^}]*\n\s*Shortcut/);
+  assert.match(out, /sequences: \["Escape"\]\n\s*enabled: !!\(\(n > 0\)\)/);
+  assert.match(out, /sequences: \["Ctrl\+A"\]\n\s*enabled: !!\(\(n < 3\)\)/);
+});
+
 test("For without a nested loop is emitted exactly as before (no id, no extra property)", async () => {
   const out = await qml(`import { For } from "solid-js"; export function C(){ const [items,setItems]=createSignal([]); return <For each={items()}>{(item)=><div><text>{item}</text></div>}</For>; }`);
   assert.doesNotMatch(out, /__forItem|id: __for/);

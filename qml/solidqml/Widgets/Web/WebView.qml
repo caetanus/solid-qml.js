@@ -90,6 +90,9 @@ Css.CssFill {
                 settings.javascriptCanOpenWindows: !root._htmlMode
                 settings.localContentCanAccessRemoteUrls: !root._htmlMode
                 settings.dnsPrefetchEnabled: !root._htmlMode
+                // Ctrl+A over the page selects ITS text: claimed at ShortcutOverride, so an app-level
+                // Ctrl+A shortcut (select all of a list) does not take it while the page has focus.
+                Keys.onShortcutOverride: (event) => { if (event.matches(StandardKey.SelectAll)) event.accepted = true }
                 onNavigationRequested: (request) => {
                     if (!root._htmlMode)
                         return;

@@ -58,7 +58,9 @@ function emitShortcut(propsArg: t.Node | undefined, _children: t.Node[], scope: 
   }
 
   const lines = [`${pad}Shortcut {`, `${i(1)}sequences: ${sequences}`];
-  if (guard) lines.push(`${i(1)}enabled: !!(${guard})`);
+  const enabled = props.get("enabled");
+  const conds = [...(guard ? [`(${guard})`] : []), ...(enabled ? [`(${bind(enabled)})`] : [])];
+  if (conds.length) lines.push(`${i(1)}enabled: !!(${conds.join(" && ")})`);
   const onActivated = props.get("onActivated");
   if (onActivated) lines.push(`${i(1)}onActivated: { ${handlerBody(onActivated, scope)} }`);
   lines.push(`${pad}}`);
