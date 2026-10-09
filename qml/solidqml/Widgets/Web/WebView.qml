@@ -63,6 +63,13 @@ Css.CssFill {
     onHtmlChanged: loadContent()
     onRemoteContentChanged: loadContent()
 
+    // The scroll box around us (an engine `overflow: auto` Flickable: it has __maxY), or null.
+    function _scroller() {
+        for (var p = root.parent; p; p = p.parent)
+            if (p.__maxY !== undefined) return p
+        return null
+    }
+
     // The box's height comes from this FOREIGN child: CssFill owns its own implicitHeight (it
     // writes it from the children), and the engine re-flows when a foreign child's implicit size
     // changes. At least 24px, or the page has no viewport and reports no content height at all.
@@ -95,6 +102,23 @@ Css.CssFill {
                             && /^(https?|mailto):/i.test(request.url.toString()))
                         Qt.openUrlExternally(request.url);
                 }
+            }
+        }
+
+        // An `html` body is as tall as its content: it never scrolls itself — the box around it
+        // does. Chromium takes the wheel and drops it, so over the body the wheel moved nothing;
+        // here it moves the enclosing scroll box (the engine's own step: pixels, or ~3 lines a
+        // notch). Buttons and hover still reach the page (links click).
+        MouseArea {
+            anchors.fill: parent
+            z: 1
+            enabled: root._htmlMode
+            acceptedButtons: Qt.NoButton
+            onWheel: (ev) => {
+                var f = root._scroller()
+                if (!f) { ev.accepted = false; return }
+                var dy = ev.pixelDelta.y !== 0 ? ev.pixelDelta.y : (ev.angleDelta.y / 120) * 54
+                f.contentY = Math.max(0, Math.min(f.contentY - dy, f.__maxY))
             }
         }
     }
