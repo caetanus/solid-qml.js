@@ -107,6 +107,22 @@ test("Shortcut under a lazy Show keeps the guard as `enabled` (a Repeater cannot
   assert.match(out, /sequences: \["Ctrl\+A"\]\n\s*enabled: !!\(\(n < 3\)\)/);
 });
 
+test("onClick with the event reads modifiers; onContextMenu is a right-button area with scene coords", async () => {
+  const out = await qml(`export function C(){ const [n,setN]=createSignal(0); let m; return <div onClick={(e) => { if (e.ctrlKey) setN(1); else setN(2); }} onContextMenu={(e) => { e.preventDefault(); m.open(e.clientX, e.clientY); }}><text>x</text></div>; }`);
+  assert.match(out, /onClicked: \(mouse\) => \{ if \(\(\(mouse\.modifiers & Qt\.ControlModifier\) !== 0\)\)/);
+  assert.match(out, /acceptedButtons: Qt\.RightButton/);
+  assert.match(out, /onClicked: \(mouse\) => \{ var __p = mapToItem\(null, mouse\.x, mouse\.y\);\s*\S*\.open\(__p\.x, __p\.y\)/);
+  assert.doesNotMatch(out, /__ev|preventDefault/);
+});
+
+test("VirtualList: a reusing ListView in a CSS box, rows as wide as the list, the row item published", async () => {
+  const out = await qml(`import { Show } from "solid-js"; export function C(){ const [ts,setTs]=createSignal([]); let box; return <VirtualList class="rows" ref={box} each={ts()}>{(t) => <div class="row"><Show when={t.unread}><text>{t.from}</text></Show></div>}</VirtualList>; }`);
+  assert.match(out, /W\.Div \{\n\s*id: _ref_box\n\s*cssClass: \["rows"\]/);
+  assert.match(out, /ListView \{[\s\S]*reuseItems: true[\s\S]*model: ts/);
+  assert.match(out, /id: (__for\d+)\n\s*property var __forItem: modelData\n\s*width: ListView\.view \? ListView\.view\.width : 0/);
+  assert.match(out, /text: "" \+ \(__for\d+\.__forItem\.from\)/);
+});
+
 test("For without a nested loop is emitted exactly as before (no id, no extra property)", async () => {
   const out = await qml(`import { For } from "solid-js"; export function C(){ const [items,setItems]=createSignal([]); return <For each={items()}>{(item)=><div><text>{item}</text></div>}</For>; }`);
   assert.doesNotMatch(out, /__forItem|id: __for/);

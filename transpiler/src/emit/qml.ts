@@ -21,6 +21,7 @@ interface Props {
   onDrop: t.Node | undefined;
   title?: t.Expression; // the HTML `title` attribute → a hover tooltip (W.ToolTip)
   onScroll?: t.Node; // on an `overflow: auto` box: the engine's scrollChanged (see translateScrollHandler)
+  onContextMenu?: t.Node; // right click: a RightButton MouseArea (see translateMouseHandler)
 }
 
 /** Build the cssClass property line(s) for a native element.
@@ -60,6 +61,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
   if (t.isIdentifier(tagArg)) {
     if (tagArg.name === "Show") return emitShow(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "For") return emitFor(propsArg, children as t.Node[], scope, level, guard);
+    if (tagArg.name === "VirtualList") return emitVirtualList(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "Index") return emitIndex(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "Switch") return emitSwitch(children as t.Node[], scope, level, guard);
     if (tagArg.name === "Dynamic") return emitDynamic(propsArg, children as t.Node[], scope, level, guard);
@@ -121,7 +123,11 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
   // rules land (menu items, carousel dots, list rows).
   const clickLines: string[] = [];
   const stateLine: string[] = [];
-  const clickHandler = emitHandler(props.onClick, scope);
+  // A handler that takes the event (`(e) => … e.ctrlKey …`) reads the click's modifiers.
+  const clickFn = props.onClick;
+  const clickHandler = clickFn && (t.isArrowFunctionExpression(clickFn) || t.isFunctionExpression(clickFn)) && clickFn.params.length > 0
+    ? `(mouse) => { ${translateMouseHandler(clickFn, scope)} }`
+    : emitHandler(props.onClick, scope);
   let maId: string | null = null;
   if (clickHandler) {
     const counter = scope.hoverCounter ?? { n: 0 };
@@ -139,6 +145,21 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
       `${pad}${INDENT}${INDENT}hoverEnabled: true`,
       `${pad}${INDENT}${INDENT}cursorShape: Qt.PointingHandCursor`,
       `${pad}${INDENT}${INDENT}onClicked: ${clickHandler}`,
+      `${pad}${INDENT}}`,
+    );
+  }
+  // onContextMenu: a right click — its own RightButton area (left clicks, hover and wheel pass), the
+  // handler's e.clientX / e.clientY in scene coordinates (what <Menu ref={r}>'s r.open(x, y) takes).
+  if (props.onContextMenu) {
+    const fn = props.onContextMenu;
+    if (!(t.isArrowFunctionExpression(fn) || t.isFunctionExpression(fn)))
+      throw new Error("onContextMenu must be an inline function: (e) => …");
+    clickLines.push(
+      `${pad}${INDENT}MouseArea {`,
+      ...(hasInteractiveDescendant(children as t.Node[]) ? [`${pad}${INDENT}${INDENT}z: -1`] : []),
+      `${pad}${INDENT}${INDENT}anchors.fill: parent`,
+      `${pad}${INDENT}${INDENT}acceptedButtons: Qt.RightButton`,
+      `${pad}${INDENT}${INDENT}onClicked: (mouse) => { ${translateMouseHandler(fn, scope)} }`,
       `${pad}${INDENT}}`,
     );
   }
@@ -483,6 +504,27 @@ function translateInputHandler(fn: t.ArrowFunctionExpression | t.FunctionExpress
     .replace(/__ev\.key\s*===\s*"Enter"/g, "(event.key === Qt.Key_Return || event.key === Qt.Key_Enter)")
     .replace(/__ev\.key\s*===\s*"Escape"/g, "(event.key === Qt.Key_Escape)")
     .replace(/__ev\.key/g, "event.key");
+}
+
+/** A mouse handler taking the event: `e.ctrlKey` / `shiftKey` / `altKey` / `metaKey` read the
+ *  click's modifiers, `e.clientX` / `e.clientY` its scene position; preventDefault() and
+ *  stopPropagation() are no-ops (the area accepts the click). Runs inside `(mouse) => { … }`. */
+function translateMouseHandler(fn: t.ArrowFunctionExpression | t.FunctionExpression, scope: Scope): string {
+  const paramName = fn.params[0] && t.isIdentifier(fn.params[0]) ? fn.params[0].name : null;
+  const inner: Scope = { ...scope, mode: "handler", locals: { ...(scope.locals ?? {}), ...(paramName ? { [paramName]: "__ev" } : {}) } };
+  const body = t.isBlockStatement(fn.body)
+    ? fn.body.body.map((s) => emitStmt(s, inner)).join(" ")
+    : `${emitExpr(fn.body, inner)};`;
+  const MOD: Record<string, string> = { ctrlKey: "ControlModifier", shiftKey: "ShiftModifier", altKey: "AltModifier", metaKey: "MetaModifier" };
+  let out = body
+    .replace(/__ev\.(?:preventDefault|stopPropagation)\(\);?/g, "")
+    .replace(/__ev\.(ctrlKey|shiftKey|altKey|metaKey)\b/g, (_m, k: string) => `((mouse.modifiers & Qt.${MOD[k]}) !== 0)`)
+    .replace(/__ev\.clientX\b/g, "__p.x")
+    .replace(/__ev\.clientY\b/g, "__p.y");
+  if (/__ev\b/.test(out))
+    throw new Error("a mouse handler reads only e.ctrlKey/shiftKey/altKey/metaKey, e.clientX/clientY, e.preventDefault()");
+  if (/__p\./.test(out)) out = `var __p = mapToItem(null, mouse.x, mouse.y); ${out}`;
+  return out;
 }
 
 /** An onScroll handler: `e.currentTarget.scrollTop` / `scrollHeight` / `clientHeight` (or
@@ -1449,6 +1491,7 @@ function readProps(propsArg: t.Node | undefined): Props {
     if (p.key.name === "ref" && t.isIdentifier(p.value)) props.ref = p.value.name;
     if (p.key.name === "title" && t.isExpression(p.value)) props.title = p.value;
     if (p.key.name === "onScroll") props.onScroll = p.value;
+    if (p.key.name === "onContextMenu") props.onContextMenu = p.value;
   }
   return props;
 }
@@ -1596,45 +1639,91 @@ function emitFor(propsArg: t.Node | undefined, children: t.Node[], scope: Scope,
   const lines = [`${pad}Css.CssRepeater {`, ...guardLine(guard, level), `${pad}${INDENT}model: ${each}`];
   const delegate = children.find((c) => t.isArrowFunctionExpression(c) || t.isFunctionExpression(c)) as t.ArrowFunctionExpression | t.FunctionExpression | undefined;
   if (delegate) {
-    const param = delegate.params[0];
-    const itemName = param && t.isIdentifier(param) ? param.name : null;
-    const body = delegate.body;
-    if (!isHCall(body)) throw new Error("For delegate must return a single element in this plan");
-    // Every delegate binds its row to `modelData`, so a loop nested in this one SHADOWS it. When
-    // the row is used inside a nested <For>/<Index>, the delegate root publishes it as a property
-    // under an id, and every use goes through that id — QML resolves ids up the context chain,
-    // so the inner delegate still sees it. Without a nested use the emission is unchanged.
-    let rowRef = "modelData";
-    let publish: string | null = null;
-    if (itemName && usedInNestedLoop(body, itemName)) {
-      const counter = scope.hoverCounter ?? { n: 0 };
-      publish = `__for${counter.n++}`;
-      rowRef = `${publish}.__forItem`;
-    }
-    const inner: Scope = { ...scope, locals: { ...(scope.locals ?? {}), ...(itemName ? { [itemName]: rowRef } : {}) } };
-    const rows = emitQml(body, inner, level + 2);
-    if (publish) {
-      // The delegate is ONE h() call, so rows[0] is its root's `Type {` line; the publish lines go
-      // right under it. Fail loud if that ever stops being true.
-      if (!rows[0]?.trimEnd().endsWith("{")) throw new Error("For delegate root: expected `Type {` as the first emitted line");
-      // Reuse the root's own id if it has one (a ref / drag source): an object takes only one.
-      const rootPad = INDENT.repeat(level + 3);
-      const own = rows.find((l) => l.startsWith(`${rootPad}id: `));
-      if (own) {
-        const id = own.slice(`${rootPad}id: `.length).trim();
-        const fixed = rows.map((l) => l.split(`${publish}.__forItem`).join(`${id}.__forItem`));
-        rows.splice(0, rows.length, ...fixed);
-        rows.splice(1, 0, `${rootPad}property var __forItem: modelData`);
-      } else {
-        rows.splice(1, 0, `${rootPad}id: ${publish}`, `${rootPad}property var __forItem: modelData`);
-      }
-    }
     lines.push(`${pad}${INDENT}delegate: Component {`);
-    lines.push(...rows);
+    lines.push(...rowDelegate(delegate, scope, level + 2, "For"));
     lines.push(`${pad}${INDENT}}`);
   }
   lines.push(`${pad}}`);
   return lines;
+}
+
+/** A <For>/<VirtualList> row: the delegate's element with its root at `rootLevel`, the row item
+ *  bound to `modelData`. Every delegate binds its row to `modelData`, so a loop nested in this one
+ *  SHADOWS it. When the row is used inside a nested <For>/<Index>/lazy <Show>, the delegate root
+ *  publishes it as a property under an id, and every use goes through that id — QML resolves ids
+ *  up the context chain, so the inner delegate still sees it. Without a nested use the emission
+ *  is unchanged. `extra`: lines for the root (after the publish lines), at rootLevel + 1. */
+function rowDelegate(delegate: t.ArrowFunctionExpression | t.FunctionExpression, scope: Scope, rootLevel: number,
+                     owner: string, extra: string[] = []): string[] {
+  const param = delegate.params[0];
+  const itemName = param && t.isIdentifier(param) ? param.name : null;
+  const body = delegate.body;
+  if (!isHCall(body)) throw new Error(`${owner} delegate must return a single element in this plan`);
+  let rowRef = "modelData";
+  let publish: string | null = null;
+  if (itemName && usedInNestedLoop(body, itemName)) {
+    const counter = scope.hoverCounter ?? { n: 0 };
+    publish = `__for${counter.n++}`;
+    rowRef = `${publish}.__forItem`;
+  }
+  const inner: Scope = { ...scope, locals: { ...(scope.locals ?? {}), ...(itemName ? { [itemName]: rowRef } : {}) } };
+  const rows = emitQml(body, inner, rootLevel);
+  // The delegate is ONE h() call, so rows[0] is its root's `Type {` line; the publish lines go
+  // right under it. Fail loud if that ever stops being true.
+  if ((publish || extra.length) && !rows[0]?.trimEnd().endsWith("{"))
+    throw new Error(`${owner} delegate root: expected \`Type {\` as the first emitted line`);
+  const rootPad = INDENT.repeat(rootLevel + 1);
+  const head: string[] = [];
+  if (publish) {
+    // Reuse the root's own id if it has one (a ref / drag source): an object takes only one.
+    const own = rows.find((l) => l.startsWith(`${rootPad}id: `));
+    if (own) {
+      const id = own.slice(`${rootPad}id: `.length).trim();
+      const fixed = rows.map((l) => l.split(`${publish}.__forItem`).join(`${id}.__forItem`));
+      rows.splice(0, rows.length, ...fixed);
+    } else {
+      head.push(`${rootPad}id: ${publish}`);
+    }
+    head.push(`${rootPad}property var __forItem: modelData`);
+  }
+  rows.splice(1, 0, ...head, ...extra.map((l) => rootPad + l));
+  return rows;
+}
+
+/** <VirtualList each={E} class="…">{(item) => <row/>}</VirtualList> → a VIRTUALIZED list: a QtQuick
+ *  ListView in a CSS box (the box takes its size from the layout, like any div). Only the rows in
+ *  view (plus a cache margin) exist, and they are REUSED — scrolling, or a new `each` (another
+ *  mailbox, a refresh), moves rows' modelData instead of creating/destroying them. For long lists
+ *  whose <For> would build every row (each one a whole subtree of CSS boxes, texts, areas).
+ *  Rows lay out with their own CSS, as wide as the list, as tall as their content. */
+function emitVirtualList(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
+  const each = readEach(propsArg, scope);
+  const props = readProps(propsArg);
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
+  const delegate = children.find((c) => t.isArrowFunctionExpression(c) || t.isFunctionExpression(c)) as t.ArrowFunctionExpression | t.FunctionExpression | undefined;
+  if (!delegate) throw new Error("<VirtualList> takes a row function: {(item) => <row/>}");
+  const refLine = props.ref ? [`${i(1)}id: _ref_${safeName(props.ref)}`] : [];
+  if (props.ref && scope.refs) scope.refs.push(props.ref);
+  return [
+    `${pad}W.Div {`,
+    ...refLine,
+    ...buildCssClassLine(props, scope, i(1)),
+    ...guardLine(guard, level),
+    `${i(1)}ListView {`,
+    `${i(2)}anchors.fill: parent`,
+    `${i(2)}clip: true`,
+    `${i(2)}reuseItems: true`,
+    `${i(2)}cacheBuffer: 600`,
+    `${i(2)}boundsBehavior: Flickable.StopAtBounds`,
+    `${i(2)}model: ${each}`,
+    `${i(2)}delegate: Component {`,
+    ...rowDelegate(delegate, scope, level + 3, "VirtualList", ["width: ListView.view ? ListView.view.width : 0"]),
+    `${i(2)}}`,
+    `${i(1)}}`,
+    `${pad}}`,
+  ];
 }
 
 /** Does a subtree hold an element that takes clicks itself — its own onClick, or a native
@@ -1678,7 +1767,7 @@ function usedInNestedLoop(node: t.Node, name: string): boolean {
     let isLoop = false;
     if (isHCall(nn)) {
       const tag = (nn as t.CallExpression).arguments[0];
-      isLoop = t.isIdentifier(tag) && ["For", "Index", "Show", "Switch"].includes(tag.name);
+      isLoop = t.isIdentifier(tag) && ["For", "VirtualList", "Index", "Show", "Switch"].includes(tag.name);
     }
     for (const key of t.VISITOR_KEYS[nn.type] ?? []) walk((nn as unknown as Record<string, unknown>)[key], nested || isLoop);
   };
