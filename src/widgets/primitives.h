@@ -74,7 +74,8 @@ public:
         if (m_alt == v)
             return;
         m_alt = v;
-        A11y::notifyNameChanged(this); // the name is read live; only a live AT needs telling
+        if (isComponentComplete())
+            A11y::notifyNameChanged(this); // the name is read live; only a live AT needs telling
         emit altChanged();
     }
 

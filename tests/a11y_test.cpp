@@ -132,6 +132,76 @@ private slots:
         QVERIFY(findByName(wi, QStringLiteral("hello")));
         root->setParentItem(nullptr);
     }
+
+    // The lazy interface must still report visibility: QAccessibleQuickItem::state() returns an empty
+    // State when no attached object exists, which would make hidden / scrolled-away text look visible.
+    void textStateReportsVisibility()
+    {
+        // The engine owns `opacity`: display:none / visibility:hidden / opacity paint as opacity 0.
+        m_theme.loadFromString(QStringLiteral("#clear { display: none; }"));
+        QQmlEngine engine;
+        wire(engine);
+        QScopedPointer<QObject> o(create(engine,
+            "import QtQuick\nimport solidqml.Widgets\nItem { width: 200; height: 100\n"
+            "  Text { objectName: \"normal\"; text: \"a\" }\n"
+            "  Text { objectName: \"hidden\"; text: \"b\"; visible: false }\n"
+            "  Text { objectName: \"clear\"; cssId: \"clear\"; text: \"c\" }\n"
+            "  Item { x: 5000; y: 5000; Text { objectName: \"away\"; text: \"d\" } }\n"
+            "}"));
+        QVERIFY(o);
+        auto *root = qobject_cast<QQuickItem *>(o.data());
+        QQuickWindow window;
+        window.resize(200, 100);
+        root->setParentItem(window.contentItem());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+        const auto state = [&](const char *name) {
+            QObject *t = o->findChild<QObject *>(QLatin1String(name));
+            QAccessibleInterface *iface = t ? QAccessible::queryAccessibleInterface(t) : nullptr;
+            return iface ? iface->state() : QAccessible::State();
+        };
+        const QAccessible::State normal = state("normal");
+        QVERIFY(!normal.invisible);
+        QVERIFY(!normal.offscreen);
+        QVERIFY(normal.focusable); // StaticText is a text role
+        QVERIFY(state("hidden").invisible);
+        QVERIFY(state("clear").invisible);
+        QVERIFY(state("away").offscreen);
+        root->setParentItem(nullptr);
+    }
+
+    // `Accessible.ignored: true` (binding runs before componentComplete) must stand.
+    void accessibleIgnoredStands()
+    {
+        QQmlEngine engine;
+        wire(engine);
+        QScopedPointer<QObject> o(create(engine,
+            "import QtQuick\nimport solidqml.Widgets\n"
+            "Div { width: 200; height: 100; Text { objectName: \"t\"; text: \"x\"; Accessible.ignored: true } }"));
+        QVERIFY(o);
+        auto *t = o->findChild<QQuickItem *>(QStringLiteral("t"));
+        QVERIFY(t);
+        QVERIFY(!QQuickItemPrivate::get(t)->isAccessible);
+        auto *root = qobject_cast<QQuickItem *>(o.data());
+        QQuickWindow window;
+        window.resize(200, 100);
+        root->setParentItem(window.contentItem());
+        QVERIFY(!findByName(QAccessible::queryAccessibleInterface(&window), QStringLiteral("x")));
+        root->setParentItem(nullptr);
+    }
+
+    void explicitAccessibleNameWins()
+    {
+        QQmlEngine engine;
+        wire(engine);
+        QScopedPointer<QObject> o(create(engine,
+            "import QtQuick\nimport solidqml.Widgets\nText { text: \"hello\"; Accessible.name: \"override\" }"));
+        QVERIFY(o);
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(o.data());
+        QVERIFY(iface);
+        QCOMPARE(iface->text(QAccessible::Name), QStringLiteral("override"));
+    }
 };
 
 QTEST_MAIN(A11yTest)
