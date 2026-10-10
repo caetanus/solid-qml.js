@@ -98,6 +98,15 @@ Css.CssFill {
                 // Ctrl+A over the page selects ITS text: claimed at ShortcutOverride, so an app-level
                 // Ctrl+A shortcut (select all of a list) does not take it while the page has focus.
                 Keys.onShortcutOverride: (event) => { if (event.matches(StandardKey.SelectAll)) event.accepted = true }
+                // A link with target="_blank" (most of a newsletter's buttons) asks for a new window,
+                // not a navigation: the same rule as a clicked link — web and mail links to the
+                // system opener, nothing else, never a window of ours.
+                onNewWindowRequested: (request) => {
+                    if (!root._htmlMode)
+                        return;
+                    if (/^(https?|mailto):/i.test(request.requestedUrl.toString()))
+                        Qt.openUrlExternally(request.requestedUrl);
+                }
                 onNavigationRequested: (request) => {
                     if (!root._htmlMode)
                         return;
