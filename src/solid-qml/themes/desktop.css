@@ -1,0 +1,55 @@
+/* solid-qml desktop theme — an OPT-IN sheet (base.css stays neutral and token-free).
+ *
+ * Everything here is written against CSS custom properties, so an app themes it by defining its
+ * palette on :root and nothing else. Token names are solid-player's (ui/player/player.css), shared
+ * by every app that imports this sheet:
+ *
+ *   --bg --side --surface --surface2 --border --text --muted --faint
+ *   --accent --accent-hover --on-accent --danger --ok --shadow
+ *
+ * Each reference carries a fallback: an app that imports the theme without a palette gets a light
+ * desktop look. Covers the popups solid-qml draws itself: <Menu>/<MenuItem>/<MenuSeparator>, the
+ * <select> list, the date input's calendar.
+ */
+
+/* ── Popups: menus, select lists, the calendar ─────────────────────────────────────────── */
+.popup {
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #c9ced6);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px var(--shadow, rgba(0, 0, 0, 0.18));
+}
+
+/* A row of a menu or a select list. The highlight is a soft tint (--surface2) so the label keeps
+ * --text: an --accent fill needs the label in --on-accent, which waits on ancestor :hover in the
+ * engine's ancestor matching. */
+.option {
+  background: transparent;
+  border-radius: 6px;
+}
+.option:hover {
+  background: var(--surface2, #dce8fc);
+}
+.option:selected {
+  background: var(--surface2, #dce8fc);
+}
+.option-label {
+  font-size: 13px;
+  color: var(--text, #1d1d1f);
+}
+
+.sep {
+  height: 1px;
+  background: var(--border, #e1e4e8);
+}
+
+/* ── The calendar (inline <Calendar> and the date input's popup) ────────────────────────── */
+.cal-nav:hover {
+  background: var(--surface2, #e8eef7);
+}
+.day:hover {
+  background: var(--surface2, #e8eef7);
+}
+.day:focus {
+  border: 1px solid var(--accent, #0a64d8);
+}
