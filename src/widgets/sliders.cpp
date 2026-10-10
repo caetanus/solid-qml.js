@@ -33,10 +33,15 @@ T.Slider {
         height: 6
         implicitWidth: 200
         implicitHeight: 6
-        Css.CssRect {
-            cssClass: ["track-fill"]
-            width: ctl.visualPosition * parent.width
-            height: parent.height
+        // A plain Item between the track and the fill keeps the fill out of the track's CSS flow
+        // (as RangeSlider does): a Css child would be laid out as a block, its width forced to 100%.
+        Item {
+            anchors.fill: parent
+            Css.CssRect {
+                cssClass: ["track-fill"]
+                width: ctl.visualPosition * parent.width
+                height: parent.height
+            }
         }
     }
     handle: Css.CssRect {
