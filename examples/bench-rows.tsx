@@ -36,13 +36,24 @@ export function BenchRows() {
     ["create1k", () => setRows(build(1000))],
     ["update10th", () => setRows(rows().map((r, i) => (i % 10 === 0 ? { id: r.id, label: r.label + " !!!" } : r)))],
     ["swap", () => {
+      // js-framework-benchmark swaps rows 1 and 998; for N < 1000 that index would extend the
+      // array with holes, so clamp the second index to the last-but-one row instead. Below N=3
+      // there is nothing meaningful to swap, so both indices fall back to -1 (a non-index property
+      // read/written on the array, never touching .length) and the swap is a no-op.
+      // (No `if`: the transpiler's inline-block emitter only supports var/return/expression
+      // statements, so the "only when a.length >= 3" guard is folded into the index values.)
       const a = rows().slice();
-      const t = a[1];
-      a[1] = a[998];
-      a[998] = t;
+      const i = a.length >= 3 ? 1 : -1;
+      const j = a.length >= 3 ? Math.min(998, a.length - 2) : -1;
+      const t = a[i];
+      a[i] = a[j];
+      a[j] = t;
       setRows(a);
     }],
-    ["remove1", () => setRows(rows().filter((r, i) => i !== 500))],
+    ["remove1", () => {
+      const i = Math.min(500, Math.floor(rows().length / 2));
+      setRows(rows().filter((r, idx) => idx !== i));
+    }],
     ["append1k", () => setRows(rows().concat(build(1000)))],
     ["clear", () => setRows([])],
   ][k];
