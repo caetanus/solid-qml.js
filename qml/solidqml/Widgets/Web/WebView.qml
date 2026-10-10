@@ -57,7 +57,12 @@ Css.CssFill {
             return;
         engine.item.loadHtml("<!doctype html><html><head><meta charset=\"utf-8\">"
             + "<meta http-equiv=\"Content-Security-Policy\" content=\"" + _policy + "\">"
-            + "<style>html,body{margin:0;padding:0;background:transparent}img{max-width:100%}</style>"
+            // The box grows to the content, so the page never scrolls itself — but Chromium laid out
+            // the first frame in a 24px viewport, added its scrollbar and kept it: a second, inner
+            // scroll in the conversation. The bar is hidden, not the overflow (overflow:hidden would
+            // also hide the content size the box grows to).
+            + "<style>html,body{margin:0;padding:0;background:transparent}html{scrollbar-width:none}"
+            + "::-webkit-scrollbar{display:none}img{max-width:100%}</style>"
             + "</head><body>" + html + "</body></html>", "about:blank");
     }
     onHtmlChanged: loadContent()
