@@ -144,3 +144,15 @@ test("bare / literal disabled and readOnly are emitted exactly as before", async
   assert.match(out, /readOnly: true/);
   assert.match(out, /disabled: true/);
 });
+
+test("<Switch fallback>: mounted (lazily) only while no <Match> holds — it used to be dropped", async () => {
+  const out = await qml(`import { Switch, Match } from "solid-js"; export function C(){ const [n,setN]=createSignal(0); return <div><Switch fallback={<text>many</text>}><Match when={n() === 0}><text>zero</text></Match><Match when={n() === 1}><text>one</text></Match></Switch></div>; }`);
+  assert.equal(out.match(/Css\.CssIncubator \{/g)?.length, 3, out);
+  assert.match(out, /active: \(!\(\(n === 0\) \|\| \(n === 1\)\)\) \? true : false\n\s*sourceComponent: Component \{\n\s*W\.Text \{\n\s*text: "many"/);
+});
+
+test("<Show> with a bare text child or fallback: a transpile error, not a dropped text", async () => {
+  await assert.rejects(qml(wrap(`<Show when={a()}>{"loose"}</Show>`)), /wrap it in <text>/);
+  await assert.rejects(qml(wrap(`<Show when={a()} fallback={"loading"}><text>x</text></Show>`)), /wrap it in <text>/);
+  await assert.rejects(qml(wrap(`<Switch fallback={"none"}><Match when={a()}><text>x</text></Match></Switch>`)), /<Switch fallback>/);
+});

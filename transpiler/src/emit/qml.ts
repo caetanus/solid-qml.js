@@ -65,7 +65,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
     if (tagArg.name === "For") return emitFor(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "VirtualList") return emitVirtualList(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "Index") return emitIndex(propsArg, children as t.Node[], scope, level, guard);
-    if (tagArg.name === "Switch") return emitSwitch(children as t.Node[], scope, level, guard);
+    if (tagArg.name === "Switch") return emitSwitch(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "Dynamic") return emitDynamic(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "Suspense") return emitSuspense(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "Window") return emitWindow(propsArg, children as t.Node[], scope, level);
@@ -1617,7 +1617,10 @@ const NON_ITEM_TAGS = new Set(["Shortcut"]);
 
 /** One `Repeater { model: (cond) ? 1 : 0 }` per element (a fragment gates each of its children). */
 function lazyGate(node: t.Node, cond: string, scope: Scope, level: number): string[] {
-  if (!isHCall(node)) return [];
+  if (!isHCall(node)) {
+    if (isWhitespaceString(node) || t.isNullLiteral(node) || t.isBooleanLiteral(node)) return [];
+    throw new Error("<Show>: a bare text/expression child (or fallback) is not emitted natively — wrap it in <text>…</text>");
+  }
   const { tag } = hParts(node);
   if (isFragmentTag(tag)) return hParts(node).children.flatMap((k) => lazyGate(k as t.Node, cond, scope, level));
   if (t.isIdentifier(tag) && NON_ITEM_TAGS.has(tag.name)) return emitQml(node as t.CallExpression, scope, level, cond);
@@ -1983,10 +1986,19 @@ function emitIndex(propsArg: t.Node | undefined, children: t.Node[], scope: Scop
  *  child of the box and the CssLayoutEngine sizes it exactly as before — a `Loader` would NOT
  *  (csslayout.cpp isLayoutChild only recognises children exposing style/cssPrimitive). Guard/
  *  first-wins semantics are unchanged; only the gate goes from `visible` (eager) to `model` (lazy). */
-function emitSwitch(children: t.Node[], scope: Scope, level: number, outerGuard?: string): string[] {
+function emitSwitch(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, outerGuard?: string): string[] {
   const out: string[] = [];
   const priors: string[] = [];
   const pad = INDENT.repeat(level);
+  // One lazy incubator per root of a branch, on the branch's guard.
+  const branch = (node: t.Node, guard: string) => {
+    for (const root of splitRoots(emitQml(node as t.CallExpression, scope, level + 2), level + 2, "<Match> child")) {
+      out.push(`${pad}Css.CssIncubator {`, `${pad}${INDENT}active: (${guard}) ? true : false`);
+      out.push(`${pad}${INDENT}sourceComponent: Component {`);
+      out.push(...root);
+      out.push(`${pad}${INDENT}}`, `${pad}}`);
+    }
+  };
   for (const c of children) {
     if (!isHCall(c)) continue;
     const { tag: tagArg, props: propsArg, children: kids } = hParts(c);
@@ -2001,14 +2013,21 @@ function emitSwitch(children: t.Node[], scope: Scope, level: number, outerGuard?
       // holder as a direct layout child — Repeater semantics, without blocking the frame.
       // A Component holds ONE root: a multi-root body (a nested <Show> with several branches) gets
       // one incubator per root, all on the same guard — siblings, as the web's fragment.
-      for (const root of splitRoots(emitQml(k, scope, level + 2), level + 2, "<Match> child")) {
-        out.push(`${pad}Css.CssIncubator {`, `${pad}${INDENT}active: (${guard}) ? true : false`);
-        out.push(`${pad}${INDENT}sourceComponent: Component {`);
-        out.push(...root);
-        out.push(`${pad}${INDENT}}`, `${pad}}`);
-      }
+      branch(k, guard);
     }
     priors.push(`(${when})`);
+  }
+  // <Switch fallback={F}>: mounted while NO Match holds (Solid's Switch fallback), lazily too.
+  const fallback = readFallback(propsArg, scope);
+  if (fallback.length) {
+    const none = priors.length ? `!(${priors.join(" || ")})` : "true";
+    const guard = outerGuard ? `(${outerGuard}) && (${none})` : none;
+    for (const fb of fallback) {
+      if (!isHCall(fb)) throw new Error("<Switch fallback>: expected an element — wrap text in <text>…</text>");
+      const { tag, children: fbKids } = hParts(fb);
+      if (isFragmentTag(tag)) { for (const k of fbKids) if (isHCall(k)) branch(k, guard); }
+      else branch(fb, guard);
+    }
   }
   return out;
 }
