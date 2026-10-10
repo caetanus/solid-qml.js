@@ -401,3 +401,13 @@ if sh_prog.found()
     timeout: 180,
   )
 endif
+
+# Accessibility of the CSS primitives (Text/Image): role/name semantics + the lazy cost contract
+# (one bool per element until an AT client queries). Uses QtQuick private headers to observe it.
+a11y_test_deps = [solidqml_dep, qt6_templates_private_dep, dependency('qt6', modules: ['Test'])]
+test('widgets-a11y',
+  executable('test-widgets-a11y', files('tests/a11y_test.cpp'),
+    qt6.preprocess(moc_sources: files('tests/a11y_test.cpp'), dependencies: a11y_test_deps),
+    include_directories: include_directories('src'),
+    dependencies: a11y_test_deps),
+  env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)

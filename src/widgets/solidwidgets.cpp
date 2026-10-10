@@ -76,6 +76,9 @@ void registerTypes()
     qmlRegisterType<Menu>("solidqml.Widgets", 1, 0, "Menu");
     qmlRegisterType<MenuItem>("solidqml.Widgets", 1, 0, "MenuItem");
     qmlRegisterType<MenuSeparator>("solidqml.Widgets", 1, 0, "MenuSeparator");
+
+    // Text/Image accessible interfaces are built on first AT query, not per element.
+    A11y::installAccessibleFactory();
 }
 
 } // namespace SolidWidgets

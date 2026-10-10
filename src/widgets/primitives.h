@@ -24,10 +24,10 @@ public:
 };
 
 // Text — the text-run primitive: a CssText whose primitive defaults to "text".
-// Accessibility: a text run declares itself to screen readers (StaticText, or Heading for h1…h6 —
-// read off the same cssPrimitive the cascade styles by), with the rendered text as its name.
-// Without this the CSS primitives are invisible to AT: unlike the widgets, they wrap no
-// QtQuick.Templates control that would supply the semantics.
+// Accessibility: a text run is visible to screen readers (StaticText, or Heading for h1…h6 — read
+// off the same cssPrimitive the cascade styles by), named by the rendered text. Without this the
+// CSS primitives are invisible to AT: unlike the widgets, they wrap no QtQuick.Templates control
+// that would supply the semantics. Lazy: one bool until an AT client asks (see a11y.h).
 class Text : public QmlCss::CssText {
     Q_OBJECT
 
@@ -39,15 +39,10 @@ public:
     }
 
 protected:
-    // Attached accessibility needs a live QML context, so it is wired at completion (the
-    // constructor runs before the item is associated with the engine).
     void componentComplete() override
     {
         QmlCss::CssText::componentComplete();
-        const auto sync = [this] { A11y::describeText(this, cssPrimitive(), text()); };
-        connect(this, &QmlCss::CssText::textChanged, this, sync);
-        connect(this, &QmlCss::CssText::cssPrimitiveChanged, this, sync);
-        sync();
+        A11y::markAccessible(this);
     }
 };
 
@@ -79,8 +74,7 @@ public:
         if (m_alt == v)
             return;
         m_alt = v;
-        if (isComponentComplete())
-            A11y::describeImage(this, m_alt);
+        A11y::notifyNameChanged(this); // the name is read live; only a live AT needs telling
         emit altChanged();
     }
 
@@ -88,7 +82,7 @@ protected:
     void componentComplete() override
     {
         QmlCss::CssImage::componentComplete();
-        A11y::describeImage(this, m_alt); // Graphic role; alt is the accessible name
+        A11y::markAccessible(this); // Graphic role; alt is the accessible name (lazy, see a11y.h)
     }
 
 signals:
