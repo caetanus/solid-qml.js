@@ -10,6 +10,7 @@ W.Div {
     cssClass: ["app"]
     Css.CssRepeater {
         model: items
+        virtualize: true
         delegate: Component {
             W.Text {
                 cssClass: ["row"]

@@ -1,8 +1,9 @@
 // Step 5v-1 (virtualized CssRepeater), Task 1: transpiler certification of <For> rows.
 // See docs/superpowers/plans/2026-10-10-step5v1-virtual-repeater.md ("5v contract" in
-// docs/superpowers/plans/2026-10-09-native-beats-web-roadmap.md). The engine does not understand
-// `virtualize` yet (Task 2), so emission is gated behind SQ_VIRTUALIZE=1 (default OFF): with the
-// gate off, a certified row's emission must be byte-identical to a non-certified row's.
+// docs/superpowers/plans/2026-10-09-native-beats-web-roadmap.md). Emission is automatic for a
+// certified row (Task 2 removed the SQ_VIRTUALIZE gate once the engine learned `virtualize`): a
+// certified row gets `virtualize: true` right after `model:`, and a non-certified row emits exactly
+// what it emitted before the feature existed (no `virtualize` line, nothing else changed).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as t from "@babel/types";
@@ -24,42 +25,35 @@ async function qml(src: string): Promise<string> {
   return emitQml(render, scope).join("\n");
 }
 
-/** Runs `qml(src)` with SQ_VIRTUALIZE forced to "1" or removed, restoring the previous value
- *  afterwards (tests in this file run sequentially, but this keeps each test self-contained). */
-async function qmlGated(src: string, on: boolean): Promise<string> {
-  const prev = process.env.SQ_VIRTUALIZE;
-  if (on) process.env.SQ_VIRTUALIZE = "1"; else delete process.env.SQ_VIRTUALIZE;
-  try {
-    return await qml(src);
-  } finally {
-    if (prev === undefined) delete process.env.SQ_VIRTUALIZE; else process.env.SQ_VIRTUALIZE = prev;
-  }
-}
-
 async function assertCertified(src: string): Promise<string> {
-  const out = await qmlGated(src, true);
+  const out = await qml(src);
   assert.match(out, /^\s*model: .*\n\s*virtualize: true$/m, out);
   return out;
 }
 
-/** A row that is NOT certified must emit IDENTICALLY whether the gate is on or off — i.e. the
- *  feature never changes its output. */
+/** A row that is NOT certified emits no `virtualize` line — its output is what the transpiler
+ *  produced before 5v-1 (the line is the feature's only emission change). */
 async function assertNotCertified(src: string): Promise<string> {
-  const off = await qmlGated(src, false);
-  const on = await qmlGated(src, true);
-  assert.doesNotMatch(off, /virtualize: true/, off);
-  assert.equal(on, off);
-  return off;
+  const out = await qml(src);
+  assert.doesNotMatch(out, /virtualize/, out);
+  return out;
 }
 
-// ---- Gate itself -----------------------------------------------------------------------------
+// ---- No gate: emission is automatic, and SQ_VIRTUALIZE no longer changes anything --------------
 
-test("SQ_VIRTUALIZE gate: OFF by default, a certifiable row emits no virtualize line", async () => {
+test("no gate: a certified row emits virtualize with or without SQ_VIRTUALIZE in the environment", async () => {
   const src = `import { For } from "solid-js"; export function C(){ const [rows,setRows]=createSignal([]); return <For each={rows()}>{(row)=><div class="bench-row"><text class="bench-id">{row.id}</text><text class="bench-label">{row.label}</text></div>}</For>; }`;
-  const off = await qmlGated(src, false);
-  assert.doesNotMatch(off, /virtualize: true/, off);
-  const on = await qmlGated(src, true);
-  assert.match(on, /virtualize: true/, on);
+  const prev = process.env.SQ_VIRTUALIZE;
+  try {
+    delete process.env.SQ_VIRTUALIZE;
+    const unset = await qml(src);
+    process.env.SQ_VIRTUALIZE = "0";
+    const zero = await qml(src);
+    assert.match(unset, /virtualize: true/, unset);
+    assert.equal(zero, unset);
+  } finally {
+    if (prev === undefined) delete process.env.SQ_VIRTUALIZE; else process.env.SQ_VIRTUALIZE = prev;
+  }
 });
 
 // ---- Certified --------------------------------------------------------------------------------
@@ -113,13 +107,12 @@ test("not certified: a capitalized component/builtin tag", async () => {
 
 test("not certified: a nested <For> disqualifies the OUTER row (an independently-passive INNER row may still certify on its own)", async () => {
   const src = `import { For } from "solid-js"; export function C(){ const [rows,setRows]=createSignal([]); return <For each={rows()}>{(row)=><div><For each={row.items}>{(it)=><text>{it}</text>}</For></div>}</For>; }`;
-  const on = await qmlGated(src, true);
-  const off = await qmlGated(src, false);
+  const out = await qml(src);
   // The outer repeater's own `model:` line gets no virtualize right after it...
-  assert.doesNotMatch(on, /model: rows\n\s*virtualize: true/, on);
-  // ...only the inner repeater (a wholly separate, independently passive <For>) does.
-  assert.match(on, /model: __for0\.__forItem\.items\n\s*virtualize: true/, on);
-  assert.equal(on.replace(/\n\s*virtualize: true/, ""), off);
+  assert.doesNotMatch(out, /model: rows\n\s*virtualize: true/, out);
+  // ...only the inner repeater (a wholly separate, independently passive <For>) does — exactly once.
+  assert.match(out, /model: __for0\.__forItem\.items\n\s*virtualize: true/, out);
+  assert.equal(out.match(/virtualize: true/g)?.length, 1, out);
 });
 
 test("not certified: a nested <Show>", async () => {

@@ -1689,10 +1689,11 @@ function emitFor(propsArg: t.Node | undefined, children: t.Node[], scope: Scope,
   const each = readEach(propsArg, scope);
   const pad = INDENT.repeat(level);
   const delegate = children.find((c) => t.isArrowFunctionExpression(c) || t.isFunctionExpression(c)) as t.ArrowFunctionExpression | t.FunctionExpression | undefined;
-  // 5v-1 (virtualized CssRepeater, Task 1): a certified row gets `virtualize: true` right after
-  // `model:`. The engine does not understand `virtualize` yet (Task 2 lands it), so this is gated
-  // behind SQ_VIRTUALIZE=1 (default OFF) — with the gate off, emission never changes.
-  const virtualize = process.env.SQ_VIRTUALIZE === "1" && !!delegate && certifyForRow(delegate);
+  // 5v-1 (virtualized CssRepeater): a certified row gets `virtualize: true` right after `model:`,
+  // automatically (owner rule: only transpiler-proven passive rows). The engine still windows the
+  // list only when it is runtime-eligible (fixed-pitch rows in a vertical scroll column); otherwise it
+  // stays eager. Uncertified rows emit exactly as before.
+  const virtualize = !!delegate && certifyForRow(delegate);
   const lines = [
     `${pad}Css.CssRepeater {`,
     ...guardLine(guard, level),
