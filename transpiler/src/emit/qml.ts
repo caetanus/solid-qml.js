@@ -1758,6 +1758,12 @@ function emitVirtualList(propsArg: t.Node | undefined, children: t.Node[], scope
   const refLine = props.ref ? [`${i(1)}id: _ref_${safeName(props.ref)}`] : [];
   const lvId = `__vlist${(scope.hoverCounter ?? { n: 0 }).n++}`;
   if (props.ref && scope.refs) scope.refs.push(props.ref);
+  // onEndReached={() => …}: the scroll reached the last row — a long list asks for its next page.
+  let endHandler: string | null = null;
+  if (propsArg && t.isObjectExpression(propsArg)) {
+    for (const p of propsArg.properties)
+      if (t.isObjectProperty(p) && t.isIdentifier(p.key, { name: "onEndReached" })) endHandler = emitHandler(p.value, scope);
+  }
   const keyFn = props.onKeyDown;
   if (keyFn && !(t.isArrowFunctionExpression(keyFn) || t.isFunctionExpression(keyFn)))
     throw new Error("onKeyDown must be an inline function: (e) => …");
@@ -1784,6 +1790,7 @@ function emitVirtualList(propsArg: t.Node | undefined, children: t.Node[], scope
     `${i(3)}onWheel: (ev) => { var lv = ${lvId}; var dy = ev.pixelDelta.y !== 0 ? ev.pixelDelta.y * 1.5 : (ev.angleDelta.y / 120) * 110; lv.contentY = Math.max(lv.originY, Math.min(lv.contentY - dy, lv.originY + lv.contentHeight - lv.height)) }`,
     `${i(2)}}`,
     `${i(2)}model: ${each}`,
+    ...(endHandler ? [`${i(2)}onAtYEndChanged: if (atYEnd && count > 0) { ${endHandler} }`] : []),
     `${i(2)}delegate: Component {`,
     ...rowDelegate(delegate, scope, level + 3, "VirtualList", ["width: ListView.view ? ListView.view.width : 0"]),
     `${i(2)}}`,

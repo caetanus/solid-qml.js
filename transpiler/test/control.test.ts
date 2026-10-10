@@ -160,6 +160,11 @@ test("onKeyDown handing the event to a helper gets a DOM-shaped event", async ()
   assert.match(out, /k\(__ev\);/);
 });
 
+test("VirtualList onEndReached: the ListView's atYEnd calls it (the next page)", async () => {
+  const out = await qml(`export function C(){ const [ts,setTs]=createSignal([]); const [n,setN]=createSignal(0); return <VirtualList class="rows" each={ts()} onEndReached={() => setN(n() + 1)}>{(t) => <div class="row"><text>{t.from}</text></div>}</VirtualList>; }`);
+  assert.match(out, /onAtYEndChanged: if \(atYEnd && count > 0\) \{ n = n \+ 1 \}/);
+});
+
 test("For without a nested loop is emitted exactly as before (no id, no extra property)", async () => {
   const out = await qml(`import { For } from "solid-js"; export function C(){ const [items,setItems]=createSignal([]); return <For each={items()}>{(item)=><div><text>{item}</text></div>}</For>; }`);
   assert.doesNotMatch(out, /__forItem|id: __for/);
