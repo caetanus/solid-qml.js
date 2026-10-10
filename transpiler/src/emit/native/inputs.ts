@@ -20,7 +20,7 @@
 import * as t from "@babel/types";
 import { registerNativeTags, type NativeEmit } from "./index.ts";
 import { emitExpr, type Scope } from "../expr.ts";
-import { buildCssClassLine, guardLine, INDENT } from "../qml.ts";
+import { boolAttrExpr, buildCssClassLine, guardLine, INDENT } from "../qml.ts";
 import { safeName } from "../../names/safe.ts";
 import { isHCall } from "../../ast/h.ts";
 
@@ -59,14 +59,14 @@ function fnProp(propsArg: t.Node | undefined, name: string): Fn | null {
   return e && (t.isArrowFunctionExpression(e) || t.isFunctionExpression(e)) ? e : null;
 }
 
-/** `disabled` / bare boolean attribute — present and not literally false. */
-function boolAttr(propsArg: t.Node | undefined, name: string): boolean {
-  if (!propsArg || !t.isObjectExpression(propsArg)) return false;
+/** `disabled` / bare boolean attribute as a QML expression: "true" when bare or literally true,
+ *  null when absent or literally false, a binding for any expression. */
+function boolAttr(propsArg: t.Node | undefined, name: string, scope: Scope): string | null {
+  if (!propsArg || !t.isObjectExpression(propsArg)) return null;
   for (const p of propsArg.properties) {
-    if (t.isObjectProperty(p) && t.isIdentifier(p.key, { name }))
-      return !t.isBooleanLiteral(p.value) || p.value.value;
+    if (t.isObjectProperty(p) && t.isIdentifier(p.key, { name })) return boolAttrExpr(p.value, scope);
   }
-  return false;
+  return null;
 }
 
 /** class / classList subset of qml.ts readProps (readProps itself is module-local). */
@@ -184,7 +184,7 @@ const emitRangeSlider: NativeEmit = (propsArg, _children, scope, level, guard) =
   const firstExpr = bindingExpr(propsArg, "first", scope);
   const secondExpr = bindingExpr(propsArg, "second", scope);
   const onChangeFn = fnProp(propsArg, "onChange");
-  const disabled = boolAttr(propsArg, "disabled");
+  const disabled = boolAttr(propsArg, "disabled", scope);
 
   // onChange(lo, hi) — direct values, fired from the component's moved() (either node).
   const changeBody = onChangeFn
@@ -200,7 +200,7 @@ const emitRangeSlider: NativeEmit = (propsArg, _children, scope, level, guard) =
     `${i(1)}to: ${max}`,
     `${i(1)}stepSize: ${step}`,
   ];
-  if (disabled) lines.push(`${i(1)}disabled: true`);
+  if (disabled !== null) lines.push(`${i(1)}disabled: ${disabled}`);
   if (changeBody) lines.push(`${i(1)}onMoved: { ${changeBody} }`);
   // Controlled values: one Binding per node — Binding.target accepts the aliased sub-object.
   if (firstExpr !== undefined) lines.push(...bindingElement(i, `${ctlId}.first`, "value", firstExpr));
@@ -227,7 +227,7 @@ const emitDial: NativeEmit = (propsArg, _children, scope, level, guard) => {
   const step = numericAttr(propsArg, "step", "1", scope);
   const valueExpr = bindingExpr(propsArg, "value", scope);
   const onChangeFn = fnProp(propsArg, "onChange");
-  const disabled = boolAttr(propsArg, "disabled");
+  const disabled = boolAttr(propsArg, "disabled", scope);
 
   // onChange(v) — direct value, fired from the component's moved() signal (control drag / wheel).
   const movedBody = onChangeFn ? translateArgsHandler(onChangeFn, [`${ctlId}.value`], scope) : "";
@@ -241,7 +241,7 @@ const emitDial: NativeEmit = (propsArg, _children, scope, level, guard) => {
     `${i(1)}to: ${max}`,
     `${i(1)}stepSize: ${step}`,
   ];
-  if (disabled) lines.push(`${i(1)}disabled: true`);
+  if (disabled !== null) lines.push(`${i(1)}disabled: ${disabled}`);
   if (movedBody) lines.push(`${i(1)}onMoved: { ${movedBody} }`);
   if (valueExpr !== undefined) lines.push(...bindingElement(i, ctlId, "value", valueExpr));
   lines.push(`${pad}}`);
@@ -264,7 +264,7 @@ const emitTumbler: NativeEmit = (propsArg, _children, scope, level, guard) => {
   const optionsExpr = bindingExpr(propsArg, "options", scope) ?? "[]";
   const valueExpr = bindingExpr(propsArg, "value", scope);
   const onChangeFn = fnProp(propsArg, "onChange");
-  const disabled = boolAttr(propsArg, "disabled");
+  const disabled = boolAttr(propsArg, "disabled", scope);
 
   // Direct-value handler: the picked option is model[currentIndex].
   const changeBody = onChangeFn
@@ -278,7 +278,7 @@ const emitTumbler: NativeEmit = (propsArg, _children, scope, level, guard) => {
     ...guardLine(guard, level),
     `${i(1)}model: ${optionsExpr}`,
   ];
-  if (disabled) lines.push(`${i(1)}disabled: true`);
+  if (disabled !== null) lines.push(`${i(1)}disabled: ${disabled}`);
   // Fires for user flicks AND Binding re-assertions — the echo writes the same value back
   // into the signal, which is a no-op (same acceptance as the <select> onActivated wiring).
   if (changeBody) lines.push(`${i(1)}onCurrentIndexChanged: { ${changeBody} }`);
@@ -302,7 +302,7 @@ const emitDelayButton: NativeEmit = (propsArg, children, scope, level, guard) =>
 
   const delay = numericAttr(propsArg, "delay", "300", scope);
   const activatedBody = emitEventHandler(propValue(propsArg, "onActivated"), scope);
-  const disabled = boolAttr(propsArg, "disabled");
+  const disabled = boolAttr(propsArg, "disabled", scope);
 
   const lines: string[] = [
     `${pad}W.DelayButton {`,
@@ -311,7 +311,7 @@ const emitDelayButton: NativeEmit = (propsArg, children, scope, level, guard) =>
     `${i(1)}delay: ${delay}`,
     `${i(1)}text: ${textLabel(children, scope)}`,
   ];
-  if (disabled) lines.push(`${i(1)}disabled: true`);
+  if (disabled !== null) lines.push(`${i(1)}disabled: ${disabled}`);
   if (activatedBody) lines.push(`${i(1)}onActivated: { ${activatedBody} }`);
   lines.push(`${pad}}`);
   return lines;
@@ -353,7 +353,7 @@ function buttonLike(wType: string, extraClass: string): NativeEmit {
     if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
     const clickBody = emitEventHandler(ui.onClick, scope);
-    const disabled = boolAttr(propsArg, "disabled");
+    const disabled = boolAttr(propsArg, "disabled", scope);
 
     const lines: string[] = [
       `${pad}${wType} {`,
@@ -361,7 +361,7 @@ function buttonLike(wType: string, extraClass: string): NativeEmit {
       ...guardLine(guard, level),
       `${i(1)}text: ${textLabel(children, scope)}`,
     ];
-    if (disabled) lines.push(`${i(1)}disabled: true`);
+    if (disabled !== null) lines.push(`${i(1)}disabled: ${disabled}`);
     if (clickBody) lines.push(`${i(1)}onClicked: { ${clickBody} }`);
     lines.push(`${pad}}`);
     return lines;

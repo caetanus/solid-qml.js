@@ -8,6 +8,7 @@ import { analyzeContexts, analyzeProvider, analyzeSignals, analyzeUseContext } f
 import { hParts, isComponentIdentifier, isHCall } from "./ast/h.ts";
 import { isBareSpecifier, isRuntimeOnlyImport, mirrorNodeImports, resolveNodeImport } from "./resolve/node.ts";
 import { emitStmt } from "./emit/stmt.ts";
+import { resetAttrWarnings } from "./emit/attrs.ts";
 
 export interface GeneratedApp {
   /** The entry (app-root) component's QML type. */
@@ -137,6 +138,7 @@ function pathPrefix(absPath: string): string {
 /** Transpile a module + every component it (transitively) instantiates, following relative imports. */
 export async function generate(source: string, filename: string, opts: GenerateOptions = {}): Promise<GeneratedApp> {
   const readFile = opts.readFile ?? ((p) => fsReadFile(p, "utf8"));
+  resetAttrWarnings(); // web-only attribute warnings print once per tag/attribute per run
   const modules = new Map<string, Mod>();
   const cssFiles: string[] = []; // resolved abs paths of imported .css, in load order, deduped
   const seenCss = new Set<string>();

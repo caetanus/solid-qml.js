@@ -5,12 +5,14 @@ import { safeName } from "../names/safe.ts";
 import { CONTROL_TAGS, hParts, isFragmentTag, isHCall } from "../ast/h.ts";
 import { nativeTags, requireImport } from "./native/index.ts";
 import { certifyForRow } from "./forCertify.ts";
+import { checkElement } from "./attrs.ts";
 
 export const INDENT = "    ";
 const TEXT_TAGS = new Set(["text", "span", "h1", "h2", "h3", "h4", "h5", "h6", "p", "cite", "bio"]);
 
 interface Props {
   classes: string[];
+  classExpr?: t.Expression; // class={expr}: a dynamic class string (space-separated, like className)
   classList: Array<{ key: string; expr: t.Expression }>;
   onClick: t.Node | undefined;
   type?: string | undefined; // the `type` attr (e.g. <button type="submit"> → default button)
@@ -33,14 +35,17 @@ interface Props {
  *    `cssClass: ["a"].concat(cond1 ? ["cls1"] : []).concat(cond2 ? ["cls2"] : [])`
  *  This keeps existing golden output byte-identical when classList is absent. */
 export function buildCssClassLine(props: Props, scope: Scope, pad: string): string[] {
-  const { classes, classList } = props;
-  if (classes.length === 0 && classList.length === 0) return [];
-  if (classList.length === 0) {
+  const { classes, classList, classExpr } = props;
+  if (classes.length === 0 && classList.length === 0 && !classExpr) return [];
+  if (classList.length === 0 && !classExpr) {
     // Original static form — unchanged for goldens compatibility
     return [`${pad}cssClass: [${classes.map((c) => JSON.stringify(c)).join(", ")}]`];
   }
-  // Reactive form: start with static array, then chain .concat() for each classList entry
-  const staticPart = `[${classes.map((c) => JSON.stringify(c)).join(", ")}]`;
+  // Reactive form: start with the static array (or the dynamic class string split like the DOM's
+  // className), then chain .concat() for each classList entry
+  const staticPart = classExpr
+    ? `("" + ((${emitExpr(classExpr, { ...scope, mode: "binding" })}) ?? "")).split(/\\s+/).filter(Boolean)`
+    : `[${classes.map((c) => JSON.stringify(c)).join(", ")}]`;
   const concats = classList.map(({ key, expr }) => {
     const cond = emitExpr(expr, { ...scope, mode: "binding" });
     return `.concat(${cond} ? [${JSON.stringify(key)}] : [])`;
@@ -51,6 +56,8 @@ export function buildCssClassLine(props: Props, scope: Scope, pad: string): stri
 /** Emit QML lines for a render `h(tag, props, ...children)` call. */
 export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?: string): string[] {
   const { tag: tagArg, props: propsArg, children } = hParts(call);
+  // Fail loud: an attribute this element's emitter would not emit is a transpile error (attrs.ts).
+  checkElement(call, TEXT_TAGS);
 
   // <>…</> fragment: NO node of its own — the children emit inline into the parent
   // (true fragment semantics; a root-level fragment is wrapped by emitComponentType).
@@ -65,7 +72,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
     if (tagArg.name === "For") return emitFor(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "VirtualList") return emitVirtualList(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "Index") return emitIndex(propsArg, children as t.Node[], scope, level, guard);
-    if (tagArg.name === "Switch") return emitSwitch(children as t.Node[], scope, level, guard);
+    if (tagArg.name === "Switch") return emitSwitch(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "Dynamic") return emitDynamic(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "Suspense") return emitSuspense(propsArg, children as t.Node[], scope, level, guard);
     if (tagArg.name === "Window") return emitWindow(propsArg, children as t.Node[], scope, level);
@@ -105,16 +112,48 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
     // Text primitive → the cached W.Text component (compile once, reuse/AOT — see Div.qml). Omit
     // cssPrimitive for <text> (the component default); set it for span/h1-6/p/cite/bio.
     if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
+    // Pointer props on a text (`<text onClick>` — a link): the div's emission, the area a child of
+    // the text (a CssText lays out no children; `anchors.fill` covers the run).
+    const { refLine, stateLine, clickLines, tipLines } = emitInteractions(props, children as t.Node[], scope, level, false);
     return [
       `${pad}W.Text {`,
       ...classLine,
+      ...stateLine,
+      ...refLine,
       ...guardLine(guard, level),
       ...(tag !== "text" ? [`${pad}${INDENT}cssPrimitive: ${JSON.stringify(tag)}`] : []),
       `${pad}${INDENT}text: ${textBinding(children as t.Node[], scope)}`,
+      ...clickLines,
+      ...tipLines,
       `${pad}}`,
     ];
   }
 
+  const { refLine, stateLine, clickLines, tipLines } = emitInteractions(props, children as t.Node[], scope, level, true);
+  // Block primitive → the cached W.Div component (compile once, reuse/AOT — see Div.qml). Omit
+  // cssPrimitive for <div> (the component default); set it for section/article/etc. Interactive
+  // variants keep their MouseArea/Drag/DropArea as children of the instance (stateLine/clickLines).
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
+  return [
+    `${pad}W.Div {`,
+    ...classLine,
+    ...stateLine,
+    ...refLine,
+    ...guardLine(guard, level),
+    ...(tag !== "div" ? [`${pad}${INDENT}cssPrimitive: ${JSON.stringify(tag)}`] : []),
+    ...emitChildren(children as t.Node[], scope, level + 1),
+    ...clickLines,
+    ...tipLines,
+    `${pad}}`,
+  ];
+}
+
+/** The pointer/keyboard props shared by every plain element (the web allows them on any element):
+ *  ref, onClick (+hover), onKeyDown, onContextMenu, draggable/dragData, onDrop, title, and — on a
+ *  box only (`scrollable`) — onScroll. Returns the lines the element splices into its own object;
+ *  <div> and <text> use the SAME emission, so a click on a text behaves like a click on a div. */
+function emitInteractions(props: Props, children: t.Node[], scope: Scope, level: number, scrollable: boolean) {
+  const pad = INDENT.repeat(level);
   const refLine: string[] = [];
   if (props.ref) {
     refLine.push(`${pad}${INDENT}id: _ref_${safeName(props.ref)}`);
@@ -142,7 +181,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
       // element's own click (a chip inside a clickable row never fired). With an interactive
       // descendant, the area goes beneath the content, so — as on the web — the innermost target
       // gets the click and plain content (text, fills) still passes it down to this one.
-      ...(hasInteractiveDescendant(children as t.Node[]) ? [`${pad}${INDENT}${INDENT}z: -1`] : []),
+      ...(hasInteractiveDescendant(children) ? [`${pad}${INDENT}${INDENT}z: -1`] : []),
       `${pad}${INDENT}${INDENT}anchors.fill: parent`,
       `${pad}${INDENT}${INDENT}hoverEnabled: true`,
       `${pad}${INDENT}${INDENT}cursorShape: Qt.PointingHandCursor`,
@@ -165,7 +204,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
       throw new Error("onContextMenu must be an inline function: (e) => …");
     clickLines.push(
       `${pad}${INDENT}MouseArea {`,
-      ...(hasInteractiveDescendant(children as t.Node[]) ? [`${pad}${INDENT}${INDENT}z: -1`] : []),
+      ...(hasInteractiveDescendant(children) ? [`${pad}${INDENT}${INDENT}z: -1`] : []),
       `${pad}${INDENT}${INDENT}anchors.fill: parent`,
       `${pad}${INDENT}${INDENT}acceptedButtons: Qt.RightButton`,
       `${pad}${INDENT}${INDENT}onClicked: (mouse) => { ${translateMouseHandler(fn, scope)} }`,
@@ -204,6 +243,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
   // onScroll: the box's own scrollChanged (CssRect scrollTop/scrollHeight/clientHeight, the DOM's
   // names) — a long list windows on it, loading more rows near the end.
   if (props.onScroll) {
+    if (!scrollable) throw new Error("onScroll: only a box (<div>) scrolls; a text has no scroll position");
     const fn = props.onScroll;
     if (!(t.isArrowFunctionExpression(fn) || t.isFunctionExpression(fn)))
       throw new Error("onScroll must be an inline function: (e) => …");
@@ -247,22 +287,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
       `${pad}${INDENT}}`,
     );
   }
-  // Block primitive → the cached W.Div component (compile once, reuse/AOT — see Div.qml). Omit
-  // cssPrimitive for <div> (the component default); set it for section/article/etc. Interactive
-  // variants keep their MouseArea/Drag/DropArea as children of the instance (stateLine/clickLines).
-  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
-  return [
-    `${pad}W.Div {`,
-    ...classLine,
-    ...stateLine,
-    ...refLine,
-    ...guardLine(guard, level),
-    ...(tag !== "div" ? [`${pad}${INDENT}cssPrimitive: ${JSON.stringify(tag)}`] : []),
-    ...emitChildren(children as t.Node[], scope, level + 1),
-    ...clickLines,
-    ...tipLines,
-    `${pad}}`,
-  ];
+  return { refLine, stateLine, clickLines, tipLines };
 }
 
 /** <Comp prop={v}>children</Comp> → Comp { prop: <v>; <children> }. Children mount into the type's
@@ -592,15 +617,27 @@ function translateScrollHandler(fn: t.ArrowFunctionExpression | t.FunctionExpres
   return out;
 }
 
+/** A boolean HTML attribute (`disabled`, `readOnly`) as a QML expression for "it holds": a bare or
+ *  literal `true` attribute → "true", literal `false` → null (absent), any expression → a binding. */
+export function boolAttrExpr(value: t.Node, scope: Scope): string | null {
+  if (t.isBooleanLiteral(value)) return value.value ? "true" : null;
+  if (!t.isExpression(value)) return "true";
+  return emitExpr(value, { ...scope, mode: "binding" });
+}
+/** `enabled:` value for a `disabled` expression ("true" → false, as before). */
+export function enabledFromDisabled(disabled: string): string {
+  return disabled === "true" ? "false" : `!(${disabled})`;
+}
+
 /** Parse all widget-relevant attrs from a propsArg ObjectExpression into a plain record.
  *  Returns the typed, name-normalised set of values the widget emitters need. */
 function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
   type: string; valueExpr: string | null; signalName: string | null;
-  placeholder: string;
+  placeholder: string | null; // a QML expression (a quoted literal, or a binding), null = none
   onInputFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null;
   onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null;
   onKeyDownFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null;
-  disabled: boolean; readOnly: boolean; maxLength: string | null;
+  disabled: string | null; readOnly: string | null; maxLength: string | null;
   // Phase 3: toggle/radio attrs
   role: string; name: string | null; checkedExpr: string | null;
   // Phase 4: range/number attrs
@@ -609,12 +646,12 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
   let type = "text";
   let valueExpr: string | null = null;
   let signalName: string | null = null;
-  let placeholder = "";
+  let placeholder: string | null = null;
   let onInputFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
   let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
   let onKeyDownFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
-  let disabled = false;
-  let readOnly = false;
+  let disabled: string | null = null;
+  let readOnly: string | null = null;
   let maxLength: string | null = null;
   let role = "";
   let name: string | null = null;
@@ -640,7 +677,9 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
       // `checked={sig()}` — boolean controlled value for checkboxes, radios, switches.
       if (key === "checked" && t.isExpression(p.value))
         checkedExpr = emitExpr(p.value, { ...scope, mode: "binding" });
-      if (key === "placeholder" && t.isStringLiteral(p.value)) placeholder = p.value.value;
+      // A literal stays a literal (an empty one is no placeholder); an expression is a binding.
+      if (key === "placeholder" && t.isStringLiteral(p.value)) placeholder = p.value.value ? JSON.stringify(p.value.value) : null;
+      else if (key === "placeholder" && t.isExpression(p.value)) placeholder = emitExpr(p.value, { ...scope, mode: "binding" });
       if (key === "onInput" && t.isExpression(p.value)
           && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
         onInputFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
@@ -651,8 +690,8 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
           && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
         onKeyDownFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
       // `disabled` / `readonly` / `readOnly` / `maxlength` / `maxLength` — HTML attribute names.
-      if (key === "disabled") disabled = !t.isBooleanLiteral(p.value) || p.value.value;
-      if (key === "readonly" || key === "readOnly") readOnly = !t.isBooleanLiteral(p.value) || p.value.value;
+      if (key === "disabled") disabled = boolAttrExpr(p.value, scope);
+      if (key === "readonly" || key === "readOnly") readOnly = boolAttrExpr(p.value, scope);
       if (key === "maxlength" || key === "maxLength") {
         if (t.isNumericLiteral(p.value)) maxLength = String(p.value.value);
         else if (t.isExpression(p.value)) maxLength = emitExpr(p.value, { ...scope, mode: "binding" });
@@ -732,10 +771,10 @@ function emitInput(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
   ];
 
   if (type === "password") lines.push(`${i(1)}echoMode: TextInput.Password`);
-  if (disabled) lines.push(`${i(1)}enabled: false`);
-  if (readOnly) lines.push(`${i(1)}readOnly: true`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
+  if (readOnly !== null) lines.push(`${i(1)}readOnly: ${readOnly}`);
   if (maxLength !== null) lines.push(`${i(1)}maximumLength: ${maxLength}`);
-  if (placeholder) lines.push(`${i(1)}placeholder: ${JSON.stringify(placeholder)}`);
+  if (placeholder !== null) lines.push(`${i(1)}placeholder: ${placeholder}`);
   if (textEditedBody) lines.push(`${i(1)}onTextEdited: { ${textEditedBody} }`);
   if (editingFinishedBody) lines.push(`${i(1)}onEditingFinished: { ${editingFinishedBody} }`);
   if (keyBody) lines.push(`${i(1)}onKeyPressed: (event) => { ${keyBody} }`);
@@ -795,9 +834,9 @@ function emitTextarea(propsArg: t.Node | undefined, props: Props, scope: Scope, 
     ...guardLine(guard, level),
   ];
 
-  if (disabled) lines.push(`${i(1)}enabled: false`);
-  if (readOnly) lines.push(`${i(1)}readOnly: true`);
-  if (placeholder) lines.push(`${i(1)}placeholder: ${JSON.stringify(placeholder)}`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
+  if (readOnly !== null) lines.push(`${i(1)}readOnly: ${readOnly}`);
+  if (placeholder !== null) lines.push(`${i(1)}placeholder: ${placeholder}`);
   if (textChangedBody) lines.push(`${i(1)}onTextChanged: { ${textChangedBody} }`);
 
   if (valueExpr !== null) {
@@ -858,7 +897,7 @@ function emitCheckboxToggle(props: Props, scope: Scope, level: number, guard: st
     ...guardLine(guard, level),
   ];
 
-  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
   // translateToggleHandler maps e.target.checked → `${ctlId}.checked`, which resolves via the
   // component's two-way `checked` alias on the instance.
   if (onChangeFn) lines.push(`${i(1)}onToggled: { ${translateToggleHandler(onChangeFn, ctlId, scope)} }`);
@@ -897,7 +936,7 @@ function emitSwitchToggle(props: Props, scope: Scope, level: number, guard: stri
     ...guardLine(guard, level),
   ];
 
-  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
   if (onChangeFn) lines.push(`${i(1)}onToggled: { ${translateToggleHandler(onChangeFn, ctlId, scope)} }`);
 
   if (checkedExpr !== null) {
@@ -1003,7 +1042,7 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
     `${i(2)}}`,
   );
 
-  if (disabled) lines.push(`${i(2)}enabled: false`);
+  if (disabled !== null) lines.push(`${i(2)}enabled: ${enabledFromDisabled(disabled)}`);
   // onChange fires when this radio BECOMES checked — by click, Space, OR arrow-nav (§6: arrows move
   // the selection). Arrow-nav sets `checked` programmatically, and `toggled()` is emitted ONLY on
   // interactive toggles (verified in qquickabstractbutton.cpp), so onToggled would miss it. Guard on
@@ -1093,7 +1132,7 @@ function emitSlider(props: Props, scope: Scope, level: number, guard: string | u
     `${i(1)}stepSize: ${step}`,
   ];
 
-  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
   if (onMovedBody) lines.push(`${i(1)}onMoved: { ${onMovedBody} }`);
 
   if (valueExpr !== null) {
@@ -1150,7 +1189,7 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
     `${i(1)}stepSize: ${step}`,
   ];
 
-  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
   if (onValueModifiedBody) lines.push(`${i(1)}onValueModified: { ${onValueModifiedBody} }`);
 
   if (valueExpr !== null) {
@@ -1241,7 +1280,7 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
   // Read value and onChange from the <select> propsArg directly.
   let valueExpr: string | null = null;
   let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
-  let disabled = false;
+  let disabled: string | null = null;
   if (propsArg && t.isObjectExpression(propsArg)) {
     for (const p of propsArg.properties) {
       if (!t.isObjectProperty(p) || !t.isIdentifier(p.key)) continue;
@@ -1251,7 +1290,7 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
       if (key === "onChange" && t.isExpression(p.value)
           && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
         onChangeFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
-      if (key === "disabled") disabled = !t.isBooleanLiteral(p.value) || p.value.value;
+      if (key === "disabled") disabled = boolAttrExpr(p.value, scope);
     }
   }
 
@@ -1270,7 +1309,7 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
     `${i(1)}values: ${valuesArr}`,
   ];
 
-  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
   if (onActivatedBody) lines.push(`${i(1)}onActivated: (index) => { ${onActivatedBody} }`);
 
   // Binding: keep currentIndex in sync with the controlled value expression.
@@ -1414,7 +1453,7 @@ function emitDateInput(
 
   let valueExpr: string | null = null;
   let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
-  let disabled = false;
+  let disabled: string | null = null;
 
   if (propsArg && t.isObjectExpression(propsArg)) {
     for (const p of propsArg.properties) {
@@ -1425,7 +1464,7 @@ function emitDateInput(
       if (key === "onChange" && t.isExpression(p.value)
         && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
         onChangeFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
-      if (key === "disabled") disabled = !t.isBooleanLiteral(p.value) || p.value.value;
+      if (key === "disabled") disabled = boolAttrExpr(p.value, scope);
     }
   }
 
@@ -1439,7 +1478,7 @@ function emitDateInput(
     ...guardLine(guard, level),
   ];
   if (valueExpr !== null) lines.push(`${i(1)}value: ${valueExpr}`);
-  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
   if (pickedBody) lines.push(`${i(1)}onDayPicked: (date) => { ${pickedBody} }`);
   lines.push(`${pad}}`);
   return lines;
@@ -1527,6 +1566,7 @@ function readProps(propsArg: t.Node | undefined): Props {
   for (const p of propsArg.properties) {
     if (!t.isObjectProperty(p) || !t.isIdentifier(p.key)) continue;
     if (p.key.name === "class" && t.isStringLiteral(p.value)) props.classes = p.value.value.split(/\s+/).filter(Boolean);
+    else if (p.key.name === "class" && t.isExpression(p.value)) props.classExpr = p.value;
     if (p.key.name === "classList" && t.isObjectExpression(p.value)) {
       for (const cp of p.value.properties) {
         if (!t.isObjectProperty(cp)) continue;
@@ -1585,14 +1625,53 @@ const NON_ITEM_TAGS = new Set(["Shortcut"]);
 
 /** One `Repeater { model: (cond) ? 1 : 0 }` per element (a fragment gates each of its children). */
 function lazyGate(node: t.Node, cond: string, scope: Scope, level: number): string[] {
-  if (!isHCall(node)) return [];
+  if (!isHCall(node)) {
+    if (isWhitespaceString(node) || t.isNullLiteral(node) || t.isBooleanLiteral(node)) return [];
+    throw new Error("<Show>: a bare text/expression child (or fallback) is not emitted natively — wrap it in <text>…</text>");
+  }
   const { tag } = hParts(node);
   if (isFragmentTag(tag)) return hParts(node).children.flatMap((k) => lazyGate(k as t.Node, cond, scope, level));
   if (t.isIdentifier(tag) && NON_ITEM_TAGS.has(tag.name)) return emitQml(node as t.CallExpression, scope, level, cond);
   const pad = INDENT.repeat(level);
   const body = publishLazyRefs(emitQml(node, scope, level + 1), scope);
   if (!body.length) return [];
-  return [`${pad}Repeater {`, `${pad}${INDENT}model: (${cond}) ? 1 : 0`, ...body, `${pad}}`];
+  // A Repeater's default property is `delegate` (ONE root): a child that emits several roots — a
+  // nested <Show> with several children or a fallback — would keep only its last one. Web semantics
+  // are a FRAGMENT (siblings in the parent's flow), so each root gets its own gate on the same
+  // condition; no implicit wrapper box (that would change the parent's flex layout).
+  return splitRoots(body, level + 1, "<Show> child").flatMap((root) =>
+    [`${pad}Repeater {`, `${pad}${INDENT}model: (${cond}) ? 1 : 0`, ...root, `${pad}}`]);
+}
+
+/** Split emitted lines into their top-level objects at `level` (each `Type {` … `}` block). A line
+ *  at that level that is not an object (a stray property) means the output cannot be placed in a
+ *  single-root slot faithfully: fail loud. Non-Item roots (Shortcut) cannot be a Repeater/Component
+ *  delegate root either. `what` names the slot in the error. */
+export function splitRoots(lines: string[], level: number, what: string): string[][] {
+  const pad = INDENT.repeat(level);
+  const roots: string[][] = [];
+  for (const l of lines) {
+    if (l.startsWith(pad) && !l.startsWith(pad + " ")) {
+      const own = l.slice(pad.length);
+      if (own === "}") { roots[roots.length - 1]?.push(l); continue; }
+      const m = /^([\w.]+) \{\s*$/.exec(own);
+      if (!m) throw new Error(`${what}: cannot place \`${own.trim()}\` as a delegate root`);
+      if (NON_ITEM_TAGS.has(m[1])) throw new Error(`${what}: <${m[1]}> is not an Item and cannot be mounted lazily here; move it out of the nested control flow`);
+      roots.push([l]);
+      continue;
+    }
+    if (!roots.length) throw new Error(`${what}: unexpected emitted line \`${l.trim()}\``);
+    roots[roots.length - 1].push(l);
+  }
+  return roots;
+}
+
+/** A <For>/<Index>/<VirtualList> row is ONE delegate object per model entry: several roots (a
+ *  fragment row, a <Show> with a fallback as the row) have no faithful mapping — fail loud. */
+function requireSingleRoot(rows: string[], level: number, owner: string): void {
+  const n = splitRoots(rows, level, `<${owner}> row`).length;
+  if (n !== 1)
+    throw new Error(`<${owner}> row must have a single root element, got ${n} (a fragment or a <Show>/<Switch> with several branches as the row) — wrap the row in a <div>`);
 }
 
 /** A ref'd element inside a lazy delegate: its id is local to the delegate, so it publishes itself
@@ -1730,6 +1809,7 @@ function rowDelegate(delegate: t.ArrowFunctionExpression | t.FunctionExpression,
   }
   const inner: Scope = { ...scope, locals: { ...(scope.locals ?? {}), ...(itemName ? { [itemName]: rowRef } : {}) } };
   const rows = emitQml(body, inner, rootLevel);
+  requireSingleRoot(rows, rootLevel, owner);
   // The delegate is ONE h() call, so rows[0] is its root's `Type {` line; the publish lines go
   // right under it. Fail loud if that ever stops being true.
   if ((publish || extra.length) && !rows[0]?.trimEnd().endsWith("{"))
@@ -1885,6 +1965,7 @@ function emitIndex(propsArg: t.Node | undefined, children: t.Node[], scope: Scop
       locals: { ...(scope.locals ?? {}), ...(idxName ? { [idxName]: publish ? `${publish}.__forIndex` : "index" } : {}) },
     };
     const rows = emitQml(body, inner, level + 1);
+    requireSingleRoot(rows, level + 1, "Index");
     if (publish) {
       if (!rows[0]?.trimEnd().endsWith("{")) throw new Error("Index delegate root: expected `Type {` as the first emitted line");
       const rootPad = INDENT.repeat(level + 2);
@@ -1913,10 +1994,19 @@ function emitIndex(propsArg: t.Node | undefined, children: t.Node[], scope: Scop
  *  child of the box and the CssLayoutEngine sizes it exactly as before — a `Loader` would NOT
  *  (csslayout.cpp isLayoutChild only recognises children exposing style/cssPrimitive). Guard/
  *  first-wins semantics are unchanged; only the gate goes from `visible` (eager) to `model` (lazy). */
-function emitSwitch(children: t.Node[], scope: Scope, level: number, outerGuard?: string): string[] {
+function emitSwitch(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, outerGuard?: string): string[] {
   const out: string[] = [];
   const priors: string[] = [];
   const pad = INDENT.repeat(level);
+  // One lazy incubator per root of a branch, on the branch's guard.
+  const branch = (node: t.Node, guard: string) => {
+    for (const root of splitRoots(emitQml(node as t.CallExpression, scope, level + 2), level + 2, "<Match> child")) {
+      out.push(`${pad}Css.CssIncubator {`, `${pad}${INDENT}active: (${guard}) ? true : false`);
+      out.push(`${pad}${INDENT}sourceComponent: Component {`);
+      out.push(...root);
+      out.push(`${pad}${INDENT}}`, `${pad}}`);
+    }
+  };
   for (const c of children) {
     if (!isHCall(c)) continue;
     const { tag: tagArg, props: propsArg, children: kids } = hParts(c);
@@ -1929,12 +2019,23 @@ function emitSwitch(children: t.Node[], scope: Scope, level: number, outerGuard?
       // Async branch mount: the click flips `active`, the page INCUBATES (time-sliced by the
       // window's incubation controller) and the ready item is reparented into the content
       // holder as a direct layout child — Repeater semantics, without blocking the frame.
-      out.push(`${pad}Css.CssIncubator {`, `${pad}${INDENT}active: (${guard}) ? true : false`);
-      out.push(`${pad}${INDENT}sourceComponent: Component {`);
-      out.push(...emitQml(k, scope, level + 2));
-      out.push(`${pad}${INDENT}}`, `${pad}}`);
+      // A Component holds ONE root: a multi-root body (a nested <Show> with several branches) gets
+      // one incubator per root, all on the same guard — siblings, as the web's fragment.
+      branch(k, guard);
     }
     priors.push(`(${when})`);
+  }
+  // <Switch fallback={F}>: mounted while NO Match holds (Solid's Switch fallback), lazily too.
+  const fallback = readFallback(propsArg, scope);
+  if (fallback.length) {
+    const none = priors.length ? `!(${priors.join(" || ")})` : "true";
+    const guard = outerGuard ? `(${outerGuard}) && (${none})` : none;
+    for (const fb of fallback) {
+      if (!isHCall(fb)) throw new Error("<Switch fallback>: expected an element — wrap text in <text>…</text>");
+      const { tag, children: fbKids } = hParts(fb);
+      if (isFragmentTag(tag)) { for (const k of fbKids) if (isHCall(k)) branch(k, guard); }
+      else branch(fb, guard);
+    }
   }
   return out;
 }

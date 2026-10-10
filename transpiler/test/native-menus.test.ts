@@ -257,7 +257,7 @@ const MENUBAR_SRC = `
   export function F() {
     const [last, setLast] = createSignal("");
     return (
-      <MenuBar class="bar">
+      <MenuBar>
         <Menu title="File">
           <MenuItem onClick={() => setLast("new")}>New</MenuItem>
           <MenuSeparator />
