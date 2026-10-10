@@ -1,0 +1,4 @@
+.bench { display: flex; flex-direction: column; overflow-y: auto; height: 100vh; }
+.bench-row { display: flex; flex-direction: row; gap: 8px; padding: 2px 8px; }
+.bench-id { width: 60px; }
+.bench-label { flex-grow: 1; }
