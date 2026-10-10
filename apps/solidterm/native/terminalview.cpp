@@ -1,5 +1,6 @@
 #include "terminalview.h"
 
+#include "scrollanchor.h"
 #include "scrollbackcells.h"
 
 #include <QClipboard>
@@ -148,9 +149,9 @@ TerminalView::TerminalView(QQuickItem *parent)
             return;
         vterm_input_write(m_vt, bytes.constData(), size_t(bytes.size()));
         vterm_screen_flush_damage(m_screen);
-        if (m_scrollOffset > 0) { // new output snaps back to live, like every terminal
-            m_scrollOffset = 0;
-        }
+        // Output never moves a scrolled-back view (VTE/Tilix default): a TUI that redraws a spinner
+        // many times a second (Claude Code) made reading the history impossible. Typing and paste
+        // still snap back to live; lines pushed meanwhile keep the view anchored (cbSbPushLine).
         update();
     });
     connect(&m_pty, &PtySession::finished, this, &TerminalView::sessionFinished);
@@ -228,6 +229,7 @@ int TerminalView::cbSbPushLine(int cols, const VTermScreenCell *cells, void *use
     self->m_scrollback.append(std::move(line));
     if (self->m_scrollback.size() > self->m_scrollbackLimit)
         self->m_scrollback.removeFirst();
+    self->m_scrollOffset = offsetAfterPush(self->m_scrollOffset, int(self->m_scrollback.size()));
     return 1;
 }
 
@@ -237,6 +239,7 @@ int TerminalView::cbSbPopLine(int cols, VTermScreenCell *cells, void *user)
     if (self->m_scrollback.isEmpty())
         return 0;
     const SbLine line = self->m_scrollback.takeLast();
+    self->m_scrollOffset = clampOffset(self->m_scrollOffset, int(self->m_scrollback.size()));
     const int n = qMin(cols, int(line.cells.size()));
     std::copy(line.cells.begin(), line.cells.begin() + n, cells);
     // A line pushed while the terminal was narrower is padded with REAL blanks — a zeroed cell has
