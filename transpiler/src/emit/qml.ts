@@ -1592,7 +1592,43 @@ function lazyGate(node: t.Node, cond: string, scope: Scope, level: number): stri
   const pad = INDENT.repeat(level);
   const body = publishLazyRefs(emitQml(node, scope, level + 1), scope);
   if (!body.length) return [];
-  return [`${pad}Repeater {`, `${pad}${INDENT}model: (${cond}) ? 1 : 0`, ...body, `${pad}}`];
+  // A Repeater's default property is `delegate` (ONE root): a child that emits several roots — a
+  // nested <Show> with several children or a fallback — would keep only its last one. Web semantics
+  // are a FRAGMENT (siblings in the parent's flow), so each root gets its own gate on the same
+  // condition; no implicit wrapper box (that would change the parent's flex layout).
+  return splitRoots(body, level + 1, "<Show> child").flatMap((root) =>
+    [`${pad}Repeater {`, `${pad}${INDENT}model: (${cond}) ? 1 : 0`, ...root, `${pad}}`]);
+}
+
+/** Split emitted lines into their top-level objects at `level` (each `Type {` … `}` block). A line
+ *  at that level that is not an object (a stray property) means the output cannot be placed in a
+ *  single-root slot faithfully: fail loud. Non-Item roots (Shortcut) cannot be a Repeater/Component
+ *  delegate root either. `what` names the slot in the error. */
+export function splitRoots(lines: string[], level: number, what: string): string[][] {
+  const pad = INDENT.repeat(level);
+  const roots: string[][] = [];
+  for (const l of lines) {
+    if (l.startsWith(pad) && !l.startsWith(pad + " ")) {
+      const own = l.slice(pad.length);
+      if (own === "}") { roots[roots.length - 1]?.push(l); continue; }
+      const m = /^([\w.]+) \{\s*$/.exec(own);
+      if (!m) throw new Error(`${what}: cannot place \`${own.trim()}\` as a delegate root`);
+      if (NON_ITEM_TAGS.has(m[1])) throw new Error(`${what}: <${m[1]}> is not an Item and cannot be mounted lazily here; move it out of the nested control flow`);
+      roots.push([l]);
+      continue;
+    }
+    if (!roots.length) throw new Error(`${what}: unexpected emitted line \`${l.trim()}\``);
+    roots[roots.length - 1].push(l);
+  }
+  return roots;
+}
+
+/** A <For>/<Index>/<VirtualList> row is ONE delegate object per model entry: several roots (a
+ *  fragment row, a <Show> with a fallback as the row) have no faithful mapping — fail loud. */
+function requireSingleRoot(rows: string[], level: number, owner: string): void {
+  const n = splitRoots(rows, level, `<${owner}> row`).length;
+  if (n !== 1)
+    throw new Error(`<${owner}> row must have a single root element, got ${n} (a fragment or a <Show>/<Switch> with several branches as the row) — wrap the row in a <div>`);
 }
 
 /** A ref'd element inside a lazy delegate: its id is local to the delegate, so it publishes itself
@@ -1730,6 +1766,7 @@ function rowDelegate(delegate: t.ArrowFunctionExpression | t.FunctionExpression,
   }
   const inner: Scope = { ...scope, locals: { ...(scope.locals ?? {}), ...(itemName ? { [itemName]: rowRef } : {}) } };
   const rows = emitQml(body, inner, rootLevel);
+  requireSingleRoot(rows, rootLevel, owner);
   // The delegate is ONE h() call, so rows[0] is its root's `Type {` line; the publish lines go
   // right under it. Fail loud if that ever stops being true.
   if ((publish || extra.length) && !rows[0]?.trimEnd().endsWith("{"))
@@ -1885,6 +1922,7 @@ function emitIndex(propsArg: t.Node | undefined, children: t.Node[], scope: Scop
       locals: { ...(scope.locals ?? {}), ...(idxName ? { [idxName]: publish ? `${publish}.__forIndex` : "index" } : {}) },
     };
     const rows = emitQml(body, inner, level + 1);
+    requireSingleRoot(rows, level + 1, "Index");
     if (publish) {
       if (!rows[0]?.trimEnd().endsWith("{")) throw new Error("Index delegate root: expected `Type {` as the first emitted line");
       const rootPad = INDENT.repeat(level + 2);
@@ -1929,10 +1967,14 @@ function emitSwitch(children: t.Node[], scope: Scope, level: number, outerGuard?
       // Async branch mount: the click flips `active`, the page INCUBATES (time-sliced by the
       // window's incubation controller) and the ready item is reparented into the content
       // holder as a direct layout child — Repeater semantics, without blocking the frame.
-      out.push(`${pad}Css.CssIncubator {`, `${pad}${INDENT}active: (${guard}) ? true : false`);
-      out.push(`${pad}${INDENT}sourceComponent: Component {`);
-      out.push(...emitQml(k, scope, level + 2));
-      out.push(`${pad}${INDENT}}`, `${pad}}`);
+      // A Component holds ONE root: a multi-root body (a nested <Show> with several branches) gets
+      // one incubator per root, all on the same guard — siblings, as the web's fragment.
+      for (const root of splitRoots(emitQml(k, scope, level + 2), level + 2, "<Match> child")) {
+        out.push(`${pad}Css.CssIncubator {`, `${pad}${INDENT}active: (${guard}) ? true : false`);
+        out.push(`${pad}${INDENT}sourceComponent: Component {`);
+        out.push(...root);
+        out.push(`${pad}${INDENT}}`, `${pad}}`);
+      }
     }
     priors.push(`(${when})`);
   }
