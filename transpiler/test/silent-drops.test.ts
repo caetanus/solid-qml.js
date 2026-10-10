@@ -128,3 +128,19 @@ test("<input placeholder=\"…\">: a static placeholder is emitted exactly as be
   assert.equal(out.match(/placeholder: "Find"/g)?.length, 1);
   assert.equal(out.match(/placeholder:/g)?.length, 1);
 });
+
+test("disabled={expr} / readOnly={expr}: a binding, not a constant (it used to be disabled forever)", async () => {
+  const out = await qml(`export function C(){ const [busy,setBusy]=createSignal(false); return <div><input disabled={busy()} readOnly={busy()} /><textarea disabled={busy()} /><select disabled={busy()} value="a" onChange={() => 0}><option value="a">A</option></select><input type="checkbox" disabled={busy()} /><input type="range" disabled={busy()} /><Dial disabled={busy()} /></div>; }`);
+  assert.doesNotMatch(out, /enabled: false/);
+  assert.doesNotMatch(out, /disabled: true/);
+  assert.equal(out.match(/enabled: !\(busy\)/g)?.length, 5, out);
+  assert.match(out, /readOnly: busy/);
+  assert.match(out, /W\.Dial \{[\s\S]*disabled: busy/);
+});
+
+test("bare / literal disabled and readOnly are emitted exactly as before", async () => {
+  const out = await qml(`export function C(){ return <div><input disabled readOnly /><input disabled={false} /><Dial disabled /></div>; }`);
+  assert.equal(out.match(/enabled: false/g)?.length, 1, out);
+  assert.match(out, /readOnly: true/);
+  assert.match(out, /disabled: true/);
+});

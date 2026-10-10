@@ -610,6 +610,18 @@ function translateScrollHandler(fn: t.ArrowFunctionExpression | t.FunctionExpres
   return out;
 }
 
+/** A boolean HTML attribute (`disabled`, `readOnly`) as a QML expression for "it holds": a bare or
+ *  literal `true` attribute → "true", literal `false` → null (absent), any expression → a binding. */
+export function boolAttrExpr(value: t.Node, scope: Scope): string | null {
+  if (t.isBooleanLiteral(value)) return value.value ? "true" : null;
+  if (!t.isExpression(value)) return "true";
+  return emitExpr(value, { ...scope, mode: "binding" });
+}
+/** `enabled:` value for a `disabled` expression ("true" → false, as before). */
+export function enabledFromDisabled(disabled: string): string {
+  return disabled === "true" ? "false" : `!(${disabled})`;
+}
+
 /** Parse all widget-relevant attrs from a propsArg ObjectExpression into a plain record.
  *  Returns the typed, name-normalised set of values the widget emitters need. */
 function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
@@ -618,7 +630,7 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
   onInputFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null;
   onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null;
   onKeyDownFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null;
-  disabled: boolean; readOnly: boolean; maxLength: string | null;
+  disabled: string | null; readOnly: string | null; maxLength: string | null;
   // Phase 3: toggle/radio attrs
   role: string; name: string | null; checkedExpr: string | null;
   // Phase 4: range/number attrs
@@ -631,8 +643,8 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
   let onInputFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
   let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
   let onKeyDownFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
-  let disabled = false;
-  let readOnly = false;
+  let disabled: string | null = null;
+  let readOnly: string | null = null;
   let maxLength: string | null = null;
   let role = "";
   let name: string | null = null;
@@ -671,8 +683,8 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
           && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
         onKeyDownFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
       // `disabled` / `readonly` / `readOnly` / `maxlength` / `maxLength` — HTML attribute names.
-      if (key === "disabled") disabled = !t.isBooleanLiteral(p.value) || p.value.value;
-      if (key === "readonly" || key === "readOnly") readOnly = !t.isBooleanLiteral(p.value) || p.value.value;
+      if (key === "disabled") disabled = boolAttrExpr(p.value, scope);
+      if (key === "readonly" || key === "readOnly") readOnly = boolAttrExpr(p.value, scope);
       if (key === "maxlength" || key === "maxLength") {
         if (t.isNumericLiteral(p.value)) maxLength = String(p.value.value);
         else if (t.isExpression(p.value)) maxLength = emitExpr(p.value, { ...scope, mode: "binding" });
@@ -752,8 +764,8 @@ function emitInput(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
   ];
 
   if (type === "password") lines.push(`${i(1)}echoMode: TextInput.Password`);
-  if (disabled) lines.push(`${i(1)}enabled: false`);
-  if (readOnly) lines.push(`${i(1)}readOnly: true`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
+  if (readOnly !== null) lines.push(`${i(1)}readOnly: ${readOnly}`);
   if (maxLength !== null) lines.push(`${i(1)}maximumLength: ${maxLength}`);
   if (placeholder !== null) lines.push(`${i(1)}placeholder: ${placeholder}`);
   if (textEditedBody) lines.push(`${i(1)}onTextEdited: { ${textEditedBody} }`);
@@ -815,8 +827,8 @@ function emitTextarea(propsArg: t.Node | undefined, props: Props, scope: Scope, 
     ...guardLine(guard, level),
   ];
 
-  if (disabled) lines.push(`${i(1)}enabled: false`);
-  if (readOnly) lines.push(`${i(1)}readOnly: true`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
+  if (readOnly !== null) lines.push(`${i(1)}readOnly: ${readOnly}`);
   if (placeholder !== null) lines.push(`${i(1)}placeholder: ${placeholder}`);
   if (textChangedBody) lines.push(`${i(1)}onTextChanged: { ${textChangedBody} }`);
 
@@ -878,7 +890,7 @@ function emitCheckboxToggle(props: Props, scope: Scope, level: number, guard: st
     ...guardLine(guard, level),
   ];
 
-  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
   // translateToggleHandler maps e.target.checked → `${ctlId}.checked`, which resolves via the
   // component's two-way `checked` alias on the instance.
   if (onChangeFn) lines.push(`${i(1)}onToggled: { ${translateToggleHandler(onChangeFn, ctlId, scope)} }`);
@@ -917,7 +929,7 @@ function emitSwitchToggle(props: Props, scope: Scope, level: number, guard: stri
     ...guardLine(guard, level),
   ];
 
-  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
   if (onChangeFn) lines.push(`${i(1)}onToggled: { ${translateToggleHandler(onChangeFn, ctlId, scope)} }`);
 
   if (checkedExpr !== null) {
@@ -1023,7 +1035,7 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
     `${i(2)}}`,
   );
 
-  if (disabled) lines.push(`${i(2)}enabled: false`);
+  if (disabled !== null) lines.push(`${i(2)}enabled: ${enabledFromDisabled(disabled)}`);
   // onChange fires when this radio BECOMES checked — by click, Space, OR arrow-nav (§6: arrows move
   // the selection). Arrow-nav sets `checked` programmatically, and `toggled()` is emitted ONLY on
   // interactive toggles (verified in qquickabstractbutton.cpp), so onToggled would miss it. Guard on
@@ -1113,7 +1125,7 @@ function emitSlider(props: Props, scope: Scope, level: number, guard: string | u
     `${i(1)}stepSize: ${step}`,
   ];
 
-  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
   if (onMovedBody) lines.push(`${i(1)}onMoved: { ${onMovedBody} }`);
 
   if (valueExpr !== null) {
@@ -1170,7 +1182,7 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
     `${i(1)}stepSize: ${step}`,
   ];
 
-  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
   if (onValueModifiedBody) lines.push(`${i(1)}onValueModified: { ${onValueModifiedBody} }`);
 
   if (valueExpr !== null) {
@@ -1261,7 +1273,7 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
   // Read value and onChange from the <select> propsArg directly.
   let valueExpr: string | null = null;
   let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
-  let disabled = false;
+  let disabled: string | null = null;
   if (propsArg && t.isObjectExpression(propsArg)) {
     for (const p of propsArg.properties) {
       if (!t.isObjectProperty(p) || !t.isIdentifier(p.key)) continue;
@@ -1271,7 +1283,7 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
       if (key === "onChange" && t.isExpression(p.value)
           && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
         onChangeFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
-      if (key === "disabled") disabled = !t.isBooleanLiteral(p.value) || p.value.value;
+      if (key === "disabled") disabled = boolAttrExpr(p.value, scope);
     }
   }
 
@@ -1290,7 +1302,7 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
     `${i(1)}values: ${valuesArr}`,
   ];
 
-  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
   if (onActivatedBody) lines.push(`${i(1)}onActivated: (index) => { ${onActivatedBody} }`);
 
   // Binding: keep currentIndex in sync with the controlled value expression.
@@ -1434,7 +1446,7 @@ function emitDateInput(
 
   let valueExpr: string | null = null;
   let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
-  let disabled = false;
+  let disabled: string | null = null;
 
   if (propsArg && t.isObjectExpression(propsArg)) {
     for (const p of propsArg.properties) {
@@ -1445,7 +1457,7 @@ function emitDateInput(
       if (key === "onChange" && t.isExpression(p.value)
         && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
         onChangeFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
-      if (key === "disabled") disabled = !t.isBooleanLiteral(p.value) || p.value.value;
+      if (key === "disabled") disabled = boolAttrExpr(p.value, scope);
     }
   }
 
@@ -1459,7 +1471,7 @@ function emitDateInput(
     ...guardLine(guard, level),
   ];
   if (valueExpr !== null) lines.push(`${i(1)}value: ${valueExpr}`);
-  if (disabled) lines.push(`${i(1)}enabled: false`);
+  if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
   if (pickedBody) lines.push(`${i(1)}onDayPicked: (date) => { ${pickedBody} }`);
   lines.push(`${pad}}`);
   return lines;
