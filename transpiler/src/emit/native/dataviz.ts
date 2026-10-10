@@ -9,6 +9,7 @@ import * as t from "@babel/types";
 import { registerNativeTags, requireImport } from "./index.ts";
 import { emitExpr, type Scope } from "../expr.ts";
 import { buildCssClassLine, INDENT } from "../qml.ts";
+import { translateArgsHandler } from "./inputs.ts";
 
 // Each viz widget is its OWN opt-in QML module (owner directive 2026-07-06: "import
 // Solid.Widgets.Surface"; lazy imports — some Qt modules won't resolve on every machine). The core
@@ -149,6 +150,15 @@ function emitRichText(propsArg: t.Node | undefined, _children: t.Node[], scope: 
 
   const lines: string[] = [`${pad}WRich.RichText {`, ...buildCssClassLine(cssPropsShim(props), scope, i(1))];
   if (guard) lines.push(`${i(1)}visible: !!(${guard})`);
+  // variant="mail": a message editor — html in, onChange(html, text) out (see RichText.qml).
+  const bind = (e: t.Expression) => emitExpr(e, { ...scope, mode: "binding" });
+  const variant = props.get("variant");
+  if (variant) lines.push(`${i(1)}variant: ${bind(variant)}`);
+  const html = props.get("html");
+  if (html) lines.push(`${i(1)}html: ${bind(html)}`);
+  const onChange = props.get("onChange");
+  if (onChange && (t.isArrowFunctionExpression(onChange) || t.isFunctionExpression(onChange)))
+    lines.push(`${i(1)}onEdited: (__html, __text) => { ${translateArgsHandler(onChange, ["__html", "__text"], scope)} }`);
   lines.push(`${pad}}`);
   return lines;
 }

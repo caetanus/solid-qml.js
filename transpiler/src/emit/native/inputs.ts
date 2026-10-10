@@ -104,7 +104,7 @@ function fnBody(fn: Fn, inner: Scope): string {
 
 /** Direct-value handler: positional params are aliased to the given QML expressions.
  *  `onChange={(lo, hi) => …}` with ["ctl.first.value", "ctl.second.value"] rewrites lo/hi. */
-function translateArgsHandler(fn: Fn, argExprs: string[], scope: Scope): string {
+export function translateArgsHandler(fn: Fn, argExprs: string[], scope: Scope): string {
   const locals: Record<string, string> = { ...(scope.locals ?? {}) };
   fn.params.forEach((p, idx) => {
     if (t.isIdentifier(p) && argExprs[idx]) locals[p.name] = argExprs[idx];
