@@ -156,3 +156,9 @@ test("<Show> with a bare text child or fallback: a transpile error, not a droppe
   await assert.rejects(qml(wrap(`<Show when={a()} fallback={"loading"}><text>x</text></Show>`)), /wrap it in <text>/);
   await assert.rejects(qml(wrap(`<Switch fallback={"none"}><Match when={a()}><text>x</text></Match></Switch>`)), /<Switch fallback>/);
 });
+
+test("class={expr}: a dynamic class string binds cssClass (it used to be dropped)", async () => {
+  const out = await qml(`export function C(){ const [hot,setHot]=createSignal(false); return <div class={hot() ? "a b" : "c"}><text class={"t " + (hot() ? "x" : "")} classList={{ hot: hot() }}>x</text></div>; }`);
+  assert.match(out, /W\.Div \{\n\s*cssClass: \(""\s*\+\s*\(\(hot \? "a b" : "c"\)\s*\?\?\s*""\)\)\.split\(\/\\s\+\/\)\.filter\(Boolean\)/);
+  assert.match(out, /W\.Text \{\n\s*cssClass: \(.*\)\.split\(\/\\s\+\/\)\.filter\(Boolean\)\.concat\(hot \? \["hot"\] : \[\]\)/);
+});

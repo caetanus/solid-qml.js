@@ -11,6 +11,7 @@ const TEXT_TAGS = new Set(["text", "span", "h1", "h2", "h3", "h4", "h5", "h6", "
 
 interface Props {
   classes: string[];
+  classExpr?: t.Expression; // class={expr}: a dynamic class string (space-separated, like className)
   classList: Array<{ key: string; expr: t.Expression }>;
   onClick: t.Node | undefined;
   type?: string | undefined; // the `type` attr (e.g. <button type="submit"> → default button)
@@ -33,14 +34,17 @@ interface Props {
  *    `cssClass: ["a"].concat(cond1 ? ["cls1"] : []).concat(cond2 ? ["cls2"] : [])`
  *  This keeps existing golden output byte-identical when classList is absent. */
 export function buildCssClassLine(props: Props, scope: Scope, pad: string): string[] {
-  const { classes, classList } = props;
-  if (classes.length === 0 && classList.length === 0) return [];
-  if (classList.length === 0) {
+  const { classes, classList, classExpr } = props;
+  if (classes.length === 0 && classList.length === 0 && !classExpr) return [];
+  if (classList.length === 0 && !classExpr) {
     // Original static form — unchanged for goldens compatibility
     return [`${pad}cssClass: [${classes.map((c) => JSON.stringify(c)).join(", ")}]`];
   }
-  // Reactive form: start with static array, then chain .concat() for each classList entry
-  const staticPart = `[${classes.map((c) => JSON.stringify(c)).join(", ")}]`;
+  // Reactive form: start with the static array (or the dynamic class string split like the DOM's
+  // className), then chain .concat() for each classList entry
+  const staticPart = classExpr
+    ? `("" + ((${emitExpr(classExpr, { ...scope, mode: "binding" })}) ?? "")).split(/\\s+/).filter(Boolean)`
+    : `[${classes.map((c) => JSON.stringify(c)).join(", ")}]`;
   const concats = classList.map(({ key, expr }) => {
     const cond = emitExpr(expr, { ...scope, mode: "binding" });
     return `.concat(${cond} ? [${JSON.stringify(key)}] : [])`;
@@ -1559,6 +1563,7 @@ function readProps(propsArg: t.Node | undefined): Props {
   for (const p of propsArg.properties) {
     if (!t.isObjectProperty(p) || !t.isIdentifier(p.key)) continue;
     if (p.key.name === "class" && t.isStringLiteral(p.value)) props.classes = p.value.value.split(/\s+/).filter(Boolean);
+    else if (p.key.name === "class" && t.isExpression(p.value)) props.classExpr = p.value;
     if (p.key.name === "classList" && t.isObjectExpression(p.value)) {
       for (const cp of p.value.properties) {
         if (!t.isObjectProperty(cp)) continue;
