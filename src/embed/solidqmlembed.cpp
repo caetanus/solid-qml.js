@@ -2,9 +2,13 @@
 
 #include "qmlcss/QMLCss.h"
 #include "shims/backgroundtasks.h"
+#include "shims/codeeditor.h"
 #include "shims/jspolyfill.h"
 #include "shims/nodeshims.h"
 #include "shims/notifications.h"
+#ifdef HAVE_RICHTEXT
+#include "shims/richtext.h"
+#endif
 #include "shims/sharedbuffers.h"
 #include "shims/tabstop.h"
 #include "shims/webfetch.h"
@@ -70,6 +74,15 @@ void init(QQmlEngine *engine, const QUrl &appDir, const QString &capabilities)
     SolidWidgets::registerTypes();
     static const int islandType = qmlRegisterType<SolidIsland>("solidqml.Embed", 1, 0, "SolidIsland");
     Q_UNUSED(islandType);
+    // The loader's helper types for the opt-in widget modules (loader.cpp registers the same ones):
+    // without them an embedded <RichText>/<CodeEditor> fails with `module "solidqml.native" is not
+    // installed`. Function-local statics: registered once per process however many engines init.
+#ifdef HAVE_RICHTEXT
+    static const int richTextType = qmlRegisterType<RichTextHandler>("solidqml.native", 1, 0, "RichTextHandler");
+    Q_UNUSED(richTextType);
+#endif
+    static const int highlighterType = qmlRegisterType<CodeHighlighter>("solidqml.native", 1, 0, "CodeHighlighter");
+    Q_UNUSED(highlighterType);
 
     const QUrl base = appDir.isEmpty()
         ? QUrl::fromLocalFile(QCoreApplication::applicationDirPath() + QLatin1Char('/'))
