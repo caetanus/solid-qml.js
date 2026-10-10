@@ -165,6 +165,7 @@ private slots:
         QVERIFY(!normal.invisible);
         QVERIFY(!normal.offscreen);
         QVERIFY(normal.focusable); // StaticText is a text role
+        QVERIFY(normal.readOnly);  // plain text is not editable
         QVERIFY(state("hidden").invisible);
         QVERIFY(state("clear").invisible);
         QVERIFY(state("away").offscreen);

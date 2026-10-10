@@ -58,6 +58,8 @@ public:
             s.offscreen = true;
         if (it->activeFocusOnTab() || role() == QAccessible::StaticText) // Qt's isTextRole()
             s.focusable = true;
+        if (role() == QAccessible::StaticText)
+            s.readOnly = true;
         if (it->hasActiveFocus())
             s.focused = true;
         if (!it->isEnabled()) {
