@@ -116,3 +116,15 @@ test("<text onClick> and <div onClick> emit the same click area", async () => {
   const area = (s: string) => s.slice(s.indexOf("MouseArea {"), s.indexOf("}", s.indexOf("onClicked")));
   assert.equal(area(tx), area(d));
 });
+
+test("<input placeholder={expr}>: a binding (a dynamic placeholder used to be dropped)", async () => {
+  const out = await qml(`export function C(){ const [mode,setMode]=createSignal("a"); return <div><input placeholder={mode() === "a" ? "Search artists" : "Search albums"} /><textarea placeholder={mode()} /></div>; }`);
+  assert.match(out, /W\.TextField \{[\s\S]*placeholder: \(?mode === "a"\)? \? "Search artists" : "Search albums"/);
+  assert.match(out, /W\.TextArea \{[\s\S]*placeholder: mode\b/);
+});
+
+test("<input placeholder=\"…\">: a static placeholder is emitted exactly as before", async () => {
+  const out = await qml(`export function C(){ return <div><input placeholder="Find" /><input placeholder="" /></div>; }`);
+  assert.equal(out.match(/placeholder: "Find"/g)?.length, 1);
+  assert.equal(out.match(/placeholder:/g)?.length, 1);
+});

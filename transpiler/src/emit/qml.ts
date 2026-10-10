@@ -614,7 +614,7 @@ function translateScrollHandler(fn: t.ArrowFunctionExpression | t.FunctionExpres
  *  Returns the typed, name-normalised set of values the widget emitters need. */
 function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
   type: string; valueExpr: string | null; signalName: string | null;
-  placeholder: string;
+  placeholder: string | null; // a QML expression (a quoted literal, or a binding), null = none
   onInputFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null;
   onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null;
   onKeyDownFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null;
@@ -627,7 +627,7 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
   let type = "text";
   let valueExpr: string | null = null;
   let signalName: string | null = null;
-  let placeholder = "";
+  let placeholder: string | null = null;
   let onInputFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
   let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
   let onKeyDownFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
@@ -658,7 +658,9 @@ function readWidgetProps(propsArg: t.Node | undefined, scope: Scope): {
       // `checked={sig()}` — boolean controlled value for checkboxes, radios, switches.
       if (key === "checked" && t.isExpression(p.value))
         checkedExpr = emitExpr(p.value, { ...scope, mode: "binding" });
-      if (key === "placeholder" && t.isStringLiteral(p.value)) placeholder = p.value.value;
+      // A literal stays a literal (an empty one is no placeholder); an expression is a binding.
+      if (key === "placeholder" && t.isStringLiteral(p.value)) placeholder = p.value.value ? JSON.stringify(p.value.value) : null;
+      else if (key === "placeholder" && t.isExpression(p.value)) placeholder = emitExpr(p.value, { ...scope, mode: "binding" });
       if (key === "onInput" && t.isExpression(p.value)
           && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
         onInputFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
@@ -753,7 +755,7 @@ function emitInput(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
   if (disabled) lines.push(`${i(1)}enabled: false`);
   if (readOnly) lines.push(`${i(1)}readOnly: true`);
   if (maxLength !== null) lines.push(`${i(1)}maximumLength: ${maxLength}`);
-  if (placeholder) lines.push(`${i(1)}placeholder: ${JSON.stringify(placeholder)}`);
+  if (placeholder !== null) lines.push(`${i(1)}placeholder: ${placeholder}`);
   if (textEditedBody) lines.push(`${i(1)}onTextEdited: { ${textEditedBody} }`);
   if (editingFinishedBody) lines.push(`${i(1)}onEditingFinished: { ${editingFinishedBody} }`);
   if (keyBody) lines.push(`${i(1)}onKeyPressed: (event) => { ${keyBody} }`);
@@ -815,7 +817,7 @@ function emitTextarea(propsArg: t.Node | undefined, props: Props, scope: Scope, 
 
   if (disabled) lines.push(`${i(1)}enabled: false`);
   if (readOnly) lines.push(`${i(1)}readOnly: true`);
-  if (placeholder) lines.push(`${i(1)}placeholder: ${JSON.stringify(placeholder)}`);
+  if (placeholder !== null) lines.push(`${i(1)}placeholder: ${placeholder}`);
   if (textChangedBody) lines.push(`${i(1)}onTextChanged: { ${textChangedBody} }`);
 
   if (valueExpr !== null) {
