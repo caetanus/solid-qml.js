@@ -41,8 +41,12 @@ they were raised. Nothing here is a regression from the native-behavior pass unl
 - **[ ] Cannot re-attach a pane between two SolidTerm windows.** Drag-and-drop of a pane from one
   window into another window's split tree does not work — today the tree only accepts moves within
   its own window.
-- **[ ] New option: focus-on-hover.** A config toggle that focuses the pane under the pointer
-  (X11 "focus follows mouse", per pane). Store it with the other prefs through `termConfig`.
+- **[x] New option: focus-on-hover.** Done (4b76be1): Preferences → Behavior → "Focus follows
+  mouse" (off by default, `termConfig` key `focusOnHover`). Entering a pane focuses it only while the
+  SolidTerm window is already active, with no mouse button held and no pane drag in progress.
+- **[x] New option: gap between splits.** Done (4b76be1): Preferences → Appearance → "Gap between
+  splits" (0-24 px, live, key `splitGap`). 0 keeps the 6 px handle-coloured divider; above 0 the
+  divider is that wide and transparent (the window background shows between panes), still draggable.
 
 ## Pre-existing bugs found during the gallery sweep (not SolidTerm, but recorded here)
 
