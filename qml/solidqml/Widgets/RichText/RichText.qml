@@ -30,6 +30,40 @@ Css.CssFill {
     property string _reported: ""
     // New content from the app (a new draft): the caret at its top, the keyboard in it.
     onHtmlChanged: if (html !== _reported) { _reported = html; edit.text = html; edit.cursorPosition = 0; edit.forceActiveFocus() }
+    // B / I / U / S: on the selection (the handler). Nothing selected: on what is typed next —
+    // the handler's cursor is a copy of the editor's, so the toggle waits (_pending) and is applied
+    // to the first characters typed, which the following ones then inherit, as in any editor.
+    property var _pending: ({})
+    property int _pendingAt: -1
+    property bool _applying: false
+    function _apply(what) {
+        if (what === "bold") fmt.toggleBold()
+        else if (what === "italic") fmt.toggleItalic()
+        else if (what === "underline") fmt.toggleUnderline()
+        else fmt.toggleStrike()
+    }
+    function _toggle(what) {
+        if (!fmt) return
+        if (edit.selectionStart !== edit.selectionEnd) return _apply(what)
+        if (_pendingAt !== edit.cursorPosition) { _pending = ({}); _pendingAt = edit.cursorPosition }
+        var p = _pending
+        p[what] = !p[what]
+        _pending = p
+    }
+    function _applyPending() {
+        if (_pendingAt < 0 || _applying) return
+        var from = _pendingAt, to = edit.cursorPosition
+        var p = _pending
+        _pendingAt = -1
+        _pending = ({})
+        if (to <= from) return
+        _applying = true
+        edit.select(from, to)
+        for (var k in p) if (p[k]) _apply(k)
+        edit.deselect()
+        edit.cursorPosition = to
+        _applying = false
+    }
     function _report() {
         if (!root._mail) return
         root._reported = edit.text
@@ -108,10 +142,10 @@ Css.CssFill {
                 x: 8
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 4
-                ToolBtn { label: "B"; active: !!fmt && fmt.bold; onClicked: if (fmt) fmt.toggleBold() }
-                ToolBtn { label: "I"; active: !!fmt && fmt.italic; onClicked: if (fmt) fmt.toggleItalic() }
-                ToolBtn { label: "U"; active: !!fmt && fmt.underline; onClicked: if (fmt) fmt.toggleUnderline() }
-                ToolBtn { label: "S"; active: !!fmt && fmt.strike; onClicked: if (fmt) fmt.toggleStrike() }
+                ToolBtn { label: "B"; active: !!fmt && fmt.bold; onClicked: root._toggle("bold") }
+                ToolBtn { label: "I"; active: !!fmt && fmt.italic; onClicked: root._toggle("italic") }
+                ToolBtn { label: "U"; active: !!fmt && fmt.underline; onClicked: root._toggle("underline") }
+                ToolBtn { label: "S"; active: !!fmt && fmt.strike; onClicked: root._toggle("strike") }
                 Item { width: 8; height: 1 }
                 ToolBtn { label: "H1"; visible: !root._mail; active: !!fmt && fmt.heading === 1; onClicked: if (fmt) fmt.setHeading(fmt.heading === 1 ? 0 : 1) }
                 ToolBtn { label: "H2"; visible: !root._mail; active: !!fmt && fmt.heading === 2; onClicked: if (fmt) fmt.setHeading(fmt.heading === 2 ? 0 : 2) }
@@ -155,13 +189,13 @@ Css.CssFill {
                 font.pixelSize: root._mail ? 14 : cssTheme.parseFontSize(root.inheritedFontSize || "14px", 14)
                 text: root._mail ? root.html : "<h1>solid-qml</h1><p>A <b>word-like</b> editor with <i>native</i> " +
                       "<u>OpenDocument</u> round-trip.</p>"
-                onTextChanged: root._report()
+                onTextChanged: { if (root._pendingAt >= 0) Qt.callLater(root._applyPending); root._report() }
                 // Ctrl+B / Ctrl+I / Ctrl+U, as in every editor.
                 Keys.onPressed: (event) => {
                     if (!root.fmt || !(event.modifiers & Qt.ControlModifier)) return
-                    if (event.key === Qt.Key_B) { root.fmt.toggleBold(); event.accepted = true }
-                    else if (event.key === Qt.Key_I) { root.fmt.toggleItalic(); event.accepted = true }
-                    else if (event.key === Qt.Key_U) { root.fmt.toggleUnderline(); event.accepted = true }
+                    if (event.key === Qt.Key_B) { root._toggle("bold"); event.accepted = true }
+                    else if (event.key === Qt.Key_I) { root._toggle("italic"); event.accepted = true }
+                    else if (event.key === Qt.Key_U) { root._toggle("underline"); event.accepted = true }
                 }
             }
         }
