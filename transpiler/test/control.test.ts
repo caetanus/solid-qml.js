@@ -144,6 +144,22 @@ test("Index without a nested Repeater is emitted exactly as before", async () =>
   assert.match(out, /text: "" \+ \(modelData\) \+ " #" \+ \(index\)/);
 });
 
+test("onKeyDown on a box: Keys.onPressed, DOM key names and modifiers mapped, preventDefault accepts", async () => {
+  const out = await qml(`export function C(){ const [n,setN]=createSignal(0); return <div onKeyDown={(e) => { if (e.key === "ArrowDown" && e.shiftKey) { setN(1); e.preventDefault(); } else if (e.key === "a" && e.ctrlKey) setN(2); }}><text>x</text></div>; }`);
+  assert.match(out, /Keys\.onPressed: \(event\) => \{ if \(\(event\.key === Qt\.Key_Down\) && \(\(event\.modifiers & Qt\.ShiftModifier\) !== 0\)\)/);
+  assert.match(out, /event\.accepted = true;/);
+  assert.match(out, /\(event\.key === Qt\.Key_A\) && \(\(event\.modifiers & Qt\.ControlModifier\) !== 0\)/);
+  assert.doesNotMatch(out, /__ev/);
+});
+
+test("onKeyDown handing the event to a helper gets a DOM-shaped event", async () => {
+  const out = await qml(`export function C(){ const [n,setN]=createSignal(0); function k(e) { if (e.key === "End") setN(1); } return <div onKeyDown={(e) => k(e)}><text>x</text></div>; }`);
+  assert.match(out, /Keys\.onPressed: \(event\) => \{ var __ev = \{ key: \(event\.key === Qt\.Key_Return/);
+  assert.match(out, /event\.key === Qt\.Key_End \? "End"/);
+  assert.match(out, /preventDefault: function\(\) \{ event\.accepted = true \}/);
+  assert.match(out, /k\(__ev\);/);
+});
+
 test("For without a nested loop is emitted exactly as before (no id, no extra property)", async () => {
   const out = await qml(`import { For } from "solid-js"; export function C(){ const [items,setItems]=createSignal([]); return <For each={items()}>{(item)=><div><text>{item}</text></div>}</For>; }`);
   assert.doesNotMatch(out, /__forItem|id: __for/);

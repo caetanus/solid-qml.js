@@ -22,6 +22,7 @@ interface Props {
   title?: t.Expression; // the HTML `title` attribute → a hover tooltip (W.ToolTip)
   onScroll?: t.Node; // on an `overflow: auto` box: the engine's scrollChanged (see translateScrollHandler)
   onContextMenu?: t.Node; // right click: a RightButton MouseArea (see translateMouseHandler)
+  onKeyDown?: t.Node; // keys on a focused box: Keys.onPressed (see translateKeyHandler)
 }
 
 /** Build the cssClass property line(s) for a native element.
@@ -147,6 +148,13 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
       `${pad}${INDENT}${INDENT}onClicked: ${clickHandler}`,
       `${pad}${INDENT}}`,
     );
+  }
+  // onKeyDown on a box (a list taking the keyboard): Keys.onPressed while it has the focus.
+  if (props.onKeyDown) {
+    const fn = props.onKeyDown;
+    if (!(t.isArrowFunctionExpression(fn) || t.isFunctionExpression(fn)))
+      throw new Error("onKeyDown must be an inline function: (e) => …");
+    stateLine.push(`${pad}${INDENT}Keys.onPressed: (event) => { ${translateKeyHandler(fn, scope)} }`);
   }
   // onContextMenu: a right click — its own RightButton area (left clicks, hover and wheel pass), the
   // handler's e.clientX / e.clientY in scene coordinates (what <Menu ref={r}>'s r.open(x, y) takes).
@@ -490,12 +498,8 @@ function translateInputHandler(fn: t.ArrowFunctionExpression | t.FunctionExpress
   const inner: Scope = { ...scope, mode: "handler", locals: { ...(scope.locals ?? {}), ...(paramName ? { [paramName]: "__ev" } : {}) } };
   let body: string;
   if (t.isBlockStatement(fn.body)) {
-    // Block-bodied handler: emit each statement, join with space
-    body = fn.body.body.map((s) => {
-      if (t.isExpressionStatement(s)) return `${emitExpr(s.expression, inner)};`;
-      if (t.isReturnStatement(s) && s.argument) return `return ${emitExpr(s.argument, inner)};`;
-      return "";
-    }).join(" ");
+    // Block-bodied handler: every statement (an `if` too — a whole kind of statement was dropped).
+    body = fn.body.body.map((s) => emitStmt(s, inner)).join(" ");
   } else {
     body = emitExpr(fn.body, inner);
   }
@@ -504,6 +508,52 @@ function translateInputHandler(fn: t.ArrowFunctionExpression | t.FunctionExpress
     .replace(/__ev\.key\s*===\s*"Enter"/g, "(event.key === Qt.Key_Return || event.key === Qt.Key_Enter)")
     .replace(/__ev\.key\s*===\s*"Escape"/g, "(event.key === Qt.Key_Escape)")
     .replace(/__ev\.key/g, "event.key");
+}
+
+/** DOM key names (KeyboardEvent.key) → Qt keys. */
+const DOM_KEYS: Record<string, string> = {
+  ArrowDown: "Qt.Key_Down", ArrowUp: "Qt.Key_Up", ArrowLeft: "Qt.Key_Left", ArrowRight: "Qt.Key_Right",
+  Home: "Qt.Key_Home", End: "Qt.Key_End", PageUp: "Qt.Key_PageUp", PageDown: "Qt.Key_PageDown",
+  Delete: "Qt.Key_Delete", Backspace: "Qt.Key_Backspace", Escape: "Qt.Key_Escape", Tab: "Qt.Key_Tab", " ": "Qt.Key_Space",
+};
+
+/** A key handler on a box: `e.key === "ArrowDown"` (any DOM key name, or one letter/digit) compares
+ *  event.key; e.shiftKey / ctrlKey / altKey / metaKey read event.modifiers; e.preventDefault()
+ *  accepts the key (else it goes on to the box's parents, as on the web). Runs inside
+ *  `(event) => { … }`. */
+function translateKeyHandler(fn: t.ArrowFunctionExpression | t.FunctionExpression, scope: Scope): string {
+  const paramName = fn.params[0] && t.isIdentifier(fn.params[0]) ? fn.params[0].name : null;
+  const inner: Scope = { ...scope, mode: "handler", locals: { ...(scope.locals ?? {}), ...(paramName ? { [paramName]: "__ev" } : {}) } };
+  const body = t.isBlockStatement(fn.body)
+    ? fn.body.body.map((s) => emitStmt(s, inner)).join(" ")
+    : `${emitExpr(fn.body, inner)};`;
+  const MOD: Record<string, string> = { ctrlKey: "ControlModifier", shiftKey: "ShiftModifier", altKey: "AltModifier", metaKey: "MetaModifier" };
+  const keyOf = (name: string): string => {
+    if (name === "Enter") return "(event.key === Qt.Key_Return || event.key === Qt.Key_Enter)";
+    if (DOM_KEYS[name]) return `(event.key === ${DOM_KEYS[name]})`;
+    if (/^[a-zA-Z0-9]$/.test(name)) return `(event.key === Qt.Key_${name.toUpperCase()})`;
+    throw new Error(`onKeyDown: key "${name}" is not mapped`);
+  };
+  const out = body
+    .replace(/__ev\.(?:preventDefault)\(\);?/g, "event.accepted = true;")
+    .replace(/__ev\.(?:stopPropagation)\(\);?/g, "")
+    .replace(/__ev\.key\s*===\s*"([^"]*)"/g, (_m, k: string) => keyOf(k))
+    .replace(/__ev\.key\s*!==\s*"([^"]*)"/g, (_m, k: string) => `!${keyOf(k)}`)
+    .replace(/__ev\.(ctrlKey|shiftKey|altKey|metaKey)\b/g, (_m, k: string) => `((event.modifiers & Qt.${MOD[k]}) !== 0)`);
+  // The event itself is used (handed to a helper): a DOM-shaped object stands in for it.
+  if (/__ev\b/.test(out)) return `var __ev = ${domKeyEvent()}; ${out}`;
+  return out;
+}
+
+/** A KeyboardEvent-shaped object over a QML KeyEvent `event`: key (DOM name; a printable key as
+ *  its character, upper-cased with Shift), the modifier flags, preventDefault() accepting it. */
+function domKeyEvent(): string {
+  const names = Object.entries(DOM_KEYS).map(([dom, qt]) => `event.key === ${qt} ? ${JSON.stringify(dom)}`).join(" : ");
+  const key = `(event.key === Qt.Key_Return || event.key === Qt.Key_Enter ? "Enter" : ${names} : `
+    + `(event.key >= 0x21 && event.key <= 0x7e ? ((event.modifiers & Qt.ShiftModifier) ? String.fromCharCode(event.key) : String.fromCharCode(event.key).toLowerCase()) : event.text))`;
+  return `{ key: ${key}, shiftKey: (event.modifiers & Qt.ShiftModifier) !== 0, ctrlKey: (event.modifiers & Qt.ControlModifier) !== 0, `
+    + `altKey: (event.modifiers & Qt.AltModifier) !== 0, metaKey: (event.modifiers & Qt.MetaModifier) !== 0, `
+    + `preventDefault: function() { event.accepted = true }, stopPropagation: function() {} }`;
 }
 
 /** A mouse handler taking the event: `e.ctrlKey` / `shiftKey` / `altKey` / `metaKey` read the
@@ -1492,6 +1542,7 @@ function readProps(propsArg: t.Node | undefined): Props {
     if (p.key.name === "title" && t.isExpression(p.value)) props.title = p.value;
     if (p.key.name === "onScroll") props.onScroll = p.value;
     if (p.key.name === "onContextMenu") props.onContextMenu = p.value;
+    if (p.key.name === "onKeyDown") props.onKeyDown = p.value;
   }
   return props;
 }
@@ -1707,11 +1758,17 @@ function emitVirtualList(propsArg: t.Node | undefined, children: t.Node[], scope
   const refLine = props.ref ? [`${i(1)}id: _ref_${safeName(props.ref)}`] : [];
   const lvId = `__vlist${(scope.hoverCounter ?? { n: 0 }).n++}`;
   if (props.ref && scope.refs) scope.refs.push(props.ref);
+  const keyFn = props.onKeyDown;
+  if (keyFn && !(t.isArrowFunctionExpression(keyFn) || t.isFunctionExpression(keyFn)))
+    throw new Error("onKeyDown must be an inline function: (e) => …");
   return [
     `${pad}W.Div {`,
     ...refLine,
     ...buildCssClassLine(props, scope, i(1)),
     ...guardLine(guard, level),
+    // ref.reveal(i): scroll row i into view (keyboard moves the selection off-screen).
+    `${i(1)}function reveal(i) { if (i >= 0) ${lvId}.positionViewAtIndex(i, ListView.Contain) }`,
+    ...(keyFn ? [`${i(1)}Keys.onPressed: (event) => { ${translateKeyHandler(keyFn as t.ArrowFunctionExpression, scope)} }`] : []),
     `${i(1)}ListView {`,
     `${i(2)}id: ${lvId}`,
     `${i(2)}anchors.fill: parent`,
