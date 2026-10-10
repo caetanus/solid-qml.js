@@ -59,7 +59,14 @@ compatibility claims, virtualization while a screen reader is active, a11y-compl
 8. **Docs:** rewrite launch-facing docs; external tutorial test.
 9. **Release:** freeze candidate from `widgets`, pin submodule SHAs, checksummed artifacts, release notes, tag.
 
-## Owner decisions needed
+## Owner decisions
+
+**Decided 2026-10-10:** (1) scope = **0.x developer preview** (QML runtime path; narrower gate accepted: wins on
+scrolling lists, eager lists and per-row memory documented as limits); (2) license = **MIT** for the framework,
+transpiler and D bindings, **LGPL-3.0 for the C++ CSS engine** (it contains code derived from Qt, e.g. the literal
+QQuickText port in csstextlayout).
+
+**Still open:**
 
 1. Preview (narrower gate, QML runtime only) or full release (original gate + AOT first)?
 2. License for the framework, the engine and the D bindings (and the Qt redistribution model for apps).
