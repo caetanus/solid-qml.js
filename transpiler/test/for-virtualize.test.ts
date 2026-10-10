@@ -127,9 +127,12 @@ test("not certified: a call in the row body", async () => {
   );
 });
 
-test("not certified: a spread onto the row", async () => {
-  await assertNotCertified(
-    `import { For } from "solid-js"; export function C(){ const [rows,setRows]=createSignal([]); return <For each={rows()}>{(row)=><div {...row}><text>x</text></div>}</For>; }`,
+test("a spread onto the row is rejected outright (spread attributes are not supported natively)", async () => {
+  // It used to be "not certified" and then silently attribute-less; the fail-loud contract
+  // (emit/attrs.ts) now rejects it before certification.
+  await assert.rejects(
+    qml(`import { For } from "solid-js"; export function C(){ const [rows,setRows]=createSignal([]); return <For each={rows()}>{(row)=><div {...row}><text>x</text></div>}</For>; }`),
+    /spread attributes/,
   );
 });
 

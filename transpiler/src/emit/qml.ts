@@ -5,6 +5,7 @@ import { safeName } from "../names/safe.ts";
 import { CONTROL_TAGS, hParts, isFragmentTag, isHCall } from "../ast/h.ts";
 import { nativeTags, requireImport } from "./native/index.ts";
 import { certifyForRow } from "./forCertify.ts";
+import { checkElement } from "./attrs.ts";
 
 export const INDENT = "    ";
 const TEXT_TAGS = new Set(["text", "span", "h1", "h2", "h3", "h4", "h5", "h6", "p", "cite", "bio"]);
@@ -55,6 +56,8 @@ export function buildCssClassLine(props: Props, scope: Scope, pad: string): stri
 /** Emit QML lines for a render `h(tag, props, ...children)` call. */
 export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?: string): string[] {
   const { tag: tagArg, props: propsArg, children } = hParts(call);
+  // Fail loud: an attribute this element's emitter would not emit is a transpile error (attrs.ts).
+  checkElement(call, TEXT_TAGS);
 
   // <>…</> fragment: NO node of its own — the children emit inline into the parent
   // (true fragment semantics; a root-level fragment is wrapped by emitComponentType).

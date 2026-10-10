@@ -153,8 +153,8 @@ test("<Switch fallback>: mounted (lazily) only while no <Match> holds — it use
 
 test("<Show> with a bare text child or fallback: a transpile error, not a dropped text", async () => {
   await assert.rejects(qml(wrap(`<Show when={a()}>{"loose"}</Show>`)), /wrap it in <text>/);
-  await assert.rejects(qml(wrap(`<Show when={a()} fallback={"loading"}><text>x</text></Show>`)), /wrap it in <text>/);
-  await assert.rejects(qml(wrap(`<Switch fallback={"none"}><Match when={a()}><text>x</text></Match></Switch>`)), /<Switch fallback>/);
+  await assert.rejects(qml(wrap(`<Show when={a()} fallback={"loading"}><text>x</text></Show>`)), /fallback .*wrap (it|text) in <text>/);
+  await assert.rejects(qml(wrap(`<Switch fallback={"none"}><Match when={a()}><text>x</text></Match></Switch>`)), /<Switch>? ?fallback/);
 });
 
 test("class={expr}: a dynamic class string binds cssClass (it used to be dropped)", async () => {
