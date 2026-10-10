@@ -29,7 +29,12 @@ Css.CssFill {
     readonly property bool _mail: variant === "mail"
     property string _reported: ""
     // New content from the app (a new draft): the caret at its top, the keyboard in it.
-    onHtmlChanged: if (html !== _reported) { _reported = html; edit.text = html; edit.cursorPosition = 0; edit.forceActiveFocus() }
+    // Its report waits a turn: echoed inside this handler, the app's binding of `html` looped.
+    property bool _loading: false
+    onHtmlChanged: if (html !== _reported) {
+        _reported = html; _loading = true; edit.text = html; _loading = false
+        edit.cursorPosition = 0; edit.forceActiveFocus(); Qt.callLater(_report)
+    }
     // B / I / U / S: on the selection (the handler). Nothing selected: on what is typed next —
     // the handler's cursor is a copy of the editor's, so the toggle waits (_pending) and is applied
     // to the first characters typed, which the following ones then inherit, as in any editor.
@@ -65,7 +70,7 @@ Css.CssFill {
         _applying = false
     }
     function _report() {
-        if (!root._mail) return
+        if (!root._mail || root._loading) return
         root._reported = edit.text
         // Qt's plain text separates paragraphs with U+2029 (lines with U+2028): real line breaks.
         root.edited(edit.text, edit.getText(0, edit.length).replace(/[\u2028\u2029]/g, "\n"))
