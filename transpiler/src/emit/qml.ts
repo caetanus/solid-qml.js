@@ -4,6 +4,7 @@ import { emitStmt } from "./stmt.ts";
 import { safeName } from "../names/safe.ts";
 import { CONTROL_TAGS, hParts, isFragmentTag, isHCall } from "../ast/h.ts";
 import { nativeTags, requireImport } from "./native/index.ts";
+import { certifyForRow } from "./forCertify.ts";
 
 export const INDENT = "    ";
 const TEXT_TAGS = new Set(["text", "span", "h1", "h2", "h3", "h4", "h5", "h6", "p", "cite", "bio"]);
@@ -1687,8 +1688,17 @@ function readWhen(propsArg: t.Node | undefined, scope: Scope): string {
 function emitFor(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
   const each = readEach(propsArg, scope);
   const pad = INDENT.repeat(level);
-  const lines = [`${pad}Css.CssRepeater {`, ...guardLine(guard, level), `${pad}${INDENT}model: ${each}`];
   const delegate = children.find((c) => t.isArrowFunctionExpression(c) || t.isFunctionExpression(c)) as t.ArrowFunctionExpression | t.FunctionExpression | undefined;
+  // 5v-1 (virtualized CssRepeater, Task 1): a certified row gets `virtualize: true` right after
+  // `model:`. The engine does not understand `virtualize` yet (Task 2 lands it), so this is gated
+  // behind SQ_VIRTUALIZE=1 (default OFF) — with the gate off, emission never changes.
+  const virtualize = process.env.SQ_VIRTUALIZE === "1" && !!delegate && certifyForRow(delegate);
+  const lines = [
+    `${pad}Css.CssRepeater {`,
+    ...guardLine(guard, level),
+    `${pad}${INDENT}model: ${each}`,
+    ...(virtualize ? [`${pad}${INDENT}virtualize: true`] : []),
+  ];
   if (delegate) {
     lines.push(`${pad}${INDENT}delegate: Component {`);
     lines.push(...rowDelegate(delegate, scope, level + 2, "For"));
