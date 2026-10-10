@@ -1705,6 +1705,7 @@ function emitVirtualList(propsArg: t.Node | undefined, children: t.Node[], scope
   const delegate = children.find((c) => t.isArrowFunctionExpression(c) || t.isFunctionExpression(c)) as t.ArrowFunctionExpression | t.FunctionExpression | undefined;
   if (!delegate) throw new Error("<VirtualList> takes a row function: {(item) => <row/>}");
   const refLine = props.ref ? [`${i(1)}id: _ref_${safeName(props.ref)}`] : [];
+  const lvId = `__vlist${(scope.hoverCounter ?? { n: 0 }).n++}`;
   if (props.ref && scope.refs) scope.refs.push(props.ref);
   return [
     `${pad}W.Div {`,
@@ -1712,11 +1713,19 @@ function emitVirtualList(propsArg: t.Node | undefined, children: t.Node[], scope
     ...buildCssClassLine(props, scope, i(1)),
     ...guardLine(guard, level),
     `${i(1)}ListView {`,
+    `${i(2)}id: ${lvId}`,
     `${i(2)}anchors.fill: parent`,
     `${i(2)}clip: true`,
     `${i(2)}reuseItems: true`,
     `${i(2)}cacheBuffer: 600`,
     `${i(2)}boundsBehavior: Flickable.StopAtBounds`,
+    // Desktop wheel: discrete steps, no fling — the engine's own scroll (cssscroll.h), a longer
+    // step: a list row is tall. Flickable's velocity-based wheel crawled. Trackpad pixels ×1.5.
+    `${i(2)}WheelHandler {`,
+    `${i(3)}acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad`,
+    // (Declared inside a ListView, the handler's parent is the contentItem: the view is named.)
+    `${i(3)}onWheel: (ev) => { var lv = ${lvId}; var dy = ev.pixelDelta.y !== 0 ? ev.pixelDelta.y * 1.5 : (ev.angleDelta.y / 120) * 110; lv.contentY = Math.max(lv.originY, Math.min(lv.contentY - dy, lv.originY + lv.contentHeight - lv.height)) }`,
+    `${i(2)}}`,
     `${i(2)}model: ${each}`,
     `${i(2)}delegate: Component {`,
     ...rowDelegate(delegate, scope, level + 3, "VirtualList", ["width: ListView.view ? ListView.view.width : 0"]),
