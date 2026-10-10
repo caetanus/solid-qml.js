@@ -20,6 +20,8 @@ W.Div {
     property var showHeader: termConfig.getInt("showHeader", 1)
     property var showStatus: termConfig.getInt("showStatus", 1)
     property var animSplits: termConfig.getInt("animSplits", 1)
+    property var uiSplitGap: termConfig.getInt("splitGap", 0)
+    property var uiFocusHover: termConfig.getInt("focusOnHover", 0)
     property var cfgOpen: false
     property var title: "solidterm"
     property var searchOpen: false
@@ -233,6 +235,8 @@ W.Div {
                 backgroundOpacity: opacity_ / 100
                 blur: uiBlur
                 animateSplits: animSplits !== 0
+                splitGap: uiSplitGap
+                focusOnHover: uiFocusHover !== 0
                 handleColor: scheme === "system" ? sysTheme.window : (__const_SCHEMES[scheme] || __const_SCHEMES.midnight).bg
                 reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, kZoomPane, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]
                 onAccelerator: function(seq) { return onAccel(seq) }
@@ -582,6 +586,38 @@ W.Div {
                                     }
                                 }
                             }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Gap between splits"
+                                }
+                                W.Div {
+                                    cssClass: ["cfg-slide"]
+                                    W.Slider {
+                                        id: __input12
+                                        cssClass: ["cfg-range"]
+                                        from: 0
+                                        to: 24
+                                        stepSize: 1
+                                        onMoved: { uiSplitGap = parseInt(__input12.value); termConfig.set("splitGap", parseInt(__input12.value)); }
+                                        Binding {
+                                            target: __input12
+                                            property: "value"
+                                            value: "" + uiSplitGap
+                                            restoreMode: Binding.RestoreNone
+                                        }
+                                    }
+                                    W.Text {
+                                        cssClass: ["cfg-slideval"]
+                                        text: "" + (uiSplitGap) + " px"
+                                    }
+                                }
+                            }
                         }
                     }
                     W.Div {
@@ -599,15 +635,39 @@ W.Div {
                                     text: "Scrollback"
                                 }
                                 W.Select {
-                                    id: __input12
+                                    id: __input13
                                     cssClass: ["cfg-sel"]
                                     model: ["1000 lines", "5000 lines", "8000 lines", "20000 lines", "100000 lines"]
                                     values: ["1000", "5000", "8000", "20000", "100000"]
-                                    onActivated: (index) => { scrollback = parseInt(__input12.values[index]); termConfig.set("scrollback", parseInt(__input12.values[index])); }
+                                    onActivated: (index) => { scrollback = parseInt(__input13.values[index]); termConfig.set("scrollback", parseInt(__input13.values[index])); }
                                     Binding {
-                                        target: __input12
+                                        target: __input13
                                         property: "currentIndex"
-                                        value: __input12.values.indexOf("" + scrollback)
+                                        value: __input13.values.indexOf("" + scrollback)
+                                        restoreMode: Binding.RestoreNone
+                                    }
+                                }
+                            }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Focus follows mouse"
+                                }
+                                W.Select {
+                                    id: __input14
+                                    cssClass: ["cfg-sel"]
+                                    model: ["Off", "On"]
+                                    values: ["0", "1"]
+                                    onActivated: (index) => { uiFocusHover = parseInt(__input14.values[index]); termConfig.set("focusOnHover", parseInt(__input14.values[index])); }
+                                    Binding {
+                                        target: __input14
+                                        property: "currentIndex"
+                                        value: __input14.values.indexOf("" + uiFocusHover)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -711,12 +771,12 @@ W.Div {
                     text: "Tab title"
                 }
                 W.TextField {
-                    id: __input15
+                    id: __input17
                     cssClass: ["cfg-in", "rename-in"]
                     placeholder: "(empty = automatic)"
                     onTextEdited: { renameValue = text }
                     Binding {
-                        target: __input15
+                        target: __input17
                         property: "text"
                         value: renameValue
                         restoreMode: Binding.RestoreNone

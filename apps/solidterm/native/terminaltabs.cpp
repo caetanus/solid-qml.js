@@ -247,6 +247,8 @@ void TerminalTabs::applyStyle(TerminalPanes *p)
     p->setBackgroundOpacity(m_bgOpacity);
     p->setBlur(m_blur);
     p->setAnimateSplits(m_animateSplits);
+    p->setSplitGap(m_splitGap);
+    p->setFocusOnHover(m_focusOnHover);
     p->setReservedSequences(m_reserved);
 }
 
@@ -268,6 +270,8 @@ TABS_STYLE_SETTER(setBackgroundImage, m_bgImage, const QString &, setBackgroundI
 TABS_STYLE_SETTER(setBackgroundOpacity, m_bgOpacity, qreal, setBackgroundOpacity)
 TABS_STYLE_SETTER(setBlur, m_blur, int, setBlur)
 TABS_STYLE_SETTER(setAnimateSplits, m_animateSplits, bool, setAnimateSplits)
+TABS_STYLE_SETTER(setSplitGap, m_splitGap, int, setSplitGap)
+TABS_STYLE_SETTER(setFocusOnHover, m_focusOnHover, bool, setFocusOnHover)
 #undef TABS_STYLE_SETTER
 
 void TerminalTabs::setReservedSequences(const QStringList &v)

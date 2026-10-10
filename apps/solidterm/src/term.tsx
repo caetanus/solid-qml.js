@@ -72,6 +72,10 @@ export function Term(props: { onTitle: (t: string) => void }) {
   const [showHeader, setShowHeader] = createSignal(termConfig.getInt("showHeader", 1));
   const [showStatus, setShowStatus] = createSignal(termConfig.getInt("showStatus", 1));
   const [animSplits, setAnimSplits] = createSignal(termConfig.getInt("animSplits", 1));
+  // Gap between split panes (px; 0 = the classic divider) and focus-follows-mouse between panes.
+  // ui* names: a signal named like the native property (splitGap/focusOnHover) would shadow it.
+  const [uiSplitGap, setUiSplitGap] = createSignal(termConfig.getInt("splitGap", 0));
+  const [uiFocusHover, setUiFocusHover] = createSignal(termConfig.getInt("focusOnHover", 0));
   sysTheme.setUiOpacity(opacity() / 100); // apply saved translucency to the chrome at startup
   const [cfgOpen, setCfgOpen] = createSignal(false);
   const [title, setTitle] = createSignal("solidterm");
@@ -244,6 +248,8 @@ export function Term(props: { onTitle: (t: string) => void }) {
           backgroundOpacity={opacity() / 100}
           blur={uiBlur()}
           animateSplits={animSplits() !== 0}
+          splitGap={uiSplitGap()}
+          focusOnHover={uiFocusHover() !== 0}
           handleColor={scheme() === "system" ? sysTheme.window : (SCHEMES[scheme()] || SCHEMES.midnight).bg}
           reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), kZoomPane(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]}
           onAccelerator={(seq) => onAccel(seq)}
@@ -393,6 +399,17 @@ export function Term(props: { onTitle: (t: string) => void }) {
                 <option value="0">Off</option>
               </select>
             </div>
+            <hr class="cfg-div" />
+            <div class="cfg-row">
+              <text class="cfg-l">Gap between splits</text>
+              {/* 0 = the classic divider; above it the panes are spaced and the window background
+                  shows through. Live, like opacity. */}
+              <div class="cfg-slide">
+                <input class="cfg-range" type="range" min="0" max="24" step="1" value={"" + uiSplitGap()}
+                       onInput={(v) => { setUiSplitGap(parseInt(v)); termConfig.set("splitGap", parseInt(v)); }} />
+                <text class="cfg-slideval">{uiSplitGap()} px</text>
+              </div>
+            </div>
           </div>
 
           </div>
@@ -409,6 +426,16 @@ export function Term(props: { onTitle: (t: string) => void }) {
                 <option value="8000">8000 lines</option>
                 <option value="20000">20000 lines</option>
                 <option value="100000">100000 lines</option>
+              </select>
+            </div>
+            <hr class="cfg-div" />
+            <div class="cfg-row">
+              <text class="cfg-l">Focus follows mouse</text>
+              {/* Hovering a pane focuses it — only while this window is already active. */}
+              <select class="cfg-sel" value={"" + uiFocusHover()}
+                      onChange={(v) => { setUiFocusHover(parseInt(v)); termConfig.set("focusOnHover", parseInt(v)); }}>
+                <option value="0">Off</option>
+                <option value="1">On</option>
               </select>
             </div>
           </div>

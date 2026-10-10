@@ -1061,6 +1061,12 @@ TerminalView::LinkSpan TerminalView::linkAt(const QPointF &p) const
     return {};
 }
 
+void TerminalView::hoverEnterEvent(QHoverEvent *event)
+{
+    emit hovered();
+    hoverMoveEvent(event); // same cursor/link state as any hover position
+}
+
 void TerminalView::hoverMoveEvent(QHoverEvent *event)
 {
     const LinkSpan link = linkAt(event->position());

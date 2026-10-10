@@ -4,6 +4,7 @@
 #include "terminalview.h"
 
 #include <QCursor>
+#include <QGuiApplication>
 #include <QMouseEvent>
 #include <QQmlComponent>
 #include <QQmlContext>
@@ -218,6 +219,18 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
     // A click in the body is explicit user intent to focus this pane → authoritative m_focused update.
     connect(v, &TerminalView::focusRequested, this, [this, v] {
         if (Node *l = leafOfView(v)) setFocused(l);
+    });
+    // Focus follows the mouse (opt-in): entering a pane focuses it — only when this window is already
+    // active (never steals focus from another app), no button is held (a drag-selection may cross
+    // panes) and no pane is being dragged.
+    connect(v, &TerminalView::hovered, this, [this, v] {
+        if (!m_focusOnHover || m_dragView || QGuiApplication::mouseButtons() != Qt::NoButton)
+            return;
+        if (!window() || !window()->isActive())
+            return;
+        Node *l = leafOfView(v);
+        if (l && l != m_focused)
+            setFocused(l);
     });
     // Keyboard-focus churn (reparent, window (de)activation) only repaints — it must NOT move the
     // logical focused pane, or a drag-move would snap the accent back to whatever grabbed focus.
@@ -756,7 +769,7 @@ void TerminalPanes::rebuildDividers(Node *splitNode)
     const bool horiz = splitNode->orientation == Qt::Horizontal;
     for (int i = 0; i + 1 < splitNode->children.size(); ++i) {
         auto *div = new DividerItem(horiz, this);
-        div->color = m_handleColor;
+        div->color = dividerColor();
         Node *node = splitNode;
         const int leftIdx = i;
         div->onDrag = [this, node, leftIdx](qreal d) {
@@ -775,6 +788,26 @@ void TerminalPanes::rebuildDividers(Node *splitNode)
     }
 }
 
+qreal TerminalPanes::dividerExtent() const
+{
+    return m_splitGap > 0 ? qreal(m_splitGap) : kDivider;
+}
+
+QColor TerminalPanes::dividerColor() const
+{
+    return m_splitGap > 0 ? QColor(Qt::transparent) : m_handleColor;
+}
+
+void TerminalPanes::setSplitGap(int v)
+{
+    v = qBound(0, v, 64);
+    if (m_splitGap == v)
+        return;
+    m_splitGap = v;
+    recolorHandles();
+    relayout();
+}
+
 void TerminalPanes::layoutNode(Node *node, qreal x, qreal y, qreal w, qreal h)
 {
     if (!node)
@@ -789,7 +822,8 @@ void TerminalPanes::layoutNode(Node *node, qreal x, qreal y, qreal w, qreal h)
     const bool horiz = node->orientation == Qt::Horizontal;
     const int n = node->children.size();
     const qreal main = horiz ? w : h;
-    const qreal available = qMax<qreal>(0, main - kDivider * (n - 1));
+    const qreal divW = dividerExtent();
+    const qreal available = qMax<qreal>(0, main - divW * (n - 1));
     node->lastAvail = available;
 
     qreal pos = horiz ? x : y;
@@ -803,10 +837,10 @@ void TerminalPanes::layoutNode(Node *node, qreal x, qreal y, qreal w, qreal h)
         if (i < n - 1) {
             DividerItem *div = node->dividers.value(i);
             if (div) {
-                if (horiz) { div->setX(pos); div->setY(y); div->setWidth(kDivider); div->setHeight(h); }
-                else { div->setX(x); div->setY(pos); div->setWidth(w); div->setHeight(kDivider); }
+                if (horiz) { div->setX(pos); div->setY(y); div->setWidth(divW); div->setHeight(h); }
+                else { div->setX(x); div->setY(pos); div->setWidth(w); div->setHeight(divW); }
             }
-            pos += kDivider;
+            pos += divW;
         }
     }
 }
@@ -1095,7 +1129,7 @@ void TerminalPanes::recolorHandles()
     std::function<void(Node *)> walk = [&](Node *node) {
         if (!node) return;
         for (DividerItem *d : node->dividers)
-            if (d) { d->color = m_handleColor; d->update(); }
+            if (d) { d->color = dividerColor(); d->update(); }
         if (node->header)
             node->header->setBackground(header);
         for (Node *c : node->children)

@@ -138,6 +138,7 @@ signals:
     void searchChanged(int index, int count);  // current match (1-based; 0 = none) + total
     void unsafePasteRequested(const QString &text); // multiline paste → confirm in the Solid dialog
     void zoomRequested(int delta);          // Ctrl+wheel → font zoom (+1 in / −1 out)
+    void hovered();                         // the mouse entered this pane (focus-follows-mouse)
     void focusRequested();                  // user clicked in the body → make this the focused pane
 
 protected:
@@ -154,6 +155,7 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
+    void hoverEnterEvent(QHoverEvent *event) override;
     void hoverMoveEvent(QHoverEvent *event) override;
     void hoverLeaveEvent(QHoverEvent *event) override;
 

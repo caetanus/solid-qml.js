@@ -30,6 +30,8 @@ class TerminalTabs : public QQuickItem {
     Q_PROPERTY(qreal backgroundOpacity READ backgroundOpacity WRITE setBackgroundOpacity NOTIFY styleChanged)
     Q_PROPERTY(int blur READ blur WRITE setBlur NOTIFY styleChanged)
     Q_PROPERTY(bool animateSplits READ animateSplits WRITE setAnimateSplits NOTIFY styleChanged)
+    Q_PROPERTY(int splitGap READ splitGap WRITE setSplitGap NOTIFY styleChanged)
+    Q_PROPERTY(bool focusOnHover READ focusOnHover WRITE setFocusOnHover NOTIFY styleChanged)
     Q_PROPERTY(QStringList reservedSequences READ reservedSequences WRITE setReservedSequences NOTIFY reservedChanged)
     Q_PROPERTY(int count READ count NOTIFY tabsChanged)
 
@@ -59,6 +61,10 @@ public:
     void setBlur(int v);
     bool animateSplits() const { return m_animateSplits; }
     void setAnimateSplits(bool v);
+    int splitGap() const { return m_splitGap; }
+    void setSplitGap(int v);
+    bool focusOnHover() const { return m_focusOnHover; }
+    void setFocusOnHover(bool v);
     QStringList reservedSequences() const { return m_reserved; }
     void setReservedSequences(const QStringList &v);
     int count() const { return m_tabs.size(); }
@@ -139,5 +145,7 @@ private:
     qreal m_bgOpacity = 1.0;
     int m_blur = 0;                         // 0-100 blur strength on the background image
     bool m_animateSplits = true;
+    int m_splitGap = 0;
+    bool m_focusOnHover = false;
     QStringList m_reserved;
 };

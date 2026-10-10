@@ -68,6 +68,13 @@ public:
     void setBlur(int v);
     bool animateSplits() const { return m_animateSplits; }
     void setAnimateSplits(bool v) { m_animateSplits = v; }
+    // Gap between split panes, px. 0 = the classic 6 px handle-coloured divider; above 0 the divider
+    // is that wide and transparent (the window background shows between panes) — still draggable.
+    int splitGap() const { return m_splitGap; }
+    void setSplitGap(int v);
+    // Focus follows the mouse between panes — only while THIS window is already the active one.
+    bool focusOnHover() const { return m_focusOnHover; }
+    void setFocusOnHover(bool v) { m_focusOnHover = v; }
 
     // Split the FOCUSED pane along `orient` (Qt::Horizontal = side by side / "split right",
     // Qt::Vertical = stacked / "split down"). Nests independently of prior splits.
@@ -213,4 +220,8 @@ private:
     qreal m_bgOpacity = 1.0;
     int m_blur = 0;                         // 0-100 blur strength on the background image
     bool m_animateSplits = true;
+    int m_splitGap = 0;
+    bool m_focusOnHover = false;
+    qreal dividerExtent() const;  // the gap when set, else the 6 px handle
+    QColor dividerColor() const;  // transparent when there is a gap, else the handle colour
 };
