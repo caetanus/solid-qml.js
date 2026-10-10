@@ -105,16 +105,48 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
     // Text primitive → the cached W.Text component (compile once, reuse/AOT — see Div.qml). Omit
     // cssPrimitive for <text> (the component default); set it for span/h1-6/p/cite/bio.
     if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
+    // Pointer props on a text (`<text onClick>` — a link): the div's emission, the area a child of
+    // the text (a CssText lays out no children; `anchors.fill` covers the run).
+    const { refLine, stateLine, clickLines, tipLines } = emitInteractions(props, children as t.Node[], scope, level, false);
     return [
       `${pad}W.Text {`,
       ...classLine,
+      ...stateLine,
+      ...refLine,
       ...guardLine(guard, level),
       ...(tag !== "text" ? [`${pad}${INDENT}cssPrimitive: ${JSON.stringify(tag)}`] : []),
       `${pad}${INDENT}text: ${textBinding(children as t.Node[], scope)}`,
+      ...clickLines,
+      ...tipLines,
       `${pad}}`,
     ];
   }
 
+  const { refLine, stateLine, clickLines, tipLines } = emitInteractions(props, children as t.Node[], scope, level, true);
+  // Block primitive → the cached W.Div component (compile once, reuse/AOT — see Div.qml). Omit
+  // cssPrimitive for <div> (the component default); set it for section/article/etc. Interactive
+  // variants keep their MouseArea/Drag/DropArea as children of the instance (stateLine/clickLines).
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
+  return [
+    `${pad}W.Div {`,
+    ...classLine,
+    ...stateLine,
+    ...refLine,
+    ...guardLine(guard, level),
+    ...(tag !== "div" ? [`${pad}${INDENT}cssPrimitive: ${JSON.stringify(tag)}`] : []),
+    ...emitChildren(children as t.Node[], scope, level + 1),
+    ...clickLines,
+    ...tipLines,
+    `${pad}}`,
+  ];
+}
+
+/** The pointer/keyboard props shared by every plain element (the web allows them on any element):
+ *  ref, onClick (+hover), onKeyDown, onContextMenu, draggable/dragData, onDrop, title, and — on a
+ *  box only (`scrollable`) — onScroll. Returns the lines the element splices into its own object;
+ *  <div> and <text> use the SAME emission, so a click on a text behaves like a click on a div. */
+function emitInteractions(props: Props, children: t.Node[], scope: Scope, level: number, scrollable: boolean) {
+  const pad = INDENT.repeat(level);
   const refLine: string[] = [];
   if (props.ref) {
     refLine.push(`${pad}${INDENT}id: _ref_${safeName(props.ref)}`);
@@ -142,7 +174,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
       // element's own click (a chip inside a clickable row never fired). With an interactive
       // descendant, the area goes beneath the content, so — as on the web — the innermost target
       // gets the click and plain content (text, fills) still passes it down to this one.
-      ...(hasInteractiveDescendant(children as t.Node[]) ? [`${pad}${INDENT}${INDENT}z: -1`] : []),
+      ...(hasInteractiveDescendant(children) ? [`${pad}${INDENT}${INDENT}z: -1`] : []),
       `${pad}${INDENT}${INDENT}anchors.fill: parent`,
       `${pad}${INDENT}${INDENT}hoverEnabled: true`,
       `${pad}${INDENT}${INDENT}cursorShape: Qt.PointingHandCursor`,
@@ -165,7 +197,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
       throw new Error("onContextMenu must be an inline function: (e) => …");
     clickLines.push(
       `${pad}${INDENT}MouseArea {`,
-      ...(hasInteractiveDescendant(children as t.Node[]) ? [`${pad}${INDENT}${INDENT}z: -1`] : []),
+      ...(hasInteractiveDescendant(children) ? [`${pad}${INDENT}${INDENT}z: -1`] : []),
       `${pad}${INDENT}${INDENT}anchors.fill: parent`,
       `${pad}${INDENT}${INDENT}acceptedButtons: Qt.RightButton`,
       `${pad}${INDENT}${INDENT}onClicked: (mouse) => { ${translateMouseHandler(fn, scope)} }`,
@@ -204,6 +236,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
   // onScroll: the box's own scrollChanged (CssRect scrollTop/scrollHeight/clientHeight, the DOM's
   // names) — a long list windows on it, loading more rows near the end.
   if (props.onScroll) {
+    if (!scrollable) throw new Error("onScroll: only a box (<div>) scrolls; a text has no scroll position");
     const fn = props.onScroll;
     if (!(t.isArrowFunctionExpression(fn) || t.isFunctionExpression(fn)))
       throw new Error("onScroll must be an inline function: (e) => …");
@@ -247,22 +280,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
       `${pad}${INDENT}}`,
     );
   }
-  // Block primitive → the cached W.Div component (compile once, reuse/AOT — see Div.qml). Omit
-  // cssPrimitive for <div> (the component default); set it for section/article/etc. Interactive
-  // variants keep their MouseArea/Drag/DropArea as children of the instance (stateLine/clickLines).
-  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
-  return [
-    `${pad}W.Div {`,
-    ...classLine,
-    ...stateLine,
-    ...refLine,
-    ...guardLine(guard, level),
-    ...(tag !== "div" ? [`${pad}${INDENT}cssPrimitive: ${JSON.stringify(tag)}`] : []),
-    ...emitChildren(children as t.Node[], scope, level + 1),
-    ...clickLines,
-    ...tipLines,
-    `${pad}}`,
-  ];
+  return { refLine, stateLine, clickLines, tipLines };
 }
 
 /** <Comp prop={v}>children</Comp> → Comp { prop: <v>; <children> }. Children mount into the type's

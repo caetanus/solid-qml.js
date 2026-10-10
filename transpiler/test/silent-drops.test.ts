@@ -94,3 +94,25 @@ test("a single-root <For> row with a lazy <Show> root is still accepted", async 
   const out = await qml(wrap(`<For each={xs()}>{(x) => <div><Show when={x.ok}><text>y</text></Show></div>}</For>`));
   assertSingleRoots(out);
 });
+
+test("<text onClick>: a hover-tracked click area like the div's (it used to emit a bare W.Text)", async () => {
+  const out = await qml(`export function C(){ const name = "n"; const [k,setK]=createSignal(0); const go = () => setK(1); return <div><text class="x" onClick={() => go()}>{name}</text></div>; }`);
+  const text = out.slice(out.indexOf("W.Text {"));
+  assert.match(text, /^W\.Text \{\n\s*cssClass: \["x"\]\n\s*cssState: (__hover\d+)\.containsMouse \? \["hover"\] : \[\]/);
+  assert.match(text, /text: [^\n]+\n\s*MouseArea \{\n\s*id: __hover\d+\n\s*anchors\.fill: parent\n\s*hoverEnabled: true\n\s*cursorShape: Qt\.PointingHandCursor\n\s*onClicked: .+/);
+});
+
+test("<text> takes the div's other pointer props too: onContextMenu, title, ref", async () => {
+  const out = await qml(`export function C(){ let m; let t; return <div><text ref={t} title="tip" onContextMenu={(e) => m.open(e.clientX, e.clientY)}>x</text></div>; }`);
+  const text = out.slice(out.indexOf("W.Text {"));
+  assert.match(text, /id: _ref_t/);
+  assert.match(text, /acceptedButtons: Qt\.RightButton/);
+  assert.match(text, /W\.ToolTip \{\n\s*text: "tip"/);
+});
+
+test("<text onClick> and <div onClick> emit the same click area", async () => {
+  const d = await qml(`export function C(){ const [k,setK]=createSignal(0); return <div onClick={(e) => { if (e.shiftKey) setK(1); }}>x</div>; }`);
+  const tx = await qml(`export function C(){ const [k,setK]=createSignal(0); return <text onClick={(e) => { if (e.shiftKey) setK(1); }}>x</text>; }`);
+  const area = (s: string) => s.slice(s.indexOf("MouseArea {"), s.indexOf("}", s.indexOf("onClicked")));
+  assert.equal(area(tx), area(d));
+});
