@@ -1,5 +1,7 @@
 #include "terminalview.h"
 
+#include "scrollbackcells.h"
+
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QGuiApplication>
@@ -237,8 +239,11 @@ int TerminalView::cbSbPopLine(int cols, VTermScreenCell *cells, void *user)
     const SbLine line = self->m_scrollback.takeLast();
     const int n = qMin(cols, int(line.cells.size()));
     std::copy(line.cells.begin(), line.cells.begin() + n, cells);
-    for (int i = n; i < cols; ++i)
-        cells[i] = VTermScreenCell{};
+    // A line pushed while the terminal was narrower is padded with REAL blanks — a zeroed cell has
+    // width 0 and hangs libvterm's backfill loop forever (see scrollbackcells.h).
+    VTermColor fg, bg;
+    vterm_state_get_default_colors(vterm_obtain_state(self->m_vt), &fg, &bg);
+    fillBlankCells(cells, n, cols, fg, bg);
     return 1;
 }
 

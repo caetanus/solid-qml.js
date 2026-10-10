@@ -375,6 +375,14 @@ if build_solidterm
   install_data('apps/solidterm/solidterm.svg',
     install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
     rename: 'solidterm.svg')
+
+  # libvterm scrollback round-trip (no Qt): a width-0 padding cell in sb_popline hung SolidTerm at
+  # 100% CPU whenever the window grew wider AND taller (workspace move, resize). The bug is a hang,
+  # so the short timeout is the assertion.
+  test('solidterm-scrollback',
+    executable('test-solidterm-scrollback', files('apps/solidterm/tests/scrollback_test.cpp'),
+      dependencies: [vterm_dep]),
+    timeout: 10)
 endif
 
 # ── Tests ────────────────────────────────────────────────────────────────────────────────────
