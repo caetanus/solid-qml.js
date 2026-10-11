@@ -170,6 +170,7 @@ Css.CssFill {
         if (_mail) { _reported = html; edit.cursorPosition = 0; edit.forceActiveFocus() }
         try {
             fmt = Qt.createQmlObject("import solidqml.native 1.0 as Native; Native.RichTextHandler {}", root, "RichTextHandler")
+            fmt.attachScrollBar(body)
             fmt.document = Qt.binding(function() { return edit.textDocument })
             fmt.selectionStart = Qt.binding(function() { return edit.selectionStart })
             fmt.selectionEnd = Qt.binding(function() { return edit.selectionEnd })
@@ -247,6 +248,15 @@ Css.CssFill {
             contentWidth: Math.max(width, root._sheetWidth)
             contentHeight: root._sheetContentHeight > 0 ? root._sheetContentHeight : edit.y + edit.height + root._textBottomMargin
             boundsBehavior: Flickable.StopAtBounds
+            // Match the engine's desktop wheel behavior, also above the scrollbar overlay.
+            WheelHandler {
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                acceptedModifiers: Qt.NoModifier
+                onWheel: (event) => {
+                    var dy = event.pixelDelta.y !== 0 ? event.pixelDelta.y : (event.angleDelta.y / 120) * 54
+                    body.contentY = Math.max(0, Math.min(body.contentY - dy, Math.max(0, body.contentHeight - body.height)))
+                }
+            }
             property real _previousContentY: 0
             onContentYChanged: {
                 // After Flickable's transform notifications: Qt's backward scan can stop

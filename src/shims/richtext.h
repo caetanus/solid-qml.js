@@ -199,6 +199,7 @@ public:
     // even on a very large document.
     // Widget-only: restart Qt's visible-node traversal after scrolling backwards.
     Q_INVOKABLE void refreshViewport();
+    Q_INVOKABLE void attachScrollBar(QQuickItem *flick);
     Q_INVOKABLE QVariantList headings() const;
     int currentHeadingIndex() const;
     // scrollToPosition(pos) is QML-level (the Flickable lives in RichText.qml) — see

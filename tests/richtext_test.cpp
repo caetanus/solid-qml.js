@@ -25,6 +25,7 @@
 #include <QRegularExpression>
 #include <QScopedPointer>
 #include <QSignalSpy>
+#include <QWheelEvent>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTextBoundaryFinder>
@@ -2752,6 +2753,56 @@ private slots:
         m_fmt->setCursorPosition(6);
         m_fmt->insertText(QStringLiteral("x"));
         QCOMPARE(doc()->pageSize(), QSizeF(794, 1147));
+    }
+
+    void documentScrollbar_data()
+    {
+        QTest::addColumn<bool>("pages");
+        QTest::newRow("continuous") << false;
+        QTest::newRow("pages") << true;
+    }
+    void documentScrollbar()
+    {
+        QFETCH(bool, pages);
+        PageEditor w;
+        QVERIFY(w.root);
+        w.root->setProperty("pageView", pages);
+        auto *track = w.body()->findChild<QQuickItem *>(QStringLiteral("cssScrollTrack"));
+        QVERIFY(track);
+        auto *thumb = track->findChild<QQuickItem *>(QStringLiteral("cssScrollThumb"));
+        QVERIFY(thumb);
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
+        if (!book.isEmpty()) QVERIFY(w.fmt()->loadOdf(QUrl::fromLocalFile(book)));
+        else w.fmt()->insertText(QString("A scrollbar test line.\n").repeated(15000));
+        w.view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        QCoreApplication::processEvents();
+        const int pos = w.fmt()->document()->textDocument()->characterCount() / 2;
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "scrollToPosition", Q_ARG(QVariant, pos)));
+        QCoreApplication::processEvents();
+        const qreal maxY = w.body()->property("contentHeight").toReal() - w.body()->height();
+        const qreal travel = track->height() - thumb->height();
+        QVERIFY(travel > 0);
+        const qreal fraction = w.body()->property("contentY").toReal() / maxY;
+        QVERIFY(qAbs(thumb->y() / travel - fraction) < 0.0001);
+        auto point = thumb->mapToScene(QPointF(thumb->width()/2, thumb->height()/2)).toPoint();
+        QTest::mousePress(&w.view, Qt::LeftButton, Qt::NoModifier, point);
+        const auto target = track->mapToScene(QPointF(track->width()/2, travel * 0.25 + thumb->height()/2)).toPoint();
+        QTest::mouseMove(&w.view, target, 20);
+        QTest::mouseRelease(&w.view, Qt::LeftButton, Qt::NoModifier, target);
+        QVERIFY(qAbs(w.body()->property("contentY").toReal() / maxY - 0.25) < 0.005);
+        // A track click pages down; wheel over both text and track works without following caret.
+        qreal before = w.body()->property("contentY").toReal();
+        QTest::mouseClick(&w.view, Qt::LeftButton, Qt::NoModifier,
+                          track->mapToScene(QPointF(6, track->height()-5)).toPoint());
+        QVERIFY(w.body()->property("contentY").toReal() > before);
+        for (QPointF at : {QPointF(400,300), track->mapToScene(QPointF(6,100))}) {
+            before = w.body()->property("contentY").toReal();
+            QWheelEvent ev(at, w.view.mapToGlobal(at.toPoint()), QPoint(0, -40), QPoint(0, -120),
+                           Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QCoreApplication::sendEvent(&w.view, &ev);
+            QTRY_VERIFY(w.body()->property("contentY").toReal() > before);
+        }
     }
 
     void keyboardKeepsCaretVisible_data()

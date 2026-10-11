@@ -1,6 +1,7 @@
 #include "richtext.h"
 #include "richtext_odf.h"
 #include "richtext_qt_p.h"
+#include "qmlcss/cssscroll.h"
 
 #include <QClipboard>
 #include <QFile>
@@ -256,6 +257,11 @@ void RichTextHandler::updateViewportCulling()
     const bool large = doc->characterCount() > kLargeTextThreshold;
     if (editor->flags().testFlag(QQuickItem::ItemObservesViewport) != large)
         editor->setFlag(QQuickItem::ItemObservesViewport, large);
+}
+
+void RichTextHandler::attachScrollBar(QQuickItem *flick)
+{
+    QmlCss::composeScrollBar(flick);
 }
 
 void RichTextHandler::refreshViewport()
