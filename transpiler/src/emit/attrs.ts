@@ -145,9 +145,9 @@ export const ELEMENT_ATTRS: Record<string, Attrs> = {
   Surface: { class: "lit", heightMap: "expr", valueMin: "expr", valueMax: "expr" },
   MediaPlayer: { class: "lit", src: "expr", subtitles: "expr", autoplay: "expr" },
   WebView: { class: "lit", src: "expr", html: "expr", remoteContent: "expr" },
-  RichText: { class: "lit", html: "expr", variant: "expr", onChange: "fn" },
+  RichText: { ...DYN, html: "expr", variant: "expr", onChange: "fn" },
   DocumentEditor: {
-    class: "lit", ref: "ident", toolbar: "bool", onModifiedChanged: "fn", onContentChanged: "fn", onStylesChanged: "fn",
+    ...DYN, ref: "ident", toolbar: "bool", onModifiedChanged: "fn", onContentChanged: "fn", onStylesChanged: "fn",
     pageWidth: "expr", pageMargins: "expr", zoom: "expr", onZoomRequested: "fn", onHeadingsChanged: "fn",
     onBlocksLoaded: "fn", onBlockChanged: "fn", onBlockRemoved: "fn", onMarkClicked: "fn", onMarkContextMenu: "fn", onMarkHovered: "fn",
   },

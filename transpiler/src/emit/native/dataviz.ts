@@ -8,7 +8,7 @@
 import * as t from "@babel/types";
 import { registerNativeTags, requireImport } from "./index.ts";
 import { emitExpr, type Scope } from "../expr.ts";
-import { buildCssClassLine, INDENT } from "../qml.ts";
+import { buildCssClassLine, readProps, INDENT } from "../qml.ts";
 import { safeName } from "../../names/safe.ts";
 import { translateArgsHandler } from "./inputs.ts";
 
@@ -149,7 +149,7 @@ function emitRichText(propsArg: t.Node | undefined, _children: t.Node[], scope: 
   requireImport(scope, "import solidqml.Widgets.RichText 1.0 as WRich");
   const props = propsOf(propsArg);
 
-  const lines: string[] = [`${pad}WRich.RichText {`, ...buildCssClassLine(cssPropsShim(props), scope, i(1))];
+  const lines: string[] = [`${pad}WRich.RichText {`, ...buildCssClassLine(readProps(propsArg), scope, i(1))];
   if (guard) lines.push(`${i(1)}visible: !!(${guard})`);
   // variant="mail": a message editor — html in, onChange(html, text) out (see RichText.qml).
   const bind = (e: t.Expression) => emitExpr(e, { ...scope, mode: "binding" });
@@ -186,7 +186,7 @@ function emitDocumentEditor(propsArg: t.Node | undefined, _children: t.Node[], s
     idLine.push(`${i(1)}id: _ref_${safeName(ref.name)}`);
     if (scope.refs) scope.refs.push(ref.name);
   }
-  const lines: string[] = [`${pad}WRich.DocumentEditor {`, ...idLine, ...buildCssClassLine(cssPropsShim(props), scope, i(1))];
+  const lines: string[] = [`${pad}WRich.DocumentEditor {`, ...idLine, ...buildCssClassLine(readProps(propsArg), scope, i(1))];
   if (guard) lines.push(`${i(1)}visible: !!(${guard})`);
   const toolbar = props.get("toolbar");
   if (toolbar) lines.push(`${i(1)}toolbar: ${bind(toolbar)}`);

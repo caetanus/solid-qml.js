@@ -94,6 +94,7 @@ type DocumentIoResult = { ok: boolean; error: string };
 
 type DocumentEditorProps = {
   class?: string;
+  classList?: Record<string, boolean | undefined>;
   /** `let doc: DocumentEditorHandle | undefined; <DocumentEditor ref={doc} />` */
   ref?: DocumentEditorHandle;
   /** false hides the built-in toolbar (the app draws its own). Default true. */

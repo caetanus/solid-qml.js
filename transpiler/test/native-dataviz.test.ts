@@ -151,3 +151,11 @@ test("document editor: <RichText> keeps its mail/forms contract (no toolbar/ref/
   await assert.rejects(qmlType(`export function F(){ return <RichText toolbar={false} />; }`), /<RichText> does not support `toolbar`/);
   await assert.rejects(qmlType(`export function F(){ return <DocumentEditor html="<p>x</p>" />; }`), /<DocumentEditor> does not support `html`/);
 });
+
+for (const tag of ["RichText", "DocumentEditor"]) {
+  test(`${tag}: dynamic class and classList bind like boxes`, async () => {
+    const out = await qmlType(`export function F(){ const [x,setX]=createSignal(true); const [cls,setCls]=createSignal("sheet"); return <${tag} class={cls()} classList={{ paged: x() }} />; }`);
+    assert.match(out, /cssClass:.*cls.*split/);
+    assert.match(out, /concat\(x_ \? \["paged"\] : \[\]\)/);
+  });
+}

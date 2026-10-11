@@ -1823,7 +1823,7 @@ function emitHandler(node: t.Node | undefined, scope: Scope): string | null {
   throw new Error("only inline arrow handlers (or a context fn-member reference) are supported in this plan");
 }
 
-function readProps(propsArg: t.Node | undefined): Props {
+export function readProps(propsArg: t.Node | undefined): Props {
   const props: Props = { classes: [], classList: [], onClick: undefined, type: undefined, ref: undefined, draggable: false, dragData: undefined, onDrop: undefined };
   if (!propsArg || !t.isObjectExpression(propsArg)) return props;
   for (const p of propsArg.properties) {
