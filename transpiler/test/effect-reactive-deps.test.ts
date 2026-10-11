@@ -80,3 +80,21 @@ test("createEffect that reads a signal and writes a DIFFERENT one does not loop 
   assert.match(app.entry, /function onCountChanged\(\) \{ other = count \* 2; \}/);
   assert.doesNotMatch(app.entry, /function onOtherChanged/, "writing `other` must not itself be tracked as a read dep");
 });
+
+test("a plain component-level value (let array mutated in place, const object, function-local) is never an effect dependency", async () => {
+  const src = `
+    import { createEffect } from "solid-js";
+    export default function App() {
+      let spellQueue: string[] = [];
+      const cache = { size: 0 };
+      function scheduleSpell() { if (spellQueue.length > 0 && cache.size >= 0) spellQueue.push("x"); }
+      function recheckAll() { scheduleSpell(); }
+      createEffect(() => { if (office.spellReady) recheckAll(); });
+      return <div>q</div>;
+    }
+  `;
+  const app = await generate(src, "office-queue.tsx");
+  assert.match(app.entry, /target: office\s*function onSpellReadyChanged\(\)/);
+  assert.doesNotMatch(app.entry, /target: spellQueue/);
+  assert.doesNotMatch(app.entry, /target: cache/);
+});

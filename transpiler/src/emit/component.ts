@@ -426,6 +426,10 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     ...(components?.keys() ?? []),
     ...(foreignQml ?? []),
     ...(mutableLocals ?? []),
+    // Every other name declared at the component's top level (a `let` array mutated in place, a
+    // plain object): a JS value, never a QObject — signals/memos/stores/refs/props are resolved
+    // before this last-resort bucket, so listing them here too is harmless.
+    ...componentTopLevelNames(fn),
   ]);
   for (const body of effects) {
     const bodyDeps = effectDeps(body, table, {
@@ -570,6 +574,20 @@ function isPureLiteral(n: t.Node): boolean {
       && (t.isIdentifier(p.key) || t.isStringLiteral(p.key))
       && t.isExpression(p.value) && isPureLiteral(p.value));
   return false;
+}
+
+/** Names declared directly in the component body (variables, incl. destructured, and functions). */
+function componentTopLevelNames(fn: t.Function): string[] {
+  if (!t.isBlockStatement(fn.body)) return [];
+  const out: string[] = [];
+  for (const s of fn.body.body) {
+    if (t.isVariableDeclaration(s)) {
+      for (const d of s.declarations) out.push(...Object.keys(t.getBindingIdentifiers(d.id)));
+    } else if (t.isFunctionDeclaration(s) && s.id) {
+      out.push(s.id.name);
+    }
+  }
+  return out;
 }
 
 /** Every Identifier name appearing in the component function — an over-approximation of what it
