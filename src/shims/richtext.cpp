@@ -656,7 +656,13 @@ void RichTextHandler::mergeCharFormat(const QTextCharFormat &fmt)
     QTextCursor c = cursor();
     if (c.isNull())
         return;
-    c.mergeCharFormat(fmt);
+    // A bare caret in an empty paragraph: this cursor is ours and temporary, so merging into it
+    // would be lost — the block's char format is what the next typed character takes (and what
+    // the editor's own cursor reads there).
+    if (!c.hasSelection() && c.block().length() == 1)
+        c.mergeBlockCharFormat(fmt);
+    else
+        c.mergeCharFormat(fmt);
     emit formatChanged();
 }
 
@@ -751,44 +757,33 @@ QVariant RichTextHandler::effectiveFontProperty(rt::Prop prop) const
     // Across a real selection (or just the one word/position `cursor()` gives with none), every
     // run touched must agree — Word's "blank box" convention for a mixed selection (office item
     // 2b, ★4 addendum): the FIRST disagreement (including "set here, unset there") stops early.
+    // Blocks in document order already include table cells and nested frames — no recursion.
     QVariant value;
     bool any = false;
-    bool mixed = false;
-    const std::function<void(QTextFrame::iterator, const QTextFrame::iterator &)> walk =
-        [&](QTextFrame::iterator it, const QTextFrame::iterator &end) {
-            for (; it != end && !mixed; ++it) {
-                if (QTextFrame *f = it.currentFrame()) {
-                    walk(f->begin(), f->end());
-                    continue;
-                }
-                const QTextBlock b = it.currentBlock();
-                if (!b.isValid())
-                    continue;
-                const int bend = b.position() + b.length();
-                if (bend <= from || b.position() >= to)
-                    continue;
-                const QString ps = rt::paragraphStyleOf(b);
-                for (auto fit = b.begin(); !fit.atEnd() && !mixed; ++fit) {
-                    const QTextFragment frag = fit.fragment();
-                    if (!frag.isValid())
-                        continue;
-                    const int s = qMax(frag.position(), from);
-                    const int e = qMin(frag.position() + frag.length(), to);
-                    if (s >= e)
-                        continue;
-                    const QVariant v = effectiveAt(frag.charFormat(), ps);
-                    if (!any) {
-                        value = v;
-                        any = true;
-                    } else if (v.isValid() != value.isValid() || (v.isValid() && v != value)) {
-                        mixed = true;
-                        return;
-                    }
-                }
+    for (QTextBlock b = doc->findBlock(from); b.isValid() && b.position() < to; b = b.next()) {
+        const QString ps = rt::paragraphStyleOf(b);
+        for (auto fit = b.begin(); !fit.atEnd(); ++fit) {
+            const QTextFragment frag = fit.fragment();
+            if (!frag.isValid())
+                continue;
+            const int s = qMax(frag.position(), from);
+            const int e = qMin(frag.position() + frag.length(), to);
+            if (s >= e)
+                continue;
+            const QVariant v = effectiveAt(frag.charFormat(), ps);
+            if (!any) {
+                value = v;
+                any = true;
+            } else if (v.isValid() != value.isValid() || (v.isValid() && v != value)) {
+                return QVariant(); // mixed
             }
-        };
-    walk(doc->rootFrame()->begin(), doc->rootFrame()->end());
-    return mixed ? QVariant() : value;
+        }
+    }
+    // No run touched (a bare caret, e.g. in an empty paragraph): the caret's own format — what
+    // the next typed character gets — over its paragraph's style chain.
+    if (!any)
+        return effectiveAt(c.charFormat(), rt::paragraphStyleOf(c.block()));
+    return value;
 }
 
 void RichTextHandler::toggleBold()

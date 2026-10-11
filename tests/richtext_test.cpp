@@ -1234,6 +1234,34 @@ private slots:
         QCOMPARE(charAt(doc(), 2).fontPointSize(), 0.0); // nothing baked onto the run itself (★2 docs)
     }
 
+    // A caret in an EMPTY paragraph has no run to read: the caret's own format (the block's char
+    // format) over the paragraph's style chain answers — what the next typed character will get.
+    void fontFamilyAndSizeAtACaretInAnEmptyParagraph()
+    {
+        const QVariantMap result = m_fmt->newDocument(QVariantMap {
+            { QStringLiteral("styles"), QVariantMap {
+                { QStringLiteral("Default Paragraph Style"), QVariantMap {
+                    { QStringLiteral("fontFamily"), QStringLiteral("Noto Serif") },
+                    { QStringLiteral("fontSize"), 12.0 },
+                } },
+            } },
+            { QStringLiteral("paragraphStyle"), QStringLiteral("Text Body") },
+        });
+        QVERIFY2(result.value(QStringLiteral("ok")).toBool(), qPrintable(result.value(QStringLiteral("error")).toString()));
+        m_fmt->setCursorPosition(0);
+        QCOMPARE(m_fmt->fontFamily(), QStringLiteral("Noto Serif"));
+        QCOMPARE(m_fmt->fontSize(), 12.0);
+
+        // A size chosen before typing (next-typed format) is what the box shows, in canonical units.
+        m_fmt->setZoom(2.0);
+        m_fmt->setFontSize(20.0);
+        QCOMPARE(m_fmt->fontSize(), 20.0);
+        QCOMPARE(m_fmt->fontFamily(), QStringLiteral("Noto Serif"));
+        // ...and the next typed character really takes it (baked at the zoom in effect).
+        m_fmt->insertText(QStringLiteral("x"));
+        QCOMPARE(charAt(doc(), 0).fontPointSize(), 40.0);
+    }
+
     void fontFamilyAndSizeFallBackToUnsetWhenDefaultParagraphStyleDefinesNeither()
     {
         // Unmodified built-in Default Paragraph Style: unchanged from before this fix — "" / 0,
