@@ -246,20 +246,6 @@ function readNamesIn(expr: t.Expression, names: Set<string>): Set<string> {
   return found;
 }
 
-/** Names of signals/memos/resources read by `expr` (ignoring property-key positions) — used to
- *  detect a plain const/let whose initializer reads reactive state. */
-function reactiveReadsIn(expr: t.Expression, table: SymbolTable): string[] {
-  const found = new Set<string>();
-  traverse(t.file(t.program([t.expressionStatement(expr)])), {
-    Identifier(path) {
-      if (t.isMemberExpression(path.parent) && !path.parent.computed && path.parent.property === path.node) return;
-      const sym = table.get(path.node.name);
-      if (sym && (sym.kind === "signal" || sym.kind === "memo" || sym.kind === "resource")) found.add(path.node.name);
-    },
-  });
-  return [...found];
-}
-
 /** Top-level immutable locals whose values are read by the render tree — directly, OR
  *  transitively through another such local's OWN initializer (`const fonts = f(); const opts =
  *  fonts.map(...); return <Select options={opts}/>` — `fonts` is never named in `render`, only
@@ -282,9 +268,9 @@ function reactiveReadsIn(expr: t.Expression, table: SymbolTable): string[] {
  *  — as a `readonly property var` it would freeze at its first value, or silently drop the
  *  reassignment if emitted non-readonly instead.
  *
- *  Does NOT check for a signal/memo/resource read in the initializer — see
- *  assertNoLiveRenderLocalReads below, called separately once the caller (component.ts) has
- *  removed its own deliberate exception from the map. */
+ *  Does NOT decide which of these must be FROZEN once (a signal/memo/resource/prop read in the
+ *  initializer) — see renderLocalLiveTaint below, called separately once the caller (component.ts)
+ *  has removed its own deliberate exception (a context provider's value-local) from the map. */
 export function analyzeRenderLocals(fn: t.Function, render: t.CallExpression, mutableLocals?: Set<string>): Map<string, t.Expression> {
   const candidates = new Map<string, t.Expression>();
   const letCandidates = new Set<string>();
@@ -339,29 +325,52 @@ export function analyzeRenderLocals(fn: t.Function, render: t.CallExpression, mu
   return candidates;
 }
 
-/** Guard for the signal-read case, called SEPARATELY (component.ts) from analyzeRenderLocals,
- *  AFTER a context provider's own value-local (`provider?.valueLocal`) has been deleted from the
- *  map — that one is a DELIBERATE exception: `const counter = { count, increment: … }` passed as
- *  `<Ctx.Provider value={counter}>` is EXPECTED to stay live (every descendant's `counter.count()`
- *  must track the signal — that is the entire point of the context value object; proven by the
- *  shipped context golden tests, which read a signal bare inside an object literal assigned to
- *  such a const and rely on it staying reactive). Called on anything STILL in the map:
+/** Which render-locals must be FROZEN once, right after construction, instead of staying a live
+ *  QML binding forever. Called SEPARATELY (component.ts) from analyzeRenderLocals, AFTER a context
+ *  provider's own value-local (`provider?.valueLocal`) has been deleted from the map — that one is
+ *  a DELIBERATE exception: `const counter = { count, increment: … }` passed as `<Ctx.Provider
+ *  value={counter}>` is EXPECTED to stay live (every descendant's `counter.count()` must track the
+ *  signal — that is the entire point of the context value object; proven by the shipped context
+ *  golden tests, which read a signal bare inside an object literal assigned to such a const and
+ *  rely on it staying reactive).
  *
- *  Solid evaluates a plain const/let ONCE, even if its initializer reads a signal/memo/resource —
- *  unlike createMemo, it does NOT re-run when that cell changes. Emitting it as a QML `readonly
- *  property var` binding would make it silently LIVE instead (QML tracks any property read during a
- *  binding's evaluation, including through nested calls — verified against the real engine:
- *  wrapping the read in an IIFE does not stop it from re-evaluating). There is no snapshot that is
- *  both synchronously available (render needs the value at construction time, before
- *  Component.onCompleted runs — also verified: a plain Component.onCompleted assignment arrives too
- *  late and the binding referencing it already crashed) and untracked. Fail loud instead of
- *  silently turning a const into a memo. */
-export function assertNoLiveRenderLocalReads(renderLocals: Map<string, t.Expression>, table: SymbolTable): void {
+ *  Solid evaluates a plain const/let ONCE, even if its initializer reads a signal/memo/resource or
+ *  a prop — unlike createMemo, it does NOT re-run when that cell changes. But this transpiler
+ *  represents EVERY such reference (called or not) as a bare, live QML property read (cellRef) —
+ *  so emitting one of these as a plain `readonly property var` binding would make it silently LIVE
+ *  (re-running whenever the thing it reads changes), diverging from Solid. There is no snapshot
+ *  that is both synchronously available (render needs the value at construction time — the eager
+ *  evaluation analyzeRenderLocals exists for) and untracked within the binding expression itself
+ *  (verified against the real engine: wrapping the read in an IIFE does not stop it from
+ *  re-evaluating). So instead: emit it as a NON-readonly `property var` (still bound to the same
+ *  expression, so it gets the correct value at construction — ordering unaffected), then — in
+ *  Component.onCompleted, before any user onMount/effect code — assign it to itself (`x = x`).
+ *  Assigning a VALUE to a QML property always clears any binding on it (verified against the real
+ *  engine: after `snap = snap`, changing the signal the binding used to read no longer has any
+ *  effect on `snap`, even transitively through another frozen local that reads `snap`) — exactly
+ *  Solid's "evaluated once, frozen forever" snapshot.
+ *
+ *  `isLive(name)` tells the caller which bare names denote such live, externally-mutable state
+ *  (signals/memos/resources via the SymbolTable, OR the props param / a prop alias) — component.ts
+ *  knows both; this function stays agnostic of how `isLive` decides. A render-local that reads
+ *  ANOTHER render-local already found to be tainted is tainted too (transitively) — processed in
+ *  Map iteration order, which is declaration order, so a dependency's taint is already known by
+ *  the time a later candidate that reads it is checked (no forward references are possible in a
+ *  straight-line top-level body). */
+export function renderLocalLiveTaint(renderLocals: Map<string, t.Expression>, isLive: (name: string) => boolean): Set<string> {
+  const tainted = new Set<string>();
   for (const [name, init] of renderLocals) {
-    const reads = reactiveReadsIn(init, table);
-    if (reads.length > 0)
-      throw new Error(`const ${name}: its initializer reads reactive state (${reads.join(", ")}) and is read by a render binding — Solid evaluates a plain const/let ONCE, but emitting it as a QML property binding here would make it live (recomputing whenever ${reads[0]} changes) instead. Use createMemo() if ${name} should track ${reads[0]}, or compute it without reading reactive state.`);
+    let live = false;
+    traverse(t.file(t.program([t.expressionStatement(init)])), {
+      Identifier(path) {
+        if (live) return;
+        if (t.isMemberExpression(path.parent) && !path.parent.computed && path.parent.property === path.node) return;
+        if (isLive(path.node.name) || tainted.has(path.node.name)) live = true;
+      },
+    });
+    if (live) tainted.add(name);
   }
+  return tainted;
 }
 
 /** Names of signals/memos read by an effect body — used to wire `Connections` dep-tracking so the

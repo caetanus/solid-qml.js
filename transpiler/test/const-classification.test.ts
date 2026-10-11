@@ -12,12 +12,20 @@
 //
 // Fix: analyzeRenderLocals (model/symbols.ts) now closes over inter-candidate references (a BFS
 // from the render-seeded set, following each candidate's own init), and extends eligibility from
-// `const` to a never-reassigned `let` (same snapshot semantics). Two cases fail loud instead of
-// silently emitting wrong semantics: a reassigned `let` with a non-literal init (would freeze at
-// its first value or silently drop the write), and an initializer that reads a signal/memo/resource
-// (Solid evaluates a plain const/let ONCE; a QML property binding that reads another property is
-// LIVE — proven against the real engine that wrapping the read in an IIFE does not stop it from
-// re-evaluating — so emitting it directly would silently turn a frozen snapshot into a memo).
+// `const` to a never-reassigned `let` (same snapshot semantics).
+//
+// A reassigned `let` with a non-literal init FAILS LOUD (no safe representation — it would freeze
+// at its first value as a readonly property, or silently drop the reassignment as a plain one).
+//
+// An initializer that reads a signal/memo/resource/prop does NOT fail loud: Solid evaluates a
+// plain const/let ONCE (unlike createMemo, it never re-runs), but this transpiler represents every
+// such reference — called or not — as a bare, live QML property read. renderLocalLiveTaint flags
+// these; component.ts emits them as a non-readonly `property var` (still gets the right value at
+// construction from the same binding) and then FREEZES them with a self-assignment (`x = x`) in
+// Component.onCompleted, before any user onMount/effect code — assigning a value to a QML property
+// always clears any binding on it (verified against the real engine, including transitively
+// through another frozen local that reads it). A context provider's own value-local is the one
+// deliberate exception (kept live — see context-classification tests / module-const-positions.ts).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generate } from "../src/index.ts";
@@ -109,7 +117,7 @@ export function App() {
   await assert.rejects(() => generate(src, "t.tsx"), /let fonts: reassigned later/);
 });
 
-test("a const initializer that reads a signal, read by a render binding, fails loud (would silently become live)", async () => {
+test("a const initializer that reads a signal is a non-readonly property, frozen once in onCompleted", async () => {
   const src = `
 import { text } from "../src/solid-qml/runtime";
 export function App() {
@@ -118,10 +126,15 @@ export function App() {
   return <text>{doubled}</text>;
 }
 `;
-  await assert.rejects(() => generate(src, "t.tsx"), /const doubled:.*reads reactive state.*count/s);
+  const app = await generate(src, "t.tsx");
+  // NOT readonly — it must accept the later self-assignment that freezes it.
+  assert.match(app.entry, /(?<!readonly )property var doubled: count \* 2/);
+  assert.doesNotMatch(app.entry, /readonly property var doubled/);
+  // Frozen before any other onCompleted code, inside the SAME onCompleted block.
+  assert.match(app.entry, /Component\.onCompleted: \{ doubled = doubled;/);
 });
 
-test("a const initializer that reads a signal ONLY transitively (through another promoted const) also fails loud", async () => {
+test("a const reading a signal ONLY transitively (through another promoted const) is ALSO frozen, in declaration order", async () => {
   const src = `
 import { text } from "../src/solid-qml/runtime";
 export function App() {
@@ -131,7 +144,24 @@ export function App() {
   return <text>{label}</text>;
 }
 `;
-  await assert.rejects(() => generate(src, "t.tsx"), /const doubled:.*reads reactive state.*count/s);
+  const app = await generate(src, "t.tsx");
+  assert.doesNotMatch(app.entry, /readonly property var doubled/);
+  assert.doesNotMatch(app.entry, /readonly property var label/);
+  // `doubled` (the direct signal reader) is frozen before `label` (which only reads `doubled`).
+  assert.match(app.entry, /Component\.onCompleted: \{ doubled = doubled; label = label;/);
+});
+
+test("a const reading a prop is ALSO frozen (props are live QML properties too, not just signals)", async () => {
+  const src = `
+import { text } from "../src/solid-qml/runtime";
+export function App(props) {
+  const doubledCount = props.count * 2;
+  return <text>{doubledCount}</text>;
+}
+`;
+  const app = await generate(src, "t.tsx");
+  assert.doesNotMatch(app.entry, /readonly property var doubledCount/);
+  assert.match(app.entry, /Component\.onCompleted: \{ doubledCount = doubledCount;/);
 });
 
 test("a plain const NOT read by render at all, even if it reads a signal, does not throw (analyzeSetup owns it)", async () => {

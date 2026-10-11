@@ -3,7 +3,7 @@ import _generate from "@babel/generator";
 import { emitQml } from "./qml.ts";
 import { emitExpr, shadowOwnParams, type Scope } from "./expr.ts";
 import { emitStmt, emitValue, emitBindingStmt } from "./stmt.ts";
-import { analyzeSignals, analyzeProps, analyzeSetup, analyzeResources, analyzeMutableLocals, analyzeRenderLocals, assertNoLiveRenderLocalReads, analyzeHelpers, analyzeModuleFunctions, moduleLevelMutableNames, collectModuleFunctionClosure, collectFetcherDeps, effectDeps, type HelperInfo, type ProviderInfo, type UseContextBinding } from "../model/symbols.ts";
+import { analyzeSignals, analyzeProps, analyzeSetup, analyzeResources, analyzeMutableLocals, analyzeRenderLocals, renderLocalLiveTaint, analyzeHelpers, analyzeModuleFunctions, moduleLevelMutableNames, collectModuleFunctionClosure, collectFetcherDeps, effectDeps, type HelperInfo, type ProviderInfo, type UseContextBinding } from "../model/symbols.ts";
 import { safeName } from "../names/safe.ts";
 import { hParts, isHCall, isFragmentTag } from "../ast/h.ts";
 
@@ -30,6 +30,7 @@ export interface CtxWiring {
 export function emitComponentType(fn: t.Function, render: t.CallExpression, components?: Map<string, string>, contexts?: Set<string>, provider?: ProviderInfo | null, ctx?: CtxWiring, moduleFile?: t.File, jsImports?: Record<string, string>, moduleInit?: string[], foreignQml?: Set<string>, foreignImports?: Map<string, string>): string[] {
   const table = analyzeSignals(fn);
   const props = analyzeProps(fn);
+  const propAliases = new Set(props.aliases);
   const resources = analyzeResources(fn);
   const mutableLocalsMap = analyzeMutableLocals(fn);
   const mutableLocals = mutableLocalsMap.size > 0 ? new Set(mutableLocalsMap.keys()) : undefined;
@@ -37,14 +38,23 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   // `provider.valueLocal` (a context provider's own value object, e.g. `const counter = { count,
   // increment }`) is a DELIBERATE exception: it is EXPECTED to stay a live QML binding (every
   // descendant's `counter.count()` must track the signal — that's the whole point of a context
-  // value). Remove it BEFORE the reactive-read guard below, which exists for every OTHER plain
-  // const/let (those must stay frozen, matching Solid's "evaluate once" const semantics).
+  // value). Remove it BEFORE the live-taint check below, which exists for every OTHER plain
+  // const/let (those must be FROZEN once constructed, matching Solid's "evaluate once" semantics).
   if (provider?.valueLocal) renderLocalsMap.delete(provider.valueLocal);
-  assertNoLiveRenderLocalReads(renderLocalsMap, table);
+  // A render-local is "live-tainted" when its initializer reads a signal/memo/resource, or a prop
+  // (bare `props`, or a mergeProps/splitProps alias) — anything this transpiler represents as a
+  // bare, live QML property read. Those get frozen once in Component.onCompleted (below) instead
+  // of staying a `readonly property var` binding forever (renderLocalLiveTaint's doc comment).
+  const isLiveName = (name: string): boolean => {
+    const sym = table.get(name);
+    if (sym && (sym.kind === "signal" || sym.kind === "memo" || sym.kind === "resource")) return true;
+    if (props.param && name === props.param) return true;
+    return propAliases.has(name);
+  };
+  const renderLocalsLive = renderLocalLiveTaint(renderLocalsMap, isLiveName);
   const renderLocals = renderLocalsMap.size > 0 ? new Set(renderLocalsMap.keys()) : undefined;
   const helpersMap = analyzeHelpers(fn);
   validateChildrenSlot(render, props.param);
-  const propAliases = new Set(props.aliases);
   const collectedRefs: string[] = [];
   // Consumer wiring: local → ctx, so `c.member` resolves to `__ctx_<ctx>.member` in render bindings.
   const ctxBindings: Record<string, string> = {};
@@ -220,9 +230,14 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
       }
     }
   }
-  // Immutable locals read by render bindings must be visible as QML object properties.
+  // Immutable locals read by render bindings must be visible as QML object properties. A
+  // live-tainted one (renderLocalsLive) is emitted WITHOUT `readonly` — it still gets the right
+  // value from this same binding at construction, but it also needs to be FROZEN once afterward
+  // (the `name = name` self-assignment below, in Component.onCompleted), which a readonly property
+  // cannot accept at all.
   for (const [name, init] of renderLocalsMap) {
-    decls.push(`${INDENT}readonly property var ${safeName(name)}: ${emitExpr(init, initScope)}`);
+    const kind = renderLocalsLive.has(name) ? "property" : "readonly property";
+    decls.push(`${INDENT}${kind} var ${safeName(name)}: ${emitExpr(init, initScope)}`);
   }
   // Module-const data tables (collected above; aliased in scope as __const_NAME).
   for (const [name, init] of moduleConstDecls)
@@ -328,10 +343,22 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     );
   });
   const setupScope: Scope = { table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, locals: { ...(baseLocals ?? {}), ...refLocals }, jsImports, ...(mutableLocals ? { mutableLocals } : {}) };
+  // A live-tainted render-local (renderLocalsLive) was emitted above as a non-readonly `property
+  // var` bound to its initializer — correct at construction, but still LIVE until frozen. Freeze
+  // each one here, in DECLARATION order (renderLocalsMap's own iteration order), so a later
+  // tainted local that reads an earlier one sees it already frozen — not that the ORDER changes
+  // the frozen VALUE (nothing can mutate the signal/prop between these synchronous statements),
+  // but it keeps the mechanism legible. Self-assignment (`x = x`) clears the binding (verified
+  // against the real engine) and must run before any user onMount/effect code, which is why these
+  // statements come first, right after the hoisted module-level ones.
+  const freezeRenderLocals = [...renderLocalsMap.keys()]
+    .filter((name) => renderLocalsLive.has(name))
+    .map((name) => `${safeName(name)} = ${safeName(name)};`);
   const onCompletedBody: string[] = [
     // Hoisted module-level statements (already emitted in their own module's import scope):
     // import-time code runs before any component setup.
     ...(moduleInit ?? []),
+    ...freezeRenderLocals,
     ...filteredSetup.map((s) => emitStmt(s, setupScope)),
     ...onMount.map((b) => t.isBlockStatement(b)
       ? b.body.map((st) => emitStmt(st, setupScope)).join(" ")
