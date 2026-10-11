@@ -20,8 +20,9 @@ import { hParts, isFragmentTag, isHCall } from "../ast/h.ts";
  *  - ident: an identifier (ref={x}).
  *  - object: an object literal (classList={{ a: cond }}).
  *  - elem: an element (fallback={<text/>}, trigger={<button/>}).
- *  - key: <For key>: a field name literal (key="id") or a field accessor ((r) => r.id). */
-type Kind = "lit" | "expr" | "fn" | "handler" | "bool" | "flag" | "ident" | "object" | "elem" | "key";
+ *  - key: <For key>: a field name literal (key="id") or a field accessor ((r) => r.id).
+ *  - numlit: a numeric literal only (tabIndex: focus ORDER is structural, not reactive). */
+type Kind = "lit" | "expr" | "fn" | "handler" | "bool" | "flag" | "ident" | "object" | "elem" | "key" | "numlit";
 export type AttrSpec = Kind | { kind: "lit"; values: readonly string[] };
 type Attrs = Record<string, AttrSpec>;
 
@@ -31,9 +32,21 @@ const CSS: Attrs = { class: "lit", classList: "object" };
 const DYN: Attrs = { class: "expr", classList: "object" };
 // <div> and every other plain block tag (section, nav, li, a, …) → W.Div; the text tags → W.Text.
 // Both share the pointer emission (emitInteractions); only a box scrolls.
+//
+// Keyboard & accessibility (release-plan M5): role/tabIndex/aria-* map to the SAME native semantics
+// a Templates control gets for free (QtQuick's `Accessible` attached type + the tab-focus chain) —
+// see docs/keyboard-accessibility.md for the full table. `role` is an open string (unknown roles
+// WARN at emit time — attrs.ts only proves it is a literal, qml.ts's ARIA_ROLE_MAP decides whether
+// it maps); aria-description/aria-describedby are static text (no live AT announcement on change);
+// the rest are reactive. aria-expanded has NO Qt Quick equivalent (QQuickAccessibleAttached does not
+// expose `expanded`/`expandable`) and stays unmapped — isWarnOnlyAttr below.
 const POINTER: Attrs = {
   ref: "ident", onClick: "handler", onKeyDown: "fn", onContextMenu: "fn",
   draggable: "flag", dragData: "expr", onDrop: "fn", title: "expr",
+  tabIndex: "numlit", role: "lit",
+  "aria-label": "expr", "aria-description": "lit", "aria-describedby": "lit",
+  "aria-checked": "expr", "aria-pressed": "expr", "aria-selected": "expr",
+  "aria-hidden": "expr", "aria-disabled": "expr",
 };
 const TEXT_INPUT_TYPES = ["text", "password", "email", "search", "tel", "url"] as const;
 const INPUT_TYPES = [...TEXT_INPUT_TYPES, "checkbox", "radio", "range", "number", "date"] as const;
@@ -137,13 +150,16 @@ export const ELEMENT_ATTRS: Record<string, Attrs> = {
 };
 
 /** WARN tier (documented allow-list): web attributes that have NO native effect yet and whose
- *  absence does not change what the app does — accessibility hints and web-only data. They are
- *  reported once per tag/attribute with a console warning instead of failing the build:
+ *  absence does not change what the app does. They are reported once per tag/attribute with a
+ *  console warning instead of failing the build:
  *  - `data-*`: web-only data attributes (test hooks, the web runtime's markers); nothing to map.
- *  - `aria-*`, `role` (where the element does not consume it — <input role="switch"> does) and
- *    `tabIndex`: accessibility/focus semantics for the WEB. The native widgets carry their own
- *    roles (Templates controls) and focus chain; a plain <div role="button" tabIndex={0}> does NOT
- *    become a native focusable button yet — a real gap, tracked, not a silent success.
+ *  - `role`/`tabIndex`/most `aria-*` ARE mapped on a plain element (<div>/<text>, POINTER above —
+ *    see docs/keyboard-accessibility.md) and on `<input role="switch">`; this tier only still
+ *    catches them where the element does NOT consume them (every OTHER native widget — a Templates
+ *    control already carries its own role/focus chain, so e.g. `<button role="x">` warns here
+ *    instead of fighting the control's real Accessible role) and `aria-expanded`, which has no Qt
+ *    Quick equivalent (QQuickAccessibleAttached exposes no `expanded`/`expandable` property) and so
+ *    stays unmapped everywhere, a real gap, tracked, not a silent success.
  *  Everything else not in ELEMENT_ATTRS is a transpile error. */
 export function isWarnOnlyAttr(key: string): boolean {
   return key.startsWith("data-") || key.startsWith("aria-") || key === "role" || key === "tabIndex" || key === "tabindex";
@@ -208,6 +224,10 @@ function valueOk(spec: AttrSpec, v: t.Node): string | null {
       return forKeyFieldOf(v) !== null ? null
         : "must be a field name (key=\"id\") or a field accessor (key={(r) => r.id}); a computed key " +
           "function is not supported natively — key the rows by a field of the row object";
+    case "numlit": {
+      const n = t.isUnaryExpression(v) && v.operator === "-" ? v.argument : v;
+      return t.isNumericLiteral(n) ? null : "must be a numeric literal (focus order is structural, not reactive)";
+    }
   }
 }
 
@@ -267,6 +287,15 @@ const label = (tag: string) => tag === "box" ? "div" : tag.startsWith("input:") 
 const warned = new Set<string>();
 /** Forget which warnings were printed (one per tag/attribute per generate run). */
 export function resetAttrWarnings(): void { warned.clear(); }
+
+/** Print `msg` once per `key` per generate run (the same de-dupe set checkAttrs's own web-only
+ *  warnings use, reset together by resetAttrWarnings). Used by qml.ts for the a11y warnings that
+ *  depend on an attribute's VALUE, not just its name (an unknown `role="…"`, a positive tabIndex). */
+export function warnOnce(key: string, msg: string): void {
+  if (warned.has(key)) return;
+  warned.add(key);
+  console.warn(msg);
+}
 
 /** Check one element's attributes against the contract: throw on anything its emitter would drop,
  *  warn (once) on the documented web-only allow-list. `tagKey` from attrTagOf. */

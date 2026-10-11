@@ -82,6 +82,10 @@ const FOREIGN = `id style key href target hidden autofocus lang spellcheck tabIn
 /** The value written for an attribute under test: a sentinel that must surface in the QML. */
 function sample(spec: AttrSpec | undefined, name: string): string {
   const kind = typeof spec === "string" ? spec : spec?.kind ?? "expr";
+  // `role` (the bare, open-string POINTER spec — NOT the restricted `{kind:"lit",values:[…]}` enum
+  // input:checkbox declares) maps an ARIA keyword to Accessible.<Role>, so the sweep's generic
+  // "__pk must reach the QML verbatim" check does not apply to it: it needs a REAL mapped keyword.
+  if (name === "role" && spec === "lit") return `"button"`;
   switch (kind) {
     case "fn": case "handler": return `{() => __pk()}`;
     case "object": return `{{ __pk: s() > 0 }}`;
@@ -89,6 +93,8 @@ function sample(spec: AttrSpec | undefined, name: string): string {
     case "flag": return "";
     case "key": return `"__pk"`; // a field name (C23); the accessor form is covered in for-key.test.ts
     case "lit": return typeof spec === "string" ? `"__pk"` : `"${(spec as { values: readonly string[] }).values[0]}"`;
+    // tabIndex: focus order is structural, not reactive — a numeric literal, not `__pk`.
+    case "numlit": return `{0}`;
     default: return `{__pk}`;
   }
 }
@@ -141,7 +147,16 @@ test("sweep: every tag × attribute is emitted or reported, never silently ignor
         } else if (r.out === base.out) problems.push(`${where}: declared flag has no effect on the output`);
         continue;
       }
-      if (!r.out!.includes("__pk")) problems.push(`${where}: declared but its value never reaches the QML`);
+      // `role` (open string) maps an ARIA keyword to Accessible.<Role> — it does not echo "__pk"
+      // verbatim, so the sweep's sample() above gave it a real mapped keyword ("button") instead.
+      if (name === "role" && kind === "lit" && typeof s === "string") {
+        if (!r.out!.includes("Accessible.role: Accessible.Button")) problems.push(`${where}: declared but its mapped value never reaches the QML`);
+      } else if (kind === "numlit") {
+        // tabIndex={0}: structural (joins the Tab chain), not a literal echoed into the QML.
+        if (r.out === base.out) problems.push(`${where}: declared numeric literal has no effect on the output`);
+        const dyn = await emit(at(`${name}={__pk}`));
+        if (!dyn.err) problems.push(`${where}: a non-numeric value is silently accepted for a numeric-literal-only attribute`);
+      } else if (!r.out!.includes("__pk")) problems.push(`${where}: declared but its value never reaches the QML`);
       // A dynamic value where only a literal is supported must be rejected, not dropped.
       if (kind === "lit" || kind === "key") {
         const dyn = await emit(at(`${name}={__pk}`));

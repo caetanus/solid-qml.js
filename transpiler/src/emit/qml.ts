@@ -5,7 +5,7 @@ import { safeName } from "../names/safe.ts";
 import { CONTROL_TAGS, hParts, isFragmentTag, isHCall } from "../ast/h.ts";
 import { nativeTags, requireImport } from "./native/index.ts";
 import { certifyForRow } from "./forCertify.ts";
-import { checkAttrs, checkElement, forKeyField, rejectForKey } from "./attrs.ts";
+import { checkAttrs, checkElement, forKeyField, rejectForKey, warnOnce } from "./attrs.ts";
 
 export const INDENT = "    ";
 const TEXT_TAGS = new Set(["text", "span", "h1", "h2", "h3", "h4", "h5", "h6", "p", "cite", "bio"]);
@@ -26,6 +26,16 @@ interface Props {
   onScroll?: t.Node; // on an `overflow: auto` box: the engine's scrollChanged (see translateScrollHandler)
   onContextMenu?: t.Node; // right click: a RightButton MouseArea (see translateMouseHandler)
   onKeyDown?: t.Node; // keys on a focused box: Keys.onPressed (see translateKeyHandler)
+  // Keyboard & accessibility (release-plan M5) — see docs/keyboard-accessibility.md.
+  tabIndex?: number; // 0/positive → joins the Tab chain (activeFocusOnTab); -1 → programmatic only
+  role?: string; // ARIA role → Accessible.role (ARIA_ROLE_MAP) — unknown roles warn, don't map
+  ariaLabel?: t.Expression; // aria-label → Accessible.name (reactive)
+  ariaDescription?: string; // aria-description/aria-describedby → Accessible.description (static text)
+  ariaChecked?: t.Node; // aria-checked → Accessible.checked
+  ariaPressed?: t.Node; // aria-pressed → Accessible.pressed
+  ariaSelected?: t.Node; // aria-selected → Accessible.selected
+  ariaHidden?: t.Node; // aria-hidden → Accessible.ignored
+  ariaDisabled?: t.Node; // aria-disabled → enabled: !(…) (drives the standard disabled a11y state too)
 }
 
 /** Build the cssClass property line(s) for a native element.
@@ -190,12 +200,65 @@ function emitInteractions(props: Props, children: t.Node[], scope: Scope, level:
     );
   }
   // onKeyDown on a box (a list taking the keyboard): Keys.onPressed while it has the focus.
+  // Merged with role-based Enter/Space ACTIVATION below — a QML object can only have one
+  // Keys.onPressed binding, so both land in the same handler instead of fighting over it.
+  const keyPressStmts: string[] = [];
   if (props.onKeyDown) {
     const fn = props.onKeyDown;
     if (!(t.isArrowFunctionExpression(fn) || t.isFunctionExpression(fn)))
       throw new Error("onKeyDown must be an inline function: (e) => …");
-    stateLine.push(`${pad}${INDENT}Keys.onPressed: (event) => { ${translateKeyHandler(fn, scope)} }`);
+    keyPressStmts.push(translateKeyHandler(fn, scope));
   }
+  // WAI-ARIA keyboard practice: role="button"/"link"/"menuitem"/"tab" (+onClick) activates on
+  // Enter AND Space — Space on key RELEASE for "button" (the browser contract: it also swallows
+  // Space on press, so the page doesn't scroll first); role="checkbox"/"switch" toggles on Space
+  // alone. Only while the element has the focus (Keys delivers nothing otherwise).
+  let keyReleaseStmt: string | null = null;
+  if (props.role && clickHandler) {
+    // The same statement the MouseArea's onClicked runs: a function value (mouse param) must be
+    // CALLED, a bare expression (no param) already IS the call/body — reuse it either way.
+    const activate = clickFn && (t.isArrowFunctionExpression(clickFn) || t.isFunctionExpression(clickFn)) && clickFn.params.length > 0
+      ? `(${clickHandler})(event)` : clickHandler;
+    const onEnterSpace = new Set(["button", "link", "menuitem", "tab"]);
+    const onSpaceOnly = new Set(["checkbox", "switch"]);
+    if (onEnterSpace.has(props.role)) {
+      keyPressStmts.push(`if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { ${activate}; event.accepted = true; }`);
+      if (props.role === "button") {
+        keyPressStmts.push(`if (event.key === Qt.Key_Space) { event.accepted = true; }`);
+        keyReleaseStmt = `if (event.key === Qt.Key_Space) { ${activate}; event.accepted = true; }`;
+      } else {
+        keyPressStmts.push(`if (event.key === Qt.Key_Space) { ${activate}; event.accepted = true; }`);
+      }
+    } else if (onSpaceOnly.has(props.role)) {
+      keyPressStmts.push(`if (event.key === Qt.Key_Space) { ${activate}; event.accepted = true; }`);
+    }
+  }
+  if (keyPressStmts.length) stateLine.push(`${pad}${INDENT}Keys.onPressed: (event) => { ${keyPressStmts.join(" ")} }`);
+  if (keyReleaseStmt) stateLine.push(`${pad}${INDENT}Keys.onReleased: (event) => { ${keyReleaseStmt} }`);
+  // tabIndex / role / aria-* (M5): Accessible.* attached properties + the tab-focus chain — see
+  // docs/keyboard-accessibility.md for the full table. A plain element with none of these gets NO
+  // extra line (unchanged output), matching "generic containers get no role" (a11y.cpp).
+  if (props.tabIndex !== undefined) {
+    if (props.tabIndex > 0) {
+      warnOnce(`tabIndex-positive:${props.tabIndex}`,
+        `[solid-qml] tabIndex={${props.tabIndex}}: positive values are treated like 0 (DOM document order; no priority reordering)`);
+    }
+    if (props.tabIndex >= 0) stateLine.push(`${pad}${INDENT}activeFocusOnTab: ${TABSTOP_GUARD}`);
+    // tabIndex={-1}: no line — activeFocusOnTab defaults to false (not in the Tab chain), and
+    // ref.forceActiveFocus() already works on ANY item regardless (QQuickItem, not our own API).
+  }
+  if (props.role) {
+    const mapped = ARIA_ROLE_MAP[props.role];
+    if (mapped) stateLine.push(`${pad}${INDENT}Accessible.role: Accessible.${mapped}`);
+    else warnOnce(`role:${props.role}`, `[solid-qml] role="${props.role}": unknown ARIA role, no native mapping (ignored)`);
+  }
+  if (props.ariaLabel) stateLine.push(`${pad}${INDENT}Accessible.name: ${emitExpr(props.ariaLabel, { ...scope, mode: "binding" })}`);
+  if (props.ariaDescription !== undefined) stateLine.push(`${pad}${INDENT}Accessible.description: ${JSON.stringify(props.ariaDescription)}`);
+  if (props.ariaChecked) stateLine.push(`${pad}${INDENT}Accessible.checked: ${ariaBoolExpr(props.ariaChecked, scope)}`);
+  if (props.ariaPressed) stateLine.push(`${pad}${INDENT}Accessible.pressed: ${ariaBoolExpr(props.ariaPressed, scope)}`);
+  if (props.ariaSelected) stateLine.push(`${pad}${INDENT}Accessible.selected: ${ariaBoolExpr(props.ariaSelected, scope)}`);
+  if (props.ariaHidden) stateLine.push(`${pad}${INDENT}Accessible.ignored: ${ariaBoolExpr(props.ariaHidden, scope)}`);
+  if (props.ariaDisabled) stateLine.push(`${pad}${INDENT}enabled: !(${ariaBoolExpr(props.ariaDisabled, scope)})`);
   // onContextMenu: a right click — its own RightButton area (left clicks, hover and wheel pass), the
   // handler's e.clientX / e.clientY in scene coordinates (what <Menu ref={r}>'s r.open(x, y) takes).
   if (props.onContextMenu) {
@@ -1752,28 +1815,68 @@ function readProps(propsArg: t.Node | undefined): Props {
   const props: Props = { classes: [], classList: [], onClick: undefined, type: undefined, ref: undefined, draggable: false, dragData: undefined, onDrop: undefined };
   if (!propsArg || !t.isObjectExpression(propsArg)) return props;
   for (const p of propsArg.properties) {
-    if (!t.isObjectProperty(p) || !t.isIdentifier(p.key)) continue;
-    if (p.key.name === "class" && t.isStringLiteral(p.value)) props.classes = p.value.value.split(/\s+/).filter(Boolean);
-    else if (p.key.name === "class" && t.isExpression(p.value)) props.classExpr = p.value;
-    if (p.key.name === "classList" && t.isObjectExpression(p.value)) {
+    // `aria-*` keys are string literals (the hyphen is not a valid identifier char) — read both forms.
+    if (!t.isObjectProperty(p)) continue;
+    const key = t.isIdentifier(p.key) ? p.key.name : t.isStringLiteral(p.key) ? p.key.value : null;
+    if (key === null) continue;
+    if (key === "class" && t.isStringLiteral(p.value)) props.classes = p.value.value.split(/\s+/).filter(Boolean);
+    else if (key === "class" && t.isExpression(p.value)) props.classExpr = p.value;
+    if (key === "classList" && t.isObjectExpression(p.value)) {
       for (const cp of p.value.properties) {
         if (!t.isObjectProperty(cp)) continue;
-        const key = t.isIdentifier(cp.key) ? cp.key.name : t.isStringLiteral(cp.key) ? cp.key.value : null;
-        if (key && t.isExpression(cp.value)) props.classList.push({ key, expr: cp.value });
+        const ck = t.isIdentifier(cp.key) ? cp.key.name : t.isStringLiteral(cp.key) ? cp.key.value : null;
+        if (ck && t.isExpression(cp.value)) props.classList.push({ key: ck, expr: cp.value });
       }
     }
-    if (p.key.name === "onClick") props.onClick = p.value;
-    if (p.key.name === "type" && t.isStringLiteral(p.value)) props.type = p.value.value;
-    if (p.key.name === "draggable") props.draggable = !t.isBooleanLiteral(p.value) || p.value.value;
-    if (p.key.name === "dragData" && t.isExpression(p.value)) props.dragData = p.value;
-    if (p.key.name === "onDrop") props.onDrop = p.value;
-    if (p.key.name === "ref" && t.isIdentifier(p.value)) props.ref = p.value.name;
-    if (p.key.name === "title" && t.isExpression(p.value)) props.title = p.value;
-    if (p.key.name === "onScroll") props.onScroll = p.value;
-    if (p.key.name === "onContextMenu") props.onContextMenu = p.value;
-    if (p.key.name === "onKeyDown") props.onKeyDown = p.value;
+    if (key === "onClick") props.onClick = p.value;
+    if (key === "type" && t.isStringLiteral(p.value)) props.type = p.value.value;
+    if (key === "draggable") props.draggable = !t.isBooleanLiteral(p.value) || p.value.value;
+    if (key === "dragData" && t.isExpression(p.value)) props.dragData = p.value;
+    if (key === "onDrop") props.onDrop = p.value;
+    if (key === "ref" && t.isIdentifier(p.value)) props.ref = p.value.name;
+    if (key === "title" && t.isExpression(p.value)) props.title = p.value;
+    if (key === "onScroll") props.onScroll = p.value;
+    if (key === "onContextMenu") props.onContextMenu = p.value;
+    if (key === "onKeyDown") props.onKeyDown = p.value;
+    // Keyboard & accessibility (M5).
+    if (key === "tabIndex" || key === "tabindex") {
+      const n = t.isUnaryExpression(p.value) && p.value.operator === "-" ? p.value.argument : p.value;
+      if (t.isNumericLiteral(n)) props.tabIndex = t.isUnaryExpression(p.value) ? -n.value : n.value;
+    }
+    if (key === "role" && t.isStringLiteral(p.value)) props.role = p.value.value;
+    if (key === "aria-label" && t.isExpression(p.value)) props.ariaLabel = p.value;
+    if ((key === "aria-description" || key === "aria-describedby") && t.isStringLiteral(p.value)) props.ariaDescription = p.value.value;
+    if (key === "aria-checked" && t.isExpression(p.value)) props.ariaChecked = p.value;
+    if (key === "aria-pressed" && t.isExpression(p.value)) props.ariaPressed = p.value;
+    if (key === "aria-selected" && t.isExpression(p.value)) props.ariaSelected = p.value;
+    if (key === "aria-hidden" && t.isExpression(p.value)) props.ariaHidden = p.value;
+    if (key === "aria-disabled" && t.isExpression(p.value)) props.ariaDisabled = p.value;
   }
   return props;
+}
+
+// ARIA role → QAccessible::Role, exposed to QML as `Accessible.<Role>` (QQuickAccessibleAttached's
+// QML_EXTENDED_NAMESPACE(QAccessible)). Only roles with a direct, unambiguous Qt Quick equivalent —
+// an unmapped role WARNS (isWarnOnlyAttr's doc comment) instead of silently doing nothing AND
+// instead of failing the build (the attribute's other effects — onClick, focus — still apply).
+const ARIA_ROLE_MAP: Record<string, string> = {
+  button: "Button", link: "Link", checkbox: "CheckBox", switch: "Switch", tab: "PageTab",
+  tablist: "PageTabList", menuitem: "MenuItem", listitem: "ListItem", list: "List",
+  heading: "Heading", dialog: "Dialog", alert: "AlertMessage", img: "Graphic", textbox: "EditableText",
+};
+
+// The app-wide tab-navigation switch (src/shims/tabstop.h's `solidTabstop` context property),
+// guarded exactly like every other native widget's activeFocusOnTab (button.cpp) — a generated
+// component may run standalone (a transpiler test, the twin-render harness) where it is undefined.
+const TABSTOP_GUARD = `typeof solidTabstop !== "undefined" && solidTabstop ? solidTabstop.enabled : true`;
+
+/** An ARIA boolean value: `aria-hidden="true"` (the DOM's string convention), a bare boolean
+ *  literal, or a reactive expression — Accessible.<state> (or `enabled` for aria-disabled) takes
+ *  a real JS boolean, so a literal "true"/"false" STRING is normalised, not just truthied. */
+function ariaBoolExpr(value: t.Node, scope: Scope): string {
+  if (t.isBooleanLiteral(value)) return value.value ? "true" : "false";
+  if (t.isStringLiteral(value)) return value.value === "true" ? "true" : "false";
+  return emitExpr(value as t.Expression, { ...scope, mode: "binding" });
 }
 
 function isWhitespaceString(n: t.Node): boolean {
