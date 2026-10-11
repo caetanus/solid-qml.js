@@ -130,7 +130,7 @@ public:
     // 0 → "Text Body", 1..6 → "Heading n" (applyParagraphStyle).
     Q_INVOKABLE void setHeading(int level);
     // Office item 2b (★4): on the selection, or on what is typed next with nothing selected —
-    // same mechanics as toggleBold. `pt` is canonical (zoom-1); applied at the zoom in effect.
+    // moving the caret cancels the pending format. `pt` is canonical (zoom-1); applied at the zoom in effect.
     Q_INVOKABLE void setFontFamily(const QString &name);
     Q_INVOKABLE void setFontSize(qreal pt);
     // The selection's runs back to exactly what their (character) style gives — named character
@@ -374,13 +374,13 @@ private:
     // ★2 follow-up): builds it in a throwaway QTextDocument so the live document is never touched.
     QString unscaledHtml(const QTextDocumentFragment &frag) const;
     // fontFamily()/fontSize()'s shared implementation (office item 2b, ★4 addendum): the
-    // EFFECTIVE value across the selection (or the word under the cursor with none) — direct
+    // EFFECTIVE value across the selection (or the insertion point with none) — direct
     // formatting first, else the full resolved style chain INCLUDING Default Paragraph Style's
     // own definition (unlike restyle()'s skipDocumentFont, which only governs what gets BAKED
     // into the live document, not what a reader should report), else unset. Unset ("the editor's
     // own base font stands in") when nothing anywhere defines it, or when the touched runs
-    // disagree (Word's "blank box" for a mixed selection). fontSize() divides the result by
-    // m_zoom itself — this always returns canonical (zoom-1) units, like m_sheet.
+    // disagree (Word's "blank box" for a mixed selection). Direct sizes are normalized by
+    // this helper — this always returns canonical (zoom-1) units, like m_sheet.
     QVariant effectiveFontProperty(rt::Prop prop) const;
     void breakParagraph(QTextCursor &c);
     QTextCursor selectionCursor() const; // the selection exactly (no word expansion); null cursor if none
@@ -391,6 +391,8 @@ private:
     QTextCursor cursor() const;              // covers the selection, or the word at the cursor
     QTextCursor insertionCursor() const;     // plain caret position (no word expansion) — inserts
     void mergeCharFormat(const QTextCharFormat &fmt);
+    void mergeInsertionFont(const QTextCharFormat &fmt);
+    QTextCharFormat m_pendingFont;
 
     // ── outline (★3) ──────────────────────────────────────────────────────────────────────────
     // Identified by blockId (rt::BlockInfo::id), NOT a QTextBlock handle: QTextBlock::isValid()

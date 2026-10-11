@@ -316,7 +316,8 @@ declare global {
     insertPageBreak(): void;
     /** 0 = "Text Body", 1..6 = "Heading n" (applyParagraphStyle). */
     setHeading(level: number): void;
-    /** On the selection, or — like toggleBold — on what is typed next with nothing selected. */
+    /** On the selection, or only on what is typed next with nothing selected.
+     *  Reports the pending font immediately; moving the caret cancels it. */
     setFontFamily(name: string): void;
     /** pt, canonical (zoom-1) units. Same mechanics as setFontFamily. */
     setFontSize(pt: number): void;

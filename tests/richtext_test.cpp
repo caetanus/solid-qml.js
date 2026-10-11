@@ -239,6 +239,79 @@ private slots:
     }
     void cleanup() { m_edit.reset(); }
 
+    void fontAtCaretOnlyFormatsNewText()
+    {
+        m_fmt->insertText(QStringLiteral("hello"));
+        m_fmt->setCursorPosition(2);
+        m_edit->setProperty("cursorPosition", 2);
+        const QTextCharFormat original = charAt(doc(), 1);
+        doc()->setModified(false);
+        const int undo = doc()->availableUndoSteps();
+        m_fmt->setFontFamily(QStringLiteral("X"));
+        m_fmt->setFontSize(23);
+        QCOMPARE(m_fmt->fontFamily(), QStringLiteral("X"));
+        QCOMPARE(m_fmt->fontSize(), 23.0);
+        QVERIFY(!doc()->isModified());
+        QCOMPARE(doc()->availableUndoSteps(), undo);
+        for (int i = 0; i < 5; ++i)
+            QCOMPARE(charAt(doc(), i), original);
+        m_fmt->insertText(QStringLiteral("ab"));
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("heabllo"));
+        for (int i = 0; i < 7; ++i) {
+            if (i == 2 || i == 3) {
+                QCOMPARE(charAt(doc(), i).fontFamilies().toStringList(), QStringList{QStringLiteral("X")});
+                QCOMPARE(charAt(doc(), i).fontPointSize(), 23.0);
+            } else {
+                QCOMPARE(charAt(doc(), i), original);
+            }
+        }
+        m_fmt->setCursorPosition(6);
+        QVERIFY(m_fmt->fontFamily() != QStringLiteral("X"));
+    }
+
+    void pendingFontUsesTheNativeKeyboardCursor()
+    {
+        QQuickWindow window;
+        window.resize(300, 100);
+        auto *edit = qobject_cast<QQuickItem *>(m_edit.data());
+        edit->setParentItem(window.contentItem());
+        edit->setSize(QSizeF(300, 100));
+        m_fmt->insertText(QStringLiteral("hello"));
+        m_edit->setProperty("cursorPosition", 2);
+        m_fmt->setCursorPosition(2);
+        m_fmt->setFontFamily(QStringLiteral("X"));
+        m_fmt->setFontSize(23);
+        edit->forceActiveFocus();
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QTest::keyClick(&window, Qt::Key_A);
+        QTest::keyClick(&window, Qt::Key_B);
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("heabllo"));
+        for (int i = 0; i < 7; ++i)
+            QCOMPARE(charAt(doc(), i).fontFamilies().toStringList().value(0),
+                     i == 2 || i == 3 ? QStringLiteral("X") : QString());
+        // Moving without typing discards a newly pending format.
+        m_edit->setProperty("cursorPosition", 5);
+        m_fmt->setCursorPosition(5);
+        m_fmt->setFontFamily(QStringLiteral("Y"));
+        m_edit->setProperty("cursorPosition", 6);
+        m_fmt->setCursorPosition(6);
+        QVERIFY(m_fmt->fontFamily() != QStringLiteral("Y"));
+        edit->setParentItem(nullptr);
+    }
+
+    void pendingFontSizeStaysCanonicalAcrossZoom()
+    {
+        m_fmt->insertText(QStringLiteral("hello"));
+        m_fmt->setCursorPosition(2);
+        m_fmt->setFontSize(23);
+        m_fmt->setZoom(2);
+        QCOMPARE(m_fmt->fontSize(), 23.0);
+        m_fmt->insertText(QStringLiteral("ab"));
+        QCOMPARE(charAt(doc(), 2).fontPointSize(), 46.0);
+        QCOMPARE(charAt(doc(), 3).fontPointSize(), 46.0);
+    }
+
     void newDocumentIsEmptyAndUnmodified()
     {
         QCOMPARE(m_fmt->plainText(), QString());

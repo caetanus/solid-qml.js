@@ -31,6 +31,10 @@
 #include <QTextTable>
 #include <QAbstractUndoItem>
 #include <QPointer>
+#include <private/qquicktextedit_p.h>
+#include <private/qquicktextedit_p_p.h>
+#include <private/qquicktextcontrol_p.h>
+#include <private/qquicktextcontrol_p_p.h>
 
 class MarksOverlay; // the marks overlay item (defined with the marks, below)
 namespace { QQuickItem *createMarksOverlay(RichTextHandler *handler, QQuickItem *editor); }
@@ -66,6 +70,7 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     QObject::disconnect(m_undoAddedConn);
     detachBlockInfos();
     delete m_overlay.data();
+    m_pendingFont = {};
     m_document = doc;
     m_doc = doc ? doc->textDocument() : nullptr;
     // The marks overlay: a child of the editor (QQuickTextEdit parents its QQuickTextDocument).
@@ -87,6 +92,7 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     updateViewportCulling();
     // rebuildBlockIds() first: rebuildIndex() keys every heading/count entry by blockId, so every
     // block must already carry a BlockInfo/id by the time it runs.
+    m_pendingFont = {};
     rebuildBlockIds();
     rebuildIndex(); // a full, but infrequent (document-attach-time) scan establishes the baseline
     emit documentChanged();
@@ -455,6 +461,7 @@ QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
         rescaleRange(-1, -1, m_zoom, false);
     doc->setUndoRedoEnabled(true);
     doc->setModified(false);
+    m_pendingFont = {};
     rebuildBlockIds(); // first: rebuildIndex() keys its entries by the blockId this assigns
     rebuildIndex(); // cheap full scan: infrequent (a new document), not a keystroke (★3)
     // clear() signals modificationChanged(true) and then resets the flag WITHOUT a signal, so
@@ -689,6 +696,7 @@ void RichTextHandler::setCursorPosition(int v)
 {
     if (m_cursorPosition == v)
         return;
+    m_pendingFont = {};
     m_cursorPosition = v;
     emit selectionChanged();
     emit formatChanged();
@@ -721,6 +729,7 @@ QTextCursor RichTextHandler::insertionCursor() const
         return QTextCursor();
     QTextCursor c(doc);
     c.setPosition(qBound(0, m_cursorPosition, doc->characterCount() - 1));
+    c.mergeCharFormat(m_pendingFont);
     return c;
 }
 
@@ -779,6 +788,8 @@ int RichTextHandler::heading() const
 
 QString RichTextHandler::fontFamily() const
 {
+    if (m_pendingFont.hasProperty(QTextFormat::FontFamilies) && m_selectionStart == m_selectionEnd)
+        return m_pendingFont.fontFamilies().toStringList().value(0);
     return effectiveFontProperty(rt::Prop::FontFamily).toString();
 }
 
@@ -788,13 +799,15 @@ qreal RichTextHandler::fontSize() const
     // hit is live-document units (baked at the zoom in effect) and needs /m_zoom; a value from
     // the resolved style chain (m_sheet is never scaled) is already canonical and must NOT be
     // divided again — only effectiveFontProperty's direct-vs-chain branch knows which is which.
+    if (m_pendingFont.hasProperty(QTextFormat::FontPointSize) && m_selectionStart == m_selectionEnd)
+        return m_pendingFont.fontPointSize() / m_zoom;
     const QVariant v = effectiveFontProperty(rt::Prop::FontSize);
     return v.isValid() ? v.toDouble() : 0.0; // unset: the editor's own base font stands in
 }
 
 QVariant RichTextHandler::effectiveFontProperty(rt::Prop prop) const
 {
-    const QTextCursor c = cursor(); // selection, or the word-processor's word-under-cursor convention
+    const QTextCursor c = m_selectionStart == m_selectionEnd ? insertionCursor() : cursor();
     QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
     if (c.isNull() || !doc)
         return QVariant();
@@ -827,7 +840,7 @@ QVariant RichTextHandler::effectiveFontProperty(rt::Prop prop) const
         }
         return resolved.value(key);
     };
-    // Across a real selection (or just the one word/position `cursor()` gives with none), every
+    // Across a real selection, every
     // run touched must agree — Word's "blank box" convention for a mixed selection (office item
     // 2b, ★4 addendum): the FIRST disagreement (including "set here, unset there") stops early.
     // Blocks in document order already include table cells and nested frames — no recursion.
@@ -929,13 +942,36 @@ void RichTextHandler::setHeading(int level)
     applyParagraphStyle(level >= 1 && level <= 6 ? QStringLiteral("Heading %1").arg(level) : rt::textBodyStyle());
 }
 
+void RichTextHandler::mergeInsertionFont(const QTextCharFormat &fmt)
+{
+    if (m_selectionStart != m_selectionEnd) {
+        m_pendingFont = {};
+        mergeCharFormat(fmt);
+        return;
+    }
+    if (!m_document)
+        return;
+    m_pendingFont.merge(fmt);
+    // Set Qt's live cursor, so key events, IME commits and insertText share the same
+    // insertion format. A cursor-only format neither edits text nor adds an undo step.
+    if (auto *edit = qobject_cast<QQuickTextEdit *>(m_document->parent())) {
+        auto *d = static_cast<QQuickTextEditPrivate *>(QQuickItemPrivate::get(edit));
+        auto *control = static_cast<QQuickTextControlPrivate *>(QObjectPrivate::get(d->control));
+        // QQuickTextControl's methods are not exported by release Qt builds. Its cursor
+        // is the insertion state used by key/IME events; do not change its position here.
+        if (!control->cursor.hasSelection() && control->cursor.position() == m_cursorPosition)
+            control->cursor.mergeCharFormat(fmt);
+    }
+    emit formatChanged();
+}
+
 void RichTextHandler::setFontFamily(const QString &name)
 {
     if (name.trimmed().isEmpty())
         return;
     QTextCharFormat f;
     f.setProperty(QTextFormat::FontFamilies, QStringList { name });
-    mergeCharFormat(f);
+    mergeInsertionFont(f);
 }
 
 void RichTextHandler::setFontSize(qreal pt)
@@ -944,7 +980,7 @@ void RichTextHandler::setFontSize(qreal pt)
         return;
     QTextCharFormat f;
     f.setProperty(QTextFormat::FontPointSize, pt * m_zoom); // canonical in, baked in at the current zoom
-    mergeCharFormat(f);
+    mergeInsertionFont(f);
 }
 
 bool RichTextHandler::insertImage(const QUrl &file)
@@ -1096,6 +1132,7 @@ bool RichTextHandler::loadOdf(const QUrl &file)
         doc->setUndoRedoEnabled(true);
         doc->setModified(false);
     }
+    m_pendingFont = {};
     rebuildBlockIds(); // the file's xml:id, generated where absent — first: rebuildIndex() needs it
     rebuildIndex(); // cheap full scan: infrequent (a load), not a keystroke (★3)
     emit modifiedChanged(); // see newDocument: clear() can leave the last signal saying "true"
@@ -1381,6 +1418,8 @@ void RichTextHandler::setZoom(qreal z)
         return;
     QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
     const qreal ratio = z / m_zoom;
+    if (m_pendingFont.hasProperty(QTextFormat::FontPointSize))
+        m_pendingFont.setFontPointSize(m_pendingFont.fontPointSize() * ratio);
     if (doc) {
         QTextCursor edit(doc);
         edit.beginEditBlock(); // one undo step, like any other formatting change
@@ -1388,6 +1427,8 @@ void RichTextHandler::setZoom(qreal z)
         edit.endEditBlock();
     }
     m_zoom = z;
+    if (m_selectionStart == m_selectionEnd && !m_pendingFont.isEmpty())
+        mergeInsertionFont(m_pendingFont);
     emit zoomChanged();
 }
 

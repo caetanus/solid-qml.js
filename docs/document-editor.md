@@ -104,7 +104,7 @@ Methods:
 | `insertText(text)` | | At the caret (replacing a selection); `\n` starts a paragraph, as Enter does (next style included). |
 | `toggleBold()`, `toggleItalic()`, `toggleUnderline()`, `toggleStrike()` | | On the selection; with nothing selected, on what is typed next (as the toolbar does). |
 | `setHeading(level)` | | `applyParagraphStyle("Heading " + level)`; `0` → `"Text Body"`. |
-| `setFontFamily(name)`, `setFontSize(pt)` | | On the selection; with nothing selected, on what is typed next (same mechanics as `toggleBold`). `pt` is canonical (zoom-1) units, applied at the zoom in effect. |
+| `setFontFamily(name)`, `setFontSize(pt)` | | On the selection; with nothing selected, only on what is typed next; existing characters never change. `fontFamily`/`fontSize` report the pending value immediately; moving the caret cancels it. `pt` is canonical (zoom-1) units, applied at the zoom in effect. |
 | `clearFormatting()` | | Drops direct CHARACTER formatting (bold, font, size, …) in the selection; keeps character styles. Unlike `clearDirectFormatting()`, paragraph properties (alignment, margins, …) are untouched. |
 | `setAlignment(align)` | | On every paragraph the selection touches. |
 | `toggleBulletList()`, `toggleNumberedList()` | | Each mirrors the other exactly: in ANY list, detach it (plain paragraph); otherwise start one of its own kind. Toggling the other kind while already in a list turns the list off, not a conversion. |
