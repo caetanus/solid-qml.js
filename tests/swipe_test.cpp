@@ -61,7 +61,10 @@ Window {
     width: 400; height: 100; visible: true
     property int clicks: 0
     property string got: ""
+    readonly property string shownHint: sw.hint
+    readonly property bool shownLeft: sw.hintOnLeft
     W.Swipe {
+        id: sw
         objectName: "sw"
         width: 400; height: 60
         rightLabel: "Arquivar"; farRightLabel: "Lixo"; leftLabel: "Adiar"
@@ -91,6 +94,24 @@ Window {
         QTest::mouseClick(m_window, Qt::LeftButton, {}, QPoint(100, 30));
         QCOMPARE(m_root->property("clicks").toInt(), before + 1);
         QCOMPARE(m_swipe->property("dx").toReal(), 0.0);
+    }
+
+    void theHintBindingFollowsTheSideBeforeAnyThreshold()
+    {
+        // Short of the near threshold there is no action, yet the uncovered side already shows its
+        // label — through a binding, so hint must notify on the side, not only on the action.
+        drag(QPoint(100, 30), QPoint(30, 0));
+        QCOMPARE(m_swipe->property("action").toString(), QString());
+        QCOMPARE(m_root->property("shownHint").toString(), QStringLiteral("Arquivar"));
+        QCOMPARE(m_root->property("shownLeft").toBool(), true);
+        QTest::mouseRelease(m_window, Qt::LeftButton, {}, QPoint(130, 30));
+        QTRY_COMPARE(m_swipe->property("dx").toReal(), 0.0);
+        QCOMPARE(m_root->property("shownHint").toString(), QString());
+        drag(QPoint(300, 30), QPoint(-30, 0));
+        QCOMPARE(m_root->property("shownHint").toString(), QStringLiteral("Adiar"));
+        QCOMPARE(m_root->property("shownLeft").toBool(), false);
+        QTest::mouseRelease(m_window, Qt::LeftButton, {}, QPoint(270, 30));
+        QTRY_COMPARE(m_swipe->property("dx").toReal(), 0.0);
     }
 
     void aShortPushRightArchives()

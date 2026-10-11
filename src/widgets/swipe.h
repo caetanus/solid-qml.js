@@ -45,7 +45,7 @@ class Swipe : public QmlCss::CssFill {
     Q_PROPERTY(qreal dx READ dx WRITE setDx NOTIFY dxChanged)
     // What a release now would do ("", "right", "far-right", "left", "far-left") and its label.
     Q_PROPERTY(QString action READ action NOTIFY actionChanged)
-    Q_PROPERTY(QString hint READ hint NOTIFY actionChanged)
+    Q_PROPERTY(QString hint READ hint NOTIFY hintChanged)
     Q_PROPERTY(bool hintOnLeft READ hintOnLeft NOTIFY hintSideChanged)
 
 public:
@@ -70,6 +70,7 @@ signals:
     void dxChanged();
     void actionChanged();
     void hintSideChanged();
+    void hintChanged();   // the side (or none), the action, or a label changed
     void swiped(const QString &action);
 
 protected:

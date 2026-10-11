@@ -83,10 +83,10 @@ Swipe::Swipe(QQuickItem *parent)
     });
 }
 
-void Swipe::setRight(const QString &v) { if (m_right != v) { m_right = v; emit labelsChanged(); } }
-void Swipe::setFarRight(const QString &v) { if (m_farRight != v) { m_farRight = v; emit labelsChanged(); } }
-void Swipe::setLeft(const QString &v) { if (m_left != v) { m_left = v; emit labelsChanged(); } }
-void Swipe::setFarLeft(const QString &v) { if (m_farLeft != v) { m_farLeft = v; emit labelsChanged(); } }
+void Swipe::setRight(const QString &v) { if (m_right != v) { m_right = v; emit labelsChanged(); emit hintChanged(); } }
+void Swipe::setFarRight(const QString &v) { if (m_farRight != v) { m_farRight = v; emit labelsChanged(); emit hintChanged(); } }
+void Swipe::setLeft(const QString &v) { if (m_left != v) { m_left = v; emit labelsChanged(); emit hintChanged(); } }
+void Swipe::setFarLeft(const QString &v) { if (m_farLeft != v) { m_farLeft = v; emit labelsChanged(); emit hintChanged(); } }
 
 // Near: 15% of the width, between 56 and 120 px; far: 55%, at most 240 px past near (a wide row
 // does not ask for a long trip), and at least 40 px past it.
@@ -122,8 +122,9 @@ void Swipe::setDx(qreal v)
 {
     if (qFuzzyCompare(m_dx + 1, v + 1))
         return;
-    const bool wasLeft = m_dx > 0;
+    const int wasSide = (m_dx > 0) - (m_dx < 0);
     m_dx = v;
+    const int side = (v > 0) - (v < 0);
     if (m_translate)
         m_translate->setX(v);
     // The slid content stays inside the box (a CssFill clips only under overflow: hidden).
@@ -134,8 +135,9 @@ void Swipe::setDx(qreal v)
         setClip(false);
         m_clipped = false;
     }
-    if ((v > 0) != wasLeft)
+    if ((side > 0) != (wasSide > 0))
         emit hintSideChanged();
+    bool hintMoved = side != wasSide;   // the hint names the uncovered side, threshold or not
     // The action follows the row, except while it slides out or back: that keeps the colour.
     if (m_anim->state() != QAbstractAnimation::Running || v == 0) {
         const QString a = actionFor(v);
@@ -143,8 +145,11 @@ void Swipe::setDx(qreal v)
             m_action = a;
             setCssState(a.isEmpty() ? QVariantList() : QVariantList{a});
             emit actionChanged();
+            hintMoved = true;
         }
     }
+    if (hintMoved)
+        emit hintChanged();
     emit dxChanged();
 }
 
