@@ -1545,6 +1545,101 @@ private slots:
         m_fmt->paste();
         QCOMPARE(m_fmt->plainText(), QStringLiteral("x"));
     }
+
+    // ── office item 2b, item 7: counts ───────────────────────────────────────────────────────────
+
+    void countsAreZeroOnAFreshDocument()
+    {
+        QCOMPARE(m_fmt->wordCount(), 0);
+        QCOMPARE(m_fmt->charCount(), 0);
+        QCOMPARE(m_fmt->selectionWordCount(), 0);
+        QCOMPARE(m_fmt->selectionCharCount(), 0);
+        QCOMPARE(m_fmt->selectedText(), QString());
+    }
+
+    void wordAndCharCountRules()
+    {
+        // "Hello, world! 42" — words: Hello, world, 42 (punctuation/space runs don't count).
+        m_fmt->insertText(QStringLiteral("Hello, world! 42"));
+        QCOMPARE(m_fmt->wordCount(), 3);
+        QCOMPARE(m_fmt->charCount(), 16);
+    }
+
+    void charCountExcludesTheParagraphSeparatorNotLineBreaks()
+    {
+        m_fmt->insertText(QStringLiteral("one"));
+        m_fmt->setCursorPosition(3);
+        m_fmt->insertText(QStringLiteral("\ntwo")); // paragraph break: NOT counted
+        QCOMPARE(m_fmt->charCount(), 6); // "one" + "two", not 7
+
+        QTextCursor c(doc());
+        c.setPosition(doc()->characterCount() - 1);
+        c.insertText(QString(QChar::LineSeparator)); // a soft line break (Shift+Enter): IS counted
+        QCOMPARE(m_fmt->charCount(), 7);
+    }
+
+    void countsUpdateIncrementallyOnEditsAnywhere()
+    {
+        m_fmt->insertText(QStringLiteral("one"));
+        m_fmt->setCursorPosition(3);
+        m_fmt->insertText(QStringLiteral("\ntwo\nthree"));
+        QCOMPARE(m_fmt->wordCount(), 3);
+        QCOMPARE(m_fmt->charCount(), 11); // one+two+three = 3+3+5
+
+        // Edit the FIRST paragraph: the others' kept counts must not be touched/re-derived wrong.
+        m_fmt->setCursorPosition(0);
+        m_fmt->insertText(QStringLiteral("NEW "));
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("NEW one\ntwo\nthree"));
+        QCOMPARE(m_fmt->wordCount(), 4);
+        QCOMPARE(m_fmt->charCount(), 15);
+
+        // Delete the middle paragraph entirely (selects "two\n").
+        m_fmt->setSelectionStart(8);
+        m_fmt->setSelectionEnd(12);
+        m_fmt->insertText(QString());
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("NEW one\nthree"));
+        QCOMPARE(m_fmt->wordCount(), 3);
+        QCOMPARE(m_fmt->charCount(), 12);
+    }
+
+    void selectionCountsAndSelectedText()
+    {
+        m_fmt->insertText(QStringLiteral("one two\nthree"));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(13); // the whole document, across the paragraph break
+        QCOMPARE(m_fmt->selectionWordCount(), 3);
+        QCOMPARE(m_fmt->selectionCharCount(), 12); // 13 positions - 1 paragraph separator
+        QCOMPARE(m_fmt->selectedText(), QStringLiteral("one two\nthree"));
+
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(3); // "one"
+        QCOMPARE(m_fmt->selectionWordCount(), 1);
+        QCOMPARE(m_fmt->selectionCharCount(), 3);
+        QCOMPARE(m_fmt->selectedText(), QStringLiteral("one"));
+    }
+
+    void countsOnThe300PageBook()
+    {
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        if (!QFile::exists(book))
+            QSKIP("livro-300p.odt sample not on this machine");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(book)));
+        QVERIFY(m_fmt->charCount() > 900000);
+        QVERIFY(m_fmt->wordCount() > 100000);
+        // charCount excludes one separator per block; plainText() keeps them as "\n".
+        QCOMPARE(m_fmt->charCount(), m_fmt->plainText().size() - (doc()->blockCount() - 1));
+
+        QElapsedTimer t;
+        t.start();
+        const int last = doc()->characterCount() - 1;
+        for (int i = 0; i < 50; ++i) {
+            m_fmt->setCursorPosition(qBound(0, last / 2 + i, last));
+            m_fmt->insertText(QStringLiteral("x"));
+        }
+        const qint64 editMs = t.elapsed();
+        qInfo("countsOnThe300PageBook: %lld words, %lld chars, 50 mid-document edits in %lld ms (%.2f ms/edit)",
+              qint64(m_fmt->wordCount()), qint64(m_fmt->charCount()), editMs, editMs / 50.0);
+    }
 };
 
 QTEST_MAIN(RichTextTest)

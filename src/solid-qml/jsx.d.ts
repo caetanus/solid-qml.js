@@ -209,6 +209,16 @@ declare global {
     readonly canRedo: boolean;
     /** The SYSTEM clipboard (not this document) currently carries pasteable content. */
     readonly canPaste: boolean;
+    /** Whole document, kept incrementally (not recounted per keystroke). A "word" is a Unicode
+     *  word-boundary segment starting with a letter or digit; "chars" excludes the paragraph
+     *  separator between blocks. */
+    readonly wordCount: number;
+    readonly charCount: number;
+    /** The current selection (0 with none); same word/char rules as above. */
+    readonly selectionWordCount: number;
+    readonly selectionCharCount: number;
+    /** "" with no selection; paragraphs separated by "\n", like plainText(). */
+    readonly selectedText: string;
     /** Index into headings() of the heading at/before the caret, -1 if none. */
     readonly currentHeadingIndex: number;
     /** [{position, level, text}] in document order (level: the outline/heading level). Kept

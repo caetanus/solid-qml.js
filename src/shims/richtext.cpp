@@ -10,6 +10,7 @@
 #include <QQuickItem>
 #include <QTextBlock>
 #include <QTextDocument>
+#include <QTextBoundaryFinder>
 #include <QTextDocumentFragment>
 #include <QTextFragment>
 #include <QTextFrame>
@@ -46,7 +47,7 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
         m_headingsConn = connect(td, &QTextDocument::contentsChange, this, &RichTextHandler::handleContentsChange);
     }
     updateViewportCulling();
-    rebuildHeadings(); // a full, but infrequent (document-attach-time) scan establishes the baseline
+    rebuildIndex(); // a full, but infrequent (document-attach-time) scan establishes the baseline
     emit documentChanged();
     emit formatChanged();
     emit modifiedChanged();
@@ -79,16 +80,45 @@ void RichTextHandler::updateViewportCulling()
 
 // ─── outline (office item 2b, ★3) ─────────────────────────────────────────────────────────────
 
-void RichTextHandler::rebuildHeadings()
+namespace {
+// item 7: a "word" is a QTextBoundaryFinder::Word segment starting with a letter or digit (so
+// runs of whitespace/punctuation between words don't count); "chars" is simply the block's own
+// text length — QTextBlock::text() already excludes the paragraph separator.
+int countWords(const QString &text)
+{
+    if (text.isEmpty())
+        return 0;
+    QTextBoundaryFinder bf(QTextBoundaryFinder::Word, text);
+    int count = 0;
+    int prev = 0;
+    for (bf.toStart(); bf.toNextBoundary() != -1; prev = bf.position()) {
+        const QStringView seg = QStringView(text).mid(prev, bf.position() - prev);
+        if (!seg.isEmpty() && seg.at(0).isLetterOrNumber())
+            ++count;
+    }
+    return count;
+}
+} // namespace
+
+void RichTextHandler::rebuildIndex()
 {
     QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
     const QList<HeadingEntry> before = m_headings;
     m_headings.clear();
+    m_blockCounts.clear();
+    m_totalChars = 0;
+    m_totalWords = 0;
     if (doc) {
         for (QTextBlock b = doc->begin(); b.isValid(); b = b.next()) {
+            const QString text = b.text();
+            const int chars = text.size();
+            const int words = countWords(text);
+            m_blockCounts << BlockCount { b, chars, words };
+            m_totalChars += chars;
+            m_totalWords += words;
             const int level = b.blockFormat().headingLevel();
             if (level > 0)
-                m_headings << HeadingEntry { b, level, b.text() };
+                m_headings << HeadingEntry { b, level, text };
         }
     }
     bool same = before.size() == m_headings.size();
@@ -110,44 +140,80 @@ void RichTextHandler::handleContentsChange(int position, int charsRemoved, int c
     const int fromNum = from.blockNumber(), toNum = to.blockNumber();
     Q_UNUSED(charsRemoved);
 
-    // The headings the re-scanned span gives NOW (document order, since we walk from→to forward).
-    QList<HeadingEntry> rescanned;
+    // What the re-scanned span gives NOW (document order, since we walk from→to forward) — both
+    // the headings in it and every block's counts (item 7), in the SAME walk.
+    QList<HeadingEntry> rescannedHeadings;
+    QList<BlockCount> rescannedCounts;
+    qint64 newChars = 0, newWords = 0;
     for (QTextBlock b = from; b.isValid(); b = b.next()) {
+        const QString text = b.text();
+        const int chars = text.size();
+        const int words = countWords(text);
+        rescannedCounts << BlockCount { b, chars, words };
+        newChars += chars;
+        newWords += words;
         const int level = b.blockFormat().headingLevel();
         if (level > 0)
-            rescanned << HeadingEntry { b, level, b.text() };
+            rescannedHeadings << HeadingEntry { b, level, text };
         if (b == to)
             break;
     }
 
-    // Splice: keep every OLD heading outside [from, to] and not deleted; everything inside that
-    // span — deleted or not — is replaced by `rescanned`, inserted where the span's old entries
-    // were (they are contiguous, since m_headings is kept in document order).
-    QList<HeadingEntry> spliced;
-    spliced.reserve(m_headings.size() + rescanned.size());
+    // Splice m_headings: keep every OLD heading outside [from, to] and not deleted; everything
+    // inside that span — deleted or not — is replaced by `rescannedHeadings`, inserted where the
+    // span's old entries were (they are contiguous, since m_headings is kept in document order).
+    QList<HeadingEntry> splicedHeadings;
+    splicedHeadings.reserve(m_headings.size() + rescannedHeadings.size());
     int insertAt = -1;
     for (const HeadingEntry &e : std::as_const(m_headings)) {
         const bool invalid = !e.block.isValid();
         const bool inSpan = !invalid && e.block.blockNumber() >= fromNum && e.block.blockNumber() <= toNum;
         if (invalid || inSpan) {
             if (insertAt < 0)
-                insertAt = spliced.size();
+                insertAt = splicedHeadings.size();
             continue;
         }
-        spliced << e;
+        splicedHeadings << e;
     }
     if (insertAt < 0)
-        insertAt = spliced.size();
-    for (int i = 0; i < rescanned.size(); ++i)
-        spliced.insert(insertAt + i, rescanned[i]);
+        insertAt = splicedHeadings.size();
+    for (int i = 0; i < rescannedHeadings.size(); ++i)
+        splicedHeadings.insert(insertAt + i, rescannedHeadings[i]);
 
-    bool same = spliced.size() == m_headings.size();
-    for (int i = 0; same && i < spliced.size(); ++i)
-        same = spliced[i].block == m_headings[i].block && spliced[i].level == m_headings[i].level
-            && spliced[i].text == m_headings[i].text;
-    m_headings = spliced;
+    bool same = splicedHeadings.size() == m_headings.size();
+    for (int i = 0; same && i < splicedHeadings.size(); ++i)
+        same = splicedHeadings[i].block == m_headings[i].block && splicedHeadings[i].level == m_headings[i].level
+            && splicedHeadings[i].text == m_headings[i].text;
+    m_headings = splicedHeadings;
     if (!same)
         emit headingsChanged();
+
+    // Splice m_blockCounts the same way (one pass, like m_headings above), adjusting the running
+    // totals by the DELTA of only the blocks touched — the recount itself (the expensive part:
+    // word-boundary analysis) only ever runs over [from, to], never the whole document (item 7).
+    QList<BlockCount> splicedCounts;
+    splicedCounts.reserve(m_blockCounts.size() + rescannedCounts.size());
+    qint64 oldChars = 0, oldWords = 0;
+    int countsInsertAt = -1;
+    for (const BlockCount &e : std::as_const(m_blockCounts)) {
+        const bool invalid = !e.block.isValid();
+        const bool inSpan = !invalid && e.block.blockNumber() >= fromNum && e.block.blockNumber() <= toNum;
+        if (invalid || inSpan) {
+            oldChars += e.chars;
+            oldWords += e.words;
+            if (countsInsertAt < 0)
+                countsInsertAt = splicedCounts.size();
+            continue;
+        }
+        splicedCounts << e;
+    }
+    if (countsInsertAt < 0)
+        countsInsertAt = splicedCounts.size();
+    for (int i = 0; i < rescannedCounts.size(); ++i)
+        splicedCounts.insert(countsInsertAt + i, rescannedCounts[i]);
+    m_blockCounts = splicedCounts;
+    m_totalChars += newChars - oldChars;
+    m_totalWords += newWords - oldWords;
 }
 
 QVariantList RichTextHandler::headings() const
@@ -178,6 +244,41 @@ int RichTextHandler::currentHeadingIndex() const
         idx = i;
     }
     return idx;
+}
+
+// ─── counts (office item 2b, item 7) ───────────────────────────────────────────────────────────
+// wordCount()/charCount() are m_totalWords/m_totalChars directly (inline, in the header) — kept
+// incrementally. The selection ones below are computed live: bounded by the selection's own
+// size, not the document's, so there is nothing to keep incrementally.
+
+int RichTextHandler::selectionWordCount() const
+{
+    const QTextCursor c = selectionCursor();
+    return c.isNull() ? 0 : countWords(c.selection().toPlainText());
+}
+
+int RichTextHandler::selectionCharCount() const
+{
+    const QTextCursor c = selectionCursor();
+    if (c.isNull())
+        return 0;
+    // Not toPlainText(): it turns BOTH the paragraph separator AND a soft line break (Shift+Enter,
+    // U+2028) into "\n", which would also strip real line breaks from the count — charCount()
+    // (whole-document) only excludes the paragraph separator (QTextBlock::text() already does).
+    // One paragraph separator is crossed per block boundary inside the selection.
+    QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
+    if (!doc)
+        return 0;
+    const int blocksTouched = doc->findBlock(c.selectionEnd()).blockNumber()
+        - doc->findBlock(c.selectionStart()).blockNumber() + 1;
+    return (c.selectionEnd() - c.selectionStart()) - (blocksTouched - 1);
+}
+
+QString RichTextHandler::selectedText() const
+{
+    // Same convention as plainText(): paragraphs separated by "\n".
+    const QTextCursor c = selectionCursor();
+    return c.isNull() ? QString() : c.selection().toPlainText().replace(QChar::LineSeparator, QLatin1Char('\n'));
 }
 
 void RichTextHandler::setError(const QString &message)
@@ -233,6 +334,13 @@ void RichTextHandler::newDocument()
     QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
     if (!doc)
         return;
+    // doc->clear() invalidates every existing QTextBlock handle at once, as part of its OWN
+    // contentsChange it fires while reinitializing — unlike a normal cursor edit, querying an
+    // OLD handle still sitting in m_headings/m_blockCounts from inside that signal is a
+    // use-after-free (observed crashing in QTextBlock::blockNumber(), reliably on a large
+    // document). Disconnect handleContentsChange around it; rebuildIndex() below is a full,
+    // safe rescan of the (now stable) fresh document anyway.
+    QObject::disconnect(m_headingsConn);
     // Undo off: the reset (and styling the first paragraph) leaves no history.
     doc->setUndoRedoEnabled(false);
     doc->clear(); // also drops the image resources
@@ -246,7 +354,8 @@ void RichTextHandler::newDocument()
         rescaleRange(-1, -1, m_zoom, false);
     doc->setUndoRedoEnabled(true);
     doc->setModified(false);
-    rebuildHeadings(); // cheap full scan: infrequent (a new document), not a keystroke (★3)
+    m_headingsConn = connect(doc, &QTextDocument::contentsChange, this, &RichTextHandler::handleContentsChange);
+    rebuildIndex(); // cheap full scan: infrequent (a new document), not a keystroke (★3)
     // clear() signals modificationChanged(true) and then resets the flag WITHOUT a signal, so
     // setModified(false) is a no-op: tell the bindings the flag is false again.
     emit modifiedChanged();
@@ -677,7 +786,12 @@ bool RichTextHandler::loadOdf(const QUrl &file)
         return false;
     QString why;
     rt::StyleSheet sheet;
+    // readOdt() calls doc->clear() internally when it does touch the document — see newDocument()
+    // for why handleContentsChange must not run across that (a use-after-free on old QTextBlock
+    // handles still in m_headings/m_blockCounts).
+    QObject::disconnect(m_headingsConn);
     const bool ok = rt::readOdt(localPath(file), doc, &sheet, &why);
+    m_headingsConn = connect(doc, &QTextDocument::contentsChange, this, &RichTextHandler::handleContentsChange);
     if (!ok && sheet.isEmpty()) { // not found / not an .odt: the document was not touched
         setError(why);
         return false;
@@ -692,7 +806,7 @@ bool RichTextHandler::loadOdf(const QUrl &file)
         doc->setUndoRedoEnabled(true);
         doc->setModified(false);
     }
-    rebuildHeadings(); // cheap full scan: infrequent (a load), not a keystroke (★3)
+    rebuildIndex(); // cheap full scan: infrequent (a load), not a keystroke (★3)
     emit modifiedChanged(); // see newDocument: clear() can leave the last signal saying "true"
     emit stylesChanged();
     setError(why);

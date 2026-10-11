@@ -79,6 +79,9 @@ State — reactive: reading `doc.bold` in a binding (a `classList`, a text) foll
 | `bulletList`, `numberedList`, `inTable` | boolean | The caret is in a bullet / numbered list (mutually exclusive) / a table. |
 | `canUndo`, `canRedo` | boolean | |
 | `canPaste` | boolean | The SYSTEM clipboard (not this document) currently carries pasteable content — tracks another app too. |
+| `wordCount`, `charCount` | number | Whole document, kept incrementally (see "Counts" below). A word is a Unicode word-boundary segment starting with a letter or digit; chars excludes the paragraph separator between blocks. |
+| `selectionWordCount`, `selectionCharCount` | number | The current selection, by the same rules; `0` with none. |
+| `selectedText` | string | `""` with no selection; paragraphs separated by `"\n"`, like `plainText()`. |
 | `currentHeadingIndex` | number | Index into `headings()` of the heading at/before the caret, `-1` if none. |
 
 Methods:
@@ -203,6 +206,18 @@ whole new paragraphs the paste creates; not worth the complexity for what is a p
 mismatch — the pasted text may look a touch off size until the next zoom change, which does
 rescale the whole document). `canPaste` tracks the clipboard, not this document, so it also
 updates when another app copies something.
+
+## Counts
+
+`wordCount`/`charCount` are kept the same way `headings()` is: a running total, adjusted by the
+delta of only the blocks an edit actually touched (the SAME `contentsChange` walk updates the
+outline and the counts together), never a full re-count of the document. A **word** is a
+`QTextBoundaryFinder::Word` segment that starts with a letter or digit (so runs of whitespace or
+punctuation between words don't count); **chars** is a block's own text length — the paragraph
+separator between blocks is not a character of either paragraph, so it is excluded (an image
+counts as one character, its `U+FFFC` placeholder). `selectionWordCount`/`selectionCharCount`/
+`selectedText` are computed live, not kept incrementally — they are bounded by the selection's
+own size, not the document's, so there is nothing to precompute.
 
 ## Notes
 

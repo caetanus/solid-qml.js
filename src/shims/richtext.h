@@ -71,6 +71,16 @@ class RichTextHandler : public QObject {
     // HTML) — not specific to this document, so it tracks QClipboard::dataChanged() too (another
     // app, or this one, copying something).
     Q_PROPERTY(bool canPaste READ canPaste NOTIFY canPasteChanged)
+    // Office item 2b (item 7): whole-document counts, kept incrementally (see m_blockCounts) —
+    // NOT recounted per keystroke. A "word" is a QTextBoundaryFinder::Word segment starting with
+    // a letter or digit; "chars" is every character of the document's text EXCLUDING the
+    // paragraph-separator between blocks (QTextBlock::text() already leaves it out).
+    Q_PROPERTY(int wordCount READ wordCount NOTIFY contentsChanged)
+    Q_PROPERTY(int charCount READ charCount NOTIFY contentsChanged)
+    // The current selection, computed live (bounded by selection size, not document size).
+    Q_PROPERTY(int selectionWordCount READ selectionWordCount NOTIFY selectionChanged)
+    Q_PROPERTY(int selectionCharCount READ selectionCharCount NOTIFY selectionChanged)
+    Q_PROPERTY(QString selectedText READ selectedText NOTIFY selectionChanged)
 
 public:
     explicit RichTextHandler(QObject *parent = nullptr);
@@ -173,6 +183,13 @@ public:
     int currentHeadingIndex() const;
     // scrollToPosition(pos) is QML-level (the Flickable lives in RichText.qml) — see
     // DocumentEditor.qml, not here.
+
+    // ── counts (office item 2b, item 7) ───────────────────────────────────────────────────────
+    int wordCount() const { return int(m_totalWords); }
+    int charCount() const { return int(m_totalChars); }
+    int selectionWordCount() const;
+    int selectionCharCount() const;
+    QString selectedText() const;
 
     // Inline image at the cursor: loaded into a document resource (so QTextDocumentWriter embeds
     // it into Pictures/ on save) and capped to a word-like page width. `file`: URL or plain path;
@@ -283,12 +300,24 @@ private:
     // block was just edited in place would always read as "unchanged").
     struct HeadingEntry { QTextBlock block; int level; QString text; };
     QList<HeadingEntry> m_headings;
-    // Full O(blockCount) scan: only at document attach/new/load — never per keystroke.
-    void rebuildHeadings();
+
+    // ── counts (item 7) ───────────────────────────────────────────────────────────────────────
+    // One entry per block in the WHOLE document (not just headings), document order — lets
+    // handleContentsChange() turn "whole document" counts into a running total updated by the
+    // DELTA of only the blocks an edit actually touched, instead of re-summing every block.
+    struct BlockCount { QTextBlock block; int chars; int words; };
+    QList<BlockCount> m_blockCounts;
+    qint64 m_totalChars = 0;
+    qint64 m_totalWords = 0;
+
+    // Full O(blockCount) scan (both m_headings and m_blockCounts/totals): only at document
+    // attach/new/load — never per keystroke.
+    void rebuildIndex();
     // QTextDocument::contentsChange(position, charsRemoved, charsAdded): re-scans ONLY the blocks
-    // in [position, position+charsAdded] (post-edit) for their current heading-ness, splicing the
-    // result into m_headings at the same spot — O(affected blocks + heading count), not
-    // O(document). Emits headingsChanged() when the result actually differs.
+    // in [position, position+charsAdded] (post-edit) for their current heading-ness and
+    // char/word counts, splicing m_headings/m_blockCounts at the same spot and adjusting
+    // m_totalChars/m_totalWords by the delta — O(affected blocks + heading count), not
+    // O(document). Emits headingsChanged() when the outline actually differs.
     void handleContentsChange(int position, int charsRemoved, int charsAdded);
 
     QQuickTextDocument *m_document = nullptr;

@@ -42,6 +42,12 @@ RichText {
     readonly property bool canRedo: _editor.canRedo
     // Office item 2b (item 6): the SYSTEM clipboard, not this document.
     readonly property bool canPaste: !!fmt && fmt.canPaste
+    // Office item 2b (item 7): kept incrementally by the engine (not recounted per keystroke).
+    readonly property int wordCount: fmt ? fmt.wordCount : 0
+    readonly property int charCount: fmt ? fmt.charCount : 0
+    readonly property int selectionWordCount: fmt ? fmt.selectionWordCount : 0
+    readonly property int selectionCharCount: fmt ? fmt.selectionCharCount : 0
+    readonly property string selectedText: fmt ? fmt.selectedText : ""
 
     // ── page look (office item 2b, ★1) ──────────────────────────────────────────────────────────
     // `pageWidth` (px): the editor's implicit width when set (0 = the plain editor's 560 default).
