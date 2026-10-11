@@ -1,4 +1,4 @@
-# solid-qml.js
+# solid-qml
 
 **Solid.js, rendered natively via QML/QtQuick — no browser.**
 
@@ -7,7 +7,7 @@
 notice.
 ```
 
-**solid-qml.js** transpiles Solid.js components (JSX + CSS) into native QtQuick — a real scene
+**solid-qml** transpiles Solid.js components (JSX + CSS) into native QtQuick — a real scene
 graph GPU-rendered through Qt, not a webview. Write UI with Solid's reactive model, style it
 with plain CSS, and run it as a native app.
 
@@ -19,5 +19,6 @@ getting-started
 architecture
 keyboard-accessibility
 document-editor
+release-policy
 roadmap
 ```

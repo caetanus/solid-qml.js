@@ -1,4 +1,4 @@
-# Roadmap — solid-qml-native
+# Roadmap — solid-qml
 
 **An Electron *and* React Native competitor** ("React Native for QML"): web authoring DX
 (Solid.js + JSX + CSS) rendering to **real native components** (QtQuick scene-graph items, not a

@@ -1,6 +1,6 @@
 # Architecture
 
-solid-qml.js has three layers: the **transpiler**, the **C++ CSS engine**, and the **browser
+solid-qml has three layers: the **transpiler**, the **C++ CSS engine**, and the **browser
 shims** over Qt's V4 engine.
 
 ## Transpiler (`transpiler/`)

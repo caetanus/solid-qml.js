@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo.png" width="132" alt="solid-qml.js logo">
+  <img src="assets/logo.png" width="132" alt="solid-qml logo">
 </p>
 
-<h1 align="center">solid-qml.js</h1>
+<h1 align="center">solid-qml</h1>
 
 <p align="center">
   <strong>Solid.js, rendered natively via QML/QtQuick — no browser.</strong>
@@ -16,7 +16,7 @@
 
 ## What it is
 
-**solid-qml.js** transpiles [Solid.js](https://www.solidjs.com/) components (JSX + CSS) into
+**solid-qml** transpiles [Solid.js](https://www.solidjs.com/) components (JSX + CSS) into
 **native QtQuick**: a real scene graph, GPU-rendered through Qt — **not** a webview,
 **not** an emulated DOM.
 

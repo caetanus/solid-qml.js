@@ -135,7 +135,7 @@ The exported component (`App`) is picked up automatically as the entry — there
 boilerplate to write for the native target (that's a web-preview-only concern).
 
 **Why `CHECKOUT/src/solid-qml/runtime` and not an npm import:** there is no published
-`solid-qml-native` npm package yet (release-plan, LATER). `Window`/`div`/`text`/`button` are plain
+`solid-qml` npm package yet (release-plan, LATER). `Window`/`div`/`text`/`button` are plain
 Solid components the transpiler recognizes structurally (by the `data-qml-type` marker on their
 JSX); importing them by absolute path from the checkout works today and is the documented path for
 this preview. Packaging them for `npm install` is tracked separately.
