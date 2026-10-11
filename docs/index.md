@@ -17,5 +17,6 @@ with plain CSS, and run it as a native app.
 
 getting-started
 architecture
+document-editor
 roadmap
 ```

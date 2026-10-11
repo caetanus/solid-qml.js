@@ -103,7 +103,9 @@ widget set below, apps written in Solid/JSX now get:
   tag pays nothing): `<MediaPlayer>` (QtMultimedia — paused until the user clicks, seek/clock,
   **external .srt subtitles** parsed natively and synced), `<WebView>` (a real Chromium page via
   QtWebEngine), `<RichText>` (a word-like editor that **saves and loads OpenDocument** — writing
-  through Qt's native ODF writer, reading through our own content.xml parser) and `<CodeEditor>`
+  through Qt's native ODF writer, reading through our own content.xml parser; `<DocumentEditor>` is the app-driven variant for a word
+  processor — own toolbar, `loadOdf`/`saveOdf`, `modified`, format state, see
+  [docs/document-editor.md](docs/document-editor.md)) and `<CodeEditor>`
   (line gutter + our own dependency-free syntax highlighting for JS/TS, QML, CSS and JSON).
 - **fetch() reads local assets** (`file://`) like a browser, and the whole box model stays
   pixel-honest with the web reference.

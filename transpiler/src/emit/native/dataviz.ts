@@ -9,6 +9,7 @@ import * as t from "@babel/types";
 import { registerNativeTags, requireImport } from "./index.ts";
 import { emitExpr, type Scope } from "../expr.ts";
 import { buildCssClassLine, INDENT } from "../qml.ts";
+import { safeName } from "../../names/safe.ts";
 import { translateArgsHandler } from "./inputs.ts";
 
 // Each viz widget is its OWN opt-in QML module (owner directive 2026-07-06: "import
@@ -163,6 +164,40 @@ function emitRichText(propsArg: t.Node | undefined, _children: t.Node[], scope: 
   return lines;
 }
 
+/** <DocumentEditor> → WRich.DocumentEditor (same opt-in module as <RichText>): the document
+ *  variant grown up — the APP drives it. `ref={doc}` is the editor's id, so `doc.saveOdf(p)`,
+ *  `doc.toggleBold()`, `doc.bold` (format state, reactive in bindings) resolve to it; `toolbar`
+ *  hides the built-in toolbar; `onModifiedChanged(modified)` and the debounced, payload-free
+ *  `onContentChanged()` report back. The API lives in DocumentEditor.qml. */
+function emitDocumentEditor(propsArg: t.Node | undefined, _children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  requireImport(scope, "import solidqml.Widgets.RichText 1.0 as WRich");
+  const props = propsOf(propsArg);
+  const bind = (e: t.Expression) => emitExpr(e, { ...scope, mode: "binding" });
+
+  // ref={doc} → the editor's id, so the app's `doc.x` resolves to it. (No private id otherwise: as
+  // the component root the editor must keep the transpiler's `__self`.)
+  const ref = props.get("ref");
+  const idLine: string[] = [];
+  if (ref && t.isIdentifier(ref)) {
+    idLine.push(`${i(1)}id: _ref_${safeName(ref.name)}`);
+    if (scope.refs) scope.refs.push(ref.name);
+  }
+  const lines: string[] = [`${pad}WRich.DocumentEditor {`, ...idLine, ...buildCssClassLine(cssPropsShim(props), scope, i(1))];
+  if (guard) lines.push(`${i(1)}visible: !!(${guard})`);
+  const toolbar = props.get("toolbar");
+  if (toolbar) lines.push(`${i(1)}toolbar: ${bind(toolbar)}`);
+  const onModified = props.get("onModifiedChanged");
+  if (onModified && (t.isArrowFunctionExpression(onModified) || t.isFunctionExpression(onModified)))
+    lines.push(`${i(1)}onModifiedChanged: { ${translateArgsHandler(onModified, ["modified"], scope)} }`);
+  const onContent = props.get("onContentChanged");
+  if (onContent && (t.isArrowFunctionExpression(onContent) || t.isFunctionExpression(onContent)))
+    lines.push(`${i(1)}onContentChanged: { ${translateArgsHandler(onContent, [], scope)} }`);
+  lines.push(`${pad}}`);
+  return lines;
+}
+
 /** <CodeEditor language text> → WCode.CodeEditor (opt-in module solidqml.Widgets.Code —
  *  KSyntaxHighlighting when the loader has it, plain mono editor otherwise). */
 function emitCodeEditor(propsArg: t.Node | undefined, _children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
@@ -182,4 +217,4 @@ function emitCodeEditor(propsArg: t.Node | undefined, _children: t.Node[], scope
   return lines;
 }
 
-registerNativeTags({ Chart: emitChart, Scene3D: emitScene3D, Surface: emitSurface, MediaPlayer: emitMediaPlayer, WebView: emitWebView, RichText: emitRichText, CodeEditor: emitCodeEditor });
+registerNativeTags({ Chart: emitChart, Scene3D: emitScene3D, Surface: emitSurface, MediaPlayer: emitMediaPlayer, WebView: emitWebView, RichText: emitRichText, DocumentEditor: emitDocumentEditor, CodeEditor: emitCodeEditor });

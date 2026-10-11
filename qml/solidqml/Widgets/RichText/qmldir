@@ -1,2 +1,3 @@
 module solidqml.Widgets.RichText
 RichText 1.0 RichText.qml
+DocumentEditor 1.0 DocumentEditor.qml

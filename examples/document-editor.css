@@ -1,0 +1,82 @@
+/* examples/document-editor.tsx — an app-drawn toolbar over <DocumentEditor toolbar={false}>. */
+.de {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #eceff3;
+  color: #1f2328;
+  font-size: 14px;
+}
+
+.de-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: #ffffff;
+  border-bottom: 1px solid #d5dce4;
+}
+
+.de-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: transparent;
+  color: #1f2328;
+  font-size: 13px;
+}
+
+.de-btn:hover {
+  background: #e4e9ef;
+}
+
+.de-btn.on {
+  background: #1f6feb;
+  color: #ffffff;
+}
+
+.de-path {
+  width: 220px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #c8d1db;
+  border-radius: 6px;
+  background: #ffffff;
+  font-size: 13px;
+  color: #1f2328;
+}
+
+.de-sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 6px;
+  background: #d5dce4;
+}
+
+.de-page {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  padding: 16px;
+}
+
+.de-editor {
+  width: 720px;
+  background: #ffffff;
+  border: 1px solid #d5dce4;
+  font-size: 15px;
+}
+
+.de-status {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  padding: 4px 12px;
+  background: #ffffff;
+  border-top: 1px solid #d5dce4;
+}
+
+.de-status-t {
+  font-size: 12px;
+  color: #57606a;
+}

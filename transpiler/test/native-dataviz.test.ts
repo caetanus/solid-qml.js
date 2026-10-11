@@ -68,3 +68,51 @@ test("dataviz: <CodeEditor> instantiates the opt-in Code module with language + 
   assert.match(out, /language: "QML"/);
   assert.match(out, /text: "a"/);
 });
+
+// ── <DocumentEditor>: the app drives the document (office item 0) ─────────────────────────────
+
+test("document editor: <DocumentEditor> instantiates WRich.DocumentEditor from the RichText module", async () => {
+  const out = await qmlType(`export function F(){ return <DocumentEditor class="editor" />; }`);
+  assert.match(out, /import solidqml\.Widgets\.RichText 1\.0 as WRich/);
+  assert.match(out, /WRich\.DocumentEditor \{/);
+  assert.match(out, /cssClass: \["editor"\]/);
+  assert.doesNotMatch(out, /variant:/); // the document variant IS the type
+});
+
+test("document editor: toolbar={false} hides the built-in toolbar; a dynamic value binds", async () => {
+  const off = await qmlType(`export function F(){ return <DocumentEditor toolbar={false} />; }`);
+  assert.match(off, /toolbar: false/);
+  const dyn = await qmlType(`export function F(){ const [t,setT]=createSignal(true); return <DocumentEditor toolbar={t()} />; }`);
+  assert.match(dyn, /toolbar: t\b/);
+});
+
+test("document editor: ref={doc} gives the editor its id; methods and format state resolve through it", async () => {
+  const out = await qmlType(`export function F(){
+    let doc;
+    const [st,setSt]=createSignal("");
+    const save = () => { const r = doc.saveOdf("/x/a.odt"); setSt(r.ok ? "saved" : r.error); };
+    return <div>
+      <button classList={{ on: doc.bold }} onClick={() => doc.toggleBold()}>B</button>
+      <button onClick={save}>S</button>
+      <DocumentEditor ref={doc} toolbar={false} />
+    </div>; }`);
+  assert.match(out, /WRich\.DocumentEditor \{\s*\n\s*id: _ref_doc/);
+  assert.match(out, /_ref_doc\.toggleBold\(\)/);
+  assert.match(out, /_ref_doc\.bold/);
+  assert.match(out, /_ref_doc\.saveOdf\("\/x\/a\.odt"\)/);
+});
+
+test("document editor: onModifiedChanged receives the flag; onContentChanged takes no payload", async () => {
+  const out = await qmlType(`export function F(){
+    const [dirty,setDirty]=createSignal(false); const [n,setN]=createSignal(0);
+    return <DocumentEditor onModifiedChanged={(m) => setDirty(m)} onContentChanged={() => setN(n() + 1)} />; }`);
+  // Inside the instance a bare `modified` is the editor's own property (QML: the scope object's
+  // properties come before the component root's).
+  assert.match(out, /onModifiedChanged: \{[^\n]*dirty = modified \}/);
+  assert.match(out, /onContentChanged: \{[^\n]*n = n \+ 1/);
+});
+
+test("document editor: <RichText> keeps its mail/forms contract (no toolbar/ref/onContentChanged)", async () => {
+  await assert.rejects(qmlType(`export function F(){ return <RichText toolbar={false} />; }`), /<RichText> does not support `toolbar`/);
+  await assert.rejects(qmlType(`export function F(){ return <DocumentEditor html="<p>x</p>" />; }`), /<DocumentEditor> does not support `html`/);
+});

@@ -55,7 +55,7 @@ const FIXTURES: Fx[] = [
   { key: "MenuBar>Menu", el: `<MenuBar>${el("Menu", "<MenuItem onClick={() => setS(1)}>i</MenuItem>")}</MenuBar>` },
   ...["ToolBar", "SplitView", "Drawer", "SwipeView", "PageIndicator", "RangeSlider", "Dial", "Tumbler",
     "DelayButton", "BusyIndicator", "RoundButton", "ToolButton", "ToolSeparator", "ContextMenu", "TreeView",
-    "ListView", "TableView", "Tray", "Chart", "Scene3D", "Surface", "MediaPlayer", "WebView", "RichText", "CodeEditor",
+    "ListView", "TableView", "Tray", "Chart", "Scene3D", "Surface", "MediaPlayer", "WebView", "RichText", "DocumentEditor", "CodeEditor",
     "Shortcut", "Calendar"].map((tg) => ({ key: tg, el: el(tg, "") })),
   { key: "MenuBar", el: el("MenuBar", `<Menu title="F"><MenuItem onClick={() => setS(1)}>i</MenuItem></Menu>`) },
   { key: "TabBar", el: el("TabBar", "<TabButton>t</TabButton>") },

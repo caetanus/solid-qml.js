@@ -13,6 +13,9 @@
 // (a draft, a quote, a signature) — when it is what the editor itself last reported, nothing
 // happens, so the caret stays put while the app echoes edits back; `edited(html, text)` reports
 // each change, the plain text alongside for a text/plain part.
+//
+// <DocumentEditor> (DocumentEditor.qml) is this editor driven by the APP: empty start, file IO,
+// `modified`, debounced contentChanged, format state and operations through a ref.
 import QtQuick
 import QtQuick.Templates as T
 import Qt.labs.platform 1.1 as Platform
@@ -25,6 +28,14 @@ Css.CssFill {
     implicitHeight: 380
     property string variant: "document"
     property string html: ""
+    // The built-in toolbar (formatting needs the loader's handler either way).
+    property bool toolbar: true
+    // What the document variant shows when created. DocumentEditor (the app-driven document,
+    // DocumentEditor.qml) starts empty instead.
+    property string _initialHtml: "<h1>solid-qml</h1><p>A <b>word-like</b> editor with <i>native</i> " +
+                                  "<u>OpenDocument</u> round-trip.</p>"
+    // The text area, for DocumentEditor (ids don't cross the file boundary).
+    readonly property alias _editor: edit
     signal edited(string html, string text)
     readonly property bool _mail: variant === "mail"
     property string _reported: ""
@@ -135,14 +146,14 @@ Css.CssFill {
         anchors.fill: parent
 
         Css.CssFill {
-            id: toolbar
+            id: bar
             cssPrimitive: "div"
             cssClass: ["rt-toolbar"]
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            height: root._canFormat ? 38 : 0
-            visible: root._canFormat
+            height: root._canFormat && root.toolbar ? 38 : 0
+            visible: root._canFormat && root.toolbar
             Row {
                 x: 8
                 anchors.verticalCenter: parent.verticalCenter
@@ -173,7 +184,7 @@ Css.CssFill {
             id: body
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.top: toolbar.bottom
+            anchors.top: bar.bottom
             anchors.bottom: parent.bottom
             clip: true
             contentWidth: width
@@ -192,8 +203,7 @@ Css.CssFill {
                 color: root.inheritedColor ? cssTheme.parseColor(root.inheritedColor) : "#1f2328"
                 font.family: cssTheme.resolveFontFamily(root.inheritedFontFamily || "Sans Serif")
                 font.pixelSize: root._mail ? 14 : cssTheme.parseFontSize(root.inheritedFontSize || "14px", 14)
-                text: root._mail ? root.html : "<h1>solid-qml</h1><p>A <b>word-like</b> editor with <i>native</i> " +
-                      "<u>OpenDocument</u> round-trip.</p>"
+                text: root._mail ? root.html : root._initialHtml
                 onTextChanged: { if (root._pendingAt >= 0) Qt.callLater(root._applyPending); root._report() }
                 // Ctrl+B / Ctrl+I / Ctrl+U, as in every editor.
                 Keys.onPressed: (event) => {

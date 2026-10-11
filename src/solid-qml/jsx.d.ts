@@ -77,12 +77,27 @@ type NativeWidgetProps = {
 };
 type NativeWidget = Component<NativeWidgetProps>;
 
+/** File IO result of the DocumentEditor ref methods. */
+type DocumentIoResult = { ok: boolean; error: string };
+
+type DocumentEditorProps = {
+  class?: string;
+  /** `let doc: DocumentEditorHandle | undefined; <DocumentEditor ref={doc} />` */
+  ref?: DocumentEditorHandle;
+  /** false hides the built-in toolbar (the app draws its own). Default true. */
+  toolbar?: boolean;
+  onModifiedChanged?: (modified: boolean) => void;
+  /** Debounced; no payload — read doc.plainText() / doc.toHtml() when needed. */
+  onContentChanged?: () => void;
+};
+
 declare global {
   const BusyIndicator: NativeWidget;
   const Chart: NativeWidget;
   const CodeEditor: NativeWidget;
   const ContextMenu: NativeWidget;
   const DelayButton: NativeWidget;
+  const DocumentEditor: Component<DocumentEditorProps>;
   const Dial: NativeWidget;
   const Drawer: NativeWidget;
   const ListView: NativeWidget;
@@ -111,6 +126,46 @@ declare global {
   const TreeView: NativeWidget;
   const Tumbler: NativeWidget;
   const WebView: NativeWidget;
+
+  /** What `ref={doc}` on <DocumentEditor> gives the app (see docs/document-editor.md). */
+  interface DocumentEditorHandle {
+    readonly modified: boolean;
+    readonly bold: boolean;
+    readonly italic: boolean;
+    readonly underline: boolean;
+    readonly strike: boolean;
+    readonly bulletList: boolean;
+    /** 0 = body text, 1..6 = heading level. */
+    readonly heading: number;
+    readonly alignment: "left" | "center" | "right" | "justify";
+    readonly inTable: boolean;
+    readonly canUndo: boolean;
+    readonly canRedo: boolean;
+    /** A plain path or a file:// URL. */
+    loadOdf(path: string): DocumentIoResult;
+    saveOdf(path: string): DocumentIoResult;
+    newDocument(): void;
+    toHtml(): string;
+    plainText(): string;
+    insertText(text: string): void;
+    focusEditor(): void;
+    undo(): void;
+    redo(): void;
+    toggleBold(): void;
+    toggleItalic(): void;
+    toggleUnderline(): void;
+    toggleStrike(): void;
+    toggleBulletList(): void;
+    /** 0 = body text, 1..3 sized headings (4..6: bold). */
+    setHeading(level: number): void;
+    setAlignment(align: "left" | "center" | "right" | "justify"): void;
+    insertTable(rows: number, cols: number): void;
+    addTableRow(): void;
+    addTableColumn(): void;
+    removeTableRow(): void;
+    removeTableColumn(): void;
+    insertImage(path: string): DocumentIoResult;
+  }
 
   // Runtime CSS-theme override handle, injected by the loader (see examples/dashboard).
   const cssTheme: { loadLayeredString(css: string): void };
