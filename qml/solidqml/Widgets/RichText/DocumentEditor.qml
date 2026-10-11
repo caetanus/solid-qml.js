@@ -263,9 +263,10 @@ RichText {
     signal blocksLoaded()
     signal blockChanged(string blockId)
     signal blockRemoved(string blockId)
-    // `mark`: {kind, id, blockId, start, end}; x, y in this item's coordinates.
-    signal markClicked(var mark, real x, real y)
-    signal markContextMenu(var mark, real x, real y)
+    // `mark`: {kind, id, blockId, start, end}; x, y in this item's coordinates; windowX/windowY
+    // the same point in the window's (what <Menu ref> open(x, y) takes).
+    signal markClicked(var mark, real x, real y, real windowX, real windowY)
+    signal markContextMenu(var mark, real x, real y, real windowX, real windowY)
     signal markHovered(var mark) // null when the pointer leaves a mark
 
     function blockIds() { return fmt ? fmt.blockIds() : [] }
@@ -305,8 +306,9 @@ RichText {
             var m = root._markAtPoint(eventPoint.position.x, eventPoint.position.y)
             if (!m) return
             var p = root.mapFromItem(root._editor, eventPoint.position.x, eventPoint.position.y)
-            if (button === Qt.RightButton) root.markContextMenu(m, p.x, p.y)
-            else root.markClicked(m, p.x, p.y)
+            var w = root._editor.mapToItem(null, eventPoint.position.x, eventPoint.position.y)
+            if (button === Qt.RightButton) root.markContextMenu(m, p.x, p.y, w.x, w.y)
+            else root.markClicked(m, p.x, p.y, w.x, w.y)
         }
     }
     property var _hoveredMark: null

@@ -111,10 +111,12 @@ type DocumentEditorProps = {
   onBlockChanged?: (blockId: string) => void;
   /** The block left the document (merged, deleted, an undone split): drop its state. */
   onBlockRemoved?: (blockId: string) => void;
-  /** A click on a mark; x, y in the editor's coordinates. */
-  onMarkClicked?: (mark: DocumentMark, x: number, y: number) => void;
-  /** A right-click on a mark (show suggestions). A right-click elsewhere is left alone. */
-  onMarkContextMenu?: (mark: DocumentMark, x: number, y: number) => void;
+  /** A click on a mark; x, y in the editor's coordinates, windowX/windowY in the window's (what
+   *  a `<Menu ref>`'s open(x, y) takes). */
+  onMarkClicked?: (mark: DocumentMark, x: number, y: number, windowX: number, windowY: number) => void;
+  /** A right-click on a mark (show suggestions; open a menu right here — a Wayland popup needs
+   *  the click's input serial). A right-click elsewhere is left alone. */
+  onMarkContextMenu?: (mark: DocumentMark, x: number, y: number, windowX: number, windowY: number) => void;
   /** The pointer entered a mark, or left it (null). */
   onMarkHovered?: (mark: DocumentMark | null) => void;
 };

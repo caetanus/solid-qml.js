@@ -214,14 +214,15 @@ function emitDocumentEditor(propsArg: t.Node | undefined, _children: t.Node[], s
   if (onHeadings && (t.isArrowFunctionExpression(onHeadings) || t.isFunctionExpression(onHeadings)))
     lines.push(`${i(1)}onHeadingsChanged: { ${translateArgsHandler(onHeadings, [], scope)} }`);
   // Office item 3 (blocks & marks): blocksLoaded(); blockChanged/blockRemoved(blockId);
-  // markClicked/markContextMenu(mark, x, y); markHovered(mark | null). Arrow form, so the app's
+  // markClicked/markContextMenu(mark, x, y, windowX, windowY); markHovered(mark | null). Arrow form, so the app's
   // own parameter names never meet the editor's properties.
   const onBlocksLoaded = props.get("onBlocksLoaded");
   if (onBlocksLoaded && (t.isArrowFunctionExpression(onBlocksLoaded) || t.isFunctionExpression(onBlocksLoaded)))
     lines.push(`${i(1)}onBlocksLoaded: { ${translateArgsHandler(onBlocksLoaded, [], scope)} }`);
   const withArgs: [string, string[]][] = [
     ["onBlockChanged", ["__blockId"]], ["onBlockRemoved", ["__blockId"]],
-    ["onMarkClicked", ["__mark", "__x", "__y"]], ["onMarkContextMenu", ["__mark", "__x", "__y"]], ["onMarkHovered", ["__mark"]],
+    ["onMarkClicked", ["__mark", "__x", "__y", "__wx", "__wy"]], ["onMarkContextMenu", ["__mark", "__x", "__y", "__wx", "__wy"]],
+    ["onMarkHovered", ["__mark"]],
   ];
   for (const [name, args] of withArgs) {
     const fn = props.get(name);
