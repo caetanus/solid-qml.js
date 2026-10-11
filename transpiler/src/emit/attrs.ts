@@ -100,7 +100,7 @@ export const ELEMENT_ATTRS: Record<string, Attrs> = {
   Menu: { class: "lit", ref: "ident", trigger: "elem", onClose: "fn" },
   // A <Menu> inside <MenuBar> is an OS-native Platform.Menu: only its title is read.
   "MenuBar>Menu": { title: "expr" },
-  MenuItem: { onClick: "fn" },
+  MenuItem: { onClick: "fn", disabled: "bool", checked: "expr" },
   MenuSeparator: {},
   MenuBar: {},
   ContextMenu: { class: "lit", onClose: "fn" },

@@ -536,3 +536,151 @@ test("contextmenu: rejects non-menu children", async () => {
     /only accepts <MenuItem>/,
   );
 });
+
+// ---------------------------------------------------------------------------
+// <For>/<Show> inside <Menu>/<ContextMenu> — dynamic items (spell-check menu, solid-player)
+// ---------------------------------------------------------------------------
+
+const SPELL_MENU_SRC = `
+  export function F() {
+    let spellMenu;
+    const [sugg, setSugg] = createSignal([]);
+    const replaceWith = (w) => setSugg([]);
+    const addToDictionary = () => setSugg([]);
+    return (
+      <Menu ref={spellMenu}>
+        <For each={sugg()}>{(w) => <MenuItem onClick={() => replaceWith(w)}>{w}</MenuItem>}</For>
+        <MenuSeparator />
+        <MenuItem onClick={() => addToDictionary()}>Add to dictionary</MenuItem>
+      </Menu>
+    );
+  }
+`;
+
+test("menus <For>: an Instantiator whose delegate IS the row, wired to insertItem/removeItem (Qt's own documented dynamic-menu-items pattern — no C++ change needed)", async () => {
+  const out = await qml(SPELL_MENU_SRC);
+  assert.match(out,
+    /Instantiator \{\n\s*id: __menuDyn\d+\n\s*model: sugg\n\s*delegate: Component \{\n\s*W\.MenuItem \{\n\s*text: \(modelData\)\n\s*onTriggered: \{ replaceWith\(modelData\) \}\n\s*\}\n\s*\}\n\s*onObjectAdded: \(index, object\) => __menu0\.insertItem\(0 \+ index, object\)\n\s*onObjectRemoved: \(index, object\) => __menu0\.removeItem\(object\)\n\s*\}/);
+  // The static items before/after the <For> are untouched, in source order.
+  assert.match(out, /\}\n\s*W\.MenuSeparator \{ \}\n\s*W\.MenuItem \{\n\s*text: "Add to dictionary"/);
+});
+
+test("menus <For>: i() routes through the reserved __forIndex property, never the bare `index`", async () => {
+  const out = await qml(`export function F(){
+    let r; const [sugg] = createSignal(["a","b"]);
+    return <Menu ref={r}><For each={sugg()}>{(w, i) => <MenuItem onClick={() => console.log(w, i())}>{w}</MenuItem>}</For></Menu>;
+  }`);
+  assert.match(out, /delegate: Component \{\n\s*W\.MenuItem \{\n\s*property int __forIndex: index\n\s*text: \(modelData\)\n\s*onTriggered: \{ console\.log\(modelData, __forIndex\) \}/);
+  assert.doesNotMatch(out, /console\.log\(modelData, index\)/);
+});
+
+test("menus <For>: multiple <For> blocks — each an independent Instantiator; the SECOND's insertItem index accounts for the static separator AND the first block's live .count", async () => {
+  const out = await qml(`export function F(){
+    let r; const [a] = createSignal(["x"]); const [b] = createSignal(["y"]);
+    return <Menu ref={r}>
+      <For each={a()}>{(w) => <MenuItem>{w}</MenuItem>}</For>
+      <MenuSeparator />
+      <For each={b()}>{(w) => <MenuItem>{w}</MenuItem>}</For>
+    </Menu>;
+  }`);
+  assert.equal((out.match(/Instantiator \{/g) ?? []).length, 2);
+  const m1 = /id: (__menuDyn\d+)\n\s*model: a[\s\S]*?onObjectAdded: \(index, object\) => __menu0\.insertItem\((\d+) \+ index, object\)/.exec(out);
+  assert.ok(m1, "first For block: no static before it, no .count term");
+  const [, id1, base1] = m1!;
+  assert.equal(base1, "0"); // 1st: no static before it
+  const m2 = new RegExp(`id: (__menuDyn\\d+)\\n\\s*model: b[\\s\\S]*?onObjectAdded: \\(index, object\\) => __menu0\\.insertItem\\((\\d+) \\+ ${id1}\\.count \\+ index, object\\)`).exec(out);
+  // 2nd: one static (the separator) + the first block's own running count.
+  assert.ok(m2, "second For block: base includes the static separator + the first block's .count");
+  assert.equal(m2![2], "1");
+});
+
+test("menus <For>: a <MenuSeparator> row (no text/onTriggered)", async () => {
+  const out = await qml(`export function F(){
+    let r; const [a] = createSignal([1,2]);
+    return <Menu ref={r}><For each={a()}>{() => <MenuSeparator />}</For></Menu>;
+  }`);
+  assert.match(out, /Instantiator \{\n\s*id: __menuDyn\d+\n\s*model: a\n\s*delegate: Component \{\n\s*W\.MenuSeparator \{ \}\n\s*\}/);
+});
+
+test("menus <For>: row must be a single <MenuItem>/<MenuSeparator> — a <div> row fails loud", async () => {
+  await assert.rejects(
+    qml(`export function F(){ let r; return <Menu ref={r}><For each={[1]}>{(w) => <div>{w}</div>}</For></Menu>; }`),
+    /<Menu><For> row must be a single <MenuItem>\/<MenuSeparator>, got <div>/,
+  );
+});
+
+test("menus <Show>: wraps one or more <MenuItem>/<MenuSeparator> — one Instantiator per item, the second's index accounting for the first", async () => {
+  const out = await qml(`export function F(){
+    let r; const [adv, setAdv] = createSignal(true);
+    return <Menu ref={r}>
+      <Show when={adv()}>
+        <MenuItem onClick={() => setAdv(false)}>Advanced</MenuItem>
+        <MenuSeparator />
+      </Show>
+      <MenuItem>Always</MenuItem>
+    </Menu>;
+  }`);
+  const m1 = /Instantiator \{\n\s*id: (__menuDyn\d+)\n\s*model: \(adv\) \? 1 : 0\n\s*delegate: Component \{\n\s*W\.MenuItem \{\n\s*text: "Advanced"\n\s*onTriggered: \{ adv = false \}\n\s*\}\n\s*\}\n\s*onObjectAdded: \(index, object\) => __menu0\.insertItem\((\d+) \+ index, object\)/.exec(out);
+  assert.ok(m1, "first Show item (MenuItem): base has no .count term (nothing dynamic precedes it)");
+  assert.equal(m1![2], "0");
+  const m2 = new RegExp(`Instantiator \\{\\n\\s*id: __menuDyn\\d+\\n\\s*model: \\(adv\\) \\? 1 : 0\\n\\s*delegate: Component \\{\\n\\s*W\\.MenuSeparator \\{ \\}\\n\\s*\\}\\n\\s*onObjectAdded: \\(index, object\\) => __menu0\\.insertItem\\(0 \\+ ${m1![1]}\\.count \\+ index, object\\)`).exec(out);
+  assert.ok(m2, "second Show item (separator): base folds in the first item's own Instantiator .count");
+  assert.match(out, /W\.MenuItem \{\n\s*text: "Always"/);
+});
+
+test("menus <Show>: nesting <For>/<Show> inside the gate is out of scope — fails loud", async () => {
+  await assert.rejects(
+    qml(`export function F(){ let r; return <Menu ref={r}><Show when={true}><For each={[1]}>{(w) => <MenuItem>{w}</MenuItem>}</For></Show></Menu>; }`),
+    /<Menu><Show> only wraps <MenuItem>\/<MenuSeparator>, got <For>/,
+  );
+  await assert.rejects(
+    qml(`export function F(){ let r; return <Menu ref={r}><Show when={true} fallback={<MenuItem>x</MenuItem>}><MenuItem>y</MenuItem></Show></Menu>; }`),
+    /<Show fallback> is not supported inside a menu/,
+  );
+});
+
+test("menus: disabled/checked on a <MenuItem> (static) — new reactive props, zero cost when absent", async () => {
+  const out = await qml(`export function F(){
+    let r; const [wrap, setWrap] = createSignal(true);
+    return <Menu ref={r}><MenuItem checked={wrap()} disabled={!wrap()}>Word wrap</MenuItem></Menu>;
+  }`);
+  assert.match(out, /W\.MenuItem \{\n\s*text: "Word wrap"\n\s*checkable: true\n\s*checked: wrap\n\s*enabled: !\(!wrap\)\n\s*\}/);
+});
+
+test("menus <For>: row items get disabled/checked too (reactive per row, via the row value)", async () => {
+  const out = await qml(`export function F(){
+    let r; const [items] = createSignal([{ label: "a", on: true }]);
+    return <Menu ref={r}><For each={items()}>{(it) => <MenuItem checked={it.on} disabled={!it.on}>{it.label}</MenuItem>}</For></Menu>;
+  }`);
+  assert.match(out, /checkable: true\n\s*checked: modelData\.on\n\s*enabled: !\(!modelData\.on\)/);
+});
+
+test("menus: an unrecognized <MenuItem> attribute still fails loud (attrs.ts contract, not silently dropped)", async () => {
+  await assert.rejects(
+    qml(`export function F(){ let r; return <Menu ref={r}><MenuItem icon="x.png">Open</MenuItem></Menu>; }`),
+    /<MenuItem> does not support `icon`/,
+  );
+});
+
+test("contextmenu <For>: the same dynamic-item support (shares emitMenuItemLines with <Menu>)", async () => {
+  const out = await qml(`export function F(){
+    const [sugg] = createSignal(["teh", "the"]);
+    return <div class="zone"><ContextMenu>
+      <For each={sugg()}>{(w) => <MenuItem onClick={() => 0}>{w}</MenuItem>}</For>
+      <MenuSeparator />
+      <MenuItem onClick={() => 0}>Add to dictionary</MenuItem>
+    </ContextMenu></div>;
+  }`);
+  assert.match(out, /Instantiator \{\n\s*id: __menuDyn\d+\n\s*model: sugg\n\s*delegate: Component \{\n\s*W\.MenuItem \{\n\s*text: \(modelData\)/);
+  assert.match(out, /W\.MenuItem \{\n\s*text: "Add to dictionary"/);
+});
+
+test("menu trigger <For>: the self-managed trigger form shares the same dynamic-item path", async () => {
+  const out = await qml(`export function F(){
+    const [sugg] = createSignal(["a"]);
+    return <Menu trigger={<button>Actions</button>}>
+      <For each={sugg()}>{(w) => <MenuItem onClick={() => 0}>{w}</MenuItem>}</For>
+    </Menu>;
+  }`);
+  assert.match(out, /Instantiator \{\n\s*id: __menuDyn\d+\n\s*model: sugg\n\s*delegate: Component \{\n\s*W\.MenuItem \{\n\s*text: \(modelData\)/);
+});

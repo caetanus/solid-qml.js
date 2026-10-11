@@ -20,7 +20,8 @@
 import * as t from "@babel/types";
 import { registerNativeTags, requireImport } from "./index.ts";
 import { emitExpr, type Scope } from "../expr.ts";
-import { buildCssClassLine, emitChildren, guardLine, INDENT } from "../qml.ts";
+import { boolAttrExpr, buildCssClassLine, emitChildren, enabledFromDisabled, guardLine, INDENT } from "../qml.ts";
+import { checkAttrs } from "../attrs.ts";
 import { hParts, isHCall } from "../../ast/h.ts";
 import { safeName } from "../../names/safe.ts";
 
@@ -112,6 +113,10 @@ function textBindingOf(children: t.Node[], scope: Scope): string {
 
 interface MenuChild { kind: "item" | "separator"; labelBinding?: string; onClick?: t.Node }
 
+/** Used only by <Tray> (its items become Platform.MenuItem, a separate object system — see
+ *  emitTray) — a flat MenuItem/MenuSeparator list, no <For>/<Show>. <Menu>/<ContextMenu> (the
+ *  W.Menu-backed forms) go through emitMenuItemLines below instead, which also accepts <For>/
+ *  <Show>. */
 function parseMenuChildren(children: t.Node[], scope: Scope, owner: string): MenuChild[] {
   const out: MenuChild[] = [];
   for (const child of children) {
@@ -122,6 +127,221 @@ function parseMenuChildren(children: t.Node[], scope: Scope, owner: string): Men
     if (name !== "MenuItem") throw new Error(`<${owner}> only accepts <MenuItem>/<MenuSeparator> children, got <${name}>`);
     const p = propsOf(itemProps);
     out.push({ kind: "item", labelBinding: textBindingOf(itemKids as t.Node[], scope), onClick: p.get("onClick") });
+  }
+  return out;
+}
+
+// ─── <Menu>/<ContextMenu> item body: <MenuItem>/<MenuSeparator> plus <For>/<Show> ──────────────
+//
+// Qt's own docs (Menu QML Type, "Performance considerations when dynamically populating menus")
+// recommend `Instantiator`, with `onObjectAdded`/`onObjectRemoved` explicitly calling
+// `menu.insertItem(index, object)` / `menu.removeItem(object)` — see the reference snippet
+// src/quickcontrols/doc/snippets/qtquickcontrols-menu-instantiator.qml in the Qt sources — rather
+// than a bare `Repeater` child. We measured why: QQuickMenu::contentData()'s DEFAULT-PROPERTY
+// GETTER (the one the engine calls to append every declared child, static or a Repeater) forces a
+// style default content item into existence on first access if none is set yet; the FIRST time a
+// Repeater's own transparent-for-positioner reparenting kicks in, it can land under whatever
+// content item won that race. A vanilla QtQuick.Controls Menu has the exact same quirk (verified
+// empirically) — mixing a bare Repeater with static siblings in a Menu is a known rough edge, not
+// something particular to this project. `insertItem(index, object)` sidesteps it entirely: we pick
+// the index ourselves, from our own authored structure, independent of contentModel's incidental
+// state. The running index is `<static items/separators declared before this point>` (a
+// compile-time constant) `+ <sum of .count over every earlier dynamic block's Instantiator>` (so
+// multiple <For>/<Show> blocks compose correctly; a trailing static item needs no adjustment — it
+// keeps whatever position contentData_append already gave it, and insertItem at a lower index
+// simply shifts it up, same as it would for another static item declared earlier).
+//
+// <For> row index: routed through the reserved `__forIndex` property (qml.ts's rowDelegate), NEVER
+// the bare `index` context property — see commit 82ef306: a handler the row declares (unlikely
+// here, but the rule is unconditional) could otherwise shadow it.
+
+/** `onClick`/`disabled`/`checked` off a <MenuItem>'s props (raw nodes — resolved against the
+ *  caller's scope, which differs for a static item vs. a <For> row). Checked against the attrs.ts
+ *  contract itself — the generic checkElement recursion (PARENT_CONSUMED) only reaches a <MenuItem>
+ *  that's a DIRECT child of <Menu>/<ContextMenu>, not one reached through a <For> row or a <Show> —
+ *  so every caller here runs the same fail-loud check regardless of where the item sits. */
+function itemPropsOf(propsArg: t.Node | undefined): { onClick?: t.Node; disabled?: t.Node; checked?: t.Node } {
+  checkAttrs("MenuItem", propsArg);
+  const props = propsOf(propsArg);
+  return { onClick: props.get("onClick"), disabled: props.get("disabled"), checked: props.get("checked") };
+}
+
+/** One W.MenuItem object, `level`-indented. `checked` implies `checkable: true`; `disabled` reuses
+ *  the same HTML-attribute convention as every other native control (bare or reactive). Shared by
+ *  static items and <For> rows — only `scope` (and the label/level) differ. */
+function renderMenuItemLines(labelBinding: string, p: { onClick?: t.Node; disabled?: t.Node; checked?: t.Node },
+                              scope: Scope, level: number): string[] {
+  const i = (n: number) => INDENT.repeat(level + n);
+  const lines = [`${i(0)}W.MenuItem {`, `${i(1)}text: ${labelBinding}`];
+  if (p.checked) {
+    lines.push(`${i(1)}checkable: true`);
+    lines.push(`${i(1)}checked: ${emitExpr(p.checked as t.Expression, { ...scope, mode: "binding" })}`);
+  }
+  if (p.disabled) {
+    const d = boolAttrExpr(p.disabled, scope);
+    if (d) lines.push(`${i(1)}enabled: ${enabledFromDisabled(d)}`);
+  }
+  if (p.onClick) lines.push(`${i(1)}onTriggered: { ${handlerBody(p.onClick, scope)} }`);
+  lines.push(`${i(0)}}`);
+  return lines;
+}
+
+function menuEachOf(propsArg: t.Node | undefined, scope: Scope): string {
+  const each = propsOf(propsArg).get("each");
+  return each ? emitExpr(each, { ...scope, mode: "binding" }) : "[]";
+}
+
+function menuWhenOf(propsArg: t.Node | undefined, scope: Scope): string {
+  const when = propsOf(propsArg).get("when");
+  return when ? emitExpr(when, { ...scope, mode: "binding" }) : "true";
+}
+
+/** One dynamic block's Instantiator wiring: model + delegate (the row/gated item) + the two
+ *  handlers that do the ACTUAL contentModel insert/remove (the Qt-documented pattern — see the
+ *  comment above). `baseIndex` is this block's running index expression (everything declared
+ *  before it); `id` is this Instantiator's own id, so a LATER block can add `${id}.count` to ITS
+ *  base index. */
+/** `itemLines` must already be indented at `level + 2` (the slot inside `delegate: Component { }`)
+ *  — callers build them with `renderMenuItemLines(…, level + 2)` / `INDENT.repeat(level + 2)`. */
+function instantiatorLines(id: string, model: string, menuId: string, baseIndex: string,
+                            itemLines: string[], level: number): string[] {
+  const i = (n: number) => INDENT.repeat(level + n);
+  return [
+    `${i(0)}Instantiator {`,
+    `${i(1)}id: ${id}`,
+    `${i(1)}model: ${model}`,
+    `${i(1)}delegate: Component {`,
+    ...itemLines,
+    `${i(1)}}`,
+    `${i(1)}onObjectAdded: (index, object) => ${menuId}.insertItem(${baseIndex} + index, object)`,
+    `${i(1)}onObjectRemoved: (index, object) => ${menuId}.removeItem(object)`,
+    `${i(0)}}`,
+  ];
+}
+
+/** <For each={E}>{(row[, i]) => <MenuItem>…</MenuItem>}</For> (or a <MenuSeparator> row) inside
+ *  <Menu>/<ContextMenu> → an Instantiator whose delegate IS the row. `row` routes through
+ *  `modelData` and `i()` through the reserved `__forIndex` property. Returns the emitted lines AND
+ *  this block's Instantiator id (the caller threads it into the running base-index for whatever
+ *  comes after). */
+function renderForBlock(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, owner: string,
+                        menuId: string, id: string, baseIndex: string): string[] {
+  checkAttrs("For", propsArg);
+  const each = menuEachOf(propsArg, scope);
+  const delegate = children.find((c) => t.isArrowFunctionExpression(c) || t.isFunctionExpression(c)) as Fn | undefined;
+  if (!delegate) throw new Error(`<${owner}><For> needs a row function: {(item) => <MenuItem>…</MenuItem>}`);
+  const [param, indexParam] = delegate.params;
+  const itemName = param && t.isIdentifier(param) ? param.name : null;
+  const indexName = indexParam && t.isIdentifier(indexParam) ? indexParam.name : null;
+  const body = delegate.body;
+  if (!isHCall(body))
+    throw new Error(`<${owner}><For> row must be a single <MenuItem>/<MenuSeparator>, got an expression`);
+  const { tag, props: rowProps, children: rowKids } = hParts(body as t.CallExpression);
+  const rowName = t.isIdentifier(tag) ? tag.name : t.isStringLiteral(tag) ? tag.value : "?";
+  if (rowName !== "MenuItem" && rowName !== "MenuSeparator")
+    throw new Error(`<${owner}><For> row must be a single <MenuItem>/<MenuSeparator>, got <${rowName}>`);
+
+  const rowScope: Scope = {
+    ...scope,
+    locals: { ...(scope.locals ?? {}), ...(itemName ? { [itemName]: "modelData" } : {}) },
+    accessors: { ...(scope.accessors ?? {}), ...(indexName ? { [indexName]: "__forIndex" } : {}) },
+  };
+
+  let itemLines: string[];
+  if (rowName === "MenuSeparator") {
+    checkAttrs("MenuSeparator", rowProps);
+    itemLines = [`${INDENT.repeat(level + 2)}W.MenuSeparator { }`];
+  } else {
+    const labelBinding = textBindingOf(rowKids as t.Node[], rowScope);
+    itemLines = renderMenuItemLines(labelBinding, itemPropsOf(rowProps), rowScope, level + 2);
+    // Declared whenever the row HAS an index param at all (not only when it's read inside a
+    // further-nested loop) — same unconditional rule as qml.ts's rowDelegate.
+    if (indexName) itemLines.splice(1, 0, `${INDENT.repeat(level + 3)}property int __forIndex: index`);
+  }
+  return instantiatorLines(id, each, menuId, baseIndex, itemLines, level);
+}
+
+/** <Show when={C}>…one or more <MenuItem>/<MenuSeparator>…</Show> inside <Menu>/<ContextMenu> →
+ *  one `Instantiator { model: (C) ? 1 : 0; <item> }` per gated item, same insertItem/removeItem
+ *  wiring as <For>. No fallback (menus don't need one here); nesting <For>/<Show> inside the gate
+ *  is out of scope — fail loud. Returns the emitted lines AND the ids of every Instantiator it
+ *  created (in order) — the caller folds each into the running base-index. */
+function renderShowBlock(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, owner: string,
+                         menuId: string, nextId: () => string, baseIndexOf: () => string): { lines: string[]; ids: string[] } {
+  checkAttrs("Show", propsArg);
+  if (propsOf(propsArg).get("fallback"))
+    throw new Error(`<${owner}><Show fallback> is not supported inside a menu — the fallback branch has no item to show`);
+  const when = menuWhenOf(propsArg, scope);
+  const out: string[] = [];
+  const ids: string[] = [];
+  for (const child of children) {
+    if (!isHCall(child)) continue; // whitespace between items
+    const { tag, props: itemProps, children: itemKids } = hParts(child as t.CallExpression);
+    const name = t.isIdentifier(tag) ? tag.name : t.isStringLiteral(tag) ? tag.value : "?";
+    let itemLines: string[];
+    if (name === "MenuSeparator") {
+      checkAttrs("MenuSeparator", itemProps);
+      itemLines = [`${INDENT.repeat(level + 2)}W.MenuSeparator { }`];
+    } else if (name === "MenuItem") {
+      const labelBinding = textBindingOf(itemKids as t.Node[], scope);
+      itemLines = renderMenuItemLines(labelBinding, itemPropsOf(itemProps), scope, level + 2);
+    } else {
+      throw new Error(`<${owner}><Show> only wraps <MenuItem>/<MenuSeparator>, got <${name}>`);
+    }
+    const id = nextId();
+    // `ids` so far are THIS Show's own earlier wrapped items — not yet folded into the caller's
+    // running `dynamicIds` (that happens after this function returns), so fold them in here too.
+    const base = [baseIndexOf(), ...ids.map((prior) => `${prior}.count`)].join(" + ");
+    out.push(...instantiatorLines(id, `(${when}) ? 1 : 0`, menuId, base, itemLines, level));
+    ids.push(id);
+  }
+  return { lines: out, ids };
+}
+
+/** The full item body of <Menu>/<ContextMenu>: <MenuItem>/<MenuSeparator> (static, placed by Qt's
+ *  normal contentData_append), <For> (one Instantiator whose delegate IS the row), <Show> (one
+ *  Instantiator per wrapped item). Anything else is a clear authoring error. `menuId` is threaded
+ *  into every dynamic block's insertItem/removeItem calls. */
+function emitMenuItemLines(children: t.Node[], scope: Scope, owner: string, level: number, menuId: string): string[] {
+  const out: string[] = [];
+  // Running insertion index for the NEXT dynamic block: a compile-time count of static items/
+  // separators seen so far, plus `.count` of every earlier dynamic block's Instantiator (see the
+  // comment above this section for why — not contentModel's own, unreliable, incidental position).
+  let staticPrefix = 0;
+  const dynamicIds: string[] = [];
+  const baseIndex = () => [String(staticPrefix), ...dynamicIds.map((id) => `${id}.count`)].join(" + ");
+  const counter = scope.inputCounter ?? { n: 0 };
+  const nextId = () => `__menuDyn${counter.n++}`;
+
+  for (const child of children) {
+    if (!isHCall(child)) continue; // whitespace between items
+    const { tag, props: itemProps, children: itemKids } = hParts(child as t.CallExpression);
+    const name = t.isIdentifier(tag) ? tag.name : t.isStringLiteral(tag) ? tag.value : "?";
+    if (name === "MenuSeparator") {
+      checkAttrs("MenuSeparator", itemProps);
+      out.push(`${INDENT.repeat(level)}W.MenuSeparator { }`);
+      staticPrefix++;
+      continue;
+    }
+    if (name === "MenuItem") {
+      const labelBinding = textBindingOf(itemKids as t.Node[], scope);
+      out.push(...renderMenuItemLines(labelBinding, itemPropsOf(itemProps), scope, level));
+      staticPrefix++;
+      continue;
+    }
+    if (name === "For") {
+      const id = nextId();
+      out.push(...renderForBlock(itemProps, itemKids as t.Node[], scope, level, owner, menuId, id, baseIndex()));
+      dynamicIds.push(id);
+      continue;
+    }
+    if (name === "Show") {
+      const { lines, ids } = renderShowBlock(itemProps, itemKids as t.Node[], scope, level, owner, menuId, nextId, baseIndex);
+      out.push(...lines);
+      dynamicIds.push(...ids);
+      continue;
+    }
+    throw new Error(`<${owner}> only accepts <MenuItem>/<MenuSeparator>/<For>/<Show> children, got <${name}>`);
   }
   return out;
 }
@@ -138,13 +358,14 @@ function parseMenuChildren(children: t.Node[], scope: Scope, owner: string): Men
 function menuObjectLines(opts: {
   menuId: string;
   anchorId: string;
-  items: MenuChild[];
+  children: t.Node[];
+  owner: string;         // "Menu" / "ContextMenu" — only for emitMenuItemLines' error messages
   classes: string[];
   title?: string;       // MenuBar submenu title (already a QML string expression)
   onCloseBody?: string;
 }, scope: Scope, level: number): string[] {
   const i = (n: number) => INDENT.repeat(level + n);
-  const { menuId, anchorId, items, classes } = opts;
+  const { menuId, anchorId, children, owner, classes } = opts;
   markWidgetLib(scope);
 
   const authorClass = classes.map((c) => JSON.stringify(c)).join(", ");
@@ -157,18 +378,8 @@ function menuObjectLines(opts: {
     ...(opts.title ? [`${i(1)}title: ${opts.title}`] : []),
     // No x/y on the menu: callers open via popup(x, y) (positions a Window popup + a fresh grab).
     ...(opts.onCloseBody ? [`${i(1)}onMenuClosed: { ${opts.onCloseBody} }`] : []),
+    ...emitMenuItemLines(children, scope, owner, level + 1, menuId),
   ];
-
-  for (const child of items) {
-    if (child.kind === "separator") { lines.push(`${i(1)}W.MenuSeparator { }`); continue; }
-    const clickBody = child.onClick ? handlerBody(child.onClick, scope) : "";
-    lines.push(
-      `${i(1)}W.MenuItem {`,
-      `${i(2)}text: ${child.labelBinding ?? '""'}`,
-      ...(clickBody ? [`${i(2)}onTriggered: { ${clickBody} }`] : []),
-      `${i(1)}}`,
-    );
-  }
 
   lines.push(`${i(0)}}`);
   return lines;
@@ -196,8 +407,6 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
   const onClose = props.get("onClose");
   const triggerProp = props.get("trigger");
   const refProp = props.get("ref");
-
-  const items = parseMenuChildren(children, scope, "Menu");
 
   // ── Self-managed form: <Menu trigger={<button>…</button>}> (owner directive 2026-07-05) ──
   // The menu owns its open/close; the embedded trigger TOGGLES it. Clicking the trigger while the
@@ -234,7 +443,7 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
       `${i(1)}Window.onActiveChanged: if (!Window.active) ${menuId}.close()`,
       ...trig,
       ...menuObjectLines({
-        menuId, anchorId: hostId, items, classes: classesOf(props),
+        menuId, anchorId: hostId, children, owner: "Menu", classes: classesOf(props),
         onCloseBody: onClose ? handlerBody(onClose, scope) : undefined,
       }, scope, level + 1),
       `${pad}}`,
@@ -263,7 +472,7 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
       `${i(1)}function close() { ${menuId}.close() }`,
       `${i(1)}Window.onActiveChanged: if (!Window.active) ${menuId}.close()`,
       ...menuObjectLines({
-        menuId, anchorId: refId, items, classes: classesOf(props),
+        menuId, anchorId: refId, children, owner: "Menu", classes: classesOf(props),
         onCloseBody: onClose ? handlerBody(onClose, scope) : undefined,
       }, scope, level + 1),
       `${pad}}`,
@@ -296,7 +505,6 @@ function emitContextMenu(propsArg: t.Node | undefined, children: t.Node[], scope
 
   const props = propsOf(propsArg);
   const onClose = props.get("onClose");
-  const items = parseMenuChildren(children, scope, "ContextMenu");
 
   // The menu's parentItem is a 1×1 anchor MOVED to the cursor: on Wayland the compositor positions a
   // Popup.Window by anchoring to parentItem's rect and ignores the popup(x,y) offset, so a right-click
@@ -319,7 +527,7 @@ function emitContextMenu(propsArg: t.Node | undefined, children: t.Node[], scope
     `${i(2)}height: 1`,
     `${i(2)}Window.onActiveChanged: if (!Window.active) ${menuId}.close()`,
     ...menuObjectLines({
-      menuId, anchorId, items, classes: classesOf(props),
+      menuId, anchorId, children, owner: "ContextMenu", classes: classesOf(props),
       onCloseBody: onClose ? handlerBody(onClose, scope) : undefined,
     }, scope, level + 2),
     `${i(1)}}`,
