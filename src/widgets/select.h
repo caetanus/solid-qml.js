@@ -18,6 +18,10 @@ class Select : public QmlCss::CssFill {
     Q_PROPERTY(QVariant model READ model WRITE setModel NOTIFY modelChanged)
     Q_PROPERTY(int currentIndex READ currentIndex WRITE setCurrentIndex NOTIFY currentIndexChanged)
     Q_PROPERTY(QVariant values READ values WRITE setValues NOTIFY valuesChanged)
+    // Parallel to `values`/`model`: one bool per row, true when that option should not be pickable.
+    // Defaults to an empty list — `[][index]` reads undefined/false, so a <select> that never sets
+    // this (every one before this plan) behaves exactly as before.
+    Q_PROPERTY(QVariant disabledFlags READ disabledFlags WRITE setDisabledFlags NOTIFY disabledFlagsChanged)
 
 public:
     explicit Select(QQuickItem *parent = nullptr);
@@ -28,11 +32,14 @@ public:
     void setCurrentIndex(int v);
     QVariant values() const { return m_values; }
     void setValues(const QVariant &v);
+    QVariant disabledFlags() const { return m_disabledFlags; }
+    void setDisabledFlags(const QVariant &v);
 
 signals:
     void modelChanged();
     void currentIndexChanged();
     void valuesChanged();
+    void disabledFlagsChanged();
     void activated(int index);
 
 protected:
@@ -46,6 +53,7 @@ private:
     // -1 would override the ComboBox's select-first-row-when-the-model-lands and blank the box.
     int m_currentIndex = 0;
     QVariant m_values = QVariantList();
+    QVariant m_disabledFlags = QVariantList();
     QPointer<QQuickItem> m_control;
 };
 

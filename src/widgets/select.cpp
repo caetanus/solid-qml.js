@@ -14,6 +14,7 @@ T.ComboBox {
     anchors.fill: parent
     activeFocusOnTab: solidTabstop.enabled
     model: root.model
+    property var disabledFlags: root.disabledFlags
     onCurrentIndexChanged: root.currentIndex = currentIndex
     onActivated: (index) => root.activated(index)
     // Qt::Popup semantics (owner directive): the dropdown vanishes when the app window loses
@@ -53,10 +54,13 @@ T.ComboBox {
         // Width must be explicit: ComboBox does not size delegates automatically.
         width: ctl.popup.width
         implicitHeight: 36
+        // disabledFlags defaults to [] — [][index] is undefined/falsy, so a <select> that never
+        // sets it (every one before this plan) picks every row exactly as before.
+        enabled: !ctl.disabledFlags[index]
         background: Css.CssFill {
             cssPrimitive: "div"
             cssClass: ["option"]
-            cssState: (optDel.highlighted ? ["hover"] : []).concat(ctl.currentIndex === index ? ["selected"] : [])
+            cssState: (optDel.highlighted ? ["hover"] : []).concat(ctl.currentIndex === index ? ["selected"] : []).concat(optDel.enabled ? [] : ["disabled"])
         }
         contentItem: Css.CssText {
             cssPrimitive: ""
@@ -131,6 +135,14 @@ void Select::setValues(const QVariant &v)
         return;
     m_values = v;
     emit valuesChanged();
+}
+
+void Select::setDisabledFlags(const QVariant &v)
+{
+    if (m_disabledFlags == v)
+        return;
+    m_disabledFlags = v;
+    emit disabledFlagsChanged();
 }
 
 void Select::componentComplete()

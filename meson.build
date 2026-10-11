@@ -414,6 +414,17 @@ test('widgets-a11y',
     dependencies: a11y_test_deps),
   env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)
 
+# <select>'s SolidWidgets::Select: model/values/disabledFlags default empty + round-trip with
+# NOTIFY, and `model: <reactive list>` keeps following a changing context property — the mechanism
+# the dynamic <select> options plan (transpiler/src/emit/qml.ts emitSelect) depends on.
+select_test_deps = [solidqml_dep, qt6_templates_private_dep, dependency('qt6', modules: ['Test'])]
+test('select-widget',
+  executable('test-select-widget', files('tests/select_test.cpp'),
+    qt6.preprocess(moc_sources: files('tests/select_test.cpp'), dependencies: select_test_deps),
+    include_directories: include_directories('src'),
+    dependencies: select_test_deps),
+  env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)
+
 # <RichText>/<DocumentEditor> engine (RichTextHandler): modified tracking, the ODF load/save error
 # contract, content/format state and an .odt round-trip — what an app driving the document uses.
 if build_richtext

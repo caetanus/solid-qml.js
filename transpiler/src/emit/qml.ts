@@ -1,11 +1,11 @@
 import * as t from "@babel/types";
-import { emitExpr, type Scope } from "./expr.ts";
+import { emitExpr, shadowOwnParams, type Scope } from "./expr.ts";
 import { emitStmt } from "./stmt.ts";
 import { safeName } from "../names/safe.ts";
 import { CONTROL_TAGS, hParts, isFragmentTag, isHCall } from "../ast/h.ts";
 import { nativeTags, requireImport } from "./native/index.ts";
 import { certifyForRow } from "./forCertify.ts";
-import { checkElement } from "./attrs.ts";
+import { checkAttrs, checkElement } from "./attrs.ts";
 
 export const INDENT = "    ";
 const TEXT_TAGS = new Set(["text", "span", "h1", "h2", "h3", "h4", "h5", "h6", "p", "cite", "bio"]);
@@ -1207,11 +1207,46 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
   return lines;
 }
 
+/** A tag's name for an error message — "div", "For", or "?" for anything else. A plain helper (not
+ *  inlined) so TS's control-flow narrowing from an earlier `isIdentifier(tag, {name: …})` match
+ *  check elsewhere in the caller can't leak in and narrow this away to `never`. */
+function describeTag(tag: t.Node): string {
+  if (t.isStringLiteral(tag)) return tag.value;
+  if (t.isIdentifier(tag)) return tag.name;
+  return "?";
+}
+
 /** Static option entry parsed from a <option value="v">Label</option> child of <select>. */
 interface OptionEntry { label: string; value: string }
 
-/** Parse the <option> children of a <select> into a list of {label, value} pairs.
- *  Throws a clear transpiler error on dynamic content (interpolations, sub-elements, computed values). */
+/** Parse one static <option value="v">Label</option> element into {label, value}. Throws a clear
+ *  transpiler error on dynamic content (interpolations, sub-elements, computed values) — shared by
+ *  the fully-static <select> path and a static run inside a dynamic (<For>-bearing) one. */
+function parseStaticOptionEntry(optProps: t.Node | undefined, optChildren: t.Node[]): OptionEntry {
+  // Collect label text (static strings only).
+  let label = "";
+  for (const c of optChildren) {
+    if (t.isStringLiteral(c)) { label += c.value; }
+    else if (isJsxText(c)) { label += (c as any).value; }
+    else throw new Error("dynamic <option> not supported yet — use static string children only");
+  }
+  label = label.trim();
+  // Collect value prop (defaults to label when absent).
+  let value = label;
+  if (optProps && t.isObjectExpression(optProps)) {
+    for (const p of (optProps as t.ObjectExpression).properties) {
+      if (!t.isObjectProperty(p) || !t.isIdentifier(p.key, { name: "value" })) continue;
+      if (t.isStringLiteral(p.value)) { value = p.value.value; }
+      else if (t.isNumericLiteral(p.value)) { value = String(p.value.value); }
+      else throw new Error("dynamic <option> value not supported yet — use static string/number values only");
+    }
+  }
+  return { label, value };
+}
+
+/** Parse the <option> children of a <select> into a list of {label, value} pairs. Used ONLY for the
+ *  fully-static <select> (no <For>, no options={} attr) — kept byte-identical to the original Phase
+ *  4 plan so every existing <select> (and the gallery regen) is untouched by this plan. */
 function parseOptions(children: t.Node[]): OptionEntry[] {
   const entries: OptionEntry[] = [];
   for (const child of children) {
@@ -1219,27 +1254,125 @@ function parseOptions(children: t.Node[]): OptionEntry[] {
     const { tag, props: optProps, children: optChildren } = hParts(child as t.CallExpression);
     if (!t.isStringLiteral(tag) || tag.value !== "option")
       throw new Error(`<select> only accepts <option> children, got <${t.isStringLiteral(tag) ? tag.value : "?"}>`);
-    // Collect label text (static strings only).
-    let label = "";
-    for (const c of optChildren) {
-      if (t.isStringLiteral(c)) { label += c.value; }
-      else if (isJsxText(c)) { label += (c as any).value; }
-      else throw new Error("dynamic <option> not supported yet — use static string children only");
-    }
-    label = label.trim();
-    // Collect value prop (defaults to label when absent).
-    let value = label;
-    if (optProps && t.isObjectExpression(optProps)) {
-      for (const p of (optProps as t.ObjectExpression).properties) {
-        if (!t.isObjectProperty(p) || !t.isIdentifier(p.key, { name: "value" })) continue;
-        if (t.isStringLiteral(p.value)) { value = p.value.value; }
-        else if (t.isNumericLiteral(p.value)) { value = String(p.value.value); }
-        else throw new Error("dynamic <option> value not supported yet — use static string/number values only");
-      }
-    }
-    entries.push({ label, value });
+    entries.push(parseStaticOptionEntry(optProps, optChildren as t.Node[]));
   }
   return entries;
+}
+
+/** One segment of a DYNAMIC <select>'s model: three PARALLEL QML-JS array expressions of the same
+ *  length/order — labels (→ model), values (→ values) and a disabled flag per row (→
+ *  disabledFlags). Segments concatenate in source order, so static <option>s before/after a <For>
+ *  interleave exactly like the DOM would render them (plan item 2, "mixing"). */
+interface SelectSegment { model: string; values: string; disabled: string }
+
+function staticOptionSegment(entries: OptionEntry[]): SelectSegment {
+  return {
+    model: `[${entries.map((o) => JSON.stringify(o.label)).join(", ")}]`,
+    values: `[${entries.map((o) => JSON.stringify(o.value)).join(", ")}]`,
+    disabled: `[${entries.map(() => "false").join(", ")}]`,
+  };
+}
+
+/** <select>'s <For each={E}>{(item) => <option value=…>…</option>}</For> child (plan item 1) — one
+ *  row's worth of QML-JS `.map()` expressions over the For's reactive list. There is no QML
+ *  Repeater/delegate here (the model is a flat array the T.ComboBox binds to directly): `item` is
+ *  shadowed into scope exactly like a real .map() callback parameter (shadowOwnParams), and the
+ *  option's children/value/disabled are emitted against that scope. Mirrors emitFor's single-param
+ *  delegate convention — no index param (not supported for <For> elsewhere in this plan either). */
+function parseForOptionSegment(forPropsArg: t.Node | undefined, forChildren: t.Node[], scope: Scope): SelectSegment {
+  checkAttrs("For", forPropsArg);
+  const each = readEach(forPropsArg, scope);
+  const delegate = forChildren.find((c) => t.isArrowFunctionExpression(c) || t.isFunctionExpression(c)) as
+    t.ArrowFunctionExpression | t.FunctionExpression | undefined;
+  if (!delegate) throw new Error("<select><For> needs a row function: {(item) => <option value={…}>…</option>}");
+  if (delegate.params.length > 1)
+    throw new Error("<select><For> row function takes a single parameter (item) in this plan — no index param");
+  const param = delegate.params[0];
+  const itemName = param && t.isIdentifier(param) ? param.name : null;
+  const body = delegate.body;
+  if (!isHCall(body))
+    throw new Error("<select><For> row function must return a single <option> element");
+  const { tag: bodyTag, props: bodyProps, children: bodyChildren } = hParts(body as t.CallExpression);
+  if (!t.isStringLiteral(bodyTag) || bodyTag.value !== "option")
+    throw new Error(`<select><For> row must be a single <option>, got <${describeTag(bodyTag)}>`);
+
+  const inner: Scope = param ? shadowOwnParams(scope, [param]) : scope;
+  const itemSafe = itemName ? safeName(itemName) : "_";
+
+  // Label: the option's own children — strings/JSXText concatenate, interpolations emit as
+  // bindings (unlike the static path, dynamic content is the whole point here).
+  const labelParts: string[] = [];
+  for (const c of bodyChildren as t.Node[]) {
+    if (t.isStringLiteral(c)) { if (c.value.trim() || /\s/.test(c.value)) labelParts.push(JSON.stringify(c.value)); }
+    else if (isJsxText(c)) { const cleaned = (c as any).value.replace(/\s+/g, " "); if (cleaned.trim()) labelParts.push(JSON.stringify(cleaned)); }
+    else if (t.isExpression(c)) labelParts.push(`(${emitExpr(c, { ...inner, mode: "binding" })})`);
+    else throw new Error("<select><For> <option> label: unsupported child");
+  }
+  const labelExpr = labelParts.length === 0 ? `""` : labelParts.join(" + ");
+
+  let valueExpr = labelExpr; // defaults to the label, same convention as a static <option>
+  let disabledExpr = "false";
+  if (bodyProps && t.isObjectExpression(bodyProps)) {
+    for (const p of (bodyProps as t.ObjectExpression).properties) {
+      if (!t.isObjectProperty(p) || !t.isIdentifier(p.key))
+        throw new Error("<select><For> <option>: unsupported prop");
+      const key = p.key.name;
+      if (key === "value" && t.isExpression(p.value)) { valueExpr = emitExpr(p.value, { ...inner, mode: "binding" }); continue; }
+      if (key === "disabled") { disabledExpr = boolAttrExpr(p.value, inner) ?? "false"; continue; }
+      throw new Error(`<select><For> <option> does not support \`${key}\` — only value/disabled and its text children`);
+    }
+  }
+
+  return {
+    // labelExpr/valueExpr/disabledExpr already carry their own grouping (built the same way
+    // textBinding does for a plain text run) — no extra outer parens here.
+    model: `(${each}).map((${itemSafe}) => ${labelExpr})`,
+    values: `(${each}).map((${itemSafe}) => ${valueExpr})`,
+    disabled: `(${each}).map((${itemSafe}) => ${disabledExpr})`,
+  };
+}
+
+/** `options={expr}` (plan item 3): an array of plain label strings OR {value, label, disabled?}
+ *  objects — <select> sugar for a runtime option list without writing a <For> by hand. Polymorphic
+ *  at runtime (`typeof` check) since the array may mix either shape. */
+function optionsAttrSegment(expr: string): SelectSegment {
+  return {
+    model: `(${expr}).map((o) => (typeof o === "string" ? o : o.label))`,
+    values: `(${expr}).map((o) => (typeof o === "string" ? o : (("value" in o) ? o.value : o.label)))`,
+    disabled: `(${expr}).map((o) => (typeof o === "string" ? false : !!o.disabled))`,
+  };
+}
+
+function concatSegments(segs: SelectSegment[], field: "model" | "values" | "disabled"): string {
+  return segs.map((s) => s[field]).reduce((a, b) => `${a}.concat(${b})`);
+}
+
+/** Parse <select>'s children into a sequence of SelectSegments: consecutive static <option>s batch
+ *  into one literal-array segment (so a fully-static run reads exactly like the Phase 4 output), a
+ *  <For> becomes a .map() segment over its list, and anything else — <optgroup>, any other tag — is
+ *  a fail-loud transpile error (no silent drop; plan's explicit unsupported-cases requirement). */
+function parseDynamicSelectChildren(children: t.Node[], scope: Scope): SelectSegment[] {
+  const segs: SelectSegment[] = [];
+  let run: OptionEntry[] = [];
+  const flush = () => { if (run.length) { segs.push(staticOptionSegment(run)); run = []; } };
+  for (const child of children) {
+    if (!isHCall(child)) continue; // skip whitespace JSXText between children
+    const { tag, props: elProps, children: elChildren } = hParts(child as t.CallExpression);
+    if (t.isIdentifier(tag, { name: "For" })) {
+      flush();
+      segs.push(parseForOptionSegment(elProps, elChildren as t.Node[], scope));
+      continue;
+    }
+    if (t.isStringLiteral(tag) && tag.value === "option") {
+      run.push(parseStaticOptionEntry(elProps, elChildren as t.Node[]));
+      continue;
+    }
+    if (t.isStringLiteral(tag) && tag.value === "optgroup")
+      throw new Error("<select>: <optgroup> is not supported yet — flatten its <option>s as direct children");
+    throw new Error(`<select> only accepts <option> or <For> children, got <${describeTag(tag)}>`);
+  }
+  flush();
+  return segs;
 }
 
 /** <select value={} onChange={}><option value="v">Label</option>…</select>
@@ -1258,7 +1391,13 @@ function parseOptions(children: t.Node[]): OptionEntry[] {
  *    (["popup"]); contentItem ListView (clip, cap 240 px, model from delegateModel).
  *
  *  onChange → onActivated (index) with synthetic value __input<n>.__values[index].
- *  Dynamic <option> children (interpolations or <For>) throw a clear transpiler error. */
+ *
+ *  DYNAMIC options (this plan): a <For> child, static <option>s mixed before/after it, and/or an
+ *  `options={expr}` attribute all build the SAME `model`/`values` (now QML-JS expressions rather
+ *  than literal arrays) plus a `disabledFlags` parallel array — see parseDynamicSelectChildren /
+ *  optionsAttrSegment. A <select> with NEITHER keeps the ORIGINAL literal-array emission verbatim
+ *  (no textual or behavioural change). Anything still unsupported (<optgroup>, a <For> row that
+ *  isn't a single <option>, any other child tag) is a fail-loud transpile error. */
 function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
@@ -1272,15 +1411,11 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
   // Select.qml). Keep the id so the controlled Binding and onActivated value-reads resolve.
   if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
 
-  // Parse static <option> children.
-  const options = parseOptions(children);
-  const modelArr = `[${options.map((o) => JSON.stringify(o.label)).join(", ")}]`;
-  const valuesArr = `[${options.map((o) => JSON.stringify(o.value)).join(", ")}]`;
-
-  // Read value and onChange from the <select> propsArg directly.
+  // Read value/onChange/disabled/options from the <select> propsArg directly.
   let valueExpr: string | null = null;
   let onChangeFn: (t.ArrowFunctionExpression | t.FunctionExpression) | null = null;
   let disabled: string | null = null;
+  let optionsExpr: string | null = null;
   if (propsArg && t.isObjectExpression(propsArg)) {
     for (const p of propsArg.properties) {
       if (!t.isObjectProperty(p) || !t.isIdentifier(p.key)) continue;
@@ -1291,7 +1426,37 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
           && (t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value)))
         onChangeFn = p.value as t.ArrowFunctionExpression | t.FunctionExpression;
       if (key === "disabled") disabled = boolAttrExpr(p.value, scope);
+      if (key === "options" && t.isExpression(p.value)) optionsExpr = emitExpr(p.value, { ...scope, mode: "binding" });
     }
+  }
+
+  // A <For> child (anywhere among the children) or an `options={}` attribute makes the option list
+  // DYNAMIC — it must follow a reactive list at runtime. Pure static <option>s (the original Phase
+  // 4 case) take the untouched literal-array path below.
+  const hasFor = (children as t.Node[]).some((c) => {
+    if (!isHCall(c)) return false;
+    const { tag } = hParts(c as t.CallExpression);
+    return t.isIdentifier(tag, { name: "For" });
+  });
+  const dynamic = hasFor || optionsExpr !== null;
+
+  let modelArr: string;
+  let valuesArr: string;
+  let disabledArr: string | null = null;
+
+  if (!dynamic) {
+    // Original Phase 4 path — byte-identical emission for every pre-existing <select>.
+    const options = parseOptions(children);
+    modelArr = `[${options.map((o) => JSON.stringify(o.label)).join(", ")}]`;
+    valuesArr = `[${options.map((o) => JSON.stringify(o.value)).join(", ")}]`;
+  } else {
+    const segs: SelectSegment[] = [];
+    if (optionsExpr !== null) segs.push(optionsAttrSegment(optionsExpr));
+    segs.push(...parseDynamicSelectChildren(children, scope));
+    if (segs.length === 0) throw new Error("<select>: no options — pass options={…} or <option>/<For> children");
+    modelArr = concatSegments(segs, "model");
+    valuesArr = concatSegments(segs, "values");
+    disabledArr = concatSegments(segs, "disabled");
   }
 
   // onActivated(index): translate onChange so e.target.value → the picked value. `${ctlId}.values`
@@ -1307,21 +1472,38 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
     ...guardLine(guard, level),
     `${i(1)}model: ${modelArr}`,
     `${i(1)}values: ${valuesArr}`,
+    ...(disabledArr !== null ? [`${i(1)}disabledFlags: ${disabledArr}`] : []),
   ];
 
   if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
   if (onActivatedBody) lines.push(`${i(1)}onActivated: (index) => { ${onActivatedBody} }`);
 
-  // Binding: keep currentIndex in sync with the controlled value expression.
+  // Binding: keep currentIndex in sync with the controlled value expression. `values.indexOf(...)`
+  // already tracks the SAME value if the (possibly reordered) list still has it — the Binding is
+  // reactive on `${ctlId}.values`. A dynamic list additionally clamps -1 (value no longer present)
+  // to 0 — web <select> semantics (falls back to the first option) — left untouched for the static
+  // path (no behavioural change to any <select> written before this plan).
   if (valueExpr !== null) {
+    const indexValue = dynamic
+      ? `Math.max(0, ${ctlId}.values.indexOf(${valueExpr}))`
+      : `${ctlId}.values.indexOf(${valueExpr})`;
     lines.push(
       `${i(1)}Binding {`,
       `${i(2)}target: ${ctlId}`,
       `${i(2)}property: "currentIndex"`,
-      `${i(2)}value: ${ctlId}.values.indexOf(${valueExpr})`,
+      `${i(2)}value: ${indexValue}`,
       `${i(2)}restoreMode: Binding.RestoreNone`,
       `${i(1)}}`,
     );
+    // Swapping `values` for a NEW array (the list signal firing) makes the underlying T.ComboBox
+    // reset currentIndex to 0 *after* the Binding above already recomputed the right index
+    // (QtQuick's own model-reset handling settles on a LATER event-loop pass than the Binding —
+    // verified empirically with a headless probe: the Binding's value is already correct by the
+    // time Qt.callLater runs, but currentIndex has since been clobbered back to 0, and nothing
+    // re-fires the Binding until `${valueExpr}` itself changes again). Re-push the same expression
+    // once more, deferred, so it wins the LAST write — the only way to survive a reset that lands
+    // strictly after a live QML Binding with no earlier hook to intercept it.
+    if (dynamic) lines.push(`${i(1)}onValuesChanged: Qt.callLater(function() { ${ctlId}.currentIndex = ${indexValue} })`);
   }
 
   lines.push(`${pad}}`);

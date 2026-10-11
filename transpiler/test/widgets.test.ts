@@ -692,6 +692,18 @@ test("widgets: the C++ Select cssState carries focus and disabled on the wrapper
   assert.match(SELECT_QML, /if \(!isEnabled\(\)\)\s*\n\s*state << QStringLiteral\("disabled"\)/);
 });
 
+test("widgets: Select has a disabledFlags QVariant property defaulting to an empty list", async () => {
+  assert.match(SELECT_QML, /Q_PROPERTY\(QVariant disabledFlags READ disabledFlags WRITE setDisabledFlags NOTIFY disabledFlagsChanged\)/);
+  assert.match(SELECT_QML, /QVariant m_disabledFlags = QVariantList\(\)/);
+  assert.match(SELECT_QML, /void Select::setDisabledFlags\(const QVariant &v\)/);
+});
+
+test("widgets: Select.qml delegate disables a row per disabledFlags[index] and adds cssState 'disabled'", async () => {
+  assert.match(SELECT_QML, /property var disabledFlags: root\.disabledFlags/);
+  assert.match(SELECT_QML, /enabled: !ctl\.disabledFlags\[index\]/);
+  assert.match(SELECT_QML, /optDel\.enabled \? \[\] : \["disabled"\]/);
+});
+
 test("widgets: <select> value={sig()} emits Binding on currentIndex via indexOf", async () => {
   const out = await qmlType(`
     export function F() {
@@ -751,6 +763,208 @@ test("widgets: dynamic <option> content throws a clear transpiler error", async 
     qml(`export function F(){ return <select><option>{someExpr}</option></select>; }`),
     /dynamic.*option.*not supported/i,
   );
+});
+
+// ---------------------------------------------------------------------------
+// Dynamic <select> options: <For> child, mixed static + <For>, options={expr} attribute.
+// ---------------------------------------------------------------------------
+
+test("widgets: <select><For> builds model/values via .map() over the reactive list", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [fonts, setFonts] = createSignal(["Arial", "Times"]);
+      const [font, setFont] = createSignal("Arial");
+      return (
+        <select value={font()} onChange={(e) => setFont(e.target.value)}>
+          <For each={fonts()}>{(f) => <option value={f}>{f}</option>}</For>
+        </select>
+      );
+    }
+  `);
+  assert.match(out, /model: \(fonts\)\.map\(\(f\) => \(f\)\)/);
+  assert.match(out, /values: \(fonts\)\.map\(\(f\) => f\)/);
+  assert.match(out, /disabledFlags: \(fonts\)\.map\(\(f\) => false\)/);
+});
+
+test("widgets: <select><For> selection clamps to the first option when the value is gone (web semantics)", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [fonts, setFonts] = createSignal(["Arial", "Times"]);
+      const [font, setFont] = createSignal("Arial");
+      return (
+        <select value={font()}>
+          <For each={fonts()}>{(f) => <option value={f}>{f}</option>}</For>
+        </select>
+      );
+    }
+  `);
+  assert.match(out, /value: Math\.max\(0, __input0\.values\.indexOf\(font\)\)/);
+});
+
+test("widgets: a fully-static <select> keeps the ORIGINAL literal Binding expression (no Math.max)", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [sel, setSel] = createSignal("a");
+      return (
+        <select value={sel()}>
+          <option value="a">Alpha</option>
+        </select>
+      );
+    }
+  `);
+  assert.match(out, /value: __input0\.values\.indexOf\(sel\)/);
+  assert.doesNotMatch(out, /Math\.max/);
+  assert.doesNotMatch(out, /onValuesChanged/);
+});
+
+// A dynamic model swap makes the underlying T.ComboBox reset currentIndex to 0 on a LATER
+// event-loop pass than the Binding above (verified empirically against the built widget — see
+// select-dynamic branch notes): the Binding already recomputes the right index, but nothing
+// re-fires it once the reset clobbers currentIndex back to 0 afterward. onValuesChanged re-pushes
+// the SAME expression once more, deferred, so it is the last writer.
+test("widgets: <select><For> re-asserts currentIndex via onValuesChanged (survives the model-reset clobber)", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [fonts, setFonts] = createSignal(["Arial", "Times"]);
+      const [font, setFont] = createSignal("Arial");
+      return (
+        <select value={font()}>
+          <For each={fonts()}>{(f) => <option value={f}>{f}</option>}</For>
+        </select>
+      );
+    }
+  `);
+  assert.match(out, /onValuesChanged: Qt\.callLater\(function\(\) \{ __input0\.currentIndex = Math\.max\(0, __input0\.values\.indexOf\(font\)\) \}\)/);
+});
+
+test("widgets: <select options={expr}> (no <For>, no value=) does NOT emit onValuesChanged (nothing to preserve)", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [fonts, setFonts] = createSignal(["Arial"]);
+      return <select options={fonts()} />;
+    }
+  `);
+  assert.doesNotMatch(out, /onValuesChanged/);
+});
+
+test("widgets: <select> mixes a static placeholder <option> before a <For>", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [fonts, setFonts] = createSignal(["Arial", "Times"]);
+      return (
+        <select>
+          <option value="">Choose a font…</option>
+          <For each={fonts()}>{(f) => <option value={f}>{f}</option>}</For>
+        </select>
+      );
+    }
+  `);
+  assert.match(out, /model: \["Choose a font…"\]\.concat\(\(fonts\)\.map\(\(f\) => \(f\)\)\)/);
+  assert.match(out, /values: \[""\]\.concat\(\(fonts\)\.map\(\(f\) => f\)\)/);
+});
+
+test("widgets: <select> mixes a <For> followed by a static trailing <option>", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [fonts, setFonts] = createSignal(["Arial"]);
+      return (
+        <select>
+          <For each={fonts()}>{(f) => <option value={f}>{f}</option>}</For>
+          <option value="__custom__">Custom...</option>
+        </select>
+      );
+    }
+  `);
+  assert.match(out, /model: \(fonts\)\.map\(\(f\) => \(f\)\)\.concat\(\["Custom\.\.\."\]\)/);
+});
+
+test("widgets: <select><For> row with a per-item label expression and a disabled expression", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [items, setItems] = createSignal([{ name: "A", locked: true }]);
+      return (
+        <select>
+          <For each={items()}>{(it) => <option value={it.name} disabled={it.locked}>{it.name} (x)</option>}</For>
+        </select>
+      );
+    }
+  `);
+  assert.match(out, /model: \(items\)\.map\(\(it\) => \(it\.name\) \+ " \(x\)"\)/);
+  assert.match(out, /values: \(items\)\.map\(\(it\) => it\.name\)/);
+  assert.match(out, /disabledFlags: \(items\)\.map\(\(it\) => it\.locked\)/);
+});
+
+test("widgets: <select><For> row with bare `disabled` (no expression) treats it as literal true", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [fonts, setFonts] = createSignal(["Arial"]);
+      return <select><For each={fonts()}>{(f) => <option value={f} disabled>{f}</option>}</For></select>;
+    }
+  `);
+  assert.match(out, /disabledFlags: \(fonts\)\.map\(\(f\) => true\)/);
+});
+
+test("widgets: <select><For> row defaults value to the label when value= is absent", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [fonts, setFonts] = createSignal(["Arial"]);
+      return <select><For each={fonts()}>{(f) => <option>{f}</option>}</For></select>;
+    }
+  `);
+  assert.match(out, /values: \(fonts\)\.map\(\(f\) => \(f\)\)/);
+});
+
+test("widgets: <select><For> row must be a single <option> — a <div> row throws a clear error", async () => {
+  await assert.rejects(
+    qml(`export function F(){ const [fonts] = createSignal(["a"]); return <select><For each={fonts()}>{(f) => <div>{f}</div>}</For></select>; }`),
+    /<select><For> row must be a single <option>, got <div>/,
+  );
+});
+
+test("widgets: <select><For> needs a row function", async () => {
+  await assert.rejects(
+    qml(`export function F(){ const [fonts] = createSignal(["a"]); return <select><For each={fonts()}></For></select>; }`),
+    /<select><For> needs a row function/,
+  );
+});
+
+test("widgets: <select><option> + <optgroup> throws a clear not-supported error", async () => {
+  await assert.rejects(
+    qml(`export function F(){ const [fonts] = createSignal(["a"]); return (
+      <select><For each={fonts()}>{(f) => <option value={f}>{f}</option>}</For><optgroup label="g"></optgroup></select>
+    ); }`),
+    /<optgroup> is not supported yet/,
+  );
+});
+
+test("widgets: <select> rejects a child that is neither <option> nor <For>", async () => {
+  await assert.rejects(
+    qml(`export function F(){ const [fonts] = createSignal(["a"]); return <select><For each={fonts()}>{(f) => <option value={f}>{f}</option>}</For><div>x</div></select>; }`),
+    /<select> only accepts <option> or <For> children, got <div>/,
+  );
+});
+
+test("widgets: <select options={expr}> builds model/values from an array of plain strings", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [fonts, setFonts] = createSignal(["Arial", "Times"]);
+      return <select options={fonts()} />;
+    }
+  `);
+  assert.match(out, /model: \(fonts\)\.map\(\(o\) => \(typeof o === "string" \? o : o\.label\)\)/);
+  assert.match(out, /values: \(fonts\)\.map\(\(o\) => \(typeof o === "string" \? o : \(\("value" in o\) \? o\.value : o\.label\)\)\)/);
+  assert.match(out, /disabledFlags: \(fonts\)\.map\(\(o\) => \(typeof o === "string" \? false : !!o\.disabled\)\)/);
+});
+
+test("widgets: <select options={expr}> accepts {value,label,disabled} objects at runtime (same expression, polymorphic)", async () => {
+  const out = await qmlType(`
+    export function F() {
+      const [opts, setOpts] = createSignal([{ value: "a", label: "Alpha", disabled: true }]);
+      return <select options={opts()} />;
+    }
+  `);
+  assert.match(out, /model: \(opts\)\.map/);
+  assert.match(out, /disabledFlags: \(opts\)\.map/);
 });
 
 // ---------------------------------------------------------------------------

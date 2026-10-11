@@ -70,7 +70,7 @@ export const ELEMENT_ATTRS: Record<string, Attrs> = {
     ...DYN, ref: "ident", value: "expr", placeholder: "expr", onInput: "fn", onChange: "fn",
     disabled: "bool", readOnly: "bool", readonly: "bool",
   },
-  select: { ...DYN, value: "expr", onChange: "fn", disabled: "bool" },
+  select: { ...DYN, value: "expr", onChange: "fn", disabled: "bool", options: "expr" },
   option: { value: "lit" },
   progress: { ...CSS, value: "expr", max: "expr" },
   fieldset: CSS,
