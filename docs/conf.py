@@ -1,10 +1,10 @@
 # Configuration file for the Sphinx documentation builder.
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-project = "solid-qml.js"
-copyright = "2026, solid-qml.js contributors"
-author = "solid-qml.js contributors"
-release = "0.1.0"
+project = "solid-qml"
+copyright = "2026, solid-qml contributors"
+author = "solid-qml contributors"
+release = "0.3.0-preview.1"
 
 extensions = [
     "myst_parser",
@@ -27,4 +27,4 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "superpowers", "v4-engin
 # -- HTML output -------------------------------------------------------------
 html_theme = "furo"
 html_static_path = ["_static"]
-html_title = "solid-qml.js"
+html_title = "solid-qml"

@@ -1,7 +1,11 @@
 project(
   'solid-qml-native',
   'cpp',
-  version: '0.2.0',
+  # The single source of truth for the app's version (docs/release-policy.md). It may carry a
+  # "-preview.N" prerelease suffix meson/pkg-config accept as free text but CMake's generated
+  # package-version file does not (it wants a numeric major[.minor[.patch]]) — the CMake config
+  # below is given a numeric-only version instead; see docs/release-policy.md for the split.
+  version: '0.3.0-preview.1',
   # The framework is MIT; the CSS engine (vendor/qml-css-engine) is LGPL-3.0-only — see README.
   license: 'MIT',
   license_files: ['LICENSE'],
@@ -181,7 +185,13 @@ solidqml_lib = shared_library(
   cpp_args: notify_args + richtext_args,
   include_directories: include_directories('src'),
   dependencies: [qml_css_engine_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep, qt6_templates_private_dep] + core_private_deps,
-  version: meson.project_version(),
+  # SONAME/ABI policy for 0.x (docs/release-policy.md): soversion stays '0' for the whole 0.x
+  # series (no ABI stability promise pre-1.0) and `version` is the numeric libsolidqml.so.X.Y.Z
+  # filename suffix — decoupled from the project's "-preview.N" marketing version above. This
+  # library also links against Qt's private Templates headers, so it is built for exactly one Qt
+  # minor (6.11) regardless of soversion; rebuild on any Qt or solid-qml upgrade.
+  version: '0.3.0',
+  soversion: '0',
   install: install_lib,
 )
 
@@ -206,7 +216,9 @@ if install_lib
   )
 
   cmake = import('cmake')
-  cmake.write_basic_package_version_file(name: 'SolidQml', version: meson.project_version())
+  # CMake's generated version-check file requires a numeric major[.minor[.patch]] — it cannot
+  # parse the "-preview.N" suffix in meson.project_version() (see docs/release-policy.md).
+  cmake.write_basic_package_version_file(name: 'SolidQml', version: '0.3.0')
   cmake.configure_package_config_file(
     name: 'SolidQml',
     input: 'cmake/SolidQmlConfig.cmake.in',
@@ -409,6 +421,17 @@ if sh_prog.found()
     args: ['-c', 'npm run test:transpiler'],
     workdir: meson.project_source_root(),
     timeout: 180,
+  )
+
+  # Version-consistency gate (release-plan M8): meson.build's project() version is the single
+  # source of truth; this fails the build if package.json / package-lock.json / either Sphinx
+  # doc site's `release` drifts from it. See scripts/check-version-consistency.mjs.
+  test(
+    'version-consistency',
+    sh_prog,
+    args: ['-c', 'node scripts/check-version-consistency.mjs'],
+    workdir: meson.project_source_root(),
+    timeout: 30,
   )
 endif
 

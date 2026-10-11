@@ -1,7 +1,8 @@
 {
-  "name": "solid-qml-native",
+  "name": "solid-qml",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0-preview.1",
+  "description": "Solid.js, rendered natively via QML/QtQuick — no browser.",
   "license": "MIT",
   "type": "module",
   "security": {
@@ -12,8 +13,9 @@
     "dev": "vite --host 0.0.0.0",
     "qmldev": "vite --mode qmldev",
     "build": "vite build",
-    "test": "npm run typecheck && npm run test:transpiler",
+    "test": "npm run typecheck && npm run test:transpiler && npm run check:version",
     "test:transpiler": "node --import tsx --test transpiler/test/*.test.ts",
+    "check:version": "node scripts/check-version-consistency.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p transpiler/tsconfig.json --noEmit",
     "typecheck:transpiler": "tsc -p transpiler/tsconfig.json --noEmit",
     "dev:native": "node --import tsx scripts/dev-native.mjs",
