@@ -67,9 +67,13 @@ class RichTextHandler : public QObject {
     Q_PROPERTY(qreal zoom READ zoom WRITE setZoom NOTIFY zoomChanged)
     // Office item 2b (★3): index into headings() of the heading at/before the caret, -1 if none.
     Q_PROPERTY(int currentHeadingIndex READ currentHeadingIndex NOTIFY formatChanged)
+    // Office item 2b (item 6): the SYSTEM clipboard currently carries pasteable content (text or
+    // HTML) — not specific to this document, so it tracks QClipboard::dataChanged() too (another
+    // app, or this one, copying something).
+    Q_PROPERTY(bool canPaste READ canPaste NOTIFY canPasteChanged)
 
 public:
-    using QObject::QObject;
+    explicit RichTextHandler(QObject *parent = nullptr);
 
     // QQuickTextEdit only renders the blocks near the viewport (ItemObservesViewport) when its
     // `text` is set to more than this many characters (QQuickTextEditPrivate::largeTextSizeThreshold,
@@ -213,6 +217,17 @@ public:
     // around it.
     Q_INVOKABLE void insertText(const QString &text);
 
+    // ── clipboard (office item 2b, item 6) ────────────────────────────────────────────────────
+    // HTML (rich: formatting kept) AND plain text, so both a paste back into this/another
+    // DocumentEditor and a paste into a plain text field work. No-op without a selection.
+    Q_INVOKABLE void copy() const;
+    Q_INVOKABLE void cut();
+    // Prefers HTML when the clipboard has it, else plain text; no-op (and !canPaste) otherwise.
+    // Inserted as-is, at whatever size its source gives — see docs/document-editor.md "Clipboard"
+    // for the (minor, cosmetic) interaction with zoom.
+    Q_INVOKABLE void paste();
+    bool canPaste() const;
+
 signals:
     void documentChanged();
     void selectionChanged();
@@ -231,6 +246,8 @@ signals:
     // before (size/position/level/text); the QML widget debounces it the same way it does
     // contentsChanged() → contentChanged().
     void headingsChanged();
+    // The system clipboard's content changed (any app — see QClipboard::dataChanged()).
+    void canPasteChanged();
 
 private:
     friend class StyleUndo;

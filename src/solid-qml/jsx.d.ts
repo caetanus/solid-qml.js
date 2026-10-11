@@ -207,6 +207,8 @@ declare global {
     readonly currentCharStyle: string;
     readonly canUndo: boolean;
     readonly canRedo: boolean;
+    /** The SYSTEM clipboard (not this document) currently carries pasteable content. */
+    readonly canPaste: boolean;
     /** Index into headings() of the heading at/before the caret, -1 if none. */
     readonly currentHeadingIndex: number;
     /** [{position, level, text}] in document order (level: the outline/heading level). Kept
@@ -226,6 +228,12 @@ declare global {
     focusEditor(): void;
     undo(): void;
     redo(): void;
+    /** HTML (formatting kept) and plain text; no-op without a selection. Ctrl+C/X/V already work
+     *  natively (the editor's own built-in handling) — these are for an app's own toolbar. */
+    cut(): void;
+    copy(): void;
+    /** Prefers HTML when the clipboard has it, else plain text; no-op when !canPaste. */
+    paste(): void;
     toggleBold(): void;
     toggleItalic(): void;
     toggleUnderline(): void;

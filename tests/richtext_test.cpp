@@ -6,9 +6,12 @@
 // and their styles.xml round-trip.
 #include "shims/richtext.h"
 
+#include <QClipboard>
 #include <QDir>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QImage>
+#include <QMimeData>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickItem>
@@ -1466,6 +1469,81 @@ private slots:
         const QString at2 = m_dir.filePath(QStringLiteral("pb-zoom2.odt"));
         QVERIFY(m_fmt->saveOdf(QUrl(at2)));
         QCOMPARE(zipEntry(at2, QStringLiteral("content.xml")), zipEntry(at1, QStringLiteral("content.xml")));
+    }
+
+    // ── office item 2b, item 6: clipboard ────────────────────────────────────────────────────────
+
+    void copyPutsHtmlAndPlainTextOnTheClipboard()
+    {
+        m_fmt->insertText(QStringLiteral("Hello"));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(5);
+        m_fmt->copy();
+        const QMimeData *data = QGuiApplication::clipboard()->mimeData();
+        QVERIFY(data);
+        QVERIFY(data->hasText());
+        QVERIFY(data->hasHtml());
+        QCOMPARE(data->text(), QStringLiteral("Hello"));
+        QVERIFY2(data->html().contains(QStringLiteral("Hello")), qPrintable(data->html()));
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("Hello")); // copy() does not touch the document
+    }
+
+    void copyWithoutASelectionIsANoOp()
+    {
+        m_fmt->insertText(QStringLiteral("x"));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(0);
+        QGuiApplication::clipboard()->clear();
+        m_fmt->copy();
+        // QClipboard::mimeData() is not guaranteed non-null after clear() on every platform
+        // (observed null under offscreen) — go through the guarded, production canPaste() rather
+        // than dereference it directly.
+        QVERIFY(!m_fmt->canPaste());
+    }
+
+    void cutRemovesTheSelectionAndCopiesIt()
+    {
+        m_fmt->insertText(QStringLiteral("Hello world"));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(6); // "Hello "
+        m_fmt->cut();
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("world"));
+        const QMimeData *data = QGuiApplication::clipboard()->mimeData();
+        QVERIFY(data);
+        QCOMPARE(data->text(), QStringLiteral("Hello "));
+    }
+
+    void pasteInsertsAtTheCaretAndReplacesASelection()
+    {
+        m_fmt->insertText(QStringLiteral("Hello"));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(5);
+        m_fmt->copy();
+        QVERIFY(m_fmt->canPaste());
+
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(0);
+        m_fmt->setCursorPosition(5);
+        m_fmt->insertText(QStringLiteral(" world"));
+        m_fmt->setCursorPosition(6); // right after "Hello " (" world" starts with a space)
+        m_fmt->paste();
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("Hello Helloworld"));
+
+        // Replaces a selection, like typed text does.
+        m_fmt->setSelectionStart(11);
+        m_fmt->setSelectionEnd(16); // "world"
+        m_fmt->paste();
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("Hello HelloHello"));
+    }
+
+    void pasteIsANoOpWhenTheClipboardHasNothingPasteable()
+    {
+        QGuiApplication::clipboard()->clear();
+        QVERIFY(!m_fmt->canPaste());
+        m_fmt->insertText(QStringLiteral("x"));
+        m_fmt->setCursorPosition(1);
+        m_fmt->paste();
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("x"));
     }
 };
 

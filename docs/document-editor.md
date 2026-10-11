@@ -78,6 +78,7 @@ State — reactive: reading `doc.bold` in a binding (a `classList`, a text) foll
 | `alignment` | `"left" \| "center" \| "right" \| "justify"` | Paragraph alignment. |
 | `bulletList`, `numberedList`, `inTable` | boolean | The caret is in a bullet / numbered list (mutually exclusive) / a table. |
 | `canUndo`, `canRedo` | boolean | |
+| `canPaste` | boolean | The SYSTEM clipboard (not this document) currently carries pasteable content — tracks another app too. |
 | `currentHeadingIndex` | number | Index into `headings()` of the heading at/before the caret, `-1` if none. |
 
 Methods:
@@ -103,6 +104,7 @@ Methods:
 | `insertTable(rows, cols)`, `addTableRow()`, `addTableColumn()`, `removeTableRow()`, `removeTableColumn()` | | Row/column edits act on the cell at the caret. |
 | `insertImage(path)` | `{ ok, error }` | Inline image at the caret, capped to the column width. |
 | `undo()`, `redo()`, `focusEditor()` | | |
+| `cut()`, `copy()`, `paste()` | | HTML (formatting kept) and plain text on the SYSTEM clipboard; `cut()`/`copy()` are no-ops without a selection, `paste()` when `!canPaste`. Ctrl+C/X/V already work natively (the editor's own built-in handling) — these are for an app's own toolbar/menu. |
 
 Formatting calls give the keyboard back to the editor, so an app toolbar button does not leave
 the caret stranded. Ctrl+B / Ctrl+I / Ctrl+U work with or without the built-in toolbar.
@@ -189,6 +191,18 @@ O(whole document) except the first scan when a document is attached, loaded or r
 scan of the kept outline, not the document) on every caret move. `headingsChanged` diffs the
 outline (size, then each entry's position/level/text) before firing, so a plain content edit that
 touches no heading does not retrigger it.
+
+## Clipboard
+
+`copy()`/`cut()` put both HTML and plain text on the system clipboard; `paste()` prefers the
+HTML (so formatting survives a round trip through this or another app) and falls back to plain
+text. Pasted content is inserted at whatever size its source gives it — unlike typed text or a
+style change, it is **not** rescaled to the zoom in effect (doing so correctly would mean
+telling apart the part of the paste that lands in an existing, already-zoomed paragraph from
+whole new paragraphs the paste creates; not worth the complexity for what is a purely cosmetic
+mismatch — the pasted text may look a touch off size until the next zoom change, which does
+rescale the whole document). `canPaste` tracks the clipboard, not this document, so it also
+updates when another app copies something.
 
 ## Notes
 

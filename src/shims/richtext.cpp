@@ -1,12 +1,16 @@
 #include "richtext.h"
 #include "richtext_odf.h"
 
+#include <QClipboard>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QImage>
+#include <QMimeData>
 #include <QQuickItem>
 #include <QTextBlock>
 #include <QTextDocument>
+#include <QTextDocumentFragment>
 #include <QTextFragment>
 #include <QTextFrame>
 #include <QTextImageFormat>
@@ -14,6 +18,13 @@
 #include <QTextTable>
 #include <QAbstractUndoItem>
 #include <QPointer>
+
+RichTextHandler::RichTextHandler(QObject *parent) : QObject(parent)
+{
+    // The system clipboard, not this document: canPaste must track another app copying something
+    // too (office item 2b, item 6).
+    connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, &RichTextHandler::canPasteChanged);
+}
 
 void RichTextHandler::setDocument(QQuickTextDocument *doc)
 {
@@ -278,6 +289,59 @@ void RichTextHandler::insertText(const QString &text)
     }
     c.endEditBlock();
     emit formatChanged();
+}
+
+// ─── clipboard (office item 2b, item 6) ───────────────────────────────────────────────────────
+
+void RichTextHandler::copy() const
+{
+    const QTextCursor c = selectionCursor();
+    if (c.isNull())
+        return;
+    const QTextDocumentFragment sel = c.selection();
+    auto *data = new QMimeData;
+    data->setHtml(sel.toHtml());
+    data->setText(sel.toPlainText());
+    QGuiApplication::clipboard()->setMimeData(data);
+}
+
+void RichTextHandler::cut()
+{
+    QTextCursor c = selectionCursor();
+    if (c.isNull())
+        return;
+    copy();
+    c.removeSelectedText();
+    emit formatChanged();
+}
+
+void RichTextHandler::paste()
+{
+    const QMimeData *data = QGuiApplication::clipboard()->mimeData();
+    if (!data || !(data->hasHtml() || data->hasText()))
+        return;
+    QTextCursor c = insertionCursor();
+    if (c.isNull())
+        return;
+    c.beginEditBlock();
+    if (const QTextCursor sel = selectionCursor(); !sel.isNull()) {
+        c = sel;
+        c.removeSelectedText();
+    }
+    // HTML preferred (keeps formatting); inserted at whatever size its source gives (see
+    // docs/document-editor.md "Clipboard" for the zoom interaction).
+    if (data->hasHtml())
+        c.insertHtml(data->html());
+    else
+        c.insertText(data->text());
+    c.endEditBlock();
+    emit formatChanged();
+}
+
+bool RichTextHandler::canPaste() const
+{
+    const QMimeData *data = QGuiApplication::clipboard()->mimeData();
+    return data && (data->hasHtml() || data->hasText());
 }
 
 void RichTextHandler::setSelectionStart(int v)

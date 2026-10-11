@@ -40,6 +40,8 @@ RichText {
     readonly property string currentCharStyle: fmt ? fmt.currentCharStyle : ""
     readonly property bool canUndo: _editor.canUndo
     readonly property bool canRedo: _editor.canRedo
+    // Office item 2b (item 6): the SYSTEM clipboard, not this document.
+    readonly property bool canPaste: !!fmt && fmt.canPaste
 
     // ── page look (office item 2b, ★1) ──────────────────────────────────────────────────────────
     // `pageWidth` (px): the editor's implicit width when set (0 = the plain editor's 560 default).
@@ -143,6 +145,10 @@ RichText {
     function focusEditor() { _editor.forceActiveFocus() }
     function undo() { _editor.undo() }
     function redo() { _editor.redo() }
+    // ── clipboard (office item 2b, item 6) ──────────────────────────────────────────────────────
+    function cut() { if (fmt) fmt.cut(); _editor.forceActiveFocus() }
+    function copy() { if (fmt) fmt.copy() }
+    function paste() { if (fmt) fmt.paste(); _editor.forceActiveFocus() }
 
     // ── formatting (the built-in toolbar's operations, for the app's own toolbar/shortcuts) ──────
     // B/I/U/S with nothing selected apply to what is typed next, as the toolbar does.
