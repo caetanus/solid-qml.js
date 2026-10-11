@@ -17,6 +17,7 @@ with plain CSS, and run it as a native app.
 
 getting-started
 architecture
+keyboard-accessibility
 document-editor
 roadmap
 ```

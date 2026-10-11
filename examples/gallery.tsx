@@ -17,6 +17,7 @@ import { Fetch } from "./fetch";
 import { TodoMVC } from "./todomvc";
 import { NodeImports } from "./nodeimports";
 import { CssGaps } from "./cssgaps";
+import { A11yDemo } from "./a11y-demo";
 import { Dashboard } from "./dashboard";
 import { Widgets } from "./widgets";
 import { NativeOnly } from "./native";
@@ -48,6 +49,7 @@ export function Gallery() {
         <ToolButton classList={{ active: view() === "todomvc" }} onClick={() => setView("todomvc")}>TodoMVC</ToolButton>
         <ToolButton classList={{ active: view() === "nodeimports" }} onClick={() => setView("nodeimports")}>Node imports</ToolButton>
         <ToolButton classList={{ active: view() === "cssgaps" }} onClick={() => setView("cssgaps")}>CSS gaps</ToolButton>
+        <ToolButton classList={{ active: view() === "a11y" }} onClick={() => setView("a11y")}>Keyboard &amp; a11y</ToolButton>
         <ToolButton classList={{ active: view() === "dashboard" }} onClick={() => setView("dashboard")}>Dashboard</ToolButton>
         <ToolButton classList={{ active: view() === "widgets" }} onClick={() => setView("widgets")}>Widgets</ToolButton>
         <ToolButton classList={{ active: view() === "native" }} onClick={() => setView("native")}>Native</ToolButton>
@@ -68,6 +70,7 @@ export function Gallery() {
         <Match when={view() === "todomvc"}><TodoMVC /></Match>
         <Match when={view() === "nodeimports"}><NodeImports /></Match>
         <Match when={view() === "cssgaps"}><CssGaps /></Match>
+        <Match when={view() === "a11y"}><A11yDemo /></Match>
         <Match when={view() === "dashboard"}><Dashboard /></Match>
         <Match when={view() === "widgets"}><Widgets /></Match>
         <Match when={view() === "native"}><NativeOnly /></Match>

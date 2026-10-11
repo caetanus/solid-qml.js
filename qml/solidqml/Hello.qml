@@ -8,10 +8,12 @@ W.Div {
     id: __self
     property var events: 0
     cssClass: ["hello-stage"]
+    Accessible.name: "Solid QML hello world"
     W.Div {
         cssClass: ["hello-panel"]
         W.Div {
             cssClass: ["hello-mark"]
+            Accessible.ignored: true
             W.Div {
                 cssClass: ["hello-orbit"]
                 W.Div {
