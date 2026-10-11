@@ -117,7 +117,9 @@ export const ELEMENT_ATTRS: Record<string, Attrs> = {
   MenuItem: { onClick: "fn", disabled: "bool", checked: "expr" },
   MenuSeparator: {},
   MenuBar: {},
-  ContextMenu: { class: "lit", onClose: "fn" },
+  // suppressWhen (solidterm mouse reporting): (modifiers) => boolean, re-checked on every
+  // right-PRESS — true declines the press instead of opening, letting it fall through below.
+  ContextMenu: { class: "lit", onClose: "fn", suppressWhen: "fn" },
   TreeView: { ...CSS, data: "expr", onSelect: "fn" },
   ListView: { ...CSS, data: "expr", onSelect: "fn" },
   TableView: { ...CSS, data: "expr", columns: "expr", onSelect: "fn" },

@@ -530,6 +530,31 @@ test("contextmenu: <ContextMenu> fills its parent and opens at the cursor on rig
   assert.match(out, /W\.MenuSeparator \{ \}/);
 });
 
+test("contextmenu: suppressWhen declines the press instead of opening (solidterm mouse reporting)", async () => {
+  const out = await qml(`export function F(){ let term; return (
+    <div class="zone">
+      <ContextMenu suppressWhen={(mods) => term.wantsMouseReportFocused(mods)}>
+        <MenuItem onClick={() => {}}>&Copy</MenuItem>
+      </ContextMenu>
+    </div>); }`);
+  // The guard runs on PRESS (not click): a true result declines the event so Qt Quick's hit-test
+  // falls through to whatever is below this host, before any menu/popup bookkeeping happens.
+  assert.match(out, /onPressed: function\(mouse\) \{ if \(term\.wantsMouseReportFocused\(mouse\.modifiers\)\) mouse\.accepted = false \}/);
+  // onClicked (the popup-opening path) is unconditional and unchanged — it only ever runs when
+  // onPressed did NOT decline.
+  assert.match(out, /onClicked: function\(mouse\) \{ __ctxAnchor0\.x = mouse\.x; __ctxAnchor0\.y = mouse\.y; __menu0\.popup\(0, 0\) \}/);
+});
+
+test("contextmenu: without suppressWhen emits no onPressed guard (unchanged default behaviour)", async () => {
+  const out = await qml(`export function F(){ return (
+    <div class="zone">
+      <ContextMenu>
+        <MenuItem onClick={() => {}}>&Copy</MenuItem>
+      </ContextMenu>
+    </div>); }`);
+  assert.doesNotMatch(out, /onPressed:/);
+});
+
 test("contextmenu: rejects non-menu children", async () => {
   await assert.rejects(
     qml(`export function F(){ return <div><ContextMenu><div /></ContextMenu></div>; }`),

@@ -255,7 +255,11 @@ export function Term(props: { onTitle: (t: string) => void }) {
           onAccelerator={(seq) => onAccel(seq)}
           onTitleChanged={(t) => { setTitle(t); props.onTitle(t); }}
         />
-        <ContextMenu class="tmenu">
+        {/* suppressWhen: a program that turned mouse tracking on (vim, htop, tmux…) gets the
+            right-click reported instead of this menu opening — Shift still forces the menu (the
+            escape hatch), same as Shift forces local selection/scrollback over reporting
+            everywhere else. See TerminalView::wantsMouseReport. */}
+        <ContextMenu class="tmenu" suppressWhen={(mods) => term.wantsMouseReportFocused(mods)}>
           <MenuItem onClick={() => term.copyFocused()}>&Copy</MenuItem>
           <MenuItem onClick={() => term.pasteFocused()}>&Paste</MenuItem>
           <MenuSeparator />

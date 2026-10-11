@@ -249,6 +249,7 @@ W.Div {
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.RightButton
+                onPressed: function(mouse) { if (_ref_term.wantsMouseReportFocused(mouse.modifiers)) mouse.accepted = false }
                 onClicked: function(mouse) { __ctxAnchor1.x = mouse.x; __ctxAnchor1.y = mouse.y; __menu1.popup(0, 0) }
             }
             Item {
@@ -381,7 +382,7 @@ W.Div {
                                     cssClass: ["cfg-sel"]
                                     model: ["9 px", "10 px", "11 px", "12 px", "13 px", "14 px", "15 px", "16 px", "17 px", "18 px", "19 px", "20 px", "21 px", "22 px", "23 px", "24 px", "25 px", "26 px", "27 px", "28 px", "32 px", "36 px"]
                                     values: ["9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "32", "36"]
-                                    onActivated: (index) => { uiFontSize = parseInt(__input4.values[index]); termConfig.set("fontSize", parseInt(__input4.values[index])); }
+                                    onActivated: (__idx) => { uiFontSize = parseInt(__input4.values[__idx]); termConfig.set("fontSize", parseInt(__input4.values[__idx])); }
                                     Binding {
                                         target: __input4
                                         property: "currentIndex"
@@ -405,7 +406,7 @@ W.Div {
                                     cssClass: ["cfg-sel"]
                                     model: ["System", "Midnight", "Midnight (high contrast)", "Monokai", "Solarized Dark", "Gruvbox", "Paper (light)"]
                                     values: ["system", "midnight", "midnight-hc", "monokai", "solarized", "gruvbox", "paper"]
-                                    onActivated: (index) => { scheme = __input5.values[index]; termConfig.set("scheme", __input5.values[index]); }
+                                    onActivated: (__idx) => { scheme = __input5.values[__idx]; termConfig.set("scheme", __input5.values[__idx]); }
                                     Binding {
                                         target: __input5
                                         property: "currentIndex"
@@ -529,7 +530,7 @@ W.Div {
                                     cssClass: ["cfg-sel"]
                                     model: ["Shown", "Hidden"]
                                     values: ["1", "0"]
-                                    onActivated: (index) => { showHeader = parseInt(__input9.values[index]); termConfig.set("showHeader", parseInt(__input9.values[index])); }
+                                    onActivated: (__idx) => { showHeader = parseInt(__input9.values[__idx]); termConfig.set("showHeader", parseInt(__input9.values[__idx])); }
                                     Binding {
                                         target: __input9
                                         property: "currentIndex"
@@ -553,7 +554,7 @@ W.Div {
                                     cssClass: ["cfg-sel"]
                                     model: ["Shown", "Hidden"]
                                     values: ["1", "0"]
-                                    onActivated: (index) => { showStatus = parseInt(__input10.values[index]); termConfig.set("showStatus", parseInt(__input10.values[index])); }
+                                    onActivated: (__idx) => { showStatus = parseInt(__input10.values[__idx]); termConfig.set("showStatus", parseInt(__input10.values[__idx])); }
                                     Binding {
                                         target: __input10
                                         property: "currentIndex"
@@ -577,7 +578,7 @@ W.Div {
                                     cssClass: ["cfg-sel"]
                                     model: ["On", "Off"]
                                     values: ["1", "0"]
-                                    onActivated: (index) => { animSplits = parseInt(__input11.values[index]); termConfig.set("animSplits", parseInt(__input11.values[index])); }
+                                    onActivated: (__idx) => { animSplits = parseInt(__input11.values[__idx]); termConfig.set("animSplits", parseInt(__input11.values[__idx])); }
                                     Binding {
                                         target: __input11
                                         property: "currentIndex"
@@ -639,7 +640,7 @@ W.Div {
                                     cssClass: ["cfg-sel"]
                                     model: ["1000 lines", "5000 lines", "8000 lines", "20000 lines", "100000 lines"]
                                     values: ["1000", "5000", "8000", "20000", "100000"]
-                                    onActivated: (index) => { scrollback = parseInt(__input13.values[index]); termConfig.set("scrollback", parseInt(__input13.values[index])); }
+                                    onActivated: (__idx) => { scrollback = parseInt(__input13.values[__idx]); termConfig.set("scrollback", parseInt(__input13.values[__idx])); }
                                     Binding {
                                         target: __input13
                                         property: "currentIndex"
@@ -663,7 +664,7 @@ W.Div {
                                     cssClass: ["cfg-sel"]
                                     model: ["Off", "On"]
                                     values: ["0", "1"]
-                                    onActivated: (index) => { uiFocusHover = parseInt(__input14.values[index]); termConfig.set("focusOnHover", parseInt(__input14.values[index])); }
+                                    onActivated: (__idx) => { uiFocusHover = parseInt(__input14.values[__idx]); termConfig.set("focusOnHover", parseInt(__input14.values[__idx])); }
                                     Binding {
                                         target: __input14
                                         property: "currentIndex"

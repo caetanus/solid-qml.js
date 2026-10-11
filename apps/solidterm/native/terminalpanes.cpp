@@ -1047,6 +1047,10 @@ void TerminalPanes::searchFocused(const QString &q) { if (m_focused && m_focused
 void TerminalPanes::searchNext() { if (m_focused && m_focused->view) m_focused->view->searchNext(); }
 void TerminalPanes::searchPrev() { if (m_focused && m_focused->view) m_focused->view->searchPrev(); }
 void TerminalPanes::clearSearch() { if (m_focused && m_focused->view) m_focused->view->clearSearch(); }
+bool TerminalPanes::wantsMouseReportFocused(int qtModifiers) const
+{
+    return m_focused && m_focused->view && m_focused->view->wantsMouseReport(qtModifiers);
+}
 
 // ─── style ──────────────────────────────────────────────────────────────────────────────────────
 

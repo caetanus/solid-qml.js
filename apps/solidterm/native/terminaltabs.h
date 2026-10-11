@@ -95,6 +95,9 @@ public:
     Q_INVOKABLE void searchNext();
     Q_INVOKABLE void searchPrev();
     Q_INVOKABLE void clearSearch();
+    // The active tab's focused pane's TerminalView::wantsMouseReport. Queried by the solid
+    // <ContextMenu> before it opens on a right-click.
+    Q_INVOKABLE bool wantsMouseReportFocused(int qtModifiers) const;
 
 signals:
     void styleChanged();

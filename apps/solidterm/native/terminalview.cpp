@@ -1,5 +1,6 @@
 #include "terminalview.h"
 
+#include "mousereport.h"
 #include "scrollanchor.h"
 #include "scrollbackcells.h"
 
@@ -112,7 +113,11 @@ TerminalView::TerminalView(QQuickItem *parent)
     m_font = QFont(QStringLiteral("monospace"));
     m_font.setPixelSize(15);
     m_font.setStyleHint(QFont::Monospace);
-    setAcceptedMouseButtons(Qt::LeftButton | Qt::MiddleButton); // right passes to the solid <ContextMenu>
+    // Right is normally captured by the solid <ContextMenu>'s MouseArea, which sits ABOVE this item
+    // and only declines (mouse.accepted = false) when the running program wants mouse reports and
+    // Shift isn't held — see wantsMouseReport(). Declared here too so THAT right-press (forwarded by
+    // Qt Quick's own hit-testing once the MouseArea declines) actually reaches mousePressEvent.
+    setAcceptedMouseButtons(Qt::LeftButton | Qt::MiddleButton | Qt::RightButton);
     setActiveFocusOnTab(true);
     setAcceptHoverEvents(true);               // hover to detect/underline links
     setFlag(ItemHasContents, true);
@@ -129,7 +134,7 @@ TerminalView::TerminalView(QQuickItem *parent)
         update();
     });
     m_blinkTimer->start();
-    connect(this, &QQuickItem::activeFocusChanged, this, [this] { resetBlink(); });
+    connect(this, &QQuickItem::activeFocusChanged, this, [this] { resetBlink(); updateFocusReport(); });
 
     // Visual bell: BEL raises a brief bright wash, cleared ~130ms later. bellRang is emitted from the
     // vterm callback on the GUI thread, so this runs synchronously here (update() is safe).
@@ -189,6 +194,12 @@ int TerminalView::cbSetTermProp(VTermProp prop, VTermValue *val, void *user)
     } else if (prop == VTERM_PROP_CURSORVISIBLE) {
         self->m_cursorVisible = val->boolean;
         self->update();
+    } else if (prop == VTERM_PROP_MOUSE) {
+        // DECSET 1000/1002/1003 (CLICK/DRAG/MOVE) or a reset to NONE — decideMouseAction() in
+        // mousereport.h reads this on every mouse event, no further bookkeeping needed here.
+        self->m_mouseMode = val->number;
+    } else if (prop == VTERM_PROP_ALTSCREEN) {
+        self->m_altScreen = val->boolean;
     }
     return 1;
 }
@@ -210,6 +221,15 @@ void TerminalView::itemChange(ItemChange change, const ItemChangeData &data)
         m_imageNode = nullptr;
         m_glyphs.reset();
         update();
+    }
+    // Focus reporting (DECSET 1004) cares about the WINDOW's activation, not just this item's — a
+    // cross-window pane move (detach/reattach) means the old window's activeChanged must stop
+    // driving it. Qt auto-disconnects when either end is destroyed, so this is also safe on teardown.
+    if (change == ItemSceneChange) {
+        QObject::disconnect(m_winActiveConn);
+        m_winActiveConn = data.window
+            ? connect(data.window, &QWindow::activeChanged, this, [this] { updateFocusReport(); })
+            : QMetaObject::Connection();
     }
     QQuickItem::itemChange(change, data);
     // A new window (or the same window moved to a screen with another scale) changes the device
@@ -302,6 +322,7 @@ void TerminalView::ensureSession()
         env = s_pendingSpawn->env;
     }
     m_pty.start(m_rows, m_cols, QString(), cwd, env);
+    updateFocusReport(); // sync the program's focus state with whatever we're starting with
 }
 
 void TerminalView::componentComplete()
@@ -918,6 +939,25 @@ void TerminalView::resetBlink()
     update();
 }
 
+// DECSET 1004: a program (tmux, vim) that asked for focus events gets a report whenever THIS pane
+// both has Qt's active focus AND its window is the active one — the closest native analogue of
+// "the terminal application is focused". vterm_state_focus_in/out() decide internally whether the
+// program actually asked for 1004; we just report the transition, unconditionally, like xterm does.
+void TerminalView::updateFocusReport()
+{
+    if (!m_vt)
+        return;
+    const bool focused = hasActiveFocus() && window() && window()->isActive();
+    if (focused == m_focusReported)
+        return;
+    m_focusReported = focused;
+    VTermState *state = vterm_obtain_state(m_vt);
+    if (focused)
+        vterm_state_focus_in(state);
+    else
+        vterm_state_focus_out(state);
+}
+
 // ─── search ─────────────────────────────────────────────────────────────────────────────────────
 
 QString TerminalView::rowText(int absRow) const
@@ -1077,6 +1117,10 @@ void TerminalView::hoverEnterEvent(QHoverEvent *event)
 
 void TerminalView::hoverMoveEvent(QHoverEvent *event)
 {
+    // MOVE mode (DECSET 1003) reports motion with NO button down too — that only ever reaches this
+    // item as a hover (mouseMoveEvent is only delivered between a press and its release).
+    if (decideMouseAction(m_mouseMode, m_altScreen, event->modifiers() & Qt::ShiftModifier) == MouseAction::Report)
+        reportMouseMotion(event->position(), event->modifiers(), Qt::NoButton);
     const LinkSpan link = linkAt(event->position());
     const bool ctrl = event->modifiers() & Qt::ControlModifier;
     setCursor(link.valid && ctrl ? Qt::PointingHandCursor : Qt::IBeamCursor);
@@ -1097,6 +1141,122 @@ void TerminalView::hoverLeaveEvent(QHoverEvent *)
 }
 
 // ─── mouse ────────────────────────────────────────────────────────────────────────────────────
+
+namespace {
+// Qt's modifier bits → libvterm's, for mouse reports (keyToVTerm does the same for the keyboard).
+VTermModifier qtModsToVTerm(Qt::KeyboardModifiers m)
+{
+    VTermModifier mod = VTERM_MOD_NONE;
+    if (m & Qt::ShiftModifier) mod = VTermModifier(mod | VTERM_MOD_SHIFT);
+    if (m & Qt::ControlModifier) mod = VTermModifier(mod | VTERM_MOD_CTRL);
+    if (m & Qt::AltModifier) mod = VTermModifier(mod | VTERM_MOD_ALT);
+    return mod;
+}
+
+// xterm convention: left/middle/right = 1/2/3 (libvterm encodes the actual X10/SGR byte); 0 = "not
+// a button libvterm's mouse API knows about" (e.g. a fourth/back/forward mouse button).
+int vtermButtonFor(Qt::MouseButton b)
+{
+    switch (b) {
+    case Qt::LeftButton: return 1;
+    case Qt::MiddleButton: return 2;
+    case Qt::RightButton: return 3;
+    default: return 0;
+    }
+}
+} // namespace
+
+bool TerminalView::wantsMouseReport(int qtModifiers) const
+{
+    const bool shift = Qt::KeyboardModifiers(qtModifiers) & Qt::ShiftModifier;
+    return decideMouseAction(m_mouseMode, m_altScreen, shift) == MouseAction::Report;
+}
+
+// xterm never reports a scrolled-back position: any reported event first snaps the view back to
+// live, exactly like typing already does (see keyPressEvent).
+void TerminalView::snapToLive()
+{
+    if (m_scrollOffset > 0) {
+        m_scrollOffset = 0;
+        update();
+    }
+}
+
+void TerminalView::reportMousePress(Qt::MouseButton button, const QPointF &pos, Qt::KeyboardModifiers mods)
+{
+    const int vb = vtermButtonFor(button);
+    if (!m_vt || vb == 0)
+        return;
+    snapToLive();
+    const VTermModifier mod = qtModsToVTerm(mods);
+    const int col = pixelToCellIndex(pos.x(), m_cellW, m_cols);
+    const int row = pixelToCellIndex(pos.y(), m_cellH, m_rows);
+    vterm_mouse_move(m_vt, row, col, mod);
+    vterm_mouse_button(m_vt, vb, true, mod);
+    m_lastReportedCell = { row, col };
+}
+
+void TerminalView::reportMouseRelease(Qt::MouseButton button, const QPointF &pos, Qt::KeyboardModifiers mods)
+{
+    const int vb = vtermButtonFor(button);
+    if (!m_vt || vb == 0)
+        return;
+    const VTermModifier mod = qtModsToVTerm(mods);
+    const int col = pixelToCellIndex(pos.x(), m_cellW, m_cols);
+    const int row = pixelToCellIndex(pos.y(), m_cellH, m_rows);
+    vterm_mouse_move(m_vt, row, col, mod);
+    vterm_mouse_button(m_vt, vb, false, mod);
+    m_lastReportedCell = { row, col };
+}
+
+// Motion only reports in DRAG mode while a button is down, or unconditionally in MOVE mode (CLICK
+// mode never reports motion at all — libvterm itself enforces that from m_mouseMode); either way,
+// only on an actual cell change, so a touchpad doesn't flood the pty with same-cell reports.
+void TerminalView::reportMouseMotion(const QPointF &pos, Qt::KeyboardModifiers mods, Qt::MouseButtons buttons)
+{
+    if (!m_vt)
+        return;
+    const bool wants = m_mouseMode == VTERM_PROP_MOUSE_MOVE
+        || (m_mouseMode == VTERM_PROP_MOUSE_DRAG && buttons != Qt::NoButton);
+    if (!wants)
+        return;
+    const int col = pixelToCellIndex(pos.x(), m_cellW, m_cols);
+    const int row = pixelToCellIndex(pos.y(), m_cellH, m_rows);
+    if (row == m_lastReportedCell.row && col == m_lastReportedCell.col)
+        return;
+    m_lastReportedCell = { row, col };
+    vterm_mouse_move(m_vt, row, col, qtModsToVTerm(mods));
+}
+
+// Wheel → xterm buttons 4 (up) / 5 (down), one PRESS per physical notch (no matching release — the
+// wheel protocol only ever sends the press byte).
+void TerminalView::reportWheel(const QPointF &pos, int angleDeltaY, Qt::KeyboardModifiers mods)
+{
+    const int notches = accumulateWheelNotches(m_wheelPending, angleDeltaY);
+    if (!m_vt || notches == 0)
+        return;
+    snapToLive();
+    const VTermModifier mod = qtModsToVTerm(mods);
+    const int col = pixelToCellIndex(pos.x(), m_cellW, m_cols);
+    const int row = pixelToCellIndex(pos.y(), m_cellH, m_rows);
+    vterm_mouse_move(m_vt, row, col, mod);
+    const int button = notches > 0 ? 4 : 5;
+    for (int i = 0, n = qAbs(notches); i < n; ++i)
+        vterm_mouse_button(m_vt, button, true, mod);
+}
+
+// Alternate-scroll (no mouse mode, altscreen app: less/man/git log): the wheel becomes cursor
+// Up/Down keys, 3 per notch — the same "3 lines" feel as the ordinary scrollback wheel, and through
+// vterm_keyboard_key so DECCKM (application cursor-key mode) picks the right escape (\eOA vs \e[A).
+void TerminalView::sendAltScrollKeys(int angleDeltaY)
+{
+    const int notches = accumulateWheelNotches(m_wheelPending, angleDeltaY);
+    if (!m_vt || notches == 0)
+        return;
+    const VTermKey key = notches > 0 ? VTERM_KEY_UP : VTERM_KEY_DOWN;
+    for (int i = 0, n = qAbs(notches) * 3; i < n; ++i)
+        vterm_keyboard_key(m_vt, key, VTERM_MOD_NONE);
+}
 
 void TerminalView::selectWordAt(const CellPos &c)
 {
@@ -1140,6 +1300,17 @@ void TerminalView::mousePressEvent(QMouseEvent *event)
 {
     forceActiveFocus(Qt::MouseFocusReason);
     emit focusRequested(); // user intent: this pane is now the focused one (TerminalPanes updates m_focused)
+
+    // A program that turned mouse tracking on gets the click reported (xterm/VTE behaviour) instead
+    // of any of TerminalView's own button handling below — no paste, no selection, no local menu.
+    // Right only ever reaches here via the QML <ContextMenu> declining the press (wantsMouseReport),
+    // so this is always true for Right; Left/Middle can go either way.
+    if (decideMouseAction(m_mouseMode, m_altScreen, event->modifiers() & Qt::ShiftModifier) == MouseAction::Report) {
+        reportMousePress(event->button(), event->position(), event->modifiers());
+        event->accept();
+        return;
+    }
+
     // Middle-click pastes the PRIMARY selection (X11/Wayland convention).
     if (event->button() == Qt::MiddleButton) {
         const QString sel = QGuiApplication::clipboard()->text(QClipboard::Selection);
@@ -1182,6 +1353,11 @@ void TerminalView::mousePressEvent(QMouseEvent *event)
 
 void TerminalView::mouseMoveEvent(QMouseEvent *event)
 {
+    if (decideMouseAction(m_mouseMode, m_altScreen, event->modifiers() & Qt::ShiftModifier) == MouseAction::Report) {
+        reportMouseMotion(event->position(), event->modifiers(), event->buttons());
+        event->accept();
+        return;
+    }
     if (!m_selecting)
         return;
     const CellPos p = cellAt(event->position());
@@ -1199,6 +1375,11 @@ void TerminalView::mouseMoveEvent(QMouseEvent *event)
 
 void TerminalView::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (decideMouseAction(m_mouseMode, m_altScreen, event->modifiers() & Qt::ShiftModifier) == MouseAction::Report) {
+        reportMouseRelease(event->button(), event->position(), event->modifiers());
+        event->accept();
+        return;
+    }
     m_selecting = false;
     // Copy-on-select to the PRIMARY selection (middle-click paste; doesn't clobber the clipboard).
     if (m_selValid) {
@@ -1211,13 +1392,30 @@ void TerminalView::mouseReleaseEvent(QMouseEvent *event)
 
 void TerminalView::wheelEvent(QWheelEvent *event)
 {
-    // Ctrl+wheel zooms the font (like Ctrl +/−), instead of scrolling.
+    // Ctrl+wheel zooms the font (like Ctrl +/−), instead of scrolling or reporting — takes
+    // precedence over everything else, exactly as today.
     if (event->modifiers() & Qt::ControlModifier) {
         if (event->angleDelta().y() != 0)
             emit zoomRequested(event->angleDelta().y() > 0 ? 1 : -1);
         event->accept();
         return;
     }
+
+    const bool shift = event->modifiers() & Qt::ShiftModifier;
+    switch (decideMouseAction(m_mouseMode, m_altScreen, shift)) {
+    case MouseAction::Report:
+        reportWheel(event->position(), event->angleDelta().y(), event->modifiers());
+        event->accept();
+        return;
+    case MouseAction::AltScroll:
+        sendAltScrollKeys(event->angleDelta().y());
+        event->accept();
+        return;
+    case MouseAction::Local:
+        break;
+    }
+
+    // Local (today's behaviour): scroll SolidTerm's own scrollback.
     const int lines = event->angleDelta().y() / 40; // 3 lines per notch
     m_scrollOffset = qBound(0, m_scrollOffset + lines, int(m_scrollback.size()));
     update();

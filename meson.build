@@ -385,6 +385,14 @@ if build_solidterm
     executable('test-solidterm-scrollback', files('apps/solidterm/tests/scrollback_test.cpp'),
       dependencies: [vterm_dep]),
     timeout: 10)
+
+  # Mouse reporting (xterm/VTE protocol): the decision table (mode/altscreen/shift →
+  # report|altscroll|local) plus libvterm's own SGR/X10/DRAG/wheel/DECCKM encoding, driven the same
+  # way TerminalView drives it. No Qt — see mousereport_test.cpp.
+  test('solidterm-mousereport',
+    executable('test-solidterm-mousereport', files('apps/solidterm/tests/mousereport_test.cpp'),
+      dependencies: [vterm_dep]),
+    timeout: 10)
 endif
 
 # ── Tests ────────────────────────────────────────────────────────────────────────────────────

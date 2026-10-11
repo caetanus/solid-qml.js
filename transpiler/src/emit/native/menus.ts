@@ -495,7 +495,15 @@ function emitMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope
  *  its parent box (a foreign anchored child: invisible to the CSS layout pass), and a
  *  RightButton-only MouseArea opens the popup at the cursor via T.Menu.popup(x, y) — left
  *  clicks, hover and wheel pass through untouched. Everything else (items, author class,
- *  onClose, window-deactivation close) matches <Menu>. */
+ *  onClose, window-deactivation close) matches <Menu>.
+ *
+ *  `suppressWhen={(modifiers) => boolean}` (optional, solidterm's mouse-reporting feature): an
+ *  expression re-evaluated on every right-PRESS; a true result declines the press
+ *  (`mouse.accepted = false`) instead of opening the menu, which lets Qt Quick's own hit-testing
+ *  fall through to whatever sits BELOW this host (e.g. a TerminalView that wants to report the
+ *  click to the program it's running, xterm/VTE-style) — the press (and its matching release/drag)
+ *  then goes to that item directly, not through this one. `modifiers` is the raw Qt.KeyboardModifiers
+ *  int off the triggering QMouseEvent. */
 function emitContextMenu(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
@@ -506,6 +514,8 @@ function emitContextMenu(propsArg: t.Node | undefined, children: t.Node[], scope
 
   const props = propsOf(propsArg);
   const onClose = props.get("onClose");
+  const suppressWhen = props.get("suppressWhen");
+  const suppressExpr = suppressWhen ? handlerBody(suppressWhen, scope, "mouse.modifiers") : undefined;
 
   // The menu's parentItem is a 1×1 anchor MOVED to the cursor: on Wayland the compositor positions a
   // Popup.Window by anchoring to parentItem's rect and ignores the popup(x,y) offset, so a right-click
@@ -520,6 +530,7 @@ function emitContextMenu(propsArg: t.Node | undefined, children: t.Node[], scope
     `${i(1)}MouseArea {`,
     `${i(2)}anchors.fill: parent`,
     `${i(2)}acceptedButtons: Qt.RightButton`,
+    ...(suppressExpr ? [`${i(2)}onPressed: function(mouse) { if (${suppressExpr}) mouse.accepted = false }`] : []),
     `${i(2)}onClicked: function(mouse) { ${anchorId}.x = mouse.x; ${anchorId}.y = mouse.y; ${menuId}.popup(0, 0) }`,
     `${i(1)}}`,
     `${i(1)}Item {`,

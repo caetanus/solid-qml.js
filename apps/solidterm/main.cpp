@@ -27,6 +27,8 @@
 #include <QQuickWindow>
 #include <QKeyEvent>
 #include <QKeySequence>
+#include <QMouseEvent>
+#include <QWheelEvent>
 #include <QTimer>
 #include <QGuiApplication>
 #include <QClipboard>
@@ -426,6 +428,54 @@ int main(int argc, char **argv)
                         for (QQuickItem *k : it->childItems()) stack.append(k);
                     }
                 }
+        });
+    }
+
+    // Debug: SOLIDTERM_MOUSETEST=1 (or "x,y", window-local, to override the point) synthesises a
+    // real left-click press+release and a wheel-up notch after a settle — through
+    // QCoreApplication::sendEvent(window, …) like SENDKEYS does for keys, so Qt Quick's own
+    // hit-testing + TerminalView's real event handlers run (not a direct method call). Without an
+    // explicit point it finds the first TerminalView in the tree and clicks its centre (same
+    // tree-walk idiom as AUTOSPLIT/AUTOSPLIT's TerminalTabs lookup below). Used to verify mouse
+    // reporting end-to-end: point SHELL at a script that enables SGR mouse tracking and redirects
+    // what it reads back to a file.
+    const QString mouseTest = qEnvironmentVariable("SOLIDTERM_MOUSETEST");
+    if (!mouseTest.isEmpty() && window) {
+        const QStringList xy = mouseTest.split(QLatin1Char(','));
+        const bool explicitPoint = xy.size() == 2;
+        const qreal ex = explicitPoint ? xy[0].toDouble() : 0;
+        const qreal ey = explicitPoint ? xy[1].toDouble() : 0;
+        QTimer::singleShot(1600, window, [&engine, window, explicitPoint, ex, ey] {
+            QPointF p(ex, ey);
+            if (!explicitPoint) {
+                TerminalView *view = nullptr;
+                for (QObject *o : engine.rootObjects()) {
+                    if (auto *w = qobject_cast<QQuickWindow *>(o)) {
+                        QList<QQuickItem *> stack { w->contentItem() };
+                        while (!stack.isEmpty() && !view) {
+                            QQuickItem *it = stack.takeLast();
+                            view = qobject_cast<TerminalView *>(it);
+                            for (QQuickItem *k : it->childItems()) stack.append(k);
+                        }
+                    }
+                }
+                if (!view) {
+                    qWarning("solidterm: mousetest found no TerminalView");
+                    return;
+                }
+                p = view->mapToScene(QPointF(view->width() / 2, view->height() / 2));
+            }
+            const QPointF g = window->mapToGlobal(p.toPoint());
+            QMouseEvent press(QEvent::MouseButtonPress, p, g, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(window, &press);
+            // 4th arg is the button whose state CHANGED (released) — Left, same as the press — not
+            // NoButton; 5th is the set still held afterwards, which correctly IS NoButton.
+            QMouseEvent release(QEvent::MouseButtonRelease, p, g, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(window, &release);
+            QWheelEvent wheel(p, g, QPoint(0, 0), QPoint(0, 120), Qt::NoButton, Qt::NoModifier,
+                               Qt::NoScrollPhase, false);
+            QCoreApplication::sendEvent(window, &wheel);
+            qInfo().noquote() << "solidterm: mousetest sent click+wheel at" << p;
         });
     }
 

@@ -231,6 +231,11 @@ void TerminalTabs::searchFocused(const QString &q) { if (auto *p = active()) p->
 void TerminalTabs::searchNext() { if (auto *p = active()) p->searchNext(); }
 void TerminalTabs::searchPrev() { if (auto *p = active()) p->searchPrev(); }
 void TerminalTabs::clearSearch() { if (auto *p = active()) p->clearSearch(); }
+bool TerminalTabs::wantsMouseReportFocused(int qtModifiers) const
+{
+    auto *p = active();
+    return p && p->wantsMouseReportFocused(qtModifiers);
+}
 
 // ─── style forwarding ───────────────────────────────────────────────────────────────────────────
 

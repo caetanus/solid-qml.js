@@ -121,6 +121,14 @@ public:
     Q_INVOKABLE void searchPrev();
     Q_INVOKABLE void clearSearch();
 
+    // True when a right-click (or any button, really) right now would be REPORTED to the program
+    // instead of doing TerminalView's own local thing (selection / context menu) — i.e. the program
+    // asked for mouse tracking (DECSET 1000/1002/1003) and `qtModifiers` doesn't hold Shift. Queried
+    // by the QML-level <ContextMenu> (which sits ABOVE this item for right-clicks) so it can decline
+    // the press and let it fall through to this item's own mousePressEvent, which does the actual
+    // reporting — see TerminalPanes/TerminalTabs::wantsMouseReportFocused for the delegation chain.
+    Q_INVOKABLE bool wantsMouseReport(int qtModifiers) const;
+
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) override;
 
 signals:
@@ -253,4 +261,26 @@ private:
     quint64 m_lastDblTime = 0;               // for triple-click (line select) detection
     void selectWordAt(const CellPos &c);
     void selectLineAt(const CellPos &c);
+
+    // ── Mouse reporting (xterm/VTE protocol) ────────────────────────────────────────────────────
+    // Mode the running program last asked for via VTERM_PROP_MOUSE (NONE/CLICK/DRAG/MOVE) and
+    // whether it's on the alternate screen (VTERM_PROP_ALTSCREEN) — both tracked in cbSetTermProp.
+    int m_mouseMode = VTERM_PROP_MOUSE_NONE;
+    bool m_altScreen = false;
+    // The last cell a motion report was sent for, so DRAG/MOVE reporting only fires on cell change
+    // (libvterm itself decides WHETHER a mode wants motion at all; this just avoids flooding it).
+    struct MouseCell { int row = -1, col = -1; };
+    MouseCell m_lastReportedCell;
+    int m_wheelPending = 0; // sub-notch remainder of accumulated high-res wheel deltas
+    void snapToLive();      // scrolled-back view → live (xterm: reports always refer to the live screen)
+    void reportMousePress(Qt::MouseButton button, const QPointF &pos, Qt::KeyboardModifiers mods);
+    void reportMouseRelease(Qt::MouseButton button, const QPointF &pos, Qt::KeyboardModifiers mods);
+    void reportMouseMotion(const QPointF &pos, Qt::KeyboardModifiers mods, Qt::MouseButtons buttons);
+    void reportWheel(const QPointF &pos, int angleDeltaY, Qt::KeyboardModifiers mods);
+    void sendAltScrollKeys(int angleDeltaY);
+
+    // ── Focus reporting (DECSET 1004) ───────────────────────────────────────────────────────────
+    bool m_focusReported = false;                  // last state sent to libvterm (avoid duplicate sends)
+    QMetaObject::Connection m_winActiveConn;        // this item's window's activeChanged → updateFocusReport
+    void updateFocusReport();
 };
