@@ -2521,6 +2521,41 @@ private slots:
         fmt.clearMarks(QStringLiteral("spelling"));
         QTRY_COMPARE(reddish(view.grabWindow(), area), 0);
     }
+    void replaceRangeKeepsTheIdAndIsOneUndoStep()
+    {
+        m_fmt->insertText(QStringLiteral("I saw teh cat"));
+        const QString a = m_fmt->blockIds().value(0);
+        m_fmt->setSelectionStart(6);
+        m_fmt->setSelectionEnd(9);
+        m_fmt->toggleBold(); // the replaced text's format carries over
+        m_fmt->setSelectionEnd(6);
+        m_fmt->addMark(QStringLiteral("spelling"), a, 6, 9);
+        const int steps = doc()->availableUndoSteps();
+        QVERIFY(m_fmt->replaceRange(a, 6, 9, QStringLiteral("the")));
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("I saw the cat"));
+        QCOMPARE(m_fmt->blockIds(), QStringList { a });
+        QVERIFY(m_fmt->marks().isEmpty()); // the edit was inside it
+        QVERIFY(charAt(doc(), 7).fontWeight() >= QFont::Bold);
+        QVERIFY(doc()->availableUndoSteps() > steps);
+        doc()->undo();
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("I saw teh cat"));
+        QCOMPARE(m_fmt->blockIds(), QStringList { a });
+        doc()->redo();
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("I saw the cat"));
+
+        // "\n" starts a paragraph; the first part keeps the id
+        QVERIFY(m_fmt->replaceRange(a, 0, 1, QStringLiteral("We\nAll")));
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("We\nAll saw the cat"));
+        QCOMPARE(m_fmt->blockIds().value(0), a);
+        // a pure insertion
+        QVERIFY(m_fmt->replaceRange(a, 2, 2, QStringLiteral("!")));
+        QCOMPARE(m_fmt->blockText(a), QStringLiteral("We!"));
+
+        QVERIFY(!m_fmt->replaceRange(QStringLiteral("nope"), 0, 1, QStringLiteral("x")));
+        QVERIFY(!m_fmt->replaceRange(a, 2, 1, QStringLiteral("x")));
+        QVERIFY(!m_fmt->replaceRange(a, 0, 99, QStringLiteral("x")));
+        QCOMPARE(m_fmt->blockText(a), QStringLiteral("We!"));
+    }
 };
 
 QTEST_MAIN(RichTextTest)

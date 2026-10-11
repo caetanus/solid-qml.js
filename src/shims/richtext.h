@@ -288,6 +288,11 @@ public:
     // (start <= position - blockStart < end), or an invalid QVariant (JS undefined) for none.
     Q_INVOKABLE QVariant markAt(int position);
 
+    // Replaces [start, end) of a block with `text` ("\n" starts a paragraph, as insertText) — one
+    // undo step; the block keeps its id. The replaced text's format carries over. false when the
+    // id/range is invalid.
+    Q_INVOKABLE bool replaceRange(const QString &blockId, int start, int end, const QString &text);
+
     // What the marks overlay draws, in the EDITOR item's coordinates (C++: the overlay and tests).
     // `band` limits it to marks whose block may intersect it (a null rect = every mark).
     struct MarkSegment {
@@ -299,7 +304,7 @@ public:
     };
     static constexpr qreal kWaveHeight = 4.0; // px (logical), the squiggle's band under the baseline
     QList<MarkSegment> markSegments(const QRectF &band = QRectF());
-    bool hasMarks() const { return !m_marks.isEmpty(); }
+    Q_INVOKABLE bool hasMarks() const { return !m_marks.isEmpty(); } // QML: skip hover hit-tests without marks
     // A mark as stored: absolute document positions [start, end) (kept sorted by start).
     struct Mark { int start; int end; int kind; QString id; };
     const QList<Mark> &marks() { ensureMarksSorted(); return m_marks; }

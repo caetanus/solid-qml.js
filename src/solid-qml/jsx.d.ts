@@ -103,6 +103,34 @@ type DocumentEditorProps = {
   onZoomRequested?: (delta: number) => void;
   /** The outline changed (doc.headings()) — debounced, and only when the list actually differs. */
   onHeadingsChanged?: () => void;
+  /** Every block was replaced (loadOdf, newDocument): the app's first full pass (doc.blockIds()).
+   *  No onBlockRemoved/onBlockChanged is sent for that. */
+  onBlocksLoaded?: () => void;
+  /** A block's TEXT changed, or a block appeared (Enter, paste, undo). Coalesced per block,
+   *  delivered on the next event-loop turn; never for formatting or marks. */
+  onBlockChanged?: (blockId: string) => void;
+  /** The block left the document (merged, deleted, an undone split): drop its state. */
+  onBlockRemoved?: (blockId: string) => void;
+  /** A click on a mark; x, y in the editor's coordinates. */
+  onMarkClicked?: (mark: DocumentMark, x: number, y: number) => void;
+  /** A right-click on a mark (show suggestions). A right-click elsewhere is left alone. */
+  onMarkContextMenu?: (mark: DocumentMark, x: number, y: number) => void;
+  /** The pointer entered a mark, or left it (null). */
+  onMarkHovered?: (mark: DocumentMark | null) => void;
+};
+
+/** A mark (docs/document-editor.md "Blocks and marks"): [start, end) are UTF-16 offsets in the
+ *  block's text (doc.blockText(blockId)). */
+type DocumentMark = { kind: string; id: string; blockId: string; start: number; end: number };
+
+/** How a kind of mark is drawn. Left out: kept; null: removed. Defaults: "spelling" a red wave,
+ *  "grammar" a blue wave, "highlight" a yellow background, any other kind a grey underline. */
+type DocumentMarkStyle = {
+  underline?: "wave" | "single" | "none" | null;
+  /** The underline's colour ("#rrggbb" or a color name). */
+  color?: string | null;
+  /** Drawn under the text. */
+  background?: string | null;
 };
 
 /** One entry of doc.headings() (docs/document-editor.md "Outline"). */
@@ -301,6 +329,28 @@ declare global {
     clearDirectFormatting(): void;
     /** Overrides on top of the styles at `pos` (default: the caret). */
     directFormattingAt(pos?: number): DocumentDirectFormatting;
+    /** Every block's stable id, in document order (kept through typing, other blocks' edits and
+     *  undo/redo; a split gives the part after the caret a new id; saved as xml:id). */
+    blockIds(): string[];
+    /** The id of the block holding document position `pos` ("" outside the document). */
+    blockIdAt(pos: number): string;
+    /** The block's plain text (UTF-16 — mark offsets count in it; a soft line break reads "\n").
+     *  "" for an unknown id. */
+    blockText(blockId: string): string;
+    /** Marks [start, end) of the block's text; returns the mark's id (`id`, or a generated one),
+     *  "" for an unknown block or a range outside its text. An overlay: never saved, copied,
+     *  undone nor counted as a modification. Edits move it with the text; an edit inside it (or
+     *  deleting any of it) removes it. */
+    addMark(kind: string, blockId: string, start: number, end: number, id?: string): string;
+    /** Every mark of `kind`, or only those in `blockId`. Other kinds/blocks are untouched. */
+    clearMarks(kind: string, blockId?: string): void;
+    /** How `kind` is drawn (see DocumentMarkStyle). */
+    markStyle(kind: string, style: DocumentMarkStyle): DocumentIoResult;
+    /** The mark over the character at `pos`, or null. */
+    markAt(pos: number): DocumentMark | null;
+    /** Replaces [start, end) of the block's text (e.g. a suggestion) — one undo step, the block
+     *  keeps its id; "\n" starts a paragraph. false for an unknown id / a range outside the text. */
+    replaceRange(blockId: string, start: number, end: number, text: string): boolean;
   }
 
   // Runtime CSS-theme override handle, injected by the loader (see examples/dashboard).

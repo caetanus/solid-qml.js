@@ -120,6 +120,9 @@ RichText {
         function onContentsChanged() { debounce.restart() }
         function onStylesChanged() { root.stylesChanged() }
         function onHeadingsChanged() { headingsDebounce.restart() }
+        function onBlocksLoaded() { root.blocksLoaded() }
+        function onBlockChanged(blockId) { root.blockChanged(blockId) }
+        function onBlockRemoved(blockId) { root.blockRemoved(blockId) }
     }
     // The handler arrives in RichText's Component.onCompleted: start from an empty, unmodified
     // document, without reporting that as an edit.
@@ -250,5 +253,72 @@ RichText {
     function scrollToPosition(pos) {
         var r = _editor.positionToRectangle(pos)
         _body.contentY = Math.max(0, Math.min(r.y, Math.max(0, _body.contentHeight - _body.height)))
+    }
+
+    // ── blocks & marks (office item 3; docs/document-editor.md "Blocks and marks") ─────────────
+    // Every paragraph has a stable string id (kept through typing, other blocks' edits and
+    // undo/redo; saved as xml:id). blockChanged/blockRemoved are coalesced by the engine and
+    // arrive on the next event-loop turn; blocksLoaded after loadOdf/newDocument (the app's
+    // first full pass — it replaces every block, no removals are reported for that).
+    signal blocksLoaded()
+    signal blockChanged(string blockId)
+    signal blockRemoved(string blockId)
+    // `mark`: {kind, id, blockId, start, end}; x, y in this item's coordinates.
+    signal markClicked(var mark, real x, real y)
+    signal markContextMenu(var mark, real x, real y)
+    signal markHovered(var mark) // null when the pointer leaves a mark
+
+    function blockIds() { return fmt ? fmt.blockIds() : [] }
+    function blockIdAt(pos) { return fmt ? fmt.blockIdAt(pos) : "" }
+    function blockText(blockId) { return fmt ? fmt.blockText(blockId) : "" }
+    // Marks are an overlay, not content (not saved, copied, undone, nor `modified`).
+    function addMark(kind, blockId, start, end, id) { return fmt ? fmt.addMark(kind, blockId, start, end, id || "") : "" }
+    function clearMarks(kind, blockId) { if (fmt) fmt.clearMarks(kind, blockId || "") }
+    function markStyle(kind, style) {
+        if (!fmt) return _noEngine
+        var e = fmt.markStyle(kind, style || {})
+        return { ok: e === "", error: e }
+    }
+    function markAt(pos) { var m = fmt ? fmt.markAt(pos) : undefined; return m ? m : null }
+    // Applies a suggestion: one undo step, the block keeps its id.
+    function replaceRange(blockId, start, end, text) {
+        var ok = !!fmt && fmt.replaceRange(blockId, start, end, text)
+        _editor.forceActiveFocus()
+        return ok
+    }
+
+    // The mark under a point of the text area: the CHARACTER there (positionAt gives the nearest
+    // caret boundary — the right half of a character answers the next position).
+    function _markAtPoint(x, y) {
+        if (!fmt || !fmt.hasMarks()) return null
+        var p = _editor.positionAt(x, y)
+        var at = (p > 0 && x < _editor.positionToRectangle(p).x) ? p - 1 : p
+        var m = fmt.markAt(at)
+        return m ? m : null
+    }
+    // Passive (DragThreshold): the editor still gets the press — the caret and selection behave
+    // as without marks; a right-click outside any mark is left alone.
+    TapHandler {
+        parent: root._editor
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        onTapped: (eventPoint, button) => {
+            var m = root._markAtPoint(eventPoint.position.x, eventPoint.position.y)
+            if (!m) return
+            var p = root.mapFromItem(root._editor, eventPoint.position.x, eventPoint.position.y)
+            if (button === Qt.RightButton) root.markContextMenu(m, p.x, p.y)
+            else root.markClicked(m, p.x, p.y)
+        }
+    }
+    property var _hoveredMark: null
+    function _setHoveredMark(m) {
+        var h = _hoveredMark
+        if (m === h || (m && h && m.id === h.id && m.blockId === h.blockId && m.start === h.start)) return
+        _hoveredMark = m
+        markHovered(m)
+    }
+    HoverHandler {
+        parent: root._editor
+        onPointChanged: if (hovered) root._setHoveredMark(root._markAtPoint(point.position.x, point.position.y))
+        onHoveredChanged: if (!hovered) root._setHoveredMark(null)
     }
 }

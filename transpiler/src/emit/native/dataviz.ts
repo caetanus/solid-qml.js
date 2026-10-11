@@ -168,7 +168,9 @@ function emitRichText(propsArg: t.Node | undefined, _children: t.Node[], scope: 
  *  variant grown up — the APP drives it. `ref={doc}` is the editor's id, so `doc.saveOdf(p)`,
  *  `doc.toggleBold()`, `doc.bold` (format state, reactive in bindings) resolve to it; `toolbar`
  *  hides the built-in toolbar; `onModifiedChanged(modified)`, the debounced, payload-free
- *  `onContentChanged()` and `onStylesChanged()` (the style table changed) report back. The API lives in DocumentEditor.qml. */
+ *  `onContentChanged()` and `onStylesChanged()` (the style table changed) report back, and the blocks & marks
+ *  events (office item 3: onBlocksLoaded/onBlockChanged/onBlockRemoved/onMarkClicked/onMarkContextMenu/
+ *  onMarkHovered). The API lives in DocumentEditor.qml. */
 function emitDocumentEditor(propsArg: t.Node | undefined, _children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
@@ -211,6 +213,21 @@ function emitDocumentEditor(propsArg: t.Node | undefined, _children: t.Node[], s
   const onHeadings = props.get("onHeadingsChanged");
   if (onHeadings && (t.isArrowFunctionExpression(onHeadings) || t.isFunctionExpression(onHeadings)))
     lines.push(`${i(1)}onHeadingsChanged: { ${translateArgsHandler(onHeadings, [], scope)} }`);
+  // Office item 3 (blocks & marks): blocksLoaded(); blockChanged/blockRemoved(blockId);
+  // markClicked/markContextMenu(mark, x, y); markHovered(mark | null). Arrow form, so the app's
+  // own parameter names never meet the editor's properties.
+  const onBlocksLoaded = props.get("onBlocksLoaded");
+  if (onBlocksLoaded && (t.isArrowFunctionExpression(onBlocksLoaded) || t.isFunctionExpression(onBlocksLoaded)))
+    lines.push(`${i(1)}onBlocksLoaded: { ${translateArgsHandler(onBlocksLoaded, [], scope)} }`);
+  const withArgs: [string, string[]][] = [
+    ["onBlockChanged", ["__blockId"]], ["onBlockRemoved", ["__blockId"]],
+    ["onMarkClicked", ["__mark", "__x", "__y"]], ["onMarkContextMenu", ["__mark", "__x", "__y"]], ["onMarkHovered", ["__mark"]],
+  ];
+  for (const [name, args] of withArgs) {
+    const fn = props.get(name);
+    if (fn && (t.isArrowFunctionExpression(fn) || t.isFunctionExpression(fn)))
+      lines.push(`${i(1)}${name}: (${args.join(", ")}) => { ${translateArgsHandler(fn, args, scope)} }`);
+  }
   lines.push(`${pad}}`);
   return lines;
 }

@@ -128,6 +128,25 @@ test("document editor: named styles — onStylesChanged, style calls and state t
   assert.match(out, /_ref_doc\.defineStyle\("Text Body", \(?\{\s*fontSize: 13\s*\}\)?\)/);
 });
 
+test("document editor: blocks & marks events carry their payload (office item 3)", async () => {
+  const out = await qmlType(`export function F(){
+    let doc;
+    const [n,setN]=createSignal(0); const [last,setLast]=createSignal("");
+    return <DocumentEditor ref={doc}
+      onBlocksLoaded={() => setN(doc.blockIds().length)}
+      onBlockChanged={(id) => doc.addMark("spelling", id, 0, 1)}
+      onBlockRemoved={(id) => setLast(id)}
+      onMarkClicked={(m, x, y) => setLast(m.id + x + y)}
+      onMarkContextMenu={(m, x, y) => doc.replaceRange(m.blockId, m.start, m.end, "the")}
+      onMarkHovered={(m) => setLast(m ? m.kind : "")} />; }`);
+  assert.match(out, /onBlocksLoaded: \{[^\n]*n = _ref_doc\.blockIds\(\)\.length/);
+  assert.match(out, /onBlockChanged: \(__blockId\) => \{[^\n]*_ref_doc\.addMark\("spelling", __blockId, 0, 1\)/);
+  assert.match(out, /onBlockRemoved: \(__blockId\) => \{[^\n]*last = __blockId/);
+  assert.match(out, /onMarkClicked: \(__mark, __x, __y\) => \{[^\n]*last = __mark\.id \+ __x \+ __y/);
+  assert.match(out, /onMarkContextMenu: \(__mark, __x, __y\) => \{[^\n]*_ref_doc\.replaceRange\(__mark\.blockId, __mark\.start, __mark\.end, "the"\)/);
+  assert.match(out, /onMarkHovered: \(__mark\) => \{[^\n]*__mark \? __mark\.kind : ""/);
+});
+
 test("document editor: <RichText> keeps its mail/forms contract (no toolbar/ref/onContentChanged)", async () => {
   await assert.rejects(qmlType(`export function F(){ return <RichText toolbar={false} />; }`), /<RichText> does not support `toolbar`/);
   await assert.rejects(qmlType(`export function F(){ return <DocumentEditor html="<p>x</p>" />; }`), /<DocumentEditor> does not support `html`/);

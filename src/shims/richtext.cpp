@@ -2239,3 +2239,32 @@ QList<RichTextHandler::MarkSegment> RichTextHandler::markSegments(const QRectF &
     }
     return out;
 }
+
+bool RichTextHandler::replaceRange(const QString &blockId, int start, int end, const QString &text)
+{
+    const auto it = m_blocksById.constFind(blockId);
+    if (!m_doc || it == m_blocksById.cend() || start < 0 || start > end || end > it->length() - 1)
+        return false;
+    const int pos = it->position();
+    QTextCursor c(m_doc);
+    // The format of the first replaced character (charFormat() reads the one BEFORE the cursor);
+    // a pure insertion takes the caret's, like typing.
+    c.setPosition(pos + (end > start ? start + 1 : start));
+    QTextCharFormat fmt = c.charFormat();
+    if (fmt.isImageFormat())
+        fmt = it->charFormat();
+    c.beginEditBlock(); // one undo step
+    c.setPosition(pos + start);
+    c.setPosition(pos + end, QTextCursor::KeepAnchor);
+    c.removeSelectedText(); // within the block: it keeps its node, hence its id
+    const QStringList parts = text.split(QLatin1Char('\n'));
+    for (qsizetype i = 0; i < parts.size(); ++i) {
+        if (i > 0)
+            breakParagraph(c);
+        if (!parts[i].isEmpty())
+            c.insertText(parts[i], fmt);
+    }
+    c.endEditBlock();
+    emit formatChanged();
+    return true;
+}
