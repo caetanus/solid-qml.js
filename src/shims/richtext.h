@@ -312,6 +312,15 @@ private:
     // The unscaled (zoom / ratio) HTML of a selection fragment, for the clipboard (office item 2b,
     // ★2 follow-up): builds it in a throwaway QTextDocument so the live document is never touched.
     QString unscaledHtml(const QTextDocumentFragment &frag) const;
+    // fontFamily()/fontSize()'s shared implementation (office item 2b, ★4 addendum): the
+    // EFFECTIVE value across the selection (or the word under the cursor with none) — direct
+    // formatting first, else the full resolved style chain INCLUDING Default Paragraph Style's
+    // own definition (unlike restyle()'s skipDocumentFont, which only governs what gets BAKED
+    // into the live document, not what a reader should report), else unset. Unset ("the editor's
+    // own base font stands in") when nothing anywhere defines it, or when the touched runs
+    // disagree (Word's "blank box" for a mixed selection). fontSize() divides the result by
+    // m_zoom itself — this always returns canonical (zoom-1) units, like m_sheet.
+    QVariant effectiveFontProperty(rt::Prop prop) const;
     void breakParagraph(QTextCursor &c);
     QTextCursor selectionCursor() const; // the selection exactly (no word expansion); null cursor if none
     void setError(const QString &message); // "" = success; non-empty also emits ioError

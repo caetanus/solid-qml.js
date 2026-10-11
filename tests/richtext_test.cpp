@@ -1206,6 +1206,66 @@ private slots:
         QCOMPARE(charAt(doc(), 2).fontPointSize(), 14.0);
     }
 
+    // fontFamily()/fontSize() must report the EFFECTIVE value: direct formatting over the
+    // resolved style chain, including a Default Paragraph Style the APP itself customized via
+    // newDocument(options) — restyle()'s skipDocumentFont only governs what gets baked into the
+    // live document (so the editor's own base font shows through when nothing was customized),
+    // not what a reader should see.
+    void fontFamilyAndSizeReportTheCustomizedDefaultParagraphStyle()
+    {
+        const QVariantMap result = m_fmt->newDocument(QVariantMap {
+            { QStringLiteral("styles"), QVariantMap {
+                { QStringLiteral("Default Paragraph Style"), QVariantMap {
+                    { QStringLiteral("fontFamily"), QStringLiteral("Noto Serif") },
+                    { QStringLiteral("fontSize"), 12.0 },
+                } },
+            } },
+            { QStringLiteral("paragraphStyle"), QStringLiteral("Text Body") },
+        });
+        QVERIFY2(result.value(QStringLiteral("ok")).toBool(), qPrintable(result.value(QStringLiteral("error")).toString()));
+        m_fmt->insertText(QStringLiteral("Hello"));
+        m_fmt->setCursorPosition(1);
+        QCOMPARE(m_fmt->fontFamily(), QStringLiteral("Noto Serif"));
+        QCOMPARE(m_fmt->fontSize(), 12.0);
+
+        // In CANONICAL units — zoom must not change what this reports, same as a direct override.
+        m_fmt->setZoom(2.0);
+        QCOMPARE(m_fmt->fontSize(), 12.0);
+        QCOMPARE(charAt(doc(), 2).fontPointSize(), 0.0); // nothing baked onto the run itself (★2 docs)
+    }
+
+    void fontFamilyAndSizeFallBackToUnsetWhenDefaultParagraphStyleDefinesNeither()
+    {
+        // Unmodified built-in Default Paragraph Style: unchanged from before this fix — "" / 0,
+        // the editor's own base font standing in (this handler has no way to know what that is).
+        m_fmt->insertText(QStringLiteral("x"));
+        m_fmt->setCursorPosition(1);
+        QCOMPARE(m_fmt->fontFamily(), QString());
+        QCOMPARE(m_fmt->fontSize(), 0.0);
+    }
+
+    void fontFamilyAndSizeAreBlankOverAMixedSelection()
+    {
+        // Word's "blank box" convention: a selection whose runs don't all agree reports "" / 0,
+        // not whichever run happens to be last.
+        m_fmt->insertText(QStringLiteral("AB"));
+        m_fmt->setSelectionStart(1);
+        m_fmt->setSelectionEnd(2); // "B"
+        m_fmt->setFontSize(20.0);
+        m_fmt->setFontFamily(QStringLiteral("Monospace"));
+
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(2); // "AB": "A" has nothing direct, "B" has a 20pt Monospace override
+        QCOMPARE(m_fmt->fontFamily(), QString());
+        QCOMPARE(m_fmt->fontSize(), 0.0);
+
+        // Each one alone is still reported correctly (sanity: the mixed check isn't just always blank).
+        m_fmt->setSelectionStart(1);
+        m_fmt->setSelectionEnd(2);
+        QCOMPARE(m_fmt->fontFamily(), QStringLiteral("Monospace"));
+        QCOMPARE(m_fmt->fontSize(), 20.0);
+    }
+
     void clearFormattingDropsDirectButKeepsCharStyle()
     {
         m_fmt->insertText(QStringLiteral("Hello"));

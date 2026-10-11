@@ -700,13 +700,95 @@ int RichTextHandler::heading() const
 
 QString RichTextHandler::fontFamily() const
 {
-    return rt::readProp(cursor().charFormat(), rt::Prop::FontFamily).toString();
+    return effectiveFontProperty(rt::Prop::FontFamily).toString();
 }
 
 qreal RichTextHandler::fontSize() const
 {
-    const QVariant v = rt::readProp(cursor().charFormat(), rt::Prop::FontSize);
-    return v.isValid() ? v.toDouble() / m_zoom : 0.0; // unset: the editor's own base font stands in
+    // effectiveFontProperty() already normalizes to canonical (zoom-1) units itself — a DIRECT
+    // hit is live-document units (baked at the zoom in effect) and needs /m_zoom; a value from
+    // the resolved style chain (m_sheet is never scaled) is already canonical and must NOT be
+    // divided again — only effectiveFontProperty's direct-vs-chain branch knows which is which.
+    const QVariant v = effectiveFontProperty(rt::Prop::FontSize);
+    return v.isValid() ? v.toDouble() : 0.0; // unset: the editor's own base font stands in
+}
+
+QVariant RichTextHandler::effectiveFontProperty(rt::Prop prop) const
+{
+    const QTextCursor c = cursor(); // selection, or the word-processor's word-under-cursor convention
+    QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
+    if (c.isNull() || !doc)
+        return QVariant();
+    const int from = c.selectionStart(), to = c.selectionEnd();
+    const QString key = prop == rt::Prop::FontFamily ? QStringLiteral("fontFamily") : QStringLiteral("fontSize");
+    // The EFFECTIVE value at one run: direct/baked character formatting wins outright (what
+    // restyle() bakes onto the live format for every style EXCEPT Default Paragraph Style's own
+    // font — ★2 docs); otherwise resolve the full style chain — paragraph style then any char
+    // style on top — WITHOUT restyle()'s skipDocumentFont suppression, so a Default Paragraph
+    // Style the app itself customized (newDocument(options)) is reported too. Only when NOTHING
+    // in the chain defines it (including an unmodified Default Paragraph Style) does it come back
+    // unset, meaning "the editor's own base font stands in" — this handler has no idea what that
+    // font actually is (that lives in the QML layer), so it cannot report a value for it.
+    //
+    // Units: a DIRECT FontSize is baked into the live document AT THE ZOOM IN EFFECT (like
+    // setFontSize() does) — bring it back down to canonical before comparing/returning. A value
+    // from the style chain is already canonical (m_sheet is never scaled, ★2) — untouched.
+    const auto effectiveAt = [&](const QTextCharFormat &cf, const QString &paraStyle) -> QVariant {
+        QVariant direct = rt::readProp(cf, prop);
+        if (direct.isValid()) {
+            if (prop == rt::Prop::FontSize)
+                direct = direct.toDouble() / m_zoom;
+            return direct;
+        }
+        QVariantMap resolved = m_sheet.resolved(paraStyle, false);
+        if (const QString cs = rt::charStyleOf(cf); !cs.isEmpty()) {
+            const QVariantMap fromCharStyle = m_sheet.resolved(cs, false);
+            for (auto it = fromCharStyle.cbegin(); it != fromCharStyle.cend(); ++it)
+                resolved.insert(it.key(), it.value());
+        }
+        return resolved.value(key);
+    };
+    // Across a real selection (or just the one word/position `cursor()` gives with none), every
+    // run touched must agree — Word's "blank box" convention for a mixed selection (office item
+    // 2b, ★4 addendum): the FIRST disagreement (including "set here, unset there") stops early.
+    QVariant value;
+    bool any = false;
+    bool mixed = false;
+    const std::function<void(QTextFrame::iterator, const QTextFrame::iterator &)> walk =
+        [&](QTextFrame::iterator it, const QTextFrame::iterator &end) {
+            for (; it != end && !mixed; ++it) {
+                if (QTextFrame *f = it.currentFrame()) {
+                    walk(f->begin(), f->end());
+                    continue;
+                }
+                const QTextBlock b = it.currentBlock();
+                if (!b.isValid())
+                    continue;
+                const int bend = b.position() + b.length();
+                if (bend <= from || b.position() >= to)
+                    continue;
+                const QString ps = rt::paragraphStyleOf(b);
+                for (auto fit = b.begin(); !fit.atEnd() && !mixed; ++fit) {
+                    const QTextFragment frag = fit.fragment();
+                    if (!frag.isValid())
+                        continue;
+                    const int s = qMax(frag.position(), from);
+                    const int e = qMin(frag.position() + frag.length(), to);
+                    if (s >= e)
+                        continue;
+                    const QVariant v = effectiveAt(frag.charFormat(), ps);
+                    if (!any) {
+                        value = v;
+                        any = true;
+                    } else if (v.isValid() != value.isValid() || (v.isValid() && v != value)) {
+                        mixed = true;
+                        return;
+                    }
+                }
+            }
+        };
+    walk(doc->rootFrame()->begin(), doc->rootFrame()->end());
+    return mixed ? QVariant() : value;
 }
 
 void RichTextHandler::toggleBold()

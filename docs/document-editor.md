@@ -71,8 +71,8 @@ State — reactive: reading `doc.bold` in a binding (a `classList`, a text) foll
 | `modified` | boolean | Unsaved edits. Cleared by `loadOdf`, `saveOdf`, `newDocument` (not by `saveOdfCopy`). |
 | `bold`, `italic`, `underline`, `strike` | boolean | Character format at the caret / selection. |
 | `heading` | number | `0` not a heading, `1`–`6` heading (outline) level. |
-| `fontFamily` | string | Character format at the caret / selection; `""` when unset (Default Paragraph Style carries no explicit font by design — the editor's own font stands in). |
-| `fontSize` | number | pt, in canonical (zoom-1) units — like a word processor's font-size box, the same number at any zoom; `0` when unset. |
+| `fontFamily` | string | The EFFECTIVE value at the caret / selection: direct formatting, else the resolved style chain (including a Default Paragraph Style the app itself customized via `newDocument(options)`); `""` when nothing anywhere defines it (the editor's own font stands in) or the selection's runs disagree (Word's "blank box" for a mixed selection). |
+| `fontSize` | number | Same resolution as `fontFamily`, in canonical (zoom-1) units — like a word processor's font-size box, the same number at any zoom; `0` under the same unset/mixed rules. |
 | `currentParagraphStyle` | string | The caret's paragraph style (`"Text Body"`, `"Heading 1"`, …). |
 | `currentCharStyle` | string | The character style at the caret, `""` for none. |
 | `alignment` | `"left" \| "center" \| "right" \| "justify"` | Paragraph alignment. |
@@ -164,7 +164,9 @@ Style properties (all optional):
 Default Paragraph Style's `fontFamily` and `fontSize` are the document's base font: kept and
 saved (a LibreOffice file's 12pt Times stays 12pt Times there), but on screen the editor's own
 font stands in for them, so a file's base font never overrides the app's typography. Every other
-style's font shows as defined.
+style's font shows as defined. The handle's `fontFamily`/`fontSize` (above) still REPORT a
+customized Default Paragraph Style's own value at the caret — only the on-screen render and what
+gets baked into the live document skip it; a reader (an app's own font-name/size box) sees it.
 
 ### Starting a document with styles
 
