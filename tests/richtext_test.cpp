@@ -1,10 +1,13 @@
 // RichTextHandler — the engine behind <RichText> and <DocumentEditor>: what an app that DRIVES the
 // document relies on (office item 0). modified tracking (and its reset on load/save/new), the
 // {ok, error} contract of the ODF IO, the debounce source (contentsChanged), the readable format
-// state (alignment), and an .odt round-trip through Qt's writer + our content.xml reader.
+// state (alignment), and an .odt round-trip through our writer + reader. Office item 2: named
+// paragraph/character styles (define, apply, re-apply, next style on Enter, direct formatting)
+// and their styles.xml round-trip.
 #include "shims/richtext.h"
 
 #include <QDir>
+#include <QFileInfo>
 #include <QImage>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -17,7 +20,12 @@
 #include <QTextDocument>
 #include <QTextFrame>
 #include <QTextTable>
+#include <QTextDocumentWriter>
+#include <QTextFragment>
+#include <QTextList>
+#include <QElapsedTimer>
 
+#include <private/qzipreader_p.h>
 #include <private/qzipwriter_p.h>
 
 namespace {
@@ -62,6 +70,59 @@ void writeOdt(const QString &path, const QByteArray &body, const QByteArray &aut
 QTextBlockFormat blockFormat(QTextDocument *doc, int block)
 {
     return doc->findBlockByNumber(block).blockFormat();
+}
+
+QString mapKey(const QVariantMap &m)
+{
+    QStringList parts;
+    for (auto it = m.cbegin(); it != m.cend(); ++it)
+        parts << it.key() + QLatin1Char('=') + (it.value().isNull() ? QStringLiteral("null") : it.value().toString());
+    return parts.join(QLatin1Char(','));
+}
+
+// Everything the style model says about a document, block by block: paragraph style, heading
+// level, list membership, direct paragraph properties, then each run's character style, direct
+// properties and text. Two documents that describe the same are the same to a reader.
+QStringList describe(QTextDocument *doc, const rt::StyleSheet &sheet)
+{
+    QStringList out;
+    for (QTextBlock b = doc->begin(); b.isValid(); b = b.next()) {
+        const QString ps = rt::paragraphStyleOf(b);
+        QString line = ps + QStringLiteral(" h") + QString::number(b.blockFormat().headingLevel())
+            + (b.textList() ? QStringLiteral(" list") : QString())
+            + QStringLiteral(" {") + mapKey(rt::directProps(b.blockFormat(), sheet.blockFormat(ps), true)) + QStringLiteral("}");
+        for (auto it = b.begin(); !it.atEnd(); ++it) {
+            const QTextFragment f = it.fragment();
+            if (f.charFormat().isImageFormat()) {
+                line += QStringLiteral(" [image]");
+                continue;
+            }
+            const QString cs = rt::charStyleOf(f.charFormat());
+            line += QStringLiteral(" [") + cs + QLatin1Char('|')
+                + mapKey(rt::directProps(f.charFormat(), sheet.charFormat(ps, cs), false)) + QLatin1Char('|') + f.text() + QLatin1Char(']');
+        }
+        out << line;
+    }
+    return out;
+}
+
+// RICHTEXT_TEST_OUT=<dir>: keep a copy of the files the writer tests produce (to open them in
+// LibreOffice, or `soffice --headless --convert-to pdf` them).
+void keepForInspection(const QString &file)
+{
+    const QString dir = qEnvironmentVariable("RICHTEXT_TEST_OUT");
+    if (dir.isEmpty())
+        return;
+    const QString to = QDir(dir).filePath(QFileInfo(file).fileName());
+    QFile::remove(to);
+    QFile::copy(file, to);
+}
+
+QTextCharFormat charAt(QTextDocument *doc, int pos)
+{
+    QTextCursor c(doc);
+    c.setPosition(pos + 1); // charFormat() is the character before the cursor
+    return c.charFormat();
 }
 
 } // namespace
@@ -166,14 +227,13 @@ private slots:
         QCOMPARE(m_fmt->alignment(), QStringLiteral("center"));
         QCOMPARE(m_fmt->heading(), 0);
         m_fmt->setCursorPosition(1);
-        QVERIFY(m_fmt->bold()); // the heading's look (bold, 20pt) survives …
+        QVERIFY(m_fmt->bold()); // the heading's look (bold, its style's size) survives …
         QTextCursor at(doc());
         at.setPosition(2);
-        QCOMPARE(at.charFormat().fontPointSize(), 20.0);
-        // … but not its level: Qt's ODF writer emits <text:p> for headings (no <text:h>/outline
-        // level). Named paragraph styles + our own writer are office item 2.
-        QEXPECT_FAIL("", "Qt's QTextDocumentWriter drops heading levels (office item 2)", Continue);
+        QCOMPARE(at.charFormat().fontPointSize(), m_fmt->styleProperties(QStringLiteral("Heading 1")).value("fontSize").toDouble());
+        // … and so does its level and its style (our writer: <text:h text:outline-level>).
         QCOMPARE(m_fmt->heading(), 1);
+        QCOMPARE(m_fmt->currentParagraphStyle(), QStringLiteral("Heading 1"));
         // The load is not an undo step: Ctrl+Z must not empty the freshly opened document.
         QCOMPARE(doc()->isUndoAvailable(), false);
     }
@@ -363,7 +423,7 @@ private slots:
             QCOMPARE(f.bottomMargin(), RichTextHandler::kMinParagraphSpacing);
         }
 
-        // Qt's writer keeps the spacing as fo:margin-* on its automatic styles: a reload agrees.
+        // Our writer keeps the named styles (and the spacing they give): a reload agrees.
         const QString again = m_dir.filePath(QStringLiteral("styles-again.odt"));
         QVERIFY(m_fmt->saveOdf(QUrl(again)));
         m_fmt->newDocument();
@@ -399,6 +459,589 @@ private slots:
         m_fmt->newDocument();
         QVERIFY(m_fmt->loadOdf(QUrl(copy)));
         QCOMPARE(m_fmt->plainText(), QStringLiteral("draft"));
+    }
+
+    // ── office item 2: named styles ──────────────────────────────────────────────────────────
+
+    void builtInStylesUseLibreOfficeNames()
+    {
+        const QStringList para = m_fmt->styleNames(QStringLiteral("paragraph"));
+        for (const char *n : { "Default Paragraph Style", "Text Body", "Heading", "Heading 1", "Heading 2", "Heading 3",
+                               "Heading 4", "Heading 5", "Heading 6", "Title", "Quotations" })
+            QVERIFY2(para.contains(QLatin1String(n)), n);
+        const QStringList chars = m_fmt->styleNames(QStringLiteral("character"));
+        QVERIFY(chars.contains(QStringLiteral("Emphasis")));
+        QVERIFY(chars.contains(QStringLiteral("Strong Emphasis")));
+        QCOMPARE(m_fmt->currentParagraphStyle(), QStringLiteral("Default Paragraph Style"));
+        QCOMPARE(m_fmt->currentCharStyle(), QString());
+
+        const QVariantMap h1 = m_fmt->styleProperties(QStringLiteral("Heading 1"));
+        QCOMPARE(h1.value("family").toString(), QStringLiteral("paragraph"));
+        QCOMPARE(h1.value("parent").toString(), QStringLiteral("Heading"));
+        QCOMPARE(h1.value("nextStyle").toString(), QStringLiteral("Text Body"));
+        QCOMPARE(h1.value("outlineLevel").toInt(), 1);
+        QVERIFY(!h1.contains(QStringLiteral("keepWithNext")));                                         // own …
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("Heading 1"), true).value("keepWithNext").toBool(), true); // … resolved
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("Emphasis")).value("italic").toBool(), true);
+        QVERIFY(m_fmt->styleProperties(QStringLiteral("nope")).isEmpty());
+    }
+
+    void applyParagraphStyleAndSetHeading()
+    {
+        m_fmt->insertText(QStringLiteral("Chapter"));
+        QVERIFY(m_fmt->applyParagraphStyle(QStringLiteral("Heading 1")));
+        QCOMPARE(m_fmt->currentParagraphStyle(), QStringLiteral("Heading 1"));
+        QCOMPARE(m_fmt->heading(), 1);
+        QVERIFY(m_fmt->bold());
+        QCOMPARE(charAt(doc(), 2).fontPointSize(), 18.2);
+        QVERIFY(blockFormat(doc(), 0).topMargin() > 10);
+
+        m_fmt->setHeading(2); // item 0's API = the "Heading n" styles
+        QCOMPARE(m_fmt->currentParagraphStyle(), QStringLiteral("Heading 2"));
+        QCOMPARE(m_fmt->heading(), 2);
+        m_fmt->setHeading(0);
+        QCOMPARE(m_fmt->currentParagraphStyle(), QStringLiteral("Text Body"));
+        QCOMPARE(m_fmt->heading(), 0);
+        QVERIFY(!m_fmt->bold());
+        QVERIFY(!charAt(doc(), 2).hasProperty(QTextFormat::FontPointSize)); // the editor's font again
+
+        QVERIFY(!m_fmt->applyParagraphStyle(QStringLiteral("Emphasis"))); // a character style
+        QVERIFY(!m_fmt->applyParagraphStyle(QStringLiteral("nope")));
+        QCOMPARE(m_fmt->currentParagraphStyle(), QStringLiteral("Text Body"));
+
+        // A selection restyles every paragraph it touches, as one undo step.
+        m_fmt->setCursorPosition(7);
+        m_fmt->insertText(QStringLiteral("\nsecond\nthird"));
+        m_fmt->setSelectionStart(2);
+        m_fmt->setSelectionEnd(12);
+        QVERIFY(m_fmt->applyParagraphStyle(QStringLiteral("Quotations")));
+        QCOMPARE(rt::paragraphStyleOf(doc()->findBlockByNumber(0)), QStringLiteral("Quotations"));
+        QCOMPARE(rt::paragraphStyleOf(doc()->findBlockByNumber(1)), QStringLiteral("Quotations"));
+        QCOMPARE(rt::paragraphStyleOf(doc()->findBlockByNumber(2)), QStringLiteral("Text Body"));
+        doc()->undo();
+        QCOMPARE(rt::paragraphStyleOf(doc()->findBlockByNumber(0)), QStringLiteral("Text Body"));
+        QCOMPARE(rt::paragraphStyleOf(doc()->findBlockByNumber(1)), QStringLiteral("Text Body"));
+    }
+
+    void redefiningAStyleReappliesItKeepingDirectFormatting()
+    {
+        m_fmt->insertText(QStringLiteral("alpha beta\nplain\ncentered"));
+        for (int block : { 0, 2 }) {
+            m_fmt->setCursorPosition(doc()->findBlockByNumber(block).position());
+            QVERIFY(m_fmt->applyParagraphStyle(QStringLiteral("Text Body")));
+        }
+        m_fmt->setSelectionStart(6); // "beta" bold, directly
+        m_fmt->setSelectionEnd(10);
+        m_fmt->toggleBold();
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(0);
+        m_fmt->setCursorPosition(doc()->findBlockByNumber(2).position() + 1);
+        m_fmt->setAlignment(QStringLiteral("center")); // direct paragraph formatting
+        const int centered = doc()->findBlockByNumber(2).position();
+        doc()->setModified(false);
+
+        QSignalSpy styles(m_fmt, &RichTextHandler::stylesChanged);
+        QCOMPARE(m_fmt->defineStyle(QStringLiteral("Text Body"),
+                 { { "fontSize", 13 }, { "alignment", "justify" }, { "marginLeft", "1cm" }, { "color", "#336699" } }), QString());
+        QCOMPARE(styles.count(), 1);
+        QVERIFY(m_fmt->isModified());
+        QCOMPARE(charAt(doc(), 1).fontPointSize(), 13.0);
+        QCOMPARE(charAt(doc(), 7).fontPointSize(), 13.0);
+        QCOMPARE(charAt(doc(), 7).fontWeight(), int(QFont::Bold)); // direct bold kept
+        QCOMPARE(charAt(doc(), 1).foreground().color(), QColor(0x33, 0x66, 0x99));
+        QVERIFY(blockFormat(doc(), 0).alignment() & Qt::AlignJustify);
+        QVERIFY(qAbs(blockFormat(doc(), 0).leftMargin() - 96 / 2.54) < 0.01);
+        QVERIFY(blockFormat(doc(), 2).alignment() & Qt::AlignHCenter); // direct alignment kept
+        QVERIFY(qAbs(blockFormat(doc(), 2).leftMargin() - 96 / 2.54) < 0.01);
+        QCOMPARE(charAt(doc(), centered + 1).fontPointSize(), 13.0);
+        QVERIFY(!charAt(doc(), 12).hasProperty(QTextFormat::FontPointSize)); // "plain": Default Paragraph Style
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("Text Body")).value("marginLeft").toDouble(), 96 / 2.54);
+
+        // A null removes a property; the paragraphs follow.
+        QCOMPARE(m_fmt->defineStyle(QStringLiteral("Text Body"), { { "color", QVariant::fromValue(nullptr) } }), QString());
+        QVERIFY(!charAt(doc(), 1).hasProperty(QTextFormat::ForegroundBrush));
+
+        // The definition is part of the undo history: undo puts the old one back with the look.
+        doc()->undo();
+        QCOMPARE(charAt(doc(), 1).foreground().color(), QColor(0x33, 0x66, 0x99));
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("Text Body")).value("color").toString(), QStringLiteral("#336699"));
+        doc()->undo();
+        QVERIFY(!m_fmt->styleProperties(QStringLiteral("Text Body")).contains(QStringLiteral("fontSize")));
+        QVERIFY(!charAt(doc(), 1).hasProperty(QTextFormat::FontPointSize));
+        QCOMPARE(charAt(doc(), 7).fontWeight(), int(QFont::Bold));
+        doc()->redo();
+        QCOMPARE(charAt(doc(), 1).fontPointSize(), 13.0);
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("Text Body")).value("fontSize").toDouble(), 13.0);
+    }
+
+    void newStylesInheritAndValidate()
+    {
+        QCOMPARE(m_fmt->defineStyle(QStringLiteral("Note"), { { "family", "paragraph" }, { "parent", "Text Body" },
+                                                              { "italic", true }, { "nextStyle", "Text Body" } }), QString());
+        QVERIFY(m_fmt->styleNames(QStringLiteral("paragraph")).contains(QStringLiteral("Note")));
+        m_fmt->insertText(QStringLiteral("a note"));
+        QVERIFY(m_fmt->applyParagraphStyle(QStringLiteral("Note")));
+        QVERIFY(charAt(doc(), 1).fontItalic());
+        // A change to the parent reaches the child.
+        QCOMPARE(m_fmt->defineStyle(QStringLiteral("Text Body"), { { "fontSize", 15 } }), QString());
+        QCOMPARE(charAt(doc(), 1).fontPointSize(), 15.0);
+        QVERIFY(charAt(doc(), 1).fontItalic());
+
+        QCOMPARE(m_fmt->defineStyle(QStringLiteral("Marker"), { { "family", "character" }, { "fontWeight", "bold" } }), QString());
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("Marker")).value("fontWeight").toInt(), 700);
+
+        // Errors leave everything as it was.
+        QVERIFY(!m_fmt->defineStyle(QStringLiteral("X"), { { "bogus", 1 } }).isEmpty());
+        QVERIFY(!m_fmt->styleNames(QStringLiteral("paragraph")).contains(QStringLiteral("X")));
+        QVERIFY(!m_fmt->defineStyle(QStringLiteral("Emphasis"), { { "marginTop", 3 } }).isEmpty());
+        QVERIFY(!m_fmt->defineStyle(QStringLiteral("Text Body"), { { "parent", "Note" } }).isEmpty()); // a cycle
+        QVERIFY(!m_fmt->defineStyle(QStringLiteral("Emphasis"), { { "family", "paragraph" } }).isEmpty());
+        QVERIFY(!m_fmt->defineStyle(QStringLiteral("Y"), { { "parent", "Emphasis" } }).isEmpty()); // other family
+        QVERIFY(!m_fmt->defineStyle(QStringLiteral("Y"), { { "fontSize", "big" } }).isEmpty());
+        QVERIFY(!m_fmt->defineStyle(QStringLiteral("Y"), { { "nextStyle", "nope" } }).isEmpty());
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("Text Body")).value("parent").toString(), QStringLiteral("Default Paragraph Style"));
+    }
+
+    void characterStylesApplyAndRemove()
+    {
+        m_fmt->insertText(QStringLiteral("one two three"));
+        m_fmt->setSelectionStart(4);
+        m_fmt->setSelectionEnd(7);
+        QVERIFY(m_fmt->applyCharStyle(QStringLiteral("Emphasis")));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(0);
+        QVERIFY(charAt(doc(), 5).fontItalic());
+        QVERIFY(!charAt(doc(), 1).fontItalic());
+        QVERIFY(!charAt(doc(), 9).fontItalic());
+        m_fmt->setCursorPosition(5);
+        QCOMPARE(m_fmt->currentCharStyle(), QStringLiteral("Emphasis"));
+        m_fmt->setCursorPosition(1);
+        QCOMPARE(m_fmt->currentCharStyle(), QString());
+
+        // Redefining the character style restyles its runs only.
+        QCOMPARE(m_fmt->defineStyle(QStringLiteral("Emphasis"), { { "color", "#ff0000" } }), QString());
+        QCOMPARE(charAt(doc(), 5).foreground().color(), QColor(Qt::red));
+        QVERIFY(!charAt(doc(), 1).hasProperty(QTextFormat::ForegroundBrush));
+
+        // With no selection: the word at the caret. "" removes the character style.
+        m_fmt->setCursorPosition(10);
+        QVERIFY(m_fmt->applyCharStyle(QStringLiteral("Strong Emphasis")));
+        QCOMPARE(charAt(doc(), 9).fontWeight(), int(QFont::Bold));
+        m_fmt->setCursorPosition(5);
+        QVERIFY(m_fmt->applyCharStyle(QString()));
+        QVERIFY(!charAt(doc(), 5).fontItalic());
+        QCOMPARE(m_fmt->currentCharStyle(), QString());
+        QVERIFY(!m_fmt->applyCharStyle(QStringLiteral("Heading 1"))); // a paragraph style
+    }
+
+    void enterStartsTheNextStyle()
+    {
+        m_fmt->insertText(QStringLiteral("Title"));
+        QVERIFY(m_fmt->applyParagraphStyle(QStringLiteral("Heading 1")));
+        m_fmt->setCursorPosition(5);
+        m_fmt->insertParagraph();
+        QCOMPARE(doc()->blockCount(), 2);
+        QCOMPARE(rt::paragraphStyleOf(doc()->findBlockByNumber(1)), QStringLiteral("Text Body"));
+        QCOMPARE(doc()->findBlockByNumber(1).blockFormat().headingLevel(), 0);
+        m_fmt->setCursorPosition(6);
+        m_fmt->insertText(QStringLiteral("body"));
+        QVERIFY(charAt(doc(), 7).fontWeight() < QFont::Bold); // typed in the next style
+        QVERIFY(!charAt(doc(), 7).hasProperty(QTextFormat::FontPointSize));
+        QCOMPARE(m_fmt->currentParagraphStyle(), QStringLiteral("Text Body"));
+
+        // Enter is one undo step.
+        doc()->undo();
+        doc()->undo();
+        QCOMPARE(doc()->blockCount(), 1);
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("Title"));
+
+        // Splitting inside the paragraph keeps the style on both halves.
+        m_fmt->setCursorPosition(2);
+        m_fmt->insertParagraph();
+        QCOMPARE(rt::paragraphStyleOf(doc()->findBlockByNumber(0)), QStringLiteral("Heading 1"));
+        QCOMPARE(rt::paragraphStyleOf(doc()->findBlockByNumber(1)), QStringLiteral("Heading 1"));
+
+        // insertText's "\n" is Enter too; a style that names itself as next continues.
+        m_fmt->newDocument();
+        m_fmt->insertText(QStringLiteral("x"));
+        QVERIFY(m_fmt->applyParagraphStyle(QStringLiteral("Heading 2")));
+        m_fmt->setCursorPosition(1);
+        m_fmt->insertText(QStringLiteral("\nafter"));
+        QCOMPARE(rt::paragraphStyleOf(doc()->findBlockByNumber(1)), QStringLiteral("Text Body"));
+        QCOMPARE(m_fmt->defineStyle(QStringLiteral("Text Body"), { { "nextStyle", "Quotations" } }), QString());
+        m_fmt->setCursorPosition(doc()->characterCount() - 1);
+        m_fmt->insertParagraph();
+        QCOMPARE(rt::paragraphStyleOf(doc()->lastBlock()), QStringLiteral("Quotations"));
+    }
+
+    void directFormattingIsEnumeratedAndCleared()
+    {
+        m_fmt->insertText(QStringLiteral("normal bold"));
+        QVERIFY(m_fmt->applyParagraphStyle(QStringLiteral("Text Body")));
+        m_fmt->setSelectionStart(7);
+        m_fmt->setSelectionEnd(11);
+        m_fmt->toggleBold();
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(0);
+        m_fmt->setCursorPosition(2);
+        m_fmt->setAlignment(QStringLiteral("right"));
+
+        QVariantMap at = m_fmt->directFormattingAt(8);
+        QCOMPARE(at.value("paragraphStyle").toString(), QStringLiteral("Text Body"));
+        QCOMPARE(at.value("charStyle").toString(), QString());
+        QCOMPARE(at.value("character").toMap(), (QVariantMap { { "fontWeight", 700 } }));
+        QCOMPARE(at.value("paragraph").toMap(), (QVariantMap { { "alignment", "right" } }));
+        QCOMPARE(m_fmt->directFormattingAt(2).value("character").toMap(), QVariantMap());
+
+        // Inside a heading, the heading's bold is the style's; un-bolding is the override.
+        m_fmt->newDocument();
+        m_fmt->insertText(QStringLiteral("Heading text"));
+        QVERIFY(m_fmt->applyParagraphStyle(QStringLiteral("Heading 3")));
+        QCOMPARE(m_fmt->directFormattingAt(1).value("character").toMap(), QVariantMap());
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(7);
+        m_fmt->toggleBold();
+        QCOMPARE(m_fmt->directFormattingAt(1).value("character").toMap(), (QVariantMap { { "fontWeight", 400 } }));
+
+        // clearDirectFormatting: the selection's runs back to the style …
+        m_fmt->clearDirectFormatting();
+        QCOMPARE(m_fmt->directFormattingAt(1).value("character").toMap(), QVariantMap());
+        QCOMPARE(charAt(doc(), 1).fontWeight(), int(QFont::Bold));
+        // … and without a selection, the caret's whole paragraph (paragraph properties too).
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(0);
+        m_fmt->setCursorPosition(3);
+        m_fmt->setAlignment(QStringLiteral("center"));
+        m_fmt->setSelectionStart(8);
+        m_fmt->setSelectionEnd(12);
+        m_fmt->toggleItalic();
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(0);
+        QVERIFY(!m_fmt->directFormattingAt(9).value("character").toMap().isEmpty());
+        m_fmt->clearDirectFormatting();
+        QCOMPARE(m_fmt->directFormattingAt(9).value("character").toMap(), QVariantMap());
+        QCOMPARE(m_fmt->directFormattingAt(9).value("paragraph").toMap(), QVariantMap());
+        QCOMPARE(m_fmt->currentParagraphStyle(), QStringLiteral("Heading 3"));
+    }
+
+    void ourWriterRoundTripsStylesAndHeadingLevels()
+    {
+        // Every heading level, the built-ins, a redefined and a new style, character styles,
+        // direct formatting, a list, a table and an image.
+        QCOMPARE(m_fmt->defineStyle(QStringLiteral("Text Body"), { { "fontSize", 13 }, { "lineHeight", 1.5 },
+                                                                   { "fontFamily", "DejaVu Serif" } }), QString());
+        QCOMPARE(m_fmt->defineStyle(QStringLiteral("Note"), { { "parent", "Text Body" }, { "italic", true },
+                                    { "nextStyle", "Text Body" }, { "letterSpacing", 1.5 }, { "lineHeight", "18pt" },
+                                    { "keepWithNext", true }, { "textIndent", "-0.5cm" } }), QString());
+        QCOMPARE(m_fmt->defineStyle(QStringLiteral("Code Word"), { { "family", "character" }, { "fontFamily", "Monospace" },
+                                                                   { "color", "#aa0000" } }), QString());
+        QStringList lines { QStringLiteral("The Book") };
+        for (int i = 1; i <= 6; ++i)
+            lines << QStringLiteral("Level %1").arg(i);
+        lines << QStringLiteral("Body with  two spaces,\ta tab and bold") << QStringLiteral("A note")
+              << QStringLiteral("Quoted") << QStringLiteral(" leading space");
+        m_fmt->insertText(lines.join(QLatin1Char('\n')));
+        const auto styleBlock = [&](int block, const char *style) {
+            m_fmt->setCursorPosition(doc()->findBlockByNumber(block).position());
+            QVERIFY(m_fmt->applyParagraphStyle(QLatin1String(style)));
+        };
+        styleBlock(0, "Title");
+        for (int i = 1; i <= 6; ++i)
+            styleBlock(i, qPrintable(QStringLiteral("Heading %1").arg(i)));
+        styleBlock(7, "Text Body");
+        styleBlock(8, "Note");
+        styleBlock(9, "Quotations");
+        const int body = doc()->findBlockByNumber(7).position();
+        const auto select = [&](int from, int to) { m_fmt->setSelectionStart(from); m_fmt->setSelectionEnd(to); };
+        select(body + 33, body + 37); // "bold"
+        m_fmt->toggleBold();
+        select(body, body + 4); // "Body"
+        QVERIFY(m_fmt->applyCharStyle(QStringLiteral("Code Word")));
+        select(body + 5, body + 9); // "with": Emphasis + direct underline
+        QVERIFY(m_fmt->applyCharStyle(QStringLiteral("Emphasis")));
+        m_fmt->toggleUnderline();
+        select(0, 0);
+        m_fmt->setCursorPosition(doc()->findBlockByNumber(9).position());
+        m_fmt->setAlignment(QStringLiteral("center"));
+        // a list after the text, then a table, then an image
+        m_fmt->setCursorPosition(doc()->characterCount() - 1);
+        m_fmt->insertText(QStringLiteral("\nitem one\nitem two"));
+        m_fmt->setCursorPosition(doc()->characterCount() - 2);
+        m_fmt->setSelectionStart(doc()->characterCount() - 15);
+        m_fmt->setSelectionEnd(doc()->characterCount() - 2);
+        m_fmt->toggleBulletList();
+        select(0, 0);
+        m_fmt->setCursorPosition(doc()->characterCount() - 1);
+        m_fmt->insertTable(2, 2);
+        QTextTable *table = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().value(0));
+        QVERIFY(table);
+        table->cellAt(1, 1).firstCursorPosition().insertText(QStringLiteral("cell"));
+        const QString png = m_dir.filePath(QStringLiteral("pic.png"));
+        QImage img(10, 6, QImage::Format_RGB32);
+        img.fill(Qt::blue);
+        QVERIFY(img.save(png));
+        m_fmt->setCursorPosition(doc()->characterCount() - 1);
+        QVERIFY(m_fmt->insertImage(QUrl(png)));
+
+        const QStringList before = describe(doc(), m_fmt->styleSheet());
+        const QString text = m_fmt->plainText();
+        const QString odt = m_dir.filePath(QStringLiteral("styled.odt"));
+        QVERIFY2(m_fmt->saveOdf(QUrl(odt)), qPrintable(m_fmt->errorString()));
+        keepForInspection(odt);
+
+        // The package: mimetype first and stored; named styles in styles.xml; text:h with levels.
+        QFile raw(odt);
+        QVERIFY(raw.open(QIODevice::ReadOnly));
+        const QByteArray head = raw.read(128);
+        QVERIFY(head.startsWith("PK\x03\x04"));
+        QCOMPARE(int(uchar(head[8])) | int(uchar(head[9])) << 8, 0); // compression method: stored
+        QCOMPARE(head.mid(30, 8), QByteArray("mimetype"));
+        QCOMPARE(head.mid(38, 39), QByteArray("application/vnd.oasis.opendocument.text"));
+        QZipReader zip(odt);
+        const QByteArray styles = zip.fileData(QStringLiteral("styles.xml"));
+        const QByteArray content = zip.fileData(QStringLiteral("content.xml"));
+        QVERIFY(styles.contains("style:name=\"Heading_20_1\" style:display-name=\"Heading 1\" style:family=\"paragraph\""
+                                " style:parent-style-name=\"Heading\" style:next-style-name=\"Text_20_body\" style:default-outline-level=\"1\""));
+        QVERIFY(styles.contains("style:name=\"Note\""));
+        QVERIFY(styles.contains("style:name=\"Code_20_Word\" style:display-name=\"Code Word\" style:family=\"text\""));
+        for (int i = 1; i <= 6; ++i)
+            QVERIFY2(content.contains(QStringLiteral("<text:h text:style-name=\"Heading_20_%1\" text:outline-level=\"%1\">Level %1</text:h>")
+                                      .arg(i).toUtf8()), content.constData());
+        QVERIFY(content.contains("<text:p text:style-name=\"Title\">The Book</text:p>"));
+        QVERIFY(content.contains("style:parent-style-name=\"Quotations\"")); // the direct centering
+        QVERIFY(content.contains("<text:s/>"));
+        QVERIFY(content.contains("<text:tab/>"));
+        QVERIFY(!content.contains("<text:list><table:table")); // the table is not inside the list
+        QVERIFY(zip.fileData(QStringLiteral("META-INF/manifest.xml")).contains("Pictures/image1.png"));
+        QVERIFY(!zip.fileData(QStringLiteral("meta.xml")).isEmpty());
+
+        m_fmt->newDocument();
+        QVERIFY(m_fmt->loadOdf(QUrl(odt)));
+        QCOMPARE(m_fmt->plainText(), text);
+        const QStringList after = describe(doc(), m_fmt->styleSheet());
+        if (after != before) {
+            for (int i = 0; i < qMax(before.size(), after.size()); ++i)
+                if (before.value(i) != after.value(i))
+                    qWarning() << "block" << i << "\n  before:" << before.value(i) << "\n  after: " << after.value(i);
+        }
+        QCOMPARE(after, before);
+        for (int i = 1; i <= 6; ++i)
+            QCOMPARE(doc()->findBlockByNumber(i).blockFormat().headingLevel(), i);
+        QCOMPARE(countTables(doc()), 1);
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("Text Body")).value("fontSize").toDouble(), 13.0);
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("Text Body")).value("fontFamily").toString(), QStringLiteral("DejaVu Serif"));
+        const QVariantMap note = m_fmt->styleProperties(QStringLiteral("Note"));
+        QCOMPARE(note.value("parent").toString(), QStringLiteral("Text Body"));
+        QCOMPARE(note.value("nextStyle").toString(), QStringLiteral("Text Body"));
+        QCOMPARE(note.value("lineHeight").toString(), QStringLiteral("24px"));
+        QCOMPARE(note.value("keepWithNext").toBool(), true);
+        QVERIFY(qAbs(note.value("textIndent").toDouble() + 96 * 0.5 / 2.54) < 0.01);
+        QCOMPARE(note.value("letterSpacing").toDouble(), 1.5);
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("Code Word")).value("color").toString(), QStringLiteral("#aa0000"));
+        QVERIFY2(m_fmt->toHtml().contains(QStringLiteral("odf:/Pictures/image1.png")), "the image came back");
+
+        // Saving again writes the same document.
+        const QString again = m_dir.filePath(QStringLiteral("styled-again.odt"));
+        QVERIFY(m_fmt->saveOdf(QUrl(again)));
+        QCOMPARE(QZipReader(again).fileData(QStringLiteral("content.xml")), content);
+    }
+
+    void libreOfficeStylesMapIntoTheStyleTable()
+    {
+        const QString odt = m_dir.filePath(QStringLiteral("lo.odt"));
+        QZipWriter zip(odt);
+        zip.addFile(QStringLiteral("mimetype"), "application/vnd.oasis.opendocument.text");
+        zip.addFile(QStringLiteral("styles.xml"),
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-styles" ODF_NS " xmlns:svg=\"urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0\">"
+            "<office:font-face-decls><style:font-face style:name=\"Arial\" svg:font-family=\"Arial\"/>"
+            "<style:font-face style:name=\"Times New Roman\" svg:font-family=\"'Times New Roman'\"/></office:font-face-decls>"
+            "<office:styles>"
+            "<style:default-style style:family=\"paragraph\"><style:text-properties style:font-name=\"Times New Roman\" fo:font-size=\"12pt\"/></style:default-style>"
+            "<style:style style:name=\"Standard\" style:family=\"paragraph\" style:class=\"text\"/>"
+            "<style:style style:name=\"Heading\" style:family=\"paragraph\" style:parent-style-name=\"Standard\" style:next-style-name=\"Text_20_body\">"
+            "<style:paragraph-properties fo:keep-with-next=\"always\" fo:margin-top=\"0.1665in\" fo:margin-bottom=\"0.0835in\"/>"
+            "<style:text-properties style:font-name=\"Arial\" fo:font-size=\"14pt\"/></style:style>"
+            "<style:style style:name=\"Heading_20_1\" style:display-name=\"Heading 1\" style:family=\"paragraph\" style:parent-style-name=\"Heading\""
+            " style:next-style-name=\"Text_20_body\" style:default-outline-level=\"1\"><style:text-properties fo:font-size=\"115%\" fo:font-weight=\"bold\"/></style:style>"
+            "<style:style style:name=\"Text_20_body\" style:display-name=\"Text body\" style:family=\"paragraph\" style:parent-style-name=\"Standard\">"
+            "<style:paragraph-properties fo:margin-top=\"0.0598in\" fo:margin-bottom=\"0.0598in\" fo:line-height=\"115%\"/></style:style>"
+            "<style:style style:name=\"First_20_paragraph\" style:display-name=\"First paragraph\" style:family=\"paragraph\" style:parent-style-name=\"Text_20_body\"/>"
+            "<style:style style:name=\"Emphasis\" style:family=\"text\"><style:text-properties fo:font-style=\"italic\"/></style:style>"
+            "</office:styles></office:document-styles>");
+        zip.addFile(QStringLiteral("content.xml"),
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-content" ODF_NS ">"
+            "<office:automatic-styles><style:style style:name=\"P1\" style:family=\"paragraph\" style:parent-style-name=\"Text_20_body\">"
+            "<style:paragraph-properties fo:text-align=\"end\"/></style:style>"
+            "<style:style style:name=\"T1\" style:family=\"text\"><style:text-properties fo:font-weight=\"bold\"/></style:style></office:automatic-styles>"
+            "<office:body><office:text>"
+            "<text:h text:style-name=\"Heading_20_1\" text:outline-level=\"1\">Chapter</text:h>"
+            "<text:p text:style-name=\"First_20_paragraph\">First <text:span text:style-name=\"Emphasis\">em <text:span text:style-name=\"T1\">both</text:span> em</text:span> plain</text:p>"
+            "<text:p text:style-name=\"P1\">right</text:p>"
+            "</office:text></office:body></office:document-content>");
+        zip.close();
+
+        QVERIFY(m_fmt->loadOdf(QUrl(odt)));
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("Chapter\nFirst em both em plain\nright"));
+        // Named styles: LibreOffice's names map to ours, the others keep their display names.
+        QVERIFY(m_fmt->styleNames(QStringLiteral("paragraph")).contains(QStringLiteral("First paragraph")));
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("First paragraph")).value("parent").toString(), QStringLiteral("Text Body"));
+        const QVariantMap h1 = m_fmt->styleProperties(QStringLiteral("Heading 1"), true);
+        QVERIFY(qAbs(h1.value("fontSize").toDouble() - 16.1) < 1e-6); // 115% of Heading's 14pt
+        QCOMPARE(h1.value("fontFamily").toString(), QStringLiteral("Arial"));
+        QCOMPARE(h1.value("keepWithNext").toBool(), true);
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("Text Body")).value("lineHeight").toDouble(), 1.15);
+        // The document default IS Default Paragraph Style — kept, but the editor's font shows.
+        const QVariantMap standard = m_fmt->styleProperties(QStringLiteral("Default Paragraph Style"));
+        QCOMPARE(standard.value("fontSize").toDouble(), 12.0);
+        QCOMPARE(standard.value("fontFamily").toString(), QStringLiteral("Times New Roman"));
+        QVERIFY(!charAt(doc(), 9).hasProperty(QTextFormat::FontPointSize));
+        QVERIFY(!charAt(doc(), 9).hasProperty(QTextFormat::FontFamilies));
+        QCOMPARE(charAt(doc(), 2).fontFamilies().toStringList().value(0), QStringLiteral("Arial"));
+
+        m_fmt->setCursorPosition(1);
+        QCOMPARE(m_fmt->currentParagraphStyle(), QStringLiteral("Heading 1"));
+        QCOMPARE(m_fmt->heading(), 1);
+        m_fmt->setCursorPosition(9);
+        QCOMPARE(m_fmt->currentParagraphStyle(), QStringLiteral("First paragraph"));
+        // nested spans: the automatic T1 inside Emphasis is Emphasis + direct bold
+        QVariantMap both = m_fmt->directFormattingAt(18);
+        QCOMPARE(both.value("charStyle").toString(), QStringLiteral("Emphasis"));
+        QCOMPARE(both.value("character").toMap(), (QVariantMap { { "fontWeight", 700 } }));
+        QVERIFY(charAt(doc(), 18).fontItalic());
+        QVERIFY(charAt(doc(), 22).fontItalic()); // back in Emphasis after the inner span
+        QCOMPARE(m_fmt->directFormattingAt(22).value("character").toMap(), QVariantMap());
+        QVERIFY(!charAt(doc(), 28).fontItalic()); // "plain"
+        // the automatic paragraph style: its named parent + the direct alignment
+        const int right = doc()->findBlockByNumber(2).position();
+        QCOMPARE(m_fmt->directFormattingAt(right).value("paragraphStyle").toString(), QStringLiteral("Text Body"));
+        QCOMPARE(m_fmt->directFormattingAt(right).value("paragraph").toMap(), (QVariantMap { { "alignment", "right" } }));
+
+        // Enter after the heading: its next style.
+        m_fmt->setCursorPosition(7);
+        m_fmt->insertParagraph();
+        QCOMPARE(rt::paragraphStyleOf(doc()->findBlockByNumber(1)), QStringLiteral("Text Body"));
+    }
+
+    void filesFromQtsWriterStillLoad()
+    {
+        // .odt files saved before our writer (Qt's QTextDocumentWriter): headings as styled text:p.
+        QTextDocument old;
+        QTextCursor c(&old);
+        QTextCharFormat big;
+        big.setFontPointSize(20);
+        big.setFontWeight(QFont::Bold);
+        c.insertText(QStringLiteral("Old heading"), big);
+        c.insertBlock(QTextBlockFormat(), QTextCharFormat());
+        c.insertText(QStringLiteral("item"));
+        c.createList(QTextListFormat::ListDisc);
+        c.insertBlock(QTextBlockFormat(), QTextCharFormat());
+        c.insertTable(1, 2);
+        const QString odt = m_dir.filePath(QStringLiteral("qtwriter.odt"));
+        QTextDocumentWriter w(odt, "odf");
+        QVERIFY(w.write(&old));
+        QVERIFY(m_fmt->loadOdf(QUrl(odt)));
+        QVERIFY2(m_fmt->plainText().startsWith(QStringLiteral("Old heading\nitem")), qPrintable(m_fmt->plainText()));
+        QCOMPARE(charAt(doc(), 1).fontPointSize(), 20.0);
+        QCOMPARE(m_fmt->directFormattingAt(1).value("character").toMap().value("fontSize").toDouble(), 20.0);
+        QCOMPARE(countTables(doc()), 1);
+    }
+
+    void bookRoundTripKeepsEveryCharacterAndStyle()
+    {
+        // A 300-page LibreOffice book (headings, footnotes, tables, lists); RICHTEXT_BOOK overrides.
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        if (!QFile::exists(book))
+            QSKIP("livro-300p.odt sample not on this machine");
+        QElapsedTimer t;
+        t.start();
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(book)));
+        const qint64 loadMs = t.restart();
+        const QString text = m_fmt->plainText();
+        QVERIFY(text.size() > 900000);
+        const QStringList paraStyles = m_fmt->styleNames(QStringLiteral("paragraph"));
+        const QStringList charStyles = m_fmt->styleNames(QStringLiteral("character"));
+        QVERIFY(paraStyles.contains(QStringLiteral("First paragraph")));
+        QStringList blocks;
+        QList<int> levels;
+        for (QTextBlock b = doc()->begin(); b.isValid(); b = b.next()) {
+            blocks << rt::paragraphStyleOf(b);
+            levels << b.blockFormat().headingLevel();
+        }
+        QVERIFY(levels.count(1) > 10 && levels.count(2) > 10);
+        QVERIFY(blocks.count(QStringLiteral("Text Body")) > 1000);
+
+        const QString out = m_dir.filePath(QStringLiteral("livro-again.odt"));
+        t.restart();
+        QVERIFY2(m_fmt->saveOdf(QUrl(out)), qPrintable(m_fmt->errorString()));
+        const qint64 saveMs = t.restart();
+        keepForInspection(out);
+        m_fmt->newDocument();
+        QVERIFY(m_fmt->loadOdf(QUrl(out)));
+        const qint64 reloadMs = t.elapsed();
+        qInfo("%s: load %lld ms, save %lld ms, reload %lld ms; %lld chars, text hash %zx, %lld blocks",
+              qPrintable(QFileInfo(book).fileName()), loadMs, saveMs, reloadMs, qint64(text.size()),
+              size_t(qHash(text)), qint64(blocks.size()));
+        QCOMPARE(m_fmt->plainText().size(), text.size());
+        QVERIFY(m_fmt->plainText() == text);
+        QCOMPARE(m_fmt->styleNames(QStringLiteral("paragraph")), paraStyles);
+        QCOMPARE(m_fmt->styleNames(QStringLiteral("character")), charStyles);
+        QStringList blocks2;
+        QList<int> levels2;
+        for (QTextBlock b = doc()->begin(); b.isValid(); b = b.next()) {
+            blocks2 << rt::paragraphStyleOf(b);
+            levels2 << b.blockFormat().headingLevel();
+        }
+        QCOMPARE(blocks2, blocks);
+        QCOMPARE(levels2, levels);
+    }
+
+    void nestedListsNumberingAndMergedCellsRoundTrip()
+    {
+        QTextCursor c(doc());
+        c.insertText(QStringLiteral("one"));
+        QTextListFormat outerFmt;
+        outerFmt.setStyle(QTextListFormat::ListDecimal);
+        outerFmt.setIndent(1);
+        QTextList *outer = c.createList(outerFmt);
+        c.insertBlock();
+        c.insertText(QStringLiteral("two"));
+        c.insertBlock();
+        c.insertText(QStringLiteral("two-a"));
+        QTextListFormat innerFmt;
+        innerFmt.setStyle(QTextListFormat::ListCircle);
+        innerFmt.setIndent(2);
+        c.createList(innerFmt);
+        c.insertBlock();
+        c.insertText(QStringLiteral("three"));
+        outer->add(c.block()); // back to the outer list: its numbering continues
+        c.insertBlock(QTextBlockFormat());
+        c.insertText(QStringLiteral("after"));
+        QTextTable *t = c.insertTable(2, 3, rt::wordLikeTableFormat());
+        t->mergeCells(0, 0, 1, 2);
+        t->cellAt(0, 0).firstCursorPosition().insertText(QStringLiteral("wide"));
+        t->cellAt(1, 2).firstCursorPosition().insertText(QStringLiteral("corner"));
+
+        const QString odt = m_dir.filePath(QStringLiteral("lists.odt"));
+        QVERIFY(m_fmt->saveOdf(QUrl(odt)));
+        keepForInspection(odt);
+        m_fmt->newDocument();
+        QVERIFY(m_fmt->loadOdf(QUrl(odt)));
+        QVERIFY2(m_fmt->plainText().startsWith(QStringLiteral("one\ntwo\ntwo-a\nthree\nafter")), qPrintable(m_fmt->plainText()));
+        const QTextBlock one = doc()->findBlockByNumber(0);
+        const QTextBlock twoA = doc()->findBlockByNumber(2);
+        const QTextBlock three = doc()->findBlockByNumber(3);
+        QVERIFY(one.textList() && twoA.textList() && three.textList());
+        QCOMPARE(one.textList()->format().style(), QTextListFormat::ListDecimal);
+        QCOMPARE(twoA.textList()->format().style(), QTextListFormat::ListCircle);
+        QCOMPARE(twoA.textList()->format().indent(), 2);
+        QCOMPARE(three.textList(), one.textList());
+        QCOMPARE(three.textList()->itemNumber(three), 2);
+        QVERIFY(!doc()->findBlockByNumber(4).textList());
+        QTextTable *back = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().value(0));
+        QVERIFY(back);
+        QCOMPARE(back->columns(), 3);
+        QCOMPARE(back->cellAt(0, 0).columnSpan(), 2);
+        QCOMPARE(back->cellAt(1, 2).firstCursorPosition().block().text(), QStringLiteral("corner"));
     }
 
     void saveErrorIsReported()

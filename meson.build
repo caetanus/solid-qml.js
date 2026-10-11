@@ -167,7 +167,7 @@ solidqml_sources = files(
     'src/embed/solidqmlembed.cpp',
 )
 if build_richtext
-  solidqml_sources += files('src/shims/richtext.cpp')
+  solidqml_sources += files('src/shims/richtext.cpp', 'src/shims/richtext_styles.cpp', 'src/shims/richtext_odf.cpp')
 endif
 
 # `embed` gates INSTALLATION as a consumable product; the library is always built because the

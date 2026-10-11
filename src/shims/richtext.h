@@ -4,7 +4,11 @@
 #include <QQuickTextDocument>
 #include <QTextCursor>
 #include <QUrl>
+#include <functional>
+#include <optional>
 #include <qqml.h>
+
+#include "richtext_styles.h"
 
 // Formatting/IO engine behind the <RichText> word-like widget (module solidqml.Widgets.RichText).
 // QML text controls expose no character-format API, so the module binds its TextArea's document +
@@ -12,10 +16,14 @@
 // `RichTextHandler` under the `solidqml.native` uri (loader-provided helper types) — no extra Qt
 // dependency, so the module is opt-in purely to keep the core lean.
 //
-// OpenDocument (owner: "ods nativo"): saving uses Qt's NATIVE writer (QTextDocumentWriter, format
-// "odf" → .odt); loading parses the .odt ourselves (Qt ships no ODF reader) — content.xml via the
-// private QZipReader + QXmlStreamReader, covering the word-like subset: paragraphs, headings,
-// bold/italic/underline/strike spans and flat bullet lists.
+// OpenDocument (owner: "ods nativo"): our own reader and writer (richtext_odf.cpp) — the
+// word-like subset (paragraphs, headings with outline levels, spans, lists, tables, images) and
+// the named styles, round-tripped through styles.xml so LibreOffice opens them as styles.
+//
+// Named styles (office item 2, richtext_styles.h): every block is in a paragraph style, every
+// text run optionally in a character style; what Qt renders is the style chain plus direct
+// formatting. Redefining a style re-applies it everywhere (direct overrides kept) as one undo
+// step; Enter starts the style's next style.
 class RichTextHandler : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(RichTextHandler)
@@ -30,6 +38,9 @@ class RichTextHandler : public QObject {
     Q_PROPERTY(bool strike READ strike NOTIFY formatChanged)
     Q_PROPERTY(bool bulletList READ bulletList NOTIFY formatChanged)
     Q_PROPERTY(int heading READ heading NOTIFY formatChanged)
+    // Named styles at the caret: the paragraph style, the character style ("" = none).
+    Q_PROPERTY(QString currentParagraphStyle READ currentParagraphStyle NOTIFY formatChanged)
+    Q_PROPERTY(QString currentCharStyle READ currentCharStyle NOTIFY formatChanged)
     // Cursor sits inside a table — gates the row/column toolbar actions.
     Q_PROPERTY(bool inTable READ inTable NOTIFY formatChanged)
     // Paragraph alignment at the cursor: "left" | "center" | "right" | "justify".
@@ -48,10 +59,8 @@ public:
     // checked in setText only). Documents built through QTextCursor — loadOdf, typing, pasting —
     // never trip it, so the handler applies the same rule to the document's character count.
     static constexpr int kLargeTextThreshold = 10000;
-    // Vertical space (px) under an ODF paragraph whose style chain has none (see blockFormatFor).
-    // LibreOffice draws such paragraphs with no gap; a quarter of a CSS pixel is invisible, and
-    // any positive value avoids the culling over-draw (measured: 0.25 px == 1 px, 0 px ~3x).
-    static constexpr qreal kMinParagraphSpacing = 0.25;
+    // Vertical space (px) under a paragraph whose style chain has none (rt::kMinParagraphSpacing).
+    static constexpr qreal kMinParagraphSpacing = rt::kMinParagraphSpacing;
 
     QQuickTextDocument *document() const { return m_document; }
     void setDocument(QQuickTextDocument *doc);
@@ -75,7 +84,39 @@ public:
     Q_INVOKABLE void toggleUnderline();
     Q_INVOKABLE void toggleStrike();
     Q_INVOKABLE void toggleBulletList();
-    Q_INVOKABLE void setHeading(int level); // 0 = body text, 1..3 = H1..H3
+    // 0 → "Text Body", 1..6 → "Heading n" (applyParagraphStyle).
+    Q_INVOKABLE void setHeading(int level);
+
+    // ── named styles ──────────────────────────────────────────────────────────────────────────
+    // Creates or updates a style. props: { family: "paragraph"|"character" (new styles; default
+    // paragraph), parent, nextStyle, and the style properties (rt::Prop — fontFamily, fontSize,
+    // …) }; a property set to null is removed, one left out is kept. Every paragraph / run using
+    // the style (or one inheriting from it) is re-styled, direct formatting kept — one undo step.
+    // Returns "" or what is wrong (nothing changes then).
+    Q_INVOKABLE QString defineStyle(const QString &name, const QVariantMap &props);
+    // "paragraph" | "character": the style names, in definition order.
+    Q_INVOKABLE QStringList styleNames(const QString &family) const;
+    // { family, parent, nextStyle, …own properties } — or the values the whole chain gives when
+    // `resolved`. {} for an unknown name.
+    Q_INVOKABLE QVariantMap styleProperties(const QString &name, bool resolved = false) const;
+    // On every paragraph the selection touches (the caret's paragraph without one). false for an
+    // unknown / character style.
+    Q_INVOKABLE bool applyParagraphStyle(const QString &name);
+    // On the selection (the word at the caret without one); "" removes the character style.
+    Q_INVOKABLE bool applyCharStyle(const QString &name);
+    QString currentParagraphStyle() const;
+    QString currentCharStyle() const;
+    // The selection's runs (and its paragraphs) back to exactly what their styles give; the caret's
+    // paragraph without a selection.
+    Q_INVOKABLE void clearDirectFormatting();
+    // What overrides the styles at `pos` (the character after it): { paragraphStyle, charStyle,
+    // paragraph: {prop: value}, character: {prop: value} } — null for a property the style sets
+    // and the text removes.
+    Q_INVOKABLE QVariantMap directFormattingAt(int pos) const;
+    // Enter: splits the paragraph at the caret (replacing a selection); at the end of a paragraph
+    // the new one gets the style's next style ("Heading 1" → "Text Body").
+    Q_INVOKABLE void insertParagraph();
+    const rt::StyleSheet &styleSheet() const { return m_sheet; }
 
     // Inline image at the cursor: loaded into a document resource (so QTextDocumentWriter embeds
     // it into Pictures/ on save) and capped to a word-like page width. `file`: URL or plain path;
@@ -112,7 +153,8 @@ public:
     // Content, for the app: the HTML Qt's editor holds, and plain text with "\n" between paragraphs.
     Q_INVOKABLE QString toHtml() const;
     Q_INVOKABLE QString plainText() const;
-    // Plain text at the caret ("\n" starts a new paragraph), in the formatting around it.
+    // Plain text at the caret ("\n" starts a new paragraph, as Enter does), in the formatting
+    // around it.
     Q_INVOKABLE void insertText(const QString &text);
 
 signals:
@@ -125,8 +167,20 @@ signals:
     // Every content change, formatting included (QTextDocument::contentsChanged) — undebounced;
     // the QML widget debounces it into its contentChanged().
     void contentsChanged();
+    // The style table changed: a definition, a load, a new document (or an undo of a definition).
+    void stylesChanged();
 
 private:
+    friend class StyleUndo;
+    // A definition change as an undo item: restores `style` (or removes it when absent).
+    void restoreStyle(const QString &name, const std::optional<rt::NamedStyle> &style);
+    // Re-styles blocks/runs of [from, to] (whole document when from < 0): paragraph style through
+    // paraMap, character style through charMap, formats rebased from `oldSheet` to m_sheet;
+    // `force` drops direct formatting. Character runs are clipped to [from, to) when clipChars.
+    void restyle(int from, int to, const rt::StyleSheet &oldSheet, const std::function<QString(const QString &)> &paraMap,
+                 const std::function<QString(const QString &)> &charMap, bool force, bool clipChars);
+    void breakParagraph(QTextCursor &c);
+    QTextCursor selectionCursor() const; // the selection exactly (no word expansion); null cursor if none
     void setError(const QString &message); // "" = success; non-empty also emits ioError
     bool writeOdf(const QUrl &file);        // saveOdf/saveOdfCopy: the write + its errorString
     void updateViewportCulling();           // kLargeTextThreshold → the editor's ItemObservesViewport
@@ -140,6 +194,7 @@ private:
     int m_selectionEnd = 0;
     int m_cursorPosition = 0;
     QString m_error;
+    rt::StyleSheet m_sheet = rt::StyleSheet::builtIns();
     QMetaObject::Connection m_modifiedConn;
     QMetaObject::Connection m_contentsConn;
     QMetaObject::Connection m_cullingConn;
