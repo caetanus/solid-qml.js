@@ -1,6 +1,7 @@
 import _traverse from "@babel/traverse";
 import * as t from "@babel/types";
 import { hParts, isHCall } from "../ast/h.ts";
+import { safeName } from "../names/safe.ts";
 
 const traverse: typeof _traverse = (_traverse as any).default ?? _traverse;
 
@@ -441,25 +442,225 @@ export function renderLocalLiveTaint(renderLocals: Map<string, t.Expression>, is
   return tainted;
 }
 
-/** Names of signals/memos read by an effect body — used to wire `Connections` dep-tracking so the
- *  effect re-runs when a reactive cell it reads changes. */
-export function effectDeps(body: t.Node, table: SymbolTable): string[] {
-  const deps = new Set<string>();
-  const stmts: t.Statement[] = t.isBlockStatement(body)
-    ? body.body
-    : [t.expressionStatement(body as t.Expression)];
+/** A single reactive dependency an effect body reads: `target` is the QML object the Connections
+ *  block attaches to (`__self` for the component's own properties, `__ctx_<ctx>` for a consumed
+ *  context's provider instance, or a bare/dotted QML expression — a context property, an imported
+ *  singleton, a ref's element id, or a prefix of a longer member chain), `prop` is the property
+ *  whose `on<Prop>Changed` handler re-runs the effect. */
+export interface EffectDep { target: string; prop: string }
+
+/** JS/QML globals that are never QObjects with a NOTIFY'd member — reading `Math.max`, `JSON.parse`,
+ *  `console.log`, `globalThis.x`, `Qt.rgba`, etc. inside an effect must NOT be mistaken for a
+ *  context-property read (the whole reason this list exists: proven by the pre-existing
+ *  `globalThis.c` false-positive test below). Not exhaustive — anything NOT in this list and not
+ *  otherwise known (prop/store/ctx/ref/helper/import) is treated as a possible QObject reference,
+ *  which is the conservative direction (an extra, inert Connections block) rather than a missed dep. */
+const EFFECT_DEPS_BUILTIN_GLOBALS = new Set([
+  "Math", "JSON", "console", "Date", "Object", "Array", "String", "Number", "Boolean", "RegExp",
+  "Promise", "Error", "TypeError", "RangeError", "SyntaxError", "Symbol", "Map", "Set", "WeakMap",
+  "WeakSet", "Reflect", "Proxy", "globalThis", "window", "document", "process", "undefined",
+  "NaN", "Infinity", "parseInt", "parseFloat", "isNaN", "isFinite", "encodeURIComponent",
+  "decodeURIComponent", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "Qt",
+  "fetch", "localStorage", "structuredClone",
+]);
+
+/** Extra, caller-supplied name resolution context for `effectDeps` — everything component.ts
+ *  already knows about THIS component's names, needed to route a read to the right Connections
+ *  target instead of mistaking it for (or missing) a QObject reference. */
+export interface EffectDepsContext {
+  /** The props param name (`function C(props)`) — `props.x` reads route to the self property `x`
+   *  (props are flattened onto the component root — see `cellRef`/analyzeProps). */
+  propsParam?: string | null;
+  /** mergeProps/splitProps aliases — `alias.x` reads the same way as `props.x`. */
+  propAliases?: Set<string>;
+  /** useContext local → ctx name (component.ts's `ctxBindings`). `c.member` routes to the
+   *  `__ctx_<ctx>` provider instance's `member` property. */
+  ctxBindings?: Record<string, string>;
+  /** Per-ctx member shape — a "fn" member (e.g. `c.increment`) is an action, not a reactive read;
+   *  only "accessor" (or unknown) members are tracked. */
+  ctxValueShape?: Record<string, Record<string, "accessor" | "fn">>;
+  /** ref variable name → the QML id of the element it was bound to (component.ts's `refLocals`).
+   *  `x.someProp` (not a method CALL on `x`) routes to that id's `someProp`. */
+  refLocals?: Record<string, string>;
+  /** Names that are known NOT to be QObject/context references — local/module helper names,
+   *  imported JS module bindings, module-level consts, context/component/foreign-qml tag names,
+   *  mutable locals — so a member read on one of them is never mistaken for a context property. */
+  knownNonReactive?: Set<string>;
+  /** This component's own local helper functions (`analyzeHelpers(fn)`), so a call to one of them
+   *  inside the effect body is followed into its body for further reads — same closure-over-
+   *  component-state reasoning Solid itself has for a plain function called from an effect. */
+  helpers?: Map<string, HelperInfo>;
+}
+
+/** Every reactive read an effect body performs — used to wire `Connections` dep-tracking so the
+ *  effect re-runs when any of them changes. Covers, in order of how they're resolved:
+ *   - Solid signals/memos/stores read bare (`a` from `a()`, or the store identifier itself,
+ *     e.g. `store.field` — a store is reassign-to-rebind, so the dep is the WHOLE object, same as
+ *     the existing signal/memo case) — table-driven, unchanged logic from before this function grew.
+ *   - `props.x` / a mergeProps-alias `.x` — routes to the self property `x` (one level only,
+ *     matching how `cellRef` resolves it at emit time).
+ *   - `c.member` where `c` is a useContext consumer binding — routes to `__ctx_<ctx>.member`,
+ *     skipped when the member is a known action ("fn" in ctxValueShape).
+ *   - `x.prop` where `x` is a `ref={x}` variable and the read is NOT itself a method call
+ *     (`x.focus()`) — routes to the element's QML id.
+ *   - any OTHER non-computed member chain rooted in an identifier that isn't already covered above
+ *     (a table name, a prop/ctx/ref name) and isn't a known non-reactive name or JS/QML builtin
+ *     global — a context property injected from C++ (`office.spellReady`), an imported singleton,
+ *     or anything else QML's bare-name scope chain resolves. Skipped when the read is itself the
+ *     callee of a call (`office.recheckAll()` is an action, not a property read). A chain of length
+ *     > 1 (`a.b.c`) emits a dep at EVERY prefix level (`a.b` → `c`, AND `a` → `b`) — deliberate
+ *     static OVER-tracking (Solid tracks only the branch actually taken at runtime; we can't, short
+ *     of re-deriving Solid's own dependency graph inside QML) rather than under-tracking: it's safe
+ *     (an extra Connections block that may just never fire) and it also catches the case where the
+ *     INTERMEDIATE object (`a.b`) itself gets swapped for a different one.
+ *   - a call to a local helper (component.ts's `helpers`/`analyzeHelpers`) is followed into the
+ *     helper's own body (one level of indirection, cycle-guarded) — the helper closes over the same
+ *     component state, so a read inside it is exactly as live as one written inline.
+ *  NOT analyzable (documented, not attempted): a module-level helper function's body (a different,
+ *  shared lexical scope — see component.ts's moduleFnDecls comment), a computed member (`obj[x]`),
+ *  or a chain whose root isn't a plain identifier (`f().x`). */
+export function effectDeps(body: t.Node, table: SymbolTable, extra: EffectDepsContext = {}): EffectDep[] {
+  const { propsParam, propAliases, ctxBindings, ctxValueShape, refLocals, knownNonReactive, helpers } = extra;
+  const deps = new Map<string, EffectDep>();
+  const add = (target: string, prop: string) => deps.set(`${target}\u0000${prop}`, { target, prop });
+  const visitedHelpers = new Set<string>();
+  // Names LEXICALLY SHADOWED while scanning a node (the effect body itself, OR a called helper's
+  // body): every const/let/var/function/arrow-or-function-expression-param it declares, at ANY
+  // depth — real JS shadowing, so a read of one of these refers to the LOCAL, never an outer
+  // component prop/ctx/global of the same name. Pushed before scanning a node, popped after (stack
+  // discipline — see `scan` below). Proven necessary by TWO real-world shapes:
+  //  - a helper's own param: `onPicked = (p) => { if (p.seq <= lastPick()) … }` (office app) — `p`
+  //    is onPicked's own, unrelated to any outer `p`.
+  //  - a LOCAL declared inside the effect body itself: `var n = JSON.parse(mail.noticeOpen); …
+  //    n.category` (solid-mail), or an inline callback param: `accounts.map(function(a) {
+  //    return a.id })` — without this, `n`/`a` were wrongly emitted as dep targets (there usually
+  //    isn't a top-level `n`/`a` — a silently-dead Connections block at best, a wrong one at worst
+  //    if the component happens to also have an unrelated same-named global).
+  const shadowed = new Set<string>();
+
+  const scan = (node: t.Node, ownParams: string[] = []): void => {
+    const stmts: t.Statement[] = t.isBlockStatement(node)
+      ? node.body
+      : [t.expressionStatement(node as t.Expression)];
+    const newlyShadowed: string[] = [];
+    for (const n of localNamesIn(stmts, ownParams)) {
+      if (!shadowed.has(n)) { shadowed.add(n); newlyShadowed.push(n); }
+    }
+    traverse(t.file(t.program(stmts)), {
+      Identifier(path) {
+        // Skip the property-key position of `obj.a` — `a` there is a plain member access, not a
+        // reactive read of a same-named signal/memo. (Babel's Identifier visitor fires on both the
+        // object and the non-computed property.)
+        if (t.isMemberExpression(path.parent) && !path.parent.computed && path.parent.property === path.node) return;
+        const name = path.node.name;
+        if (shadowed.has(name)) return; // a helper-local shadows any same-named component state
+        const sym = table.get(name);
+        if (sym && (sym.kind === "signal" || sym.kind === "memo" || sym.kind === "store")) add("__self", name);
+      },
+      MemberExpression(path) {
+        const { object, property, computed } = path.node;
+        if (computed || !t.isIdentifier(property)) return;
+        const prop = property.name;
+        const calledAsFn = t.isCallExpression(path.parent) && path.parent.callee === path.node;
+
+        if (t.isIdentifier(object)) {
+          const objName = object.name;
+          if (shadowed.has(objName)) return; // helper-local object — not a component/context reference
+
+          // props.x / alias.x (one level — matches cellRef's resolution). Skip a CALL
+          // (`props.onClick()`) — that's an action/callback prop, not a reactive value read.
+          if (objName === propsParam || propAliases?.has(objName)) { if (!calledAsFn) add("__self", prop); return; }
+
+          // useContext member — skip pure-action members.
+          if (ctxBindings && objName in ctxBindings) {
+            const ctxName = ctxBindings[objName];
+            if (ctxValueShape?.[ctxName]?.[prop] !== "fn") add(`__ctx_${safeName(ctxName)}`, prop);
+            return;
+          }
+
+          // ref variable — skip a method CALL on the element (x.focus()), not a property read.
+          if (refLocals && objName in refLocals) {
+            if (!calledAsFn) add(refLocals[objName], prop);
+            return;
+          }
+
+          // Already covered by the Identifier visitor above (whole-object dep) — don't also add a
+          // (wrong) member-level target for it.
+          if (table.has(objName)) return;
+          if (knownNonReactive?.has(objName)) return;
+          if (EFFECT_DEPS_BUILTIN_GLOBALS.has(objName)) return;
+          if (calledAsFn) return; // a method call, not a property read (e.g. office.recheckAll())
+          add(objName, prop);
+          return;
+        }
+
+        // A longer chain (`a.b.c`): walk the object side so a PREFIX member expression (`a.b`) is
+        // also considered here (in addition to being visited on its own by this same visitor,
+        // which emits the `a` → `b` dep) — this call only emits the DEEPEST level (`a.b` → `c`);
+        // the shallower ones come from Babel visiting each nested MemberExpression independently.
+        if (t.isMemberExpression(object) && !object.computed && t.isIdentifier(object.property)) {
+          let root: t.Node = object;
+          while (t.isMemberExpression(root) && !root.computed && t.isIdentifier(root.property)) root = root.object;
+          if (!t.isIdentifier(root)) return;
+          const rootName = root.name;
+          if (shadowed.has(rootName)) return;
+          if (propsParam && rootName === propsParam) return;
+          if (propAliases?.has(rootName)) return;
+          if (ctxBindings && rootName in ctxBindings) return;
+          if (refLocals && rootName in refLocals) return;
+          if (table.has(rootName)) return;
+          if (knownNonReactive?.has(rootName)) return;
+          if (EFFECT_DEPS_BUILTIN_GLOBALS.has(rootName)) return;
+          if (calledAsFn) return;
+          // Reconstruct the dotted prefix text (`a.b`) — every segment here is a plain, non-computed
+          // identifier property, so the source text IS just the dotted join.
+          const segs: string[] = [];
+          let n: t.Node = object;
+          while (t.isMemberExpression(n) && !n.computed && t.isIdentifier(n.property)) { segs.unshift(n.property.name); n = n.object; }
+          add([rootName, ...segs].join("."), prop);
+        }
+      },
+      CallExpression(path) {
+        const { callee } = path.node;
+        if (!t.isIdentifier(callee) || !helpers?.has(callee.name)) return;
+        if (visitedHelpers.has(callee.name)) return; // cycle guard (mutually/self-recursive helpers)
+        visitedHelpers.add(callee.name);
+        const info = helpers.get(callee.name)!;
+        scan(info.body, info.params); // `scan` itself shadows the helper's own params/locals
+      },
+    });
+    for (const n of newlyShadowed) shadowed.delete(n); // pop — see the push above (stack discipline)
+  };
+
+  scan(body);
+  return [...deps.values()];
+}
+
+/** Every name a node (an effect body, OR a called helper's body) binds locally — `ownParams`
+ *  (a helper's own params; empty for the effect body itself) plus any const/let/var, function
+ *  declaration, or nested function/arrow param declared ANYWHERE inside it (any depth) — used by
+ *  effectDeps' `scan` to shadow them for the duration of scanning that node (see its own comment
+ *  on `shadowed`). Destructuring patterns are NOT walked (documented gap: a destructured param/
+ *  local could still be mistaken for a global if read as `x.y` — rare in practice, since a
+ *  destructured binding is usually read bare, not member-accessed). */
+function localNamesIn(stmts: t.Statement[], ownParams: string[]): Set<string> {
+  const names = new Set<string>(ownParams);
   traverse(t.file(t.program(stmts)), {
-    Identifier(path) {
-      // Skip the property-key position of `obj.a` — `a` there is a plain member access, not a
-      // reactive read of a same-named signal/memo. (Babel's Identifier visitor fires on both the
-      // object and the non-computed property.)
-      if (t.isMemberExpression(path.parent) && !path.parent.computed && path.parent.property === path.node) return;
-      const name = path.node.name;
-      const sym = table.get(name);
-      if (sym && (sym.kind === "signal" || sym.kind === "memo")) deps.add(name);
+    VariableDeclarator(path) {
+      if (t.isIdentifier(path.node.id)) names.add(path.node.id.name);
+    },
+    FunctionDeclaration(path) {
+      if (path.node.id) names.add(path.node.id.name);
+      for (const p of path.node.params) if (t.isIdentifier(p)) names.add(p.name);
+    },
+    ArrowFunctionExpression(path) {
+      for (const p of path.node.params) if (t.isIdentifier(p)) names.add(p.name);
+    },
+    FunctionExpression(path) {
+      for (const p of path.node.params) if (t.isIdentifier(p)) names.add(p.name);
     },
   });
-  return [...deps];
+  return names;
 }
 
 /** A resource declared in a component: `const [r] = createResource(source, fetcher)`. The loader is

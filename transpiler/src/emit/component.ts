@@ -414,15 +414,37 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     }
     onCompletedBody.push(loaderStmts.join(" "));
   }
+  // Names that are known NOT to be a QObject/context reference, so a bare `x.y` read inside an
+  // effect is never mistaken for one (office.spellReady IS one; a call to an imported helper or a
+  // module-level data table never is). See effectDeps' own doc comment for the full resolution
+  // order; this set only feeds its LAST-resort "unknown global" bucket.
+  const effectKnownNonReactive = new Set<string>([
+    ...(helpers ?? []),
+    ...Object.keys(jsImports ?? {}),
+    ...moduleConstDecls.keys(),
+    ...(contexts ?? []),
+    ...(components?.keys() ?? []),
+    ...(foreignQml ?? []),
+    ...(mutableLocals ?? []),
+  ]);
   for (const body of effects) {
-    for (const dep of effectDeps(body, table)) {
-      const cap = dep.charAt(0).toUpperCase() + dep.slice(1);
+    const bodyDeps = effectDeps(body, table, {
+      propsParam: props.param,
+      propAliases,
+      ctxBindings: hasCtxBindings ? ctxBindings : undefined,
+      ctxValueShape: ctx?.ctxValueShape,
+      refLocals,
+      knownNonReactive: effectKnownNonReactive,
+      helpers: helpersMap,
+    });
+    for (const dep of bodyDeps) {
+      const cap = dep.prop.charAt(0).toUpperCase() + dep.prop.slice(1);
       const run = t.isBlockStatement(body)
         ? body.body.map((s) => emitStmt(s, setupScope)).join(" ")
         : `${emitValue(body, setupScope)};`;
       conns.push(
         `${INDENT}Connections {`,
-        `${INDENT}${INDENT}target: __self`,
+        `${INDENT}${INDENT}target: ${dep.target}`,
         `${INDENT}${INDENT}function on${cap}Changed() { ${run} }`,
         `${INDENT}}`,
       );

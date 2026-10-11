@@ -108,9 +108,9 @@ test("effectDeps: returns signal names read by the effect body", async () => {
   const { effects } = analyzeSetup(fn);
   assert.equal(effects.length, 1);
   const deps = effectDeps(effects[0], table);
-  assert.ok(deps.includes("a"), "effect reads signal a");
-  assert.ok(!deps.includes("b"), "setB is a setter, not a reactive dep");
-  assert.ok(!deps.includes("setB"), "setB is a setter, not a reactive dep");
+  assert.ok(deps.some((d) => d.target === "__self" && d.prop === "a"), "effect reads signal a");
+  assert.ok(!deps.some((d) => d.prop === "b"), "setB is a setter, not a reactive dep");
+  assert.ok(!deps.some((d) => d.prop === "setB"), "setB is a setter, not a reactive dep");
 });
 
 test("effectDeps: a member-property key named like a signal is not a false-positive dep", async () => {
@@ -128,7 +128,230 @@ test("effectDeps: a member-property key named like a signal is not a false-posit
   const table = analyzeSignals(fn);
   const { effects } = analyzeSetup(fn);
   const deps = effectDeps(effects[0], table);
-  assert.deepEqual(deps, ["a"], "only a() is a reactive dep; globalThis.c member-key must not add c");
+  assert.deepEqual(deps, [{ target: "__self", prop: "a" }], "only a() is a reactive dep; globalThis.c is a builtin global, not a context property");
+});
+
+test("effectDeps: a context/global QObject member read inside an if (office.spellReady)", async () => {
+  // The real office-app bug: createEffect(() => { if (office.spellReady) recheckAll(); }) where
+  // `office` is a C++ context property (QObject, NOTIFY spellReadyChanged) — not a Solid signal,
+  // not a prop, not in any table. Must still be tracked.
+  const { ast } = await normalize(
+    `import { createEffect } from "solid-js";
+     export function C() {
+       createEffect(() => { if (office.spellReady) recheckAll(); });
+       return <div/>;
+     }`,
+    "c.tsx");
+  const fn = (ast as any).program.body.find((x: any) => x.type === "ExportNamedDeclaration").declaration;
+  const table = analyzeSignals(fn);
+  const { effects } = analyzeSetup(fn);
+  const deps = effectDeps(effects[0], table);
+  assert.deepEqual(deps, [{ target: "office", prop: "spellReady" }]);
+});
+
+test("effectDeps: second real case — office.picked read as a JSON.parse argument", async () => {
+  // createEffect(() => { if (office.picked) onPicked(JSON.parse(office.picked)); }) — JSON is a
+  // builtin global (excluded); office.picked (read twice) dedupes to one dep.
+  const { ast } = await normalize(
+    `import { createEffect } from "solid-js";
+     export function C() {
+       createEffect(() => { if (office.picked) onPicked(JSON.parse(office.picked)); });
+       return <div/>;
+     }`,
+    "c.tsx");
+  const fn = (ast as any).program.body.find((x: any) => x.type === "ExportNamedDeclaration").declaration;
+  const table = analyzeSignals(fn);
+  const { effects } = analyzeSetup(fn);
+  const deps = effectDeps(effects[0], table);
+  assert.deepEqual(deps, [{ target: "office", prop: "picked" }]);
+});
+
+test("effectDeps: a method CALL on a context object is not a dependency (action, not a read)", async () => {
+  const { ast } = await normalize(
+    `import { createEffect } from "solid-js";
+     export function C() {
+       createEffect(() => { office.recheckAll(); });
+       return <div/>;
+     }`,
+    "c.tsx");
+  const fn = (ast as any).program.body.find((x: any) => x.type === "ExportNamedDeclaration").declaration;
+  const table = analyzeSignals(fn);
+  const { effects } = analyzeSetup(fn);
+  const deps = effectDeps(effects[0], table);
+  assert.deepEqual(deps, []);
+});
+
+test("effectDeps: props.x read routes to the self property x", async () => {
+  const { ast } = await normalize(
+    `import { createEffect } from "solid-js";
+     export function C(props) {
+       createEffect(() => { if (props.x) doSomething(); });
+       return <div/>;
+     }`,
+    "c.tsx");
+  const fn = (ast as any).program.body.find((x: any) => x.type === "ExportNamedDeclaration").declaration;
+  const table = analyzeSignals(fn);
+  const { effects } = analyzeSetup(fn);
+  const deps = effectDeps(effects[0], table, { propsParam: "props" });
+  assert.deepEqual(deps, [{ target: "__self", prop: "x" }]);
+});
+
+test("effectDeps: a store field read tracks the whole store object (reassign-to-rebind)", async () => {
+  const { ast } = await normalize(
+    `import { createEffect, createStore } from "solid-js/store";
+     export function C() {
+       const [store, setStore] = createStore({ field: 1 });
+       createEffect(() => { if (store.field) doSomething(); });
+       return <div/>;
+     }`,
+    "c.tsx");
+  const fn = (ast as any).program.body.find((x: any) => x.type === "ExportNamedDeclaration").declaration;
+  const table = analyzeSignals(fn);
+  const { effects } = analyzeSetup(fn);
+  const deps = effectDeps(effects[0], table);
+  assert.deepEqual(deps, [{ target: "__self", prop: "store" }]);
+});
+
+test("effectDeps: a nested member chain a.b.c tracks every prefix level", async () => {
+  const { ast } = await normalize(
+    `import { createEffect } from "solid-js";
+     export function C() {
+       createEffect(() => { if (cfg.user.theme) applyTheme(); });
+       return <div/>;
+     }`,
+    "c.tsx");
+  const fn = (ast as any).program.body.find((x: any) => x.type === "ExportNamedDeclaration").declaration;
+  const table = analyzeSignals(fn);
+  const { effects } = analyzeSetup(fn);
+  const deps = effectDeps(effects[0], table);
+  const sorted = [...deps].sort((a, b) => a.target.length - b.target.length);
+  assert.deepEqual(sorted, [
+    { target: "cfg", prop: "user" },
+    { target: "cfg.user", prop: "theme" },
+  ]);
+});
+
+test("effectDeps: a read inside a called local helper is followed (closure over component state)", async () => {
+  const { ast } = await normalize(
+    `import { createEffect } from "solid-js";
+     export function C() {
+       function helperCheck() { return office.spellReady; }
+       createEffect(() => { if (helperCheck()) recheckAll(); });
+       return <div/>;
+     }`,
+    "c.tsx");
+  const fn = (ast as any).program.body.find((x: any) => x.type === "ExportNamedDeclaration").declaration;
+  const table = analyzeSignals(fn);
+  const { effects } = analyzeSetup(fn);
+  const helpersMap = analyzeHelpers(fn);
+  const deps = effectDeps(effects[0], table, { helpers: helpersMap });
+  assert.deepEqual(deps, [{ target: "office", prop: "spellReady" }]);
+});
+
+test("effectDeps: a called helper's OWN param is shadowed, not mistaken for a global (office app regression)", async () => {
+  // Real office-app shape (WriterApp.tsx): onPicked's own param `p` must NOT be tracked as if `p`
+  // were a top-level context property, even though `p.seq`/`p.kind`/`p.path` look exactly like the
+  // office.spellReady/picked shape syntactically. `lastPick` (a signal, read inside the helper) IS
+  // still tracked — Solid's dependency tracking follows the synchronous call, not just the body
+  // the effect lexically wrote.
+  const { ast } = await normalize(
+    `import { createSignal, createEffect } from "solid-js";
+     export function C() {
+       const [lastPick, setLastPick] = createSignal(0);
+       const onPicked = (p) => {
+         if (p.seq <= lastPick()) return;
+         setLastPick(p.seq);
+         doThing(p.path);
+       };
+       createEffect(() => { if (office.picked) onPicked(JSON.parse(office.picked)); });
+       return <div/>;
+     }`,
+    "c.tsx");
+  const fn = (ast as any).program.body.find((x: any) => x.type === "ExportNamedDeclaration").declaration;
+  const table = analyzeSignals(fn);
+  const { effects } = analyzeSetup(fn);
+  const helpersMap = analyzeHelpers(fn);
+  const deps = effectDeps(effects[0], table, { helpers: helpersMap });
+  const sorted = [...deps].sort((a, b) => (a.target + a.prop).localeCompare(b.target + b.prop));
+  assert.deepEqual(sorted, [
+    { target: "__self", prop: "lastPick" },
+    { target: "office", prop: "picked" },
+  ]);
+  assert.ok(!deps.some((d) => d.target === "p"), "onPicked's own param p must never be a dep target");
+});
+
+test("effectDeps: a local declared INSIDE the effect body itself is shadowed too (solid-mail regression)", async () => {
+  // Real solid-mail shape #1: `var n = JSON.parse(mail.noticeOpen); … n.category … n.id` — `n` is
+  // a plain local declared directly in the effect body (not inside a called helper); it must not
+  // be mistaken for a top-level identifier named `n`.
+  const { ast: ast0 } = await normalize(
+    `import { createEffect } from "solid-js";
+     export function C() {
+       createEffect(() => {
+         if (mail.noticeOpen === "") return;
+         var n = JSON.parse(mail.noticeOpen);
+         doThing(n.category, n.id);
+       });
+       return <div/>;
+     }`,
+    "c.tsx");
+  const fn0 = (ast0 as any).program.body.find((x: any) => x.type === "ExportNamedDeclaration").declaration;
+  const table0 = analyzeSignals(fn0);
+  const deps0 = effectDeps(analyzeSetup(fn0).effects[0], table0);
+  assert.deepEqual(deps0, [{ target: "mail", prop: "noticeOpen" }]);
+
+  // Real solid-mail shape #2: `accounts.map(function(a) { return a.id })` where `accounts` is a
+  // signal — `accounts` IS tracked (bare identifier, independent of the method call), but the
+  // callback's own param `a` must NOT be (it shadows any outer `a`).
+  const { ast: ast1 } = await normalize(
+    `import { createSignal, createEffect } from "solid-js";
+     export function C() {
+       const [accounts, setAccounts] = createSignal([]);
+       createEffect(() => {
+         var ids = accounts().map(function (a) { return a.id; });
+         doOther(ids);
+       });
+       return <div/>;
+     }`,
+    "c.tsx");
+  const fn1 = (ast1 as any).program.body.find((x: any) => x.type === "ExportNamedDeclaration").declaration;
+  const table1 = analyzeSignals(fn1);
+  const deps1 = effectDeps(analyzeSetup(fn1).effects[0], table1);
+  assert.deepEqual(deps1, [{ target: "__self", prop: "accounts" }]);
+});
+
+test("effectDeps: without the helpers map, a read inside a called local helper is NOT analyzable (documented gap)", async () => {
+  const { ast } = await normalize(
+    `import { createEffect } from "solid-js";
+     export function C() {
+       function helperCheck() { return office.spellReady; }
+       createEffect(() => { if (helperCheck()) recheckAll(); });
+       return <div/>;
+     }`,
+    "c.tsx");
+  const fn = (ast as any).program.body.find((x: any) => x.type === "ExportNamedDeclaration").declaration;
+  const table = analyzeSignals(fn);
+  const { effects } = analyzeSetup(fn);
+  const deps = effectDeps(effects[0], table); // no `helpers` passed
+  assert.deepEqual(deps, []);
+});
+
+test("effectDeps: a useContext accessor member is tracked on its provider instance; a fn member is not", async () => {
+  const { ast } = await normalize(
+    `import { createEffect } from "solid-js";
+     export function C() {
+       createEffect(() => { if (c.count) c.increment(); });
+       return <div/>;
+     }`,
+    "c.tsx");
+  const fn = (ast as any).program.body.find((x: any) => x.type === "ExportNamedDeclaration").declaration;
+  const table = analyzeSignals(fn);
+  const { effects } = analyzeSetup(fn);
+  const deps = effectDeps(effects[0], table, {
+    ctxBindings: { c: "Counter" },
+    ctxValueShape: { Counter: { count: "accessor", increment: "fn" } },
+  });
+  assert.deepEqual(deps, [{ target: "__ctx_Counter", prop: "count" }]);
 });
 
 test("analyzeResources: extracts [name, source, fetcher] from createResource", async () => {
