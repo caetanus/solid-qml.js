@@ -2995,6 +2995,166 @@ private slots:
         qInfo("PAGE_QT_ONLY type_ms=%.3f pages=%d", t.nsecsElapsed() / 1e6, d->pageCount());
     }
 
+    void bookPageEditBudget()
+    {
+        if (!qEnvironmentVariableIsSet("RICHTEXT_PERF_BUDGET"))
+            QSKIP("opt-in release performance gate: RICHTEXT_PERF_BUDGET=1");
+        QFile loadFile(QStringLiteral("/proc/loadavg"));
+        QVERIFY(loadFile.open(QIODevice::ReadOnly));
+        const double load = loadFile.readAll().split(' ').first().toDouble();
+        if (load > 6) QSKIP("load average exceeds 6");
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        if (!QFile::exists(book)) QSKIP("book sample unavailable");
+        double medians[2];
+        for (int pages = 0; pages < 2; ++pages) {
+            PageEditor w;
+            QVERIFY(w.root);
+            w.root->setProperty("pageView", bool(pages));
+            QCoreApplication::processEvents();
+            QVERIFY(w.fmt()->loadOdf(QUrl::fromLocalFile(book)));
+            auto *d = w.fmt()->document()->textDocument();
+            d->documentLayout()->documentSize();
+            QList<double> samples;
+            for (int i = 0; i < 7; ++i) {
+                const int pos = d->characterCount()/2;
+                w.edit()->setProperty("cursorPosition", pos);
+                w.fmt()->setCursorPosition(pos);
+                QCoreApplication::processEvents();
+                QElapsedTimer timer; timer.start();
+                w.fmt()->insertText(QStringLiteral("x"));
+                d->documentLayout()->blockBoundingRect(d->findBlock(pos));
+                samples.append(timer.nsecsElapsed()/1e6);
+                d->undo();
+                d->documentLayout()->documentSize();
+            }
+            std::sort(samples.begin(), samples.end());
+            medians[pages] = samples[samples.size()/2];
+        }
+        loadFile.seek(0);
+        const double finalLoad = loadFile.readAll().split(' ').first().toDouble();
+        qInfo("EDIT_BUDGET continuous_ms=%.3f pages_ms=%.3f load=%.2f/%.2f", medians[0], medians[1], load, finalLoad);
+        if (finalLoad > 6) QSKIP("load average exceeds 6");
+        QVERIFY2(medians[1] <= 1.5*medians[0], "page edit exceeds 1.5 times continuous view");
+        QVERIFY2(medians[1] < 16, "mid-book page edit exceeds one frame");
+    }
+
+    void bookEditPerformance_data()
+    {
+        QTest::addColumn<bool>("pages");
+        QTest::newRow("continuous") << false;
+        QTest::newRow("pages") << true;
+    }
+
+    void bookEditPerformance()
+    {
+        QFETCH(bool, pages);
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        if (!QFile::exists(book)) QSKIP("book sample unavailable");
+        PageEditor w;
+        QVERIFY(w.root);
+        w.root->setProperty("pageView", pages);
+        QCoreApplication::processEvents();
+        QElapsedTimer timer; timer.start();
+        QVERIFY(w.fmt()->loadOdf(QUrl::fromLocalFile(book)));
+        auto *d = w.fmt()->document()->textDocument();
+        d->documentLayout()->documentSize();
+        qInfo("EDIT_PERF pages=%d open_ms=%.3f", pages, timer.nsecsElapsed()/1e6);
+        // Diagnostic switch: assess Qt's public glyph cache without changing production behaviour.
+        if (qEnvironmentVariableIsSet("EDIT_LAYOUT_CACHE")) {
+            for (auto b = d->begin(); b.isValid(); b = b.next()) b.layout()->setCacheEnabled(true);
+        }
+        QFile perfControl(qEnvironmentVariable("EDIT_PERF_CONTROL"));
+        if (!perfControl.fileName().isEmpty()) QVERIFY(perfControl.open(QIODevice::WriteOnly));
+        QFile perfAck(qEnvironmentVariable("EDIT_PERF_ACK"));
+        if (!perfAck.fileName().isEmpty()) QVERIFY(perfAck.open(QIODevice::ReadOnly));
+        const int repeats = qEnvironmentVariableIntValue("EDIT_REPEATS") > 0 ? qEnvironmentVariableIntValue("EDIT_REPEATS") : 5;
+        const auto measure = [&](int scenario, int boundary = -1) {
+            QList<double> samples;
+            for (int n = 0; n < repeats; ++n) {
+                int pos = scenario == 0 ? 10 : scenario == 2 ? d->characterCount()-2 : d->characterCount()/2;
+                if (scenario == 5) pos = boundary;
+                w.edit()->setProperty("cursorPosition", pos);
+                w.fmt()->setCursorPosition(pos);
+                QCoreApplication::processEvents();
+                if (perfControl.isOpen()) { perfControl.write("enable\n"); perfControl.flush(); if (perfAck.isOpen()) perfAck.readLine(); }
+                timer.restart();
+                if (scenario == 5) { QTextCursor c(d); c.setPosition(pos); c.deletePreviousChar(); }
+                else w.fmt()->insertText(scenario == 3 ? QStringLiteral("\n") : scenario == 4 ? QStringLiteral("A pasted paragraph with enough words to wrap onto another line and exercise pagination after a document edit.\n") : QStringLiteral("x"));
+                d->documentLayout()->blockBoundingRect(d->findBlock(pos));
+                samples.append(timer.nsecsElapsed()/1e6);
+                if (perfControl.isOpen()) { perfControl.write("disable\n"); perfControl.flush(); if (perfAck.isOpen()) perfAck.readLine(); }
+                if (pages && scenario == 5) {
+                    QScopedPointer<QTextDocument> fresh(d->clone());
+                    QCOMPARE(d->pageCount(), fresh->pageCount());
+                    for (auto b = d->begin(); b.isValid(); b = b.next()) {
+                        const qreal top = d->documentLayout()->blockBoundingRect(b).top();
+                        for (int i = 0; i < b.layout()->lineCount(); ++i) {
+                            const auto line = b.layout()->lineAt(i);
+                            const qreal y = top+line.y();
+                            const qreal local = y-qFloor(y/1147)*1147;
+                            QVERIFY(local >= 93 && local+line.height() <= 1030);
+                        }
+                    }
+                }
+                d->undo();
+                d->documentLayout()->documentSize();
+            }
+            std::sort(samples.begin(), samples.end());
+            qInfo("EDIT_PERF pages=%d scenario=%d median_ms=%.3f", pages, scenario, samples[samples.size()/2]);
+        };
+        for (int scenario = 0; scenario < 5; ++scenario) {
+            if (!perfControl.isOpen() || scenario == 1) measure(scenario);
+        }
+        w.view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        timer.restart();
+        for (int i = 0; i < 100; ++i) {
+            w.body()->setProperty("contentY", 1000+i*150);
+            QCoreApplication::processEvents();
+            w.view.grabWindow();
+        }
+        QFile smaps(QStringLiteral("/proc/self/smaps_rollup"));
+        QVERIFY(smaps.open(QIODevice::ReadOnly));
+        const auto pss = QRegularExpression(QStringLiteral("Pss: +([0-9]+)")).match(QString::fromLatin1(smaps.readAll())).captured(1);
+        qInfo("EDIT_PERF pages=%d scroll100_ms=%.3f pss_kb=%s", pages, timer.nsecsElapsed()/1e6, qPrintable(pss));
+        timer.restart();
+        for (int i = 0; i < 100; ++i) {
+            w.body()->setProperty("contentY", i*600);
+            QCoreApplication::processEvents();
+            w.view.grabWindow();
+        }
+        qInfo("EDIT_PERF pages=%d pagedown100_ms=%.3f", pages, timer.nsecsElapsed()/1e6);
+        if (perfControl.isOpen()) return;
+        // Compute the same actual page-start character for both views, after PSS
+        // measurement so the reference layout does not inflate the memory sample.
+        int boundary = -1;
+        {
+            QScopedPointer<QTextDocument> reference(d->clone());
+            auto margins = reference->rootFrame()->frameFormat();
+            margins.setTopMargin(94); margins.setBottomMargin(118);
+            margins.setLeftMargin(113); margins.setRightMargin(113);
+            reference->rootFrame()->setFrameFormat(margins);
+            reference->setPageSize(QSizeF(794, 1147));
+            reference->documentLayout()->documentSize();
+            int previousPage = -1;
+            for (auto b = reference->begin(); b.isValid() && boundary < 0; b = b.next()) {
+                const qreal top = reference->documentLayout()->blockBoundingRect(b).top();
+                for (int i = 0; i < b.layout()->lineCount(); ++i) {
+                    const auto line = b.layout()->lineAt(i);
+                    const int page = int((top+line.y())/1147);
+                    const int position = b.position()+line.textStart();
+                    if (position > reference->characterCount()/2 && page > previousPage) {
+                        boundary = position; break;
+                    }
+                    previousPage = page;
+                }
+            }
+        }
+        QVERIFY(boundary > 0);
+        qInfo("EDIT_PERF boundary_position=%d", boundary);
+        measure(5, boundary);
+    }
+
     void bookPagePerformance()
     {
         const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
