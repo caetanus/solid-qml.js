@@ -32,6 +32,7 @@
 #include <QTextFragment>
 #include <QTextList>
 #include <QElapsedTimer>
+#include <QThread>
 
 #include <private/qzipreader_p.h>
 #include <private/qzipwriter_p.h>
@@ -593,6 +594,78 @@ private slots:
         QVERIFY(near(blockFormat(doc(), 2).textIndent(), -0.1 * in));
         QVERIFY(near(blockFormat(doc(), 0).topMargin(), 0.0598 * in));
         QCOMPARE(blockFormat(doc(), 3).bottomMargin(), RichTextHandler::kMinParagraphSpacing);
+    }
+
+    void asyncCopyMatchesBookAndLeavesDocumentAlone()
+    {
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        if (!QFile::exists(book)) QSKIP("book sample unavailable");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(book)));
+        const QString sync = m_dir.filePath(QStringLiteral("sync.odt"));
+        const QString async = m_dir.filePath(QStringLiteral("async.odt"));
+        QElapsedTimer timer;
+        timer.start();
+        QVERIFY(m_fmt->saveOdfCopy(QUrl(sync)));
+        const double syncMs = timer.nsecsElapsed() / 1e6;
+        const bool modified = doc()->isModified();
+        const int undo = doc()->availableUndoSteps();
+        QSignalSpy finished(m_fmt, SIGNAL(saveCopyFinished(bool,QString)));
+        QVERIFY(finished.isValid());
+        bool onUiThread = false;
+        connect(m_fmt, &RichTextHandler::saveCopyFinished, this, [&] {
+            onUiThread = QThread::currentThread() == m_fmt->thread();
+        }, Qt::DirectConnection);
+        timer.restart();
+        m_fmt->saveOdfCopyAsync(QUrl(async));
+        const double snapshotMs = timer.nsecsElapsed() / 1e6;
+        // Edit the live document immediately: the worker must see the earlier snapshot.
+        m_fmt->insertText(QStringLiteral("not in the snapshot"));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 30000);
+        QVERIFY(onUiThread);
+        QVERIFY2(finished[0][0].toBool(), qPrintable(finished[0][1].toString()));
+        for (const QString &entry : {QStringLiteral("content.xml"), QStringLiteral("styles.xml"),
+                                     QStringLiteral("META-INF/manifest.xml")})
+            QCOMPARE(zipEntry(async, entry), zipEntry(sync, entry));
+        qInfo("autosave book: synchronous %.3f ms; UI snapshot call %.3f ms", syncMs, snapshotMs);
+        doc()->undo();
+        QCOMPARE(doc()->isModified(), modified);
+        QCOMPARE(doc()->availableUndoSteps(), undo);
+    }
+
+    void asyncCopyCoalescesAndCarriesImages()
+    {
+        m_fmt->insertText(QStringLiteral("original"));
+        QImage image(8, 8, QImage::Format_ARGB32);
+        image.fill(Qt::red);
+        const QString png = m_dir.filePath(QStringLiteral("async.png"));
+        QVERIFY(image.save(png));
+        m_fmt->setCursorPosition(8);
+        QVERIFY(m_fmt->insertImage(QUrl(png)));
+        const QString sync = m_dir.filePath(QStringLiteral("image-sync.odt"));
+        QVERIFY(m_fmt->saveOdfCopy(QUrl(sync)));
+        QSignalSpy finished(m_fmt, SIGNAL(saveCopyFinished(bool,QString)));
+        const QString first = m_dir.filePath(QStringLiteral("first.odt"));
+        const QString skipped = m_dir.filePath(QStringLiteral("skipped.odt"));
+        const QString last = m_dir.filePath(QStringLiteral("last.odt"));
+        m_fmt->saveOdfCopyAsync(QUrl(first));
+        m_fmt->saveOdfCopyAsync(QUrl(skipped));
+        m_fmt->saveOdfCopyAsync(QUrl(last));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 2, 30000);
+        QVERIFY(!QFile::exists(skipped));
+        for (const QString &path : {first, last}) {
+            QZipReader zip(sync);
+            for (const auto &entry : zip.fileInfoList())
+                if (entry.filePath != QStringLiteral("meta.xml"))
+                    QCOMPARE(zipEntry(path, entry.filePath), zipEntry(sync, entry.filePath));
+        }
+        const bool modified = doc()->isModified();
+        const int undo = doc()->availableUndoSteps();
+        m_fmt->saveOdfCopyAsync(QUrl(m_dir.filePath(QStringLiteral("missing/x.odt"))));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 3, 30000);
+        QVERIFY(!finished[2][0].toBool());
+        QVERIFY(!finished[2][1].toString().isEmpty());
+        QCOMPARE(doc()->isModified(), modified);
+        QCOMPARE(doc()->availableUndoSteps(), undo);
     }
 
     void saveOdfCopyLeavesTheDocumentAlone()

@@ -4,6 +4,11 @@
 #include <QClipboard>
 #include <QFile>
 #include <QFileInfo>
+#include <QFutureWatcher>
+#include <QPromise>
+#include <QPixmap>
+#include <QThread>
+#include <QThreadPool>
 #include <QGuiApplication>
 #include <QImage>
 #include <QMimeData>
@@ -1104,6 +1109,87 @@ bool RichTextHandler::saveOdf(const QUrl &file)
 bool RichTextHandler::saveOdfCopy(const QUrl &file)
 {
     return writeOdf(file);
+}
+
+void RichTextHandler::saveOdfCopyAsync(const QUrl &file)
+{
+    if (m_copyRunning) {
+        m_queuedCopy = file;
+        return;
+    }
+    if (!m_doc) {
+        emit saveCopyFinished(false, QStringLiteral("No document attached"));
+        return;
+    }
+    // QTextDocument::clone() copies through a fragment and then inserts it into a
+    // second document. Keep the immutable, reentrant fragment as our snapshot and do
+    // that second copy on the worker. IDs are not part of a fragment's user data.
+    QTextDocumentFragment snapshot;
+    std::unique_ptr<QTextDocument> imageSnapshot;
+    const QStringList ids = blockIds();
+    const QTextFrameFormat rootFormat = m_doc->rootFrame()->frameFormat();
+    const QUrl baseUrl = m_doc->baseUrl();
+    QList<QPair<QUrl, QVariant>> images;
+    for (const auto &format : m_doc->allFormats()) {
+        if (!format.isImageFormat()) continue;
+        const QUrl name(format.toImageFormat().name());
+        QVariant resource = m_doc->resource(QTextDocument::ImageResource, name);
+        if (resource.metaType().id() == QMetaType::QPixmap)
+            resource = resource.value<QPixmap>().toImage();
+        images.append({name, resource});
+    }
+    if (images.isEmpty()) {
+        snapshot = QTextDocumentFragment(m_doc);
+    } else {
+        // Qt lazily creates image handlers in a fragment's internal document when
+        // inserting it. That QObject still has UI affinity. Use a detached clone for
+        // image-bearing documents so every resource handler is created on its owner thread.
+        imageSnapshot.reset(m_doc->clone());
+        for (const auto &image : images)
+            imageSnapshot->addResource(QTextDocument::ImageResource, image.first, image.second);
+        imageSnapshot->moveToThread(nullptr);
+    }
+    QPromise<QString> promise;
+    auto *watcher = new QFutureWatcher<QString>(this);
+    connect(watcher, &QFutureWatcher<QString>::finished, this, [this, watcher] {
+        const QString error = watcher->result();
+        watcher->deleteLater();
+        QPointer<RichTextHandler> guard(this);
+        setError(error);
+        if (!guard) return;
+        emit saveCopyFinished(error.isEmpty(), error);
+        if (!guard) return;
+        m_copyRunning = false;
+        if (auto next = std::exchange(m_queuedCopy, std::nullopt))
+            saveOdfCopyAsync(*next);
+    });
+    watcher->setFuture(promise.future());
+    m_copyRunning = true;
+    QThreadPool::globalInstance()->start([snapshot = std::move(snapshot), imageSnapshot = std::move(imageSnapshot),
+                                        ids, rootFormat, baseUrl, sheet = m_sheet,
+                                        zoom = m_zoom, path = localPath(file), promise = std::move(promise)]() mutable {
+        promise.start();
+        std::unique_ptr<QTextDocument> document = std::move(imageSnapshot);
+        if (document) {
+            document->moveToThread(QThread::currentThread());
+        } else {
+            document = std::make_unique<QTextDocument>();
+            document->setUndoRedoEnabled(false);
+            document->setLayoutEnabled(false);
+            document->setBaseUrl(baseUrl);
+            QTextCursor(document.get()).insertFragment(snapshot);
+            document->rootFrame()->setFrameFormat(rootFormat);
+        }
+        auto block = document->begin();
+        for (const auto &id : ids) {
+            block.setUserData(new rt::BlockInfo(id));
+            block = block.next();
+        }
+        QString error;
+        rt::writeOdt(path, document.get(), sheet, zoom, &error);
+        promise.addResult(error);
+        promise.finish();
+    });
 }
 
 bool RichTextHandler::loadOdf(const QUrl &file)

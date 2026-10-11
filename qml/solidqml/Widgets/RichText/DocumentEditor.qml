@@ -99,6 +99,7 @@ RichText {
     property int contentDelay: 300
     signal contentChanged()
     // The style table changed (a definition, a load, a new document, an undo of a definition).
+    signal saveCopyFinished(bool ok, string error)
     signal stylesChanged()
     // Office item 2b (★3): the outline changed — debounced the same way, and only forwarded when
     // the engine says the list actually differs (RichTextHandler::headingsChanged dedupes it).
@@ -118,6 +119,7 @@ RichText {
     Connections {
         target: root.fmt
         function onContentsChanged() { debounce.restart() }
+        function onSaveCopyFinished(ok, error) { root.saveCopyFinished(ok, error) }
         function onStylesChanged() { root.stylesChanged() }
         function onHeadingsChanged() { headingsDebounce.restart() }
         function onBlocksLoaded() { root.blocksLoaded() }
@@ -142,6 +144,10 @@ RichText {
     function saveOdf(path) { return fmt ? _result(fmt.saveOdf(path)) : _noEngine }
     // Autosave / crash recovery: the same file, but `modified` and the undo stack stay as they are.
     function saveOdfCopy(path) { return fmt ? _result(fmt.saveOdfCopy(path)) : _noEngine }
+    function saveOdfCopyAsync(path) {
+        if (fmt) fmt.saveOdfCopyAsync(path)
+        else root.saveCopyFinished(false, _noEngine.error)
+    }
     // options (office item 2b addendum): { styles: { name: {props as in defineStyle} }, paragraphStyle }
     // applied as the document's INITIAL state; {ok, error} like loadOdf — an error leaves the
     // previous document untouched.

@@ -273,6 +273,12 @@ declare global {
     saveOdf(path: string): DocumentIoResult;
     /** Same .odt as saveOdf, for autosave / crash recovery: `modified` and undo stay untouched. */
     saveOdfCopy(path: string): DocumentIoResult;
+    /** Snapshot on the UI thread, atomic write on a worker; busy requests coalesce, latest wins. */
+    saveOdfCopyAsync(path: string): void;
+    readonly saveCopyFinished: {
+      connect(callback: (ok: boolean, error: string) => void): void;
+      disconnect(callback: (ok: boolean, error: string) => void): void;
+    };
     /** Empty, unmodified document in Default Paragraph Style; drops undo history, images and
      *  style definitions (back to the built-in styles) — same as `newDocument()`. With `options`,
      *  the styles are defined/updated first (same validation as `defineStyle`; any error leaves

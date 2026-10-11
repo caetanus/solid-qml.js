@@ -99,6 +99,7 @@ Methods:
 | `loadOdf(path)` | `{ ok, error }` | Opens an `.odt`, with its named styles. On failure (`file not found: …`, `not an OpenDocument file: …`) the current document is kept. The load is not an undo step. |
 | `saveOdf(path)` | `{ ok, error }` | Writes an `.odt` (our writer: named styles, heading levels, images embedded; atomic — a failed write leaves the old file). Clears `modified` on success. |
 | `saveOdfCopy(path)` | `{ ok, error }` | The same `.odt`, for autosave / crash recovery: the document is left as it was — `modified` stays, the undo history is untouched. |
+| `saveOdfCopyAsync(path)` | void | Snapshots the document on the UI thread, then writes atomically on a worker. Emits `saveCopyFinished(ok, error)` on the UI thread; never changes modified or undo. While busy, only the latest requested path is retained; its snapshot is taken when the previous write finishes. Each actual write emits one completion. Connect through `doc.saveCopyFinished.connect(callback)` on the ref. |
 | `newDocument(options?)` | `{ ok, error }` | Empty, unmodified document in Default Paragraph Style; drops undo history, images and style definitions (back to the built-in styles). With `options`, styles are defined first (see "Starting a document with styles" below) and `{ ok, error }` reports it, like `loadOdf`. |
 | `toHtml()` / `plainText()` | string | The content; `plainText()` separates paragraphs with `\n`. |
 | `insertText(text)` | | At the caret (replacing a selection); `\n` starts a paragraph, as Enter does (next style included). |

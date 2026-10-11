@@ -228,6 +228,9 @@ public:
     // The same .odt as saveOdf, for autosave / crash recovery: the document is left exactly as it
     // was — `modified` stays, the undo stack is untouched. errorString reports the result.
     Q_INVOKABLE bool saveOdfCopy(const QUrl &file);
+    // Snapshot now, write atomically on the pool. While busy, retain only the latest
+    // requested path and snapshot the current document when that request starts.
+    Q_INVOKABLE void saveOdfCopyAsync(const QUrl &file);
     Q_INVOKABLE bool loadOdf(const QUrl &file);
     // An empty, unmodified document (no undo history, no image resources). `options.styles`
     // (office item 2b addendum): { name: {props as in defineStyle()}, … } defined/updated with
@@ -310,6 +313,7 @@ public:
     const QList<Mark> &marks() { ensureMarksSorted(); return m_marks; }
 
 signals:
+    void saveCopyFinished(bool ok, const QString &error);
     void documentChanged();
     void selectionChanged();
     void formatChanged();
@@ -473,6 +477,8 @@ private:
     int m_selectionStart = 0;
     int m_selectionEnd = 0;
     int m_cursorPosition = 0;
+    bool m_copyRunning = false;
+    std::optional<QUrl> m_queuedCopy;
     QString m_error;
     rt::StyleSheet m_sheet = rt::StyleSheet::builtIns();
     QMetaObject::Connection m_modifiedConn;
