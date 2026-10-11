@@ -56,6 +56,6 @@ test("select: onChange with a bare value param resolves to the picked value (not
   `;
   const app = await generate(src, "/tmp/t/app.tsx");
   // The bare param `v` must become the picked value, not the undefined `__ev`.
-  assert.match(app.entry, /onActivated: \(index\) => \{ n = parseInt\(__input0\.values\[index\]\) \}/);
+  assert.match(app.entry, /onActivated: \(__idx\) => \{ n = parseInt\(__input0\.values\[__idx\]\) \}/);
   assert.doesNotMatch(app.entry, /__ev/);
 });

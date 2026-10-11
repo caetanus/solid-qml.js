@@ -728,7 +728,7 @@ test("widgets: <select> without value does NOT emit a Binding", async () => {
   assert.doesNotMatch(out, /Binding \{/);
 });
 
-test("widgets: <select> onChange wires onActivated with e.target.value → values[index]", async () => {
+test("widgets: <select> onChange wires onActivated with e.target.value → values[__idx]", async () => {
   const out = await qmlType(`
     export function F() {
       const [sel, setSel] = createSignal("a");
@@ -739,7 +739,7 @@ test("widgets: <select> onChange wires onActivated with e.target.value → value
       );
     }
   `);
-  assert.match(out, /onActivated: \(index\) => \{ sel = __input0\.values\[index\] \}/);
+  assert.match(out, /onActivated: \(__idx\) => \{ sel = __input0\.values\[__idx\] \}/);
 });
 
 test("widgets: <select> without onChange does NOT emit onActivated", async () => {

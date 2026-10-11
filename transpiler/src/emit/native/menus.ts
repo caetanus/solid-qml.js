@@ -476,8 +476,10 @@ function emitListView(propsArg: t.Node | undefined, _children: t.Node[], scope: 
     ...guardLine(guard, level),
     `${i(1)}__listData: ${dataExpr}`,
   ];
-  // The QML signal is selected(item, index); the author's first param maps to `item`.
-  if (selBody) lines.push(`${i(1)}onSelected: (item, index) => { ${selBody} }`);
+  // The QML signal is selected(item, index); the author's first param maps to `item`. The second
+  // local param is named `__idx`, not `index` — a bare `index` here would shadow a <For> row's
+  // own `i()` if this <ListView> sits inside one (see qml.ts rowDelegate's `indexRef` comment).
+  if (selBody) lines.push(`${i(1)}onSelected: (item, __idx) => { ${selBody} }`);
   lines.push(`${pad}}`);
   return lines;
 }
@@ -506,7 +508,8 @@ function emitTableView(propsArg: t.Node | undefined, _children: t.Node[], scope:
     `${i(1)}__columns: ${columns ? bind(columns) : "[]"}`,
     `${i(1)}__rows: ${data ? bind(data) : "[]"}`,
   ];
-  if (selBody) lines.push(`${i(1)}onSelected: (row, index) => { ${selBody} }`);
+  // Second local param named `__idx`, not `index` — same shadowing hazard as <ListView> above.
+  if (selBody) lines.push(`${i(1)}onSelected: (row, __idx) => { ${selBody} }`);
   lines.push(`${pad}}`);
   return lines;
 }

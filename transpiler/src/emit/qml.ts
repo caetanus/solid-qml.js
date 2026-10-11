@@ -1390,7 +1390,9 @@ function parseDynamicSelectChildren(children: t.Node[], scope: Scope): SelectSeg
  *  - popup: T.Popup (padding: 1 per G3 — prevents popup CssFill border clipping); background CssFill
  *    (["popup"]); contentItem ListView (clip, cap 240 px, model from delegateModel).
  *
- *  onChange → onActivated (index) with synthetic value __input<n>.__values[index].
+ *  onChange → onActivated (__idx) with synthetic value __input<n>.__values[__idx] (NOT `index` —
+ *  see rowDelegate's `indexRef` comment in this file: a <For> row's own `i()` is routed through a
+ *  reserved `__forIndex` property precisely so no synthetic handler parameter can shadow it).
  *
  *  DYNAMIC options (this plan): a <For> child, static <option>s mixed before/after it, and/or an
  *  `options={expr}` attribute all build the SAME `model`/`values` (now QML-JS expressions rather
@@ -1459,10 +1461,13 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
     disabledArr = concatSegments(segs, "disabled");
   }
 
-  // onActivated(index): translate onChange so e.target.value → the picked value. `${ctlId}.values`
-  // resolves against the component's `values` array on the instance.
+  // onActivated(__idx): translate onChange so e.target.value → the picked value. `${ctlId}.values`
+  // resolves against the component's `values` array on the instance. The synthetic param is named
+  // `__idx`, NOT `index` — this handler may sit inside a <For> row whose own `i()` is routed
+  // through a reserved `__forIndex` property (qml.ts's rowDelegate) precisely so that no such
+  // synthetic parameter can shadow it; naming this one `index` too would defeat that on sight.
   const onActivatedBody = onChangeFn
-    ? translateValueHandler(onChangeFn, `${ctlId}.values[index]`, scope)
+    ? translateValueHandler(onChangeFn, `${ctlId}.values[__idx]`, scope)
     : "";
 
   const lines: string[] = [
@@ -1476,7 +1481,7 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
   ];
 
   if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
-  if (onActivatedBody) lines.push(`${i(1)}onActivated: (index) => { ${onActivatedBody} }`);
+  if (onActivatedBody) lines.push(`${i(1)}onActivated: (__idx) => { ${onActivatedBody} }`);
 
   // Binding: keep currentIndex in sync with the controlled value expression. `values.indexOf(...)`
   // already tracks the SAME value if the (possibly reordered) list still has it — the Binding is
@@ -1989,7 +1994,18 @@ function rowDelegate(delegate: t.ArrowFunctionExpression | t.FunctionExpression,
   const body = delegate.body;
   if (!isHCall(body)) throw new Error(`${owner} delegate must return a single element in this plan`);
   let rowRef = "modelData";
-  let indexRef = "index";
+  // The row's index is ALWAYS routed through this reserved per-row property — never through the
+  // bare QML `index` context property directly — EVEN when nothing in this row's body nests into
+  // another loop. Reason: a NATIVE handler the emitter itself generates elsewhere in this same
+  // row (e.g. <select onChange> → `onActivated: (index) => …`, or a ListView/TableView
+  // `onSelected: (item, index) => …`) declares its own JS parameter literally named `index` — an
+  // ordinary ECMAScript closure, which SHADOWS the QML `index` context property for every
+  // identifier inside its body, including a nested `i()` call, at the plain-JS-scoping level (no
+  // QML magic can see through that). `property int __forIndex: index` snapshots the delegate's
+  // own `index` context property under a name no synthetic handler will ever declare as its own
+  // parameter, so no handler/inner-scope `index` can shadow it. (Real case: solid-mail's
+  // MailApp.tsx — `<For each={fConds()}>{(c, i) => <select onChange={(e) => condSet(i(), …)}>`.)
+  let indexRef = indexName ? "__forIndex" : "index";
   let publish: string | null = null;
   if ((itemName && usedInNestedLoop(body, itemName)) || (indexName && usedInNestedLoop(body, indexName))) {
     const counter = scope.hoverCounter ?? { n: 0 };
@@ -2006,7 +2022,7 @@ function rowDelegate(delegate: t.ArrowFunctionExpression | t.FunctionExpression,
   requireSingleRoot(rows, rootLevel, owner);
   // The delegate is ONE h() call, so rows[0] is its root's `Type {` line; the publish lines go
   // right under it. Fail loud if that ever stops being true.
-  if ((publish || extra.length) && !rows[0]?.trimEnd().endsWith("{"))
+  if ((publish || indexName || extra.length) && !rows[0]?.trimEnd().endsWith("{"))
     throw new Error(`${owner} delegate root: expected \`Type {\` as the first emitted line`);
   const rootPad = INDENT.repeat(rootLevel + 1);
   const head: string[] = [];
@@ -2023,8 +2039,11 @@ function rowDelegate(delegate: t.ArrowFunctionExpression | t.FunctionExpression,
       head.push(`${rootPad}id: ${publish}`);
     }
     head.push(`${rootPad}property var __forItem: modelData`);
-    if (indexName) head.push(`${rootPad}property int __forIndex: index`);
   }
+  // Declared whenever the delegate HAS an index param at all — not only when crossing into a
+  // nested loop — so i() never has to fall back to the bare (shadowable) `index` (see the comment
+  // on `indexRef` above).
+  if (indexName) head.push(`${rootPad}property int __forIndex: index`);
   rows.splice(1, 0, ...head, ...extra.map((l) => rootPad + l));
   return rows;
 }

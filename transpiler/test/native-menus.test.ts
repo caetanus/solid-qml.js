@@ -454,7 +454,7 @@ test("listview: <ListView data onSelect> → W.ListView with __listData + select
   const out = await qml(`export function F(){ return <ListView class="lst" data={["a","b"]} onSelect={(it) => 0} />; }`);
   assert.match(out, /W\.ListView \{/);
   assert.match(out, /__listData: \["a", "b"\]/);
-  assert.match(out, /onSelected: \(item, index\) => \{ 0 \}/);
+  assert.match(out, /onSelected: \(item, __idx\) => \{ 0 \}/);
   // ListView is C++ now (widgets-to-cpp) — the snippet keeps the QML internals verbatim.
   const src = await readFile(fileURLToPath(new URL("../../src/widgets/listview.cpp", import.meta.url)), "utf8");
   assert.match(src, /import QtQuick as QtQ/);
@@ -467,7 +467,7 @@ test("tableview: <TableView columns data onSelect> → W.TableView with __column
   assert.match(out, /W\.TableView \{/);
   assert.match(out, /__columns: \[\(\{ key: "n", label: "N" \}\)\]/);
   assert.match(out, /__rows: \[\(\{ n: 1 \}\)\]/);
-  assert.match(out, /onSelected: \(row, index\) => \{ 0 \}/);
+  assert.match(out, /onSelected: \(row, __idx\) => \{ 0 \}/);
   // TableView is C++ now (widgets-to-cpp) — the snippet keeps the QML internals verbatim.
   const src = await readFile(fileURLToPath(new URL("../../src/widgets/tableview.cpp", import.meta.url)), "utf8");
   assert.match(src, /import QtQuick as QtQ/);
