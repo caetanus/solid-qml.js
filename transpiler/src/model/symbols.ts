@@ -22,9 +22,17 @@ export type SymbolTable = Map<string, Sym>;
  *  - `const [g, s] = createSignal(init)` → a signal (g) + its setter (s)
  *  - `const m = createMemo(() => …)`     → a memo (a readonly derived property)
  *  - `const d = (…) => <expr>`           → a derived accessor (inlined where called, stays reactive)
+ *    — UNLESS it has a non-call reference elsewhere in the body (see `hasNonCallReference`), in
+ *    which case it is promoted to a real helper method instead (analyzeHelpers picks it up) and is
+ *    deliberately left OUT of this table.
  */
 export function analyzeSignals(fn: t.Function): SymbolTable {
   const table: SymbolTable = new Map();
+  // Zero-param expression-body arrow candidates found during the main pass below, kept alongside
+  // their OWN declarator id node (not a clone — same object as in `fn.body`) so the promotion check
+  // after the pass can ask Babel's scope resolution "does THIS read bind to THIS declaration" —
+  // see hasNonCallReference's doc comment for why that matters (shadowing).
+  const derivedDeclIds = new Map<string, t.Identifier>();
   traverse(
     t.file(t.program(fn.body.type === "BlockStatement" ? fn.body.body : [t.expressionStatement(fn.body)])),
     {
@@ -81,11 +89,69 @@ export function analyzeSignals(fn: t.Function): SymbolTable {
         if (t.isArrowFunctionExpression(init) && !t.isJSXElement(init.body) && !t.isJSXFragment(init.body)
             && init.params.length === 0 && !t.isBlockStatement(init.body)) {
           table.set(id.name, { kind: "derived", name: id.name, params: [], body: init.body });
+          derivedDeclIds.set(id.name, id);
         }
       },
     },
   );
+  // Promotion pass: a derived accessor referenced by VALUE anywhere else in the component (passed
+  // to another call, stored, returned, used as a JSX prop, …) has no call site to inline INTO —
+  // the reference itself would otherwise emit as a bare, undeclared name (a QML
+  // "ReferenceError: <name> is not defined" at runtime, since nothing ever declares it). Delete it
+  // from the table so it is no longer treated as "derived" (inlined) anywhere downstream;
+  // analyzeHelpers makes the IDENTICAL decision (same predicate) and picks it up as a real method
+  // instead — the two analyses can never disagree about which path a name takes.
+  for (const [name, declId] of derivedDeclIds) {
+    if (hasNonCallReference(fn, name, declId)) table.delete(name);
+  }
   return table;
+}
+
+/** True if `name` — a zero-param expression-body arrow candidate declared at `declId`
+ *  (`const <name> = () => <expr>`) — has at least one use ELSEWHERE in the component body that is
+ *  NOT a direct call (`name(...)`): passed by reference (`register(f)`), used as a JSX handler
+ *  (`onClick={f}`), handed to a callback-taking call (`setTimeout(f, 0)`, `arr.map(f)`), stored
+ *  (`{cb: f}`), or returned. Such a use has no "call site" an inlined expression could sit in —
+ *  only a real, callable QML value does, so these are the uses that force promotion to a method
+ *  (see analyzeSignals' and analyzeHelpers' own comments on this function).
+ *
+ *  Shadow-aware: a NESTED declaration/param reusing the same name (`arr.map(function(f){ return
+ *  f.id; })`) binds its OWN `f`; reads inside that nested scope refer to the shadow, not this
+ *  candidate, and must not count. Resolved via Babel's own scope crawl (not the ad-hoc shadow-set
+ *  style used elsewhere in this file, e.g. `effectDeps`'s `shadowed`): each candidate read's
+ *  resolved binding identifier is compared against `declId` — the exact AST node of this
+ *  candidate's own `const <name> = …` id (same node object as in `fn.body`, not a clone), so a
+ *  shadowed read (resolving to some OTHER binding) is correctly skipped rather than over- or
+ *  under-counted. */
+export function hasNonCallReference(fn: t.Function, name: string, declId: t.Identifier): boolean {
+  const stmts = fn.body.type === "BlockStatement" ? fn.body.body : [t.expressionStatement(fn.body)];
+  const file = t.file(t.program(stmts));
+  let found = false;
+  traverse(file, {
+    Identifier(path) {
+      if (found) return;
+      if (path.node.name !== name) return;
+      if (path.node === declId) return; // the declaration's own binding identifier, not a use
+      // A property-KEY position (`{x: ...}`) or a non-computed member's property (`obj.x`) is not a
+      // value read of a same-named candidate (readNamesIn applies the identical skip, above).
+      if (t.isMemberExpression(path.parent) && !path.parent.computed && path.parent.property === path.node) return;
+      if (t.isObjectProperty(path.parent) && !path.parent.computed && path.parent.key === path.node) return;
+      const binding = path.scope.getBinding(name);
+      if (!binding || binding.identifier !== declId) return; // shadowed by a nested local/param
+      const isDirectCall = t.isCallExpression(path.parent) && path.parent.callee === path.node;
+      if (!isDirectCall) { found = true; path.stop(); }
+    },
+  });
+  return found;
+}
+
+/** Wrap an expression-bodied arrow/function body as a `return <expr>;` block — the expression IS
+ *  the return value, so a bare `ExpressionStatement` would silently make the helper return
+ *  `undefined`. Shared by analyzeHelpers' own param/block-arrow path and its promoted-derived path
+ *  (a zero-param expression arrow referenced by value — see `hasNonCallReference`) — identical
+ *  shape, one place owns it. */
+function exprArrowToHelperBody(body: t.Expression | t.BlockStatement): t.BlockStatement {
+  return t.isBlockStatement(body) ? body : t.blockStatement([t.returnStatement(body)]);
 }
 
 /** Top-level `const X = createContext(...)` declarations → the set of context names. */
@@ -842,9 +908,11 @@ export function analyzeProps(fn: t.Function): { param: string | null; used: stri
 
 /** Top-level helper functions in a component body: `function f(params) { body }` (FunctionDeclaration)
  *  and `const f = (params) => body` (block-bodied arrow) or `const f = (params) => expr` (expression
- *  arrow WITH params). Zero-param expression arrows stay as "derived" (analyzeSignals). Block-bodied
- *  arrows and param-having arrows become helpers — they are emitted as QML object methods so calls to
- *  siblings (`toggle(t.id)`) resolve bare through the object scope.
+ *  arrow WITH params). Zero-param expression arrows normally stay as "derived" (analyzeSignals,
+ *  inlined at call sites) — EXCEPT a promoted one (referenced by value elsewhere, not just called;
+ *  see `hasNonCallReference`), which is picked up here instead. Block-bodied arrows and param-having
+ *  arrows become helpers — they are emitted as QML object methods so calls to siblings
+ *  (`toggle(t.id)`) resolve bare through the object scope.
  *
  *  Excluded: createSignal/Memo/Resource, mergeProps/splitProps, useContext (handled elsewhere).
  *  Returns a map: helper name → { params, body as BlockStatement }. */
@@ -867,16 +935,23 @@ export function analyzeHelpers(fn: t.Function): Map<string, HelperInfo> {
       if (t.isCallExpression(init)) continue; // handled by analyzeSignals / analyzeProps / etc.
       if (t.isObjectExpression(init)) continue; // structural (provider value local, etc.)
       if (t.isArrowFunctionExpression(init) && !t.isJSXElement(init.body) && !t.isJSXFragment(init.body)) {
-        // Zero-param expression arrows → "derived" accessors handled by analyzeSignals; skip here.
-        if (init.params.length === 0 && !t.isBlockStatement(init.body)) continue;
+        // Zero-param expression arrows normally stay "derived" accessors (analyzeSignals, inlined
+        // at call sites) — UNLESS something elsewhere in the component references it by VALUE
+        // (not just calling it): `register(f)`, `onClick={f}`, `setTimeout(f, 0)`, `arr.map(f)`,
+        // storing it (`{cb: f}`), returning it, … There is no call site such a reference could
+        // inline INTO, so it is promoted to a real method here instead — the EXACT same predicate
+        // analyzeSignals uses to exclude it from the derived table, so the two never disagree
+        // about which path a name takes (see hasNonCallReference's own doc comment).
+        if (init.params.length === 0 && !t.isBlockStatement(init.body)) {
+          if (!hasNonCallReference(fn, d.id.name, d.id)) continue; // stays inlined — not a helper
+          out.set(d.id.name, { params: [], body: exprArrowToHelperBody(init.body) });
+          continue;
+        }
         // Param-having or block-bodied arrows → helpers (QML object methods). An expression body
         // IS the return value — wrapping it as a bare statement silently made every such helper
         // return undefined.
         const params = init.params.filter((p): p is t.Identifier => t.isIdentifier(p)).map((p) => p.name);
-        const body: t.BlockStatement = t.isBlockStatement(init.body)
-          ? init.body
-          : t.blockStatement([t.returnStatement(init.body as t.Expression)]);
-        out.set(d.id.name, { params, body });
+        out.set(d.id.name, { params, body: exprArrowToHelperBody(init.body) });
       } else if (t.isFunctionExpression(init)) {
         const params = init.params.filter((p): p is t.Identifier => t.isIdentifier(p)).map((p) => p.name);
         out.set(d.id.name, { params, body: init.body });
