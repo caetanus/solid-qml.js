@@ -3,7 +3,7 @@
 // over the TextArea's document, named paragraph/character styles, our own ODF reader and writer —
 // owner: "ods nativo"). The chrome is all CSS boxes: a toolbar of format
 // toggles (cssState "active" mirrors the format at the cursor), open/save through the native
-// platform file dialogs, and a T.TextArea in RichText mode inside the flickable body.
+// platform file dialogs, and a TextEdit in RichText mode inside the flickable body.
 //
 // The transpiler emits:  WRich.RichText { cssClass: […] }
 //                    or  WRich.RichText { variant: "mail"; html: <string>; onEdited: (html, text) => … }
@@ -17,7 +17,6 @@
 // <DocumentEditor> (DocumentEditor.qml) is this editor driven by the APP: empty start, file IO,
 // `modified`, debounced contentChanged, format state and operations through a ref.
 import QtQuick
-import QtQuick.Templates as T
 import Qt.labs.platform 1.1 as Platform
 import qmlcss 1.0 as Css
 
@@ -36,6 +35,12 @@ Css.CssFill {
                                   "<u>OpenDocument</u> round-trip.</p>"
     // The text area, for DocumentEditor (ids don't cross the file boundary).
     readonly property alias _editor: edit
+    // Insets belong to the scrolling sheet, not the observed text viewport. TextArea
+    // subtracts its padding from that viewport on every frame, cutting off bottom lines.
+    property real _textTopMargin: 12
+    property real _textRightMargin: 12
+    property real _textBottomMargin: 12
+    property real _textLeftMargin: 12
     // The scrolling viewport around it — DocumentEditor keeps the caret visible after a zoom change.
     readonly property alias _body: body
     signal edited(string html, string text)
@@ -82,6 +87,7 @@ Css.CssFill {
         edit.cursorPosition = to
         _applying = false
     }
+    function _refreshScrolledViewport() { if (fmt) fmt.refreshViewport() }
     function _report() {
         if (!root._mail || root._loading) return
         root._reported = edit.text
@@ -190,14 +196,23 @@ Css.CssFill {
             anchors.bottom: parent.bottom
             clip: true
             contentWidth: width
-            contentHeight: edit.contentHeight + 24
+            contentHeight: edit.y + edit.height + root._textBottomMargin
             boundsBehavior: Flickable.StopAtBounds
+            property real _previousContentY: 0
+            onContentYChanged: {
+                // After Flickable's transform notifications: Qt's backward scan can stop
+                // at a table before it reaches the visible text. Coalesced once per turn.
+                if (contentY < _previousContentY) Qt.callLater(root._refreshScrolledViewport)
+                _previousContentY = contentY
+            }
 
-            T.TextArea {
+            TextEdit {
                 id: edit
-                width: body.width
-                height: Math.max(body.height, contentHeight + 24)
-                padding: 12
+                x: root._textLeftMargin
+                y: root._textTopMargin
+                width: Math.max(0, body.width - root._textLeftMargin - root._textRightMargin)
+                height: Math.max(body.height - root._textTopMargin - root._textBottomMargin, contentHeight)
+                padding: 0
                 textFormat: TextEdit.RichText
                 wrapMode: TextEdit.Wrap
                 selectByMouse: true

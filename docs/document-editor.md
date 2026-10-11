@@ -55,7 +55,7 @@ A complete example (own toolbar, open/save by path, modified dot, word count) is
 | `onContentChanged` | `() => …` | Any edit, formatting included, **debounced** (300 ms of quiet). No payload: read `doc.plainText()` / `doc.toHtml()` when needed. Opening a file, `newDocument()` and `defineStyle()` count as content changes. |
 | `onStylesChanged` | `() => …` | The style table changed: `defineStyle`, a load, `newDocument`, an undo/redo of a definition. Refresh a style picker from `doc.styleNames(…)` here. |
 | `pageWidth` | number (px) | The editor's implicit width when set (e.g. `794` ≈ A4 at 96dpi). `0`/unset keeps the plain editor's default. Continuous — no on-screen page breaks (see `insertPageBreak()` for the content-level marker that round-trips to the file). |
-| `pageMargins` | `[top, right, bottom, left]` (px), or `null`/unset | Applied as the editing surface's padding, so the caret and selection respect them. `null`/unset keeps the plain editor's default (12px uniform). |
+| `pageMargins` | `[top, right, bottom, left]` (px), or `null`/unset | Insets around the text item within the scrolling sheet; the caret and selection respect them. `null`/unset keeps the plain editor's default (12px uniform). |
 | `zoom` | number, clamped `0.5`–`3.0` | A **real relayout**: font/point sizes, margins and inline images are rebuilt at the new size (not a scale transform — text stays sharp). Does not change what `saveOdf` writes. The app owns the value; see `onZoomRequested`. |
 | `onZoomRequested` | `(delta: number) => …` | Ctrl+wheel (±0.1 per notch), Ctrl+= / Ctrl+- (±0.1), Ctrl+0 (`0`, meaning "reset"). The editor only asks; set `zoom` in response (e.g. `setZoom(z => delta === 0 ? 1 : clamp(z + delta))`). |
 | `onHeadingsChanged` | `() => …` | The outline changed, **debounced** (300 ms) and only when `doc.headings()` actually differs from before. Refresh a table of contents from `doc.headings()` here. |
@@ -209,7 +209,7 @@ success it behaves like the plain `newDocument()` otherwise: no undo step, `modi
 
 ## Page look & zoom
 
-`pageWidth`/`pageMargins` only size the editing surface and its padding — they do not change any
+`pageWidth`/`pageMargins` only size the editing surface and its outer insets — they do not change any
 character or paragraph format. `zoom` does: `setZoom()` walks every block and run already in the
 live document and multiplies every absolute length baked into it (font point size, letter
 spacing, margins/indent, an exact line height, inline image width/height) by the new/old ratio,

@@ -5,6 +5,8 @@
 // paragraph/character styles (define, apply, re-apply, next style on Enter, direct formatting)
 // and their styles.xml round-trip.
 #include "shims/richtext.h"
+#include "qmlcss/QMLCss.h"
+#include <QQmlContext>
 
 #include <QClipboard>
 #include <QDir>
@@ -34,6 +36,7 @@
 #include <QElapsedTimer>
 #include <QThread>
 
+#include <private/qquicktextedit_p_p.h>
 #include <private/qzipreader_p.h>
 #include <private/qzipwriter_p.h>
 
@@ -227,6 +230,12 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void initTestCase()
+    {
+        QmlCss::registerTypes();
+        qmlRegisterType<RichTextHandler>("solidqml.native", 1, 0, "RichTextHandler");
+    }
+
     void init()
     {
         QQmlComponent c(&m_engine);
@@ -2686,6 +2695,92 @@ private slots:
         QVERIFY2(segs.size() >= 2, QByteArray::number(segs.size()).constData());
         // a band below the text holds nothing
         QVERIFY(m_fmt->markSegments(QRectF(0, 5000, 60, 100)).isEmpty());
+    }
+
+    void bookViewportPaintsBottomLines()
+    {
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        if (!QFile::exists(book)) QSKIP("book sample unavailable");
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+        QmlCss::CssTheme theme;
+        QmlCss::CssLayoutEngine layout(&theme);
+        QQuickView view, referenceView;
+        const auto create = [&](QQuickView &window) {
+            window.engine()->rootContext()->setContextProperty(QStringLiteral("cssTheme"), &theme);
+            window.engine()->rootContext()->setContextProperty(QStringLiteral("cssLayout"), &layout);
+            QQmlComponent component(window.engine());
+            component.setData("import QtQuick\nimport solidqml.Widgets.RichText\n"
+                              "DocumentEditor { width: 794; height: 600; toolbar: false; pageWidth: 794; pageMargins: [94,113,94,113] }", QUrl());
+            auto *root = qobject_cast<QQuickItem *>(component.create());
+            if (!root) qWarning().noquote() << component.errorString();
+            window.resize(794, 600);
+            window.setColor(Qt::white);
+            if (root) root->setParentItem(window.contentItem());
+            return root;
+        };
+        QScopedPointer<QQuickItem> root(create(view)), reference(create(referenceView));
+        QVERIFY(root && reference);
+        auto *fmt = root->findChild<RichTextHandler *>();
+        auto *referenceFmt = reference->findChild<RichTextHandler *>();
+        QVERIFY(fmt && referenceFmt);
+        auto *edit = root->property("_editor").value<QQuickItem *>();
+        auto *body = root->property("_body").value<QQuickItem *>();
+        auto *referenceEdit = reference->property("_editor").value<QQuickItem *>();
+        auto *referenceBody = reference->property("_body").value<QQuickItem *>();
+        QVERIFY(edit && body && referenceEdit && referenceBody);
+        QVERIFY(fmt->loadOdf(QUrl::fromLocalFile(book)));
+        QVERIFY(referenceFmt->loadOdf(QUrl::fromLocalFile(book)));
+        referenceEdit->setFlag(QQuickItem::ItemObservesViewport, false);
+        view.show();
+        referenceView.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+        QVERIFY(QTest::qWaitForWindowExposed(&referenceView));
+        for (qreal zoom : {1.0, 1.5}) {
+            root->setProperty("zoom", zoom);
+            reference->setProperty("zoom", zoom);
+            referenceEdit->setFlag(QQuickItem::ItemObservesViewport, false);
+            QTest::qWait(30);
+            const QRectF last = caretRect(edit, fmt->document()->textDocument()->characterCount() - 1);
+            QVERIFY(body->property("contentHeight").toReal() >= edit->y() + last.bottom() + 93);
+            for (qreal scroll : {0.0, 1800.0, 12000.0, 28000.0, 1800.0, 3500.0}) {
+                body->setProperty("contentY", scroll);
+                referenceBody->setProperty("contentY", scroll);
+                QTest::qWait(50);
+                QVERIFY(edit->flags().testFlag(QQuickItem::ItemObservesViewport));
+                const QImage culled = view.grabWindow();
+                const auto *state = static_cast<QQuickTextEditPrivate *>(QQuickItemPrivate::get(edit));
+                QVERIFY2(state->renderedRegion.height() < body->height() * 4,
+                         qPrintable(QStringLiteral("culling expanded to %1 px after scroll %2")
+                                        .arg(state->renderedRegion.height()).arg(scroll)));
+                // Independent full-render oracle; never toggle the tested editor's culling.
+                const QImage complete = referenceView.grabWindow();
+                QVERIFY(!culled.isNull() && !complete.isNull());
+                const qreal dpr = view.effectiveDevicePixelRatio();
+                const QRect bottom = QRectF(110 * dpr, 480 * dpr, 575 * dpr, 115 * dpr).toAlignedRect();
+                int missing = 0, ink = 0;
+                for (int y = bottom.top(); y <= bottom.bottom(); ++y) {
+                    for (int x = bottom.left(); x <= bottom.right(); ++x) {
+                        if (qGray(complete.pixel(x, y)) < 180) {
+                            ++ink;
+                            if (qGray(culled.pixel(x, y)) > 230) ++missing;
+                        }
+                    }
+                }
+                qInfo("viewport zoom %.1f scroll %.0f: bottom ink %d, missing %d", zoom, scroll, ink, missing);
+                QVERIFY(ink > 100);
+                QVERIFY2(missing < 10, qPrintable(QStringLiteral("missing bottom glyph pixels at scroll %1: %2").arg(scroll).arg(missing)));
+                // A tiny backward move wholly inside the rendered band only needs the
+                // scene transform, not rebuilding the text nodes again.
+                const qreal top = scroll - edit->y() - 1;
+                if (scroll > 0 && top > state->renderedRegion.top()
+                    && top + body->height() < state->renderedRegion.bottom()) {
+                    const int nodes = state->renderedBlockCount;
+                    body->setProperty("contentY", scroll - 1);
+                    QTest::qWait(30);
+                    QCOMPARE(state->renderedBlockCount, nodes);
+                }
+            }
+        }
     }
 
     void waveIsDrawnUnderTheWord()

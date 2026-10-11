@@ -138,6 +138,27 @@ void RichTextHandler::updateViewportCulling()
         editor->setFlag(QQuickItem::ItemObservesViewport, large);
 }
 
+void RichTextHandler::refreshViewport()
+{
+    auto *edit = m_document ? qobject_cast<QQuickTextEdit *>(m_document->parent()) : nullptr;
+    if (!edit || !edit->flags().testFlag(QQuickItem::ItemObservesViewport))
+        return;
+    // Qt 6.11's backwards node traversal stops at a nested frame (a table), because
+    // that iterator entry has no currentBlock().layout(). It can leave the first
+    // rendered block BELOW the viewport. Restart from the root on backward scroll;
+    // culling stays enabled, so only visible nodes are rebuilt, without any relayout.
+    auto *d = static_cast<QQuickTextEditPrivate *>(QQuickItemPrivate::get(edit));
+    const QRectF viewport = edit->clipRect();
+    if (viewport.top() > d->renderedRegion.top() && viewport.bottom() < d->renderedRegion.bottom())
+        return; // the existing nodes still cover this small backwards movement
+    d->updateType = QQuickTextEditPrivate::UpdateAll;
+    // UpdateAll drops the nodes, but Qt otherwise retains their old coverage. Clear
+    // it too, or a subsequent forward scroll can be mistaken for already-painted text.
+    d->renderedRegion = QRectF();
+    edit->polish();
+    edit->update();
+}
+
 // ─── outline (office item 2b, ★3) ─────────────────────────────────────────────────────────────
 
 namespace {

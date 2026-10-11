@@ -55,12 +55,12 @@ RichText {
     property real pageWidth: 0
     implicitWidth: pageWidth > 0 ? pageWidth : 560
     // `pageMargins`: [top, right, bottom, left] px, or null for the plain editor's 12px uniform
-    // default. Applied as the TextArea's padding, so the caret and selection respect them.
+    // default. Applied outside the text item, so viewport culling uses document coordinates.
     property var pageMargins: null
-    _editor.topPadding: pageMargins ? pageMargins[0] : 12
-    _editor.rightPadding: pageMargins ? pageMargins[1] : 12
-    _editor.bottomPadding: pageMargins ? pageMargins[2] : 12
-    _editor.leftPadding: pageMargins ? pageMargins[3] : 12
+    _textTopMargin: pageMargins ? pageMargins[0] : 12
+    _textRightMargin: pageMargins ? pageMargins[1] : 12
+    _textBottomMargin: pageMargins ? pageMargins[2] : 12
+    _textLeftMargin: pageMargins ? pageMargins[3] : 12
 
     // ── zoom (office item 2b, ★2) ────────────────────────────────────────────────────────────────
     // The app owns the value; clamped the same way the engine clamps it (defensive — a value
@@ -91,6 +91,7 @@ RichText {
     Shortcut { sequence: "Ctrl+0"; onActivated: root.zoomRequested(0) }
     function _keepCaretVisible() {
         var r = _editor.positionToRectangle(_editor.cursorPosition)
+        r.y += _editor.y
         if (r.y < _body.contentY) _body.contentY = Math.max(0, r.y)
         else if (r.y + r.height > _body.contentY + _body.height) _body.contentY = r.y + r.height - _body.height
     }
@@ -223,6 +224,7 @@ RichText {
     // Scrolls so `pos` sits near the top of the viewport.
     function scrollToPosition(pos) {
         var r = _editor.positionToRectangle(pos)
+        r.y += _editor.y
         _body.contentY = Math.max(0, Math.min(r.y, Math.max(0, _body.contentHeight - _body.height)))
     }
 

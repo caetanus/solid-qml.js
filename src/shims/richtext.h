@@ -184,6 +184,8 @@ public:
     // [{position, level, text}] in document order (level: the paragraph's heading/outline level).
     // m_headings is kept incrementally (see handleContentsChange) — this just reads it out; cheap
     // even on a very large document.
+    // Widget-only: restart Qt's visible-node traversal after scrolling backwards.
+    Q_INVOKABLE void refreshViewport();
     Q_INVOKABLE QVariantList headings() const;
     int currentHeadingIndex() const;
     // scrollToPosition(pos) is QML-level (the Flickable lives in RichText.qml) — see
