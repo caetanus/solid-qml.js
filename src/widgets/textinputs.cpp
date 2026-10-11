@@ -21,6 +21,8 @@ T.TextField {
     verticalAlignment: TextInput.AlignVCenter
     selectByMouse: true
     activeFocusOnTab: solidTabstop.enabled
+    Accessible.name: root.accessibleName
+    Accessible.description: root.accessibleDescription
     echoMode: root.echoMode
     maximumLength: root.maximumLength
     readOnly: root.readOnly
@@ -62,6 +64,8 @@ T.TextArea {
     padding: 12
     selectByMouse: true
     activeFocusOnTab: solidTabstop.enabled
+    Accessible.name: root.accessibleName
+    Accessible.description: root.accessibleDescription
     readOnly: root.readOnly
     onTextChanged: root.text = text
 
@@ -115,6 +119,22 @@ void TextInputBase::setReadOnly(bool v)
         return;
     m_readOnly = v;
     emit readOnlyChanged();
+}
+
+void TextInputBase::setAccessibleName(const QString &v)
+{
+    if (m_accessibleName == v)
+        return;
+    m_accessibleName = v;
+    emit accessibleNameChanged();
+}
+
+void TextInputBase::setAccessibleDescription(const QString &v)
+{
+    if (m_accessibleDescription == v)
+        return;
+    m_accessibleDescription = v;
+    emit accessibleDescriptionChanged();
 }
 
 void TextInputBase::componentComplete()

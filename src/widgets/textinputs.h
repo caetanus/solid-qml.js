@@ -17,6 +17,11 @@ class TextInputBase : public QmlCss::CssFill {
     Q_PROPERTY(QString text READ text WRITE setText NOTIFY textChanged)
     Q_PROPERTY(QString placeholder READ placeholder WRITE setPlaceholder NOTIFY placeholderChanged)
     Q_PROPERTY(bool readOnly READ readOnly WRITE setReadOnly NOTIFY readOnlyChanged)
+    // aria-label/aria-description (release-plan M5 follow-up): a text field has no default
+    // accessible name (unlike <button>, there is no `text` to fall back on) — routed to the
+    // inner T.TextField/T.TextArea, the item that actually takes focus.
+    Q_PROPERTY(QString accessibleName READ accessibleName WRITE setAccessibleName NOTIFY accessibleNameChanged)
+    Q_PROPERTY(QString accessibleDescription READ accessibleDescription WRITE setAccessibleDescription NOTIFY accessibleDescriptionChanged)
 
 public:
     explicit TextInputBase(QQuickItem *parent = nullptr);
@@ -27,11 +32,17 @@ public:
     void setPlaceholder(const QString &v);
     bool readOnly() const { return m_readOnly; }
     void setReadOnly(bool v);
+    QString accessibleName() const { return m_accessibleName; }
+    void setAccessibleName(const QString &v);
+    QString accessibleDescription() const { return m_accessibleDescription; }
+    void setAccessibleDescription(const QString &v);
 
 signals:
     void textChanged();
     void placeholderChanged();
     void readOnlyChanged();
+    void accessibleNameChanged();
+    void accessibleDescriptionChanged();
 
 protected:
     void componentComplete() override;
@@ -47,6 +58,8 @@ private:
     QString m_text;
     QString m_placeholder;
     bool m_readOnly = false;
+    QString m_accessibleName;
+    QString m_accessibleDescription;
 };
 
 // TextField — single-line <input type="text|email|password|search">: echoMode/maximumLength and

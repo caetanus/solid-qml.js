@@ -39,6 +39,8 @@ Item {
         background: null
         readOnly: true
         activeFocusOnTab: solidTabstop.enabled
+        Accessible.name: root.accessibleName
+        Accessible.description: root.accessibleDescription
         // Enter/Space/Down open the popup; with it open, arrows move the cursor and Enter/Space
         // commit it. The popup keeps focus on this field (focus: false default), so keys land here.
         Keys.onReturnPressed: pop.visible ? host.__commit() : pop.open()
@@ -150,6 +152,22 @@ void DateField::setPopupVisible(bool v)
     m_popupVisible = v;
     emit popupVisibleChanged();
     syncState();
+}
+
+void DateField::setAccessibleName(const QString &v)
+{
+    if (m_accessibleName == v)
+        return;
+    m_accessibleName = v;
+    emit accessibleNameChanged();
+}
+
+void DateField::setAccessibleDescription(const QString &v)
+{
+    if (m_accessibleDescription == v)
+        return;
+    m_accessibleDescription = v;
+    emit accessibleDescriptionChanged();
 }
 
 void DateField::componentComplete()

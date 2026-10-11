@@ -39,6 +39,9 @@ T.Button {
     // Drives the ACCESSIBLE NAME (QQuickAbstractButton exposes text to QAccessible); the visible
     // label is the root's own CssText in the layout slot, so nothing is painted twice.
     text: root.text
+    // aria-label override: an explicit accessibleName wins over the default (`text`-derived) name.
+    Accessible.name: root.accessibleName.length > 0 ? root.accessibleName : text
+    Accessible.description: root.accessibleDescription
     enabled: root.enabled
     activeFocusOnTab: typeof solidTabstop !== "undefined" && solidTabstop ? solidTabstop.enabled : true
     onClicked: root.clicked()
@@ -69,6 +72,22 @@ void Button::setText(const QString &v)
         m_label->setVisible(!m_text.isEmpty());
     }
     emit textChanged();
+}
+
+void Button::setAccessibleName(const QString &v)
+{
+    if (m_accessibleName == v)
+        return;
+    m_accessibleName = v;
+    emit accessibleNameChanged();
+}
+
+void Button::setAccessibleDescription(const QString &v)
+{
+    if (m_accessibleDescription == v)
+        return;
+    m_accessibleDescription = v;
+    emit accessibleDescriptionChanged();
 }
 
 void Button::setIsDefault(bool v)

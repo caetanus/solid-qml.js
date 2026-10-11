@@ -51,6 +51,69 @@ element, and not hit by solid-mail, solid-player, office or solidterm's generate
 sweep for this release). If a future component's own JSX root ends up being the `tabIndex`/`role`
 element itself, wrap it in a transparent parent, or test it live before shipping.
 
+### Accessible name from content
+
+A browser gives `<div role="button"><img/><text>Pastas</text></div>` the accessible name "Pastas"
+even without `aria-label` — the DOM accname algorithm's "name from content" rule. This release adds
+the same rule for roles that allow it: `button`, `link`, `menuitem`, `tab`, `checkbox`, `switch`,
+`listitem`, `heading` — **not** `list`/`tablist`/`dialog`/`textbox`/`img` (a list's name should not
+become the jumbled text of every row; `textbox`/`img` have their own naming contract — a `<label>`,
+`alt` — covered below).
+
+With no `aria-label` and a role that allows it, the name is the concatenation of the element's
+descendant text (every `<text>`/`CssText` item's rendered text, in document order, whitespace-
+collapsed) plus every descendant `<img>`'s `alt`. **This is computed at RUNTIME, not emitted as a
+transpiled expression**: `src/widgets/a11y.cpp`'s `ContentNameAccessible` walks the item's
+`childItems()` the first time (and every time) an accessibility client asks for the name
+(`QAccessible::queryAccessibleInterface(item)->text(QAccessible::Name)`) — never from a layout or
+paint pass. This is a deliberate choice over synthesizing a transpile-time expression from the
+descendant text nodes: it is correct for every content shape alike — a literal `<text>`, a reactive
+signal read, a `<For>`/`<Show>`/component subtree whose text isn't known until it runs — with no
+special-casing for "static vs. dynamic" content, it is reactive by construction (there is nothing
+to invalidate: the next query just re-walks the current tree), and it costs nothing while no AT
+client is active (lazy, on-demand, same philosophy as the Text/Image primitives' lazy
+accessibility above). The one thing it does NOT do (yet) is push a `NameChanged` event when content
+changes while an AT is live and already holds the interface — a live screen reader that caches the
+name needs to re-query it; see the module comment in `a11y.cpp` for the trade-off.
+
+Implementation note: the role/explicit-name check has to happen lazily, inside the interface's own
+`text()` (called once the interface already exists), not while `QAccessible::
+queryAccessibleInterface` is still choosing which factory answers for the object — querying the
+attached `Accessible.role` from inside that factory call observed it as not-yet-applied even though
+the exact same lookup, called a moment later from `text()`/`role()`, sees it correctly (some Qt Quick
+attached-property state apparently isn't settled yet mid-factory-selection). `ContentNameAccessible`
+is therefore built unconditionally for any accessible plain item and decides at text-query time,
+matching the pattern `PrimitiveAccessible` (the Text/Image interface, above) already uses.
+
+An explicit `Accessible.name`/`aria-label` always wins — the content walk only runs when there is
+none.
+
+### aria-label on native controls
+
+`aria-label`/`aria-description`/`aria-describedby` on a native control that already wraps a
+`QtQuick.Templates` control (`<button>`, every `<input>` type the transpiler maps, `<textarea>`,
+`<select>`) are no longer silently warn-only: they are forwarded onto the widget's `accessibleName`/
+`accessibleDescription` property, which each C++ wrapper binds as `Accessible.name`/
+`Accessible.description` on the INNER control — the item that actually takes keyboard focus and
+answers `QAccessible` (`button.cpp`'s `T.Button`, `textinputs.cpp`'s `T.TextField`/`T.TextArea`,
+`toggles.cpp`'s `T.CheckBox`/`T.Switch`, `sliders.cpp`'s `T.Slider`, `spindial.cpp`'s `T.SpinBox`,
+`select.cpp`'s `T.ComboBox`, `datefield.cpp`'s readOnly `T.TextField`) — not onto the outer `CssFill`
+wrapper, which never receives focus. `<input type="radio">` has no C++ wrapper (it emits a raw
+`T.RadioButton` directly in `qml.ts`) — `Accessible.name`/`.description` are set on it directly.
+
+A `<button>`'s accessible name defaults to its `text` (`QQuickAbstractButton` exposes it to
+`QAccessible` on its own); `aria-label` overrides that default. The other controls have no default
+name at all — without `aria-label` a `<input type="range">`/`<select>`/… stays unnamed to AT, same
+as the browser's own contract (a `<label>` is normally what names them there).
+
+`role`/`tabIndex`/most other `aria-*` on these tags stay warn-only (the control already carries its
+own role and focus chain — see "Not mapped" below); only `aria-label`/`aria-description`/
+`aria-describedby` are consumed.
+
+**Gap, not mapped**: `<label for="…">`/a wrapping `<label>` naming its input — the transpiler does
+not model `<label>` at all today (no element maps to it), so there is no live association to read a
+label's text from. Until `<label>` is modeled, `aria-label` is the only way to name these controls.
+
 ### Not mapped
 
 - `aria-expanded`: `QQuickAccessibleAttached` exposes no `expanded`/`expandable` property — there

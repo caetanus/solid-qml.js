@@ -13,6 +13,8 @@ T.ComboBox {
     id: ctl
     anchors.fill: parent
     activeFocusOnTab: solidTabstop.enabled
+    Accessible.name: root.accessibleName.length > 0 ? root.accessibleName : displayText
+    Accessible.description: root.accessibleDescription
     model: root.model
     property var disabledFlags: root.disabledFlags
     onCurrentIndexChanged: root.currentIndex = currentIndex
@@ -143,6 +145,22 @@ void Select::setDisabledFlags(const QVariant &v)
         return;
     m_disabledFlags = v;
     emit disabledFlagsChanged();
+}
+
+void Select::setAccessibleName(const QString &v)
+{
+    if (m_accessibleName == v)
+        return;
+    m_accessibleName = v;
+    emit accessibleNameChanged();
+}
+
+void Select::setAccessibleDescription(const QString &v)
+{
+    if (m_accessibleDescription == v)
+        return;
+    m_accessibleDescription = v;
+    emit accessibleDescriptionChanged();
 }
 
 void Select::componentComplete()

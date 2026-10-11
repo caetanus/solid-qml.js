@@ -14,6 +14,8 @@ T.Slider {
     id: ctl
     anchors.fill: parent
     activeFocusOnTab: solidTabstop.enabled
+    Accessible.name: root.accessibleName
+    Accessible.description: root.accessibleDescription
     from: root.from
     to: root.to
     stepSize: root.stepSize
@@ -170,6 +172,22 @@ void Slider::setStepSize(qreal v)
         return;
     m_stepSize = v;
     emit stepSizeChanged();
+}
+
+void Slider::setAccessibleName(const QString &v)
+{
+    if (m_accessibleName == v)
+        return;
+    m_accessibleName = v;
+    emit accessibleNameChanged();
+}
+
+void Slider::setAccessibleDescription(const QString &v)
+{
+    if (m_accessibleDescription == v)
+        return;
+    m_accessibleDescription = v;
+    emit accessibleDescriptionChanged();
 }
 
 void Slider::componentComplete()

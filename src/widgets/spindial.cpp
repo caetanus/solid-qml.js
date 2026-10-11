@@ -15,6 +15,8 @@ T.SpinBox {
     background: null
     editable: true
     activeFocusOnTab: solidTabstop.enabled
+    Accessible.name: root.accessibleName
+    Accessible.description: root.accessibleDescription
     from: root.from
     to: root.to
     stepSize: root.stepSize
@@ -195,6 +197,22 @@ void SpinBox::setStepSize(int v)
         return;
     m_stepSize = v;
     emit stepSizeChanged();
+}
+
+void SpinBox::setAccessibleName(const QString &v)
+{
+    if (m_accessibleName == v)
+        return;
+    m_accessibleName = v;
+    emit accessibleNameChanged();
+}
+
+void SpinBox::setAccessibleDescription(const QString &v)
+{
+    if (m_accessibleDescription == v)
+        return;
+    m_accessibleDescription = v;
+    emit accessibleDescriptionChanged();
 }
 
 void SpinBox::componentComplete()

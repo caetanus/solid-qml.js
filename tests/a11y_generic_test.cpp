@@ -38,6 +38,25 @@ bool findByName(QAccessibleInterface *iface, const QString &name, int depth = 0)
     return false;
 }
 
+// The first descendant with activeFocusOnTab (the item Tab actually lands on inside a native
+// widget's wrapper — button.cpp's kButtonBody, textinputs.cpp's kTextFieldBody, …), depth-first in
+// document order. Used instead of driving a real Tab press: the M5 runtime tests above already
+// prove Tab reaches this item; these tests only need to know WHICH interface answers once it does.
+QQuickItem *findFocusable(QQuickItem *root)
+{
+    if (!root)
+        return nullptr;
+    for (QQuickItem *c : root->childItems()) {
+        if (!c)
+            continue;
+        if (c->activeFocusOnTab())
+            return c;
+        if (auto *f = findFocusable(c))
+            return f;
+    }
+    return nullptr;
+}
+
 } // namespace
 
 class A11yGenericTest : public QObject {
@@ -290,6 +309,213 @@ private slots:
         // item); this is the contract `Accessible.ignored: true` actually gives.
         QVERIFY(!findByName(QAccessible::queryAccessibleInterface(&window), QStringLiteral("hidden-btn")));
         root->setParentItem(nullptr);
+    }
+
+    // ── Accessible name from content (M5 follow-up #2, docs/keyboard-accessibility.md) ──────────
+    // A role that allows "name from content" (button/link/menuitem/tab/checkbox/switch/listitem/
+    // heading) with NO explicit Accessible.name/aria-label gets its name from the concatenation of
+    // descendant text/alt, computed lazily by src/widgets/a11y.cpp's ContentNameAccessible — the
+    // transpiler emits no line for this (transpiler/test/accessible-name.test.ts pins that), so this
+    // is the ONLY place the actual value is checked.
+
+    void divWithTextContentGetsNameFromContent()
+    {
+        QQmlEngine engine;
+        wire(engine);
+        QScopedPointer<QObject> o(create(engine,
+            "import QtQuick\nimport solidqml.Widgets 1.0 as W\n"
+            "W.Div { width: 200; height: 60; Accessible.role: Accessible.Button\n"
+            "  W.Text { text: \"Pastas\" }\n"
+            "}"));
+        QVERIFY(o);
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(o.data());
+        QVERIFY(iface);
+        QCOMPARE(iface->text(QAccessible::Name), QStringLiteral("Pastas"));
+    }
+
+    // Reactive: the name is computed fresh on every query (nothing cached, nothing to invalidate) —
+    // a text change under the container is reflected on the NEXT text(Name) call with no wiring.
+    void nameFromContentIsReactive()
+    {
+        QQmlEngine engine;
+        wire(engine);
+        QScopedPointer<QObject> o(create(engine,
+            "import QtQuick\nimport solidqml.Widgets 1.0 as W\n"
+            "W.Div { id: root; width: 200; height: 60; Accessible.role: Accessible.Button\n"
+            "  property string label: \"Pastas\"\n"
+            "  W.Text { text: root.label }\n"
+            "}"));
+        QVERIFY(o);
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(o.data());
+        QVERIFY(iface);
+        QCOMPARE(iface->text(QAccessible::Name), QStringLiteral("Pastas"));
+        o->setProperty("label", QStringLiteral("Downloads"));
+        QCOMPARE(iface->text(QAccessible::Name), QStringLiteral("Downloads"));
+    }
+
+    // An <img alt> contributes its alt text alongside sibling text, in document order (the sidebar-
+    // item shape solid-player reported: an icon <img> next to a <text> label, inside one tappable row).
+    void imageAltAndTextConcatenateInDocumentOrder()
+    {
+        QQmlEngine engine;
+        wire(engine);
+        QScopedPointer<QObject> o(create(engine,
+            "import QtQuick\nimport solidqml.Widgets 1.0 as W\n"
+            "W.Div { width: 200; height: 60; Accessible.role: Accessible.Button\n"
+            "  W.Image { alt: \"folder icon\" }\n"
+            "  W.Text { text: \"Pastas\" }\n"
+            "}"));
+        QVERIFY(o);
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(o.data());
+        QVERIFY(iface);
+        QCOMPARE(iface->text(QAccessible::Name), QStringLiteral("folder icon Pastas"));
+    }
+
+    // An explicit Accessible.name (author's own, or the transpiler's aria-label line) wins over
+    // content — the content walk only runs when there is no explicit name at all.
+    void explicitNameWinsOverContent()
+    {
+        QQmlEngine engine;
+        wire(engine);
+        QScopedPointer<QObject> o(create(engine,
+            "import QtQuick\nimport solidqml.Widgets 1.0 as W\n"
+            "W.Div { width: 200; height: 60\n"
+            "  Accessible.role: Accessible.Button\n"
+            "  Accessible.name: \"Close\"\n"
+            "  W.Text { text: \"Pastas\" }\n"
+            "}"));
+        QVERIFY(o);
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(o.data());
+        QVERIFY(iface);
+        QCOMPARE(iface->text(QAccessible::Name), QStringLiteral("Close"));
+    }
+
+    // role="list" is NOT in the name-from-content allow-list (a list's name should not become the
+    // jumbled text of every row) — stays unnamed without an explicit Accessible.name/aria-label.
+    void roleListDoesNotGetNameFromContent()
+    {
+        QQmlEngine engine;
+        wire(engine);
+        QScopedPointer<QObject> o(create(engine,
+            "import QtQuick\nimport solidqml.Widgets 1.0 as W\n"
+            "W.Div { width: 200; height: 60; Accessible.role: Accessible.List\n"
+            "  W.Text { text: \"Pastas\" }\n"
+            "}"));
+        QVERIFY(o);
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(o.data());
+        QVERIFY(iface);
+        QCOMPARE(iface->text(QAccessible::Name), QString());
+    }
+
+    // ── aria-label on native controls (M5 follow-up #3) ──────────────────────────────────────────
+    // Each native widget forwards accessibleName/accessibleDescription onto the INNER Templates
+    // control — the item findFocusable() locates (the same one Tab actually lands on; the M5 tests
+    // above already prove that chain) — instead of silently warning (the transpiler side of this is
+    // in transpiler/test/accessible-name.test.ts; this is the runtime half: the VALUE a query sees).
+
+    void buttonAccessibleNameOverridesTheDefaultTextDerivedName()
+    {
+        QQmlEngine engine;
+        wire(engine);
+        QScopedPointer<QObject> o(create(engine,
+            "import QtQuick\nimport solidqml.Widgets 1.0 as W\n"
+            "W.Div { width: 300; height: 200\n"
+            "  W.Button { objectName: \"btn\"; text: \"Save\"; accessibleName: \"Save the document\" }\n"
+            "}"));
+        QVERIFY(o);
+        auto *root = qobject_cast<QQuickItem *>(o.data());
+        QVERIFY(root);
+        auto *btn = root->findChild<QQuickItem *>(QStringLiteral("btn"));
+        QVERIFY(btn);
+        auto *focusable = findFocusable(btn);
+        QVERIFY(focusable);
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(focusable);
+        QVERIFY(iface);
+        QCOMPARE(iface->text(QAccessible::Name), QStringLiteral("Save the document"));
+    }
+
+    void textFieldAccessibleNameNamesTheOtherwiseUnnamedField()
+    {
+        QQmlEngine engine;
+        wire(engine);
+        QScopedPointer<QObject> o(create(engine,
+            "import QtQuick\nimport solidqml.Widgets 1.0 as W\n"
+            "W.Div { width: 300; height: 200\n"
+            "  W.TextField { objectName: \"fld\"; accessibleName: \"Buscar\" }\n"
+            "}"));
+        QVERIFY(o);
+        auto *root = qobject_cast<QQuickItem *>(o.data());
+        QVERIFY(root);
+        auto *fld = root->findChild<QQuickItem *>(QStringLiteral("fld"));
+        QVERIFY(fld);
+        auto *focusable = findFocusable(fld);
+        QVERIFY(focusable);
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(focusable);
+        QVERIFY(iface);
+        QCOMPARE(iface->text(QAccessible::Name), QStringLiteral("Buscar"));
+    }
+
+    void sliderAccessibleNameNamesTheOtherwiseUnnamedControl()
+    {
+        QQmlEngine engine;
+        wire(engine);
+        QScopedPointer<QObject> o(create(engine,
+            "import QtQuick\nimport solidqml.Widgets 1.0 as W\n"
+            "W.Div { width: 300; height: 200\n"
+            "  W.Slider { objectName: \"vol\"; accessibleName: \"Volume\" }\n"
+            "}"));
+        QVERIFY(o);
+        auto *root = qobject_cast<QQuickItem *>(o.data());
+        QVERIFY(root);
+        auto *sld = root->findChild<QQuickItem *>(QStringLiteral("vol"));
+        QVERIFY(sld);
+        auto *focusable = findFocusable(sld);
+        QVERIFY(focusable);
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(focusable);
+        QVERIFY(iface);
+        QCOMPARE(iface->text(QAccessible::Name), QStringLiteral("Volume"));
+    }
+
+    void checkboxAccessibleNameNamesTheOtherwiseUnnamedControl()
+    {
+        QQmlEngine engine;
+        wire(engine);
+        QScopedPointer<QObject> o(create(engine,
+            "import QtQuick\nimport solidqml.Widgets 1.0 as W\n"
+            "W.Div { width: 300; height: 200\n"
+            "  W.Checkbox { objectName: \"cb\"; accessibleName: \"Accept terms\" }\n"
+            "}"));
+        QVERIFY(o);
+        auto *root = qobject_cast<QQuickItem *>(o.data());
+        QVERIFY(root);
+        auto *cb = root->findChild<QQuickItem *>(QStringLiteral("cb"));
+        QVERIFY(cb);
+        auto *focusable = findFocusable(cb);
+        QVERIFY(focusable);
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(focusable);
+        QVERIFY(iface);
+        QCOMPARE(iface->text(QAccessible::Name), QStringLiteral("Accept terms"));
+    }
+
+    void selectAccessibleNameOverridesTheDefaultDisplayTextDerivedName()
+    {
+        QQmlEngine engine;
+        wire(engine);
+        QScopedPointer<QObject> o(create(engine,
+            "import QtQuick\nimport solidqml.Widgets 1.0 as W\n"
+            "W.Div { width: 300; height: 200\n"
+            "  W.Select { objectName: \"sel\"; model: [\"Brazil\"]; values: [\"br\"]; accessibleName: \"Country\" }\n"
+            "}"));
+        QVERIFY(o);
+        auto *root = qobject_cast<QQuickItem *>(o.data());
+        QVERIFY(root);
+        auto *sel = root->findChild<QQuickItem *>(QStringLiteral("sel"));
+        QVERIFY(sel);
+        auto *focusable = findFocusable(sel);
+        QVERIFY(focusable);
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(focusable);
+        QVERIFY(iface);
+        QCOMPARE(iface->text(QAccessible::Name), QStringLiteral("Country"));
     }
 };
 

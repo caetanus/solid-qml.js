@@ -25,6 +25,12 @@ class Button : public QmlCss::CssFill {
     Q_PROPERTY(bool isDefault READ isDefault WRITE setIsDefault NOTIFY isDefaultChanged)
     // Disabled: no interaction, `:disabled` styling (RoundButton exposes it; harmless on <button>).
     Q_PROPERTY(bool disabled READ disabled WRITE setDisabled NOTIFY disabledChanged)
+    // aria-label/aria-description (release-plan M5 follow-up): override the accessible name that
+    // would otherwise default to `text` (QQuickAbstractButton's own contract), and set a
+    // description the button has none of by default. Routed onto the INNER T.Button — the item
+    // that actually takes focus and answers QAccessible — not onto this outer CssFill wrapper.
+    Q_PROPERTY(QString accessibleName READ accessibleName WRITE setAccessibleName NOTIFY accessibleNameChanged)
+    Q_PROPERTY(QString accessibleDescription READ accessibleDescription WRITE setAccessibleDescription NOTIFY accessibleDescriptionChanged)
 
 public:
     explicit Button(QQuickItem *parent = nullptr);
@@ -38,6 +44,11 @@ public:
     bool disabled() const { return m_disabled; }
     void setDisabled(bool v);
 
+    QString accessibleName() const { return m_accessibleName; }
+    void setAccessibleName(const QString &v);
+    QString accessibleDescription() const { return m_accessibleDescription; }
+    void setAccessibleDescription(const QString &v);
+
     // Move keyboard focus onto the button — Dialog focuses the default button on open, so
     // Enter confirms it (study §6). Focus lives on the composed control (it is the tab stop).
     Q_INVOKABLE void takeFocus();
@@ -49,6 +60,8 @@ signals:
     void textChanged();
     void isDefaultChanged();
     void disabledChanged();
+    void accessibleNameChanged();
+    void accessibleDescriptionChanged();
     void clicked();
 
 protected:
@@ -61,6 +74,8 @@ private:
     QString m_text;
     bool m_isDefault = false;
     bool m_disabled = false;
+    QString m_accessibleName;
+    QString m_accessibleDescription;
     QPointer<QmlCss::CssText> m_label;
     QPointer<QQuickItem> m_control; // the composed T.Button: all interaction + a11y
 };

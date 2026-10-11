@@ -18,6 +18,10 @@ class Slider : public QmlCss::CssFill {
     Q_PROPERTY(qreal from READ from WRITE setFrom NOTIFY fromChanged)
     Q_PROPERTY(qreal to READ to WRITE setTo NOTIFY toChanged)
     Q_PROPERTY(qreal stepSize READ stepSize WRITE setStepSize NOTIFY stepSizeChanged)
+    // aria-label/aria-description (release-plan M5 follow-up): a slider has no text content at
+    // all, so without this it is unnamed to AT — routed to the inner T.Slider (the focused item).
+    Q_PROPERTY(QString accessibleName READ accessibleName WRITE setAccessibleName NOTIFY accessibleNameChanged)
+    Q_PROPERTY(QString accessibleDescription READ accessibleDescription WRITE setAccessibleDescription NOTIFY accessibleDescriptionChanged)
 
 public:
     explicit Slider(QQuickItem *parent = nullptr);
@@ -30,12 +34,18 @@ public:
     void setTo(qreal v);
     qreal stepSize() const { return m_stepSize; }
     void setStepSize(qreal v);
+    QString accessibleName() const { return m_accessibleName; }
+    void setAccessibleName(const QString &v);
+    QString accessibleDescription() const { return m_accessibleDescription; }
+    void setAccessibleDescription(const QString &v);
 
 signals:
     void valueChanged();
     void fromChanged();
     void toChanged();
     void stepSizeChanged();
+    void accessibleNameChanged();
+    void accessibleDescriptionChanged();
     void moved();
 
 protected:
@@ -48,6 +58,8 @@ private:
     qreal m_from = 0;
     qreal m_to = 1;
     qreal m_stepSize = 0;
+    QString m_accessibleName;
+    QString m_accessibleDescription;
     QPointer<QQuickItem> m_control;
 };
 

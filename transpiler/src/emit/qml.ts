@@ -537,6 +537,7 @@ function emitButton(props: Props, children: t.Node[], scope: Scope, level: numbe
     ...guardLine(guard, level),
     ...(isSubmit ? [`${i(1)}isDefault: true`] : []),
     `${i(1)}text: ${textBinding(textKids, scope)}`,
+    ...emitAriaForNativeControl(props, scope, i(1)),
     ...emitChildren(elemKids, scope, level + 1),
   ];
   const handler = emitHandler(props.onClick, scope);
@@ -838,6 +839,7 @@ function emitInput(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
   if (readOnly !== null) lines.push(`${i(1)}readOnly: ${readOnly}`);
   if (maxLength !== null) lines.push(`${i(1)}maximumLength: ${maxLength}`);
   if (placeholder !== null) lines.push(`${i(1)}placeholder: ${placeholder}`);
+  lines.push(...emitAriaForNativeControl(props, scope, i(1)));
   if (textEditedBody) lines.push(`${i(1)}onTextEdited: { ${textEditedBody} }`);
   if (editingFinishedBody) lines.push(`${i(1)}onEditingFinished: { ${editingFinishedBody} }`);
   if (keyBody) lines.push(`${i(1)}onKeyPressed: (event) => { ${keyBody} }`);
@@ -900,6 +902,7 @@ function emitTextarea(propsArg: t.Node | undefined, props: Props, scope: Scope, 
   if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
   if (readOnly !== null) lines.push(`${i(1)}readOnly: ${readOnly}`);
   if (placeholder !== null) lines.push(`${i(1)}placeholder: ${placeholder}`);
+  lines.push(...emitAriaForNativeControl(props, scope, i(1)));
   if (textChangedBody) lines.push(`${i(1)}onTextChanged: { ${textChangedBody} }`);
 
   if (valueExpr !== null) {
@@ -961,6 +964,7 @@ function emitCheckboxToggle(props: Props, scope: Scope, level: number, guard: st
   ];
 
   if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
+  lines.push(...emitAriaForNativeControl(props, scope, i(1)));
   // translateToggleHandler maps e.target.checked → `${ctlId}.checked`, which resolves via the
   // component's two-way `checked` alias on the instance.
   if (onChangeFn) lines.push(`${i(1)}onToggled: { ${translateToggleHandler(onChangeFn, ctlId, scope)} }`);
@@ -1000,6 +1004,7 @@ function emitSwitchToggle(props: Props, scope: Scope, level: number, guard: stri
   ];
 
   if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
+  lines.push(...emitAriaForNativeControl(props, scope, i(1)));
   if (onChangeFn) lines.push(`${i(1)}onToggled: { ${translateToggleHandler(onChangeFn, ctlId, scope)} }`);
 
   if (checkedExpr !== null) {
@@ -1060,6 +1065,9 @@ function emitRadioButton(props: Props, scope: Scope, level: number, guard: strin
 
   // Attach to the group if a name was given; the group is declared at root level by emitComponentType.
   if (groupId) lines.push(`${i(2)}T.ButtonGroup.group: ${groupId}`);
+  // aria-label/aria-description: no C++ wrapper here (the radio is a raw T.RadioButton, unlike
+  // the other inputs) — set Accessible.name/.description directly on the control itself.
+  lines.push(...emitAriaForNativeControl(props, scope, i(2), { name: "Accessible.name", description: "Accessible.description" }));
 
   // Arrow keys move FOCUS through the group in DECLARATION order (the group's `order`
   // list — ButtonGroup.buttons follows attachment order, which incubation scrambles),
@@ -1196,6 +1204,7 @@ function emitSlider(props: Props, scope: Scope, level: number, guard: string | u
   ];
 
   if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
+  lines.push(...emitAriaForNativeControl(props, scope, i(1)));
   if (onMovedBody) lines.push(`${i(1)}onMoved: { ${onMovedBody} }`);
 
   if (valueExpr !== null) {
@@ -1253,6 +1262,7 @@ function emitSpinBox(props: Props, scope: Scope, level: number, guard: string | 
   ];
 
   if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
+  lines.push(...emitAriaForNativeControl(props, scope, i(1)));
   if (onValueModifiedBody) lines.push(`${i(1)}onValueModified: { ${onValueModifiedBody} }`);
 
   if (valueExpr !== null) {
@@ -1545,6 +1555,7 @@ function emitSelect(propsArg: t.Node | undefined, props: Props, children: t.Node
   ];
 
   if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
+  lines.push(...emitAriaForNativeControl(props, scope, i(1)));
   if (onActivatedBody) lines.push(`${i(1)}onActivated: (__idx) => { ${onActivatedBody} }`);
 
   // Binding: keep currentIndex in sync with the controlled value expression. `values.indexOf(...)`
@@ -1730,6 +1741,7 @@ function emitDateInput(
   ];
   if (valueExpr !== null) lines.push(`${i(1)}value: ${valueExpr}`);
   if (disabled !== null) lines.push(`${i(1)}enabled: ${enabledFromDisabled(disabled)}`);
+  lines.push(...emitAriaForNativeControl(props, scope, i(1)));
   if (pickedBody) lines.push(`${i(1)}onDayPicked: (date) => { ${pickedBody} }`);
   lines.push(`${pad}}`);
   return lines;
@@ -1853,6 +1865,21 @@ function readProps(propsArg: t.Node | undefined): Props {
     if (key === "aria-disabled" && t.isExpression(p.value)) props.ariaDisabled = p.value;
   }
   return props;
+}
+
+/** aria-label/aria-description on a native control (release-plan M5 follow-up,
+ *  docs/keyboard-accessibility.md "aria-label on native controls"): every widget wrapper below
+ *  forwards `accessibleName`/`accessibleDescription` onto the INNER QtQuick.Templates control that
+ *  actually takes focus (button.cpp's T.Button, textinputs.cpp's T.TextField/T.TextArea, …) — this
+ *  just emits the two lines on the W.* instance when the author passed them. */
+function emitAriaForNativeControl(
+  props: Props, scope: Scope, pad: string,
+  names: { name: string; description: string } = { name: "accessibleName", description: "accessibleDescription" },
+): string[] {
+  const lines: string[] = [];
+  if (props.ariaLabel) lines.push(`${pad}${names.name}: ${emitExpr(props.ariaLabel, { ...scope, mode: "binding" })}`);
+  if (props.ariaDescription !== undefined) lines.push(`${pad}${names.description}: ${JSON.stringify(props.ariaDescription)}`);
+  return lines;
 }
 
 // ARIA role → QAccessible::Role, exposed to QML as `Accessible.<Role>` (QQuickAccessibleAttached's

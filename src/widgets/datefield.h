@@ -17,6 +17,10 @@ class DateField : public QmlCss::CssFill {
     Q_PROPERTY(QVariant value READ value WRITE setValue NOTIFY valueChanged)
     Q_PROPERTY(QVariant cursor READ cursorValue WRITE setCursorValue NOTIFY cursorChanged)
     Q_PROPERTY(bool popupVisible READ popupVisible WRITE setPopupVisible NOTIFY popupVisibleChanged)
+    // aria-label/aria-description (release-plan M5 follow-up): routed to the inner T.TextField
+    // (`field`) — the item that actually takes focus.
+    Q_PROPERTY(QString accessibleName READ accessibleName WRITE setAccessibleName NOTIFY accessibleNameChanged)
+    Q_PROPERTY(QString accessibleDescription READ accessibleDescription WRITE setAccessibleDescription NOTIFY accessibleDescriptionChanged)
 
 public:
     explicit DateField(QQuickItem *parent = nullptr);
@@ -28,11 +32,17 @@ public:
     void setCursorValue(const QVariant &v);
     bool popupVisible() const { return m_popupVisible; }
     void setPopupVisible(bool v);
+    QString accessibleName() const { return m_accessibleName; }
+    void setAccessibleName(const QString &v);
+    QString accessibleDescription() const { return m_accessibleDescription; }
+    void setAccessibleDescription(const QString &v);
 
 signals:
     void valueChanged();
     void cursorChanged();
     void popupVisibleChanged();
+    void accessibleNameChanged();
+    void accessibleDescriptionChanged();
     void dayPicked(const QVariant &date);
 
 protected:
@@ -44,6 +54,8 @@ private:
     QVariant m_value;
     QVariant m_cursor;
     bool m_popupVisible = false;
+    QString m_accessibleName;
+    QString m_accessibleDescription;
 };
 
 } // namespace SolidWidgets

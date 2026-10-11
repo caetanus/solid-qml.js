@@ -16,6 +16,8 @@ T.CheckBox {
     background: null
     contentItem: null
     activeFocusOnTab: solidTabstop.enabled
+    Accessible.name: root.accessibleName
+    Accessible.description: root.accessibleDescription
     onToggled: { root.checked = checked; root.toggled(); }
 
     indicator: Css.CssFill {
@@ -55,6 +57,8 @@ T.Switch {
     background: null
     contentItem: null
     activeFocusOnTab: solidTabstop.enabled
+    Accessible.name: root.accessibleName
+    Accessible.description: root.accessibleDescription
     onToggled: { root.checked = checked; root.toggled(); }
 
     indicator: Css.CssFill {
@@ -105,6 +109,22 @@ void ToggleBase::setChecked(bool v)
     m_checked = v;
     emit checkedChanged();
     syncState();
+}
+
+void ToggleBase::setAccessibleName(const QString &v)
+{
+    if (m_accessibleName == v)
+        return;
+    m_accessibleName = v;
+    emit accessibleNameChanged();
+}
+
+void ToggleBase::setAccessibleDescription(const QString &v)
+{
+    if (m_accessibleDescription == v)
+        return;
+    m_accessibleDescription = v;
+    emit accessibleDescriptionChanged();
 }
 
 void ToggleBase::componentComplete()

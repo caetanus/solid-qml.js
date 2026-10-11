@@ -17,6 +17,10 @@ class SpinBox : public QmlCss::CssFill {
     Q_PROPERTY(int from READ from WRITE setFrom NOTIFY fromChanged)
     Q_PROPERTY(int to READ to WRITE setTo NOTIFY toChanged)
     Q_PROPERTY(int stepSize READ stepSize WRITE setStepSize NOTIFY stepSizeChanged)
+    // aria-label/aria-description (release-plan M5 follow-up): routed to the inner T.SpinBox —
+    // the item that actually takes focus.
+    Q_PROPERTY(QString accessibleName READ accessibleName WRITE setAccessibleName NOTIFY accessibleNameChanged)
+    Q_PROPERTY(QString accessibleDescription READ accessibleDescription WRITE setAccessibleDescription NOTIFY accessibleDescriptionChanged)
 
 public:
     explicit SpinBox(QQuickItem *parent = nullptr);
@@ -29,12 +33,18 @@ public:
     void setTo(int v);
     int stepSize() const { return m_stepSize; }
     void setStepSize(int v);
+    QString accessibleName() const { return m_accessibleName; }
+    void setAccessibleName(const QString &v);
+    QString accessibleDescription() const { return m_accessibleDescription; }
+    void setAccessibleDescription(const QString &v);
 
 signals:
     void valueChanged();
     void fromChanged();
     void toChanged();
     void stepSizeChanged();
+    void accessibleNameChanged();
+    void accessibleDescriptionChanged();
     void valueModified();
 
 protected:
@@ -47,6 +57,8 @@ private:
     int m_from = 0;
     int m_to = 99;
     int m_stepSize = 1;
+    QString m_accessibleName;
+    QString m_accessibleDescription;
     QPointer<QQuickItem> m_control;
 };
 

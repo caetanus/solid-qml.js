@@ -55,36 +55,52 @@ export const ELEMENT_ATTRS: Record<string, Attrs> = {
   // ── HTML ──────────────────────────────────────────────────────────────────────────────────────
   box: { ...DYN, ...POINTER, onScroll: "fn" },
   text: { ...DYN, ...POINTER },
-  button: { ...DYN, onClick: "handler", type: { kind: "lit", values: ["submit", "button"] } },
+  // aria-label/aria-description/aria-describedby (release-plan M5 follow-up): on every native
+  // control that takes focus, routed by the emitter onto the inner QtQuick.Templates control's
+  // Accessible.name/.description — see docs/keyboard-accessibility.md "aria-label on native
+  // controls". `role` stays WARN-ONLY on these (a Templates control already carries its own role).
+  button: { ...DYN, onClick: "handler", type: { kind: "lit", values: ["submit", "button"] }, "aria-label": "expr", "aria-description": "lit", "aria-describedby": "lit" },
   img: { ...DYN, src: "expr", alt: "expr" },
   "input:text": {
     ...DYN, ref: "ident", type: { kind: "lit", values: INPUT_TYPES }, value: "expr", placeholder: "expr",
     onInput: "fn", onChange: "fn", onKeyDown: "fn", onKeydown: "fn", disabled: "bool", readOnly: "bool",
     readonly: "bool", maxLength: "expr", maxlength: "expr",
+    "aria-label": "expr", "aria-description": "lit", "aria-describedby": "lit",
   },
   "input:checkbox": {
     ...DYN, ref: "ident", type: { kind: "lit", values: INPUT_TYPES }, checked: "expr", onChange: "fn",
     disabled: "bool", role: { kind: "lit", values: ["switch"] },
+    "aria-label": "expr", "aria-description": "lit", "aria-describedby": "lit",
   },
   "input:radio": {
     ...DYN, ref: "ident", type: { kind: "lit", values: INPUT_TYPES }, checked: "expr", onChange: "fn",
     disabled: "bool", name: "lit",
+    "aria-label": "expr", "aria-description": "lit", "aria-describedby": "lit",
   },
   "input:range": {
     ...DYN, ref: "ident", type: { kind: "lit", values: INPUT_TYPES }, value: "expr", onInput: "fn",
     onChange: "fn", min: "expr", max: "expr", step: "expr", disabled: "bool",
+    "aria-label": "expr", "aria-description": "lit", "aria-describedby": "lit",
   },
   "input:number": {
     ...DYN, ref: "ident", type: { kind: "lit", values: INPUT_TYPES }, value: "expr", onChange: "fn",
     min: "expr", max: "expr", step: "expr", disabled: "bool",
+    "aria-label": "expr", "aria-description": "lit", "aria-describedby": "lit",
   },
   // min/max: declared so the emitter's own, more specific error ("validate in onChange") is the one shown.
-  "input:date": { ...DYN, type: { kind: "lit", values: INPUT_TYPES }, value: "expr", onChange: "fn", disabled: "bool", min: "expr", max: "expr" },
+  "input:date": {
+    ...DYN, type: { kind: "lit", values: INPUT_TYPES }, value: "expr", onChange: "fn", disabled: "bool", min: "expr", max: "expr",
+    "aria-label": "expr", "aria-description": "lit", "aria-describedby": "lit",
+  },
   textarea: {
     ...DYN, ref: "ident", value: "expr", placeholder: "expr", onInput: "fn", onChange: "fn",
     disabled: "bool", readOnly: "bool", readonly: "bool",
+    "aria-label": "expr", "aria-description": "lit", "aria-describedby": "lit",
   },
-  select: { ...DYN, value: "expr", onChange: "fn", disabled: "bool", options: "expr" },
+  select: {
+    ...DYN, value: "expr", onChange: "fn", disabled: "bool", options: "expr",
+    "aria-label": "expr", "aria-description": "lit", "aria-describedby": "lit",
+  },
   option: { value: "lit" },
   progress: { ...CSS, value: "expr", max: "expr" },
   fieldset: CSS,
