@@ -2,7 +2,7 @@
   "name": "solid-qml-native",
   "private": true,
   "version": "0.2.0",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "security": {
     "postinstall": "disabled",

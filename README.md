@@ -161,4 +161,8 @@ plus a real guarded `<Tray>` whose menu items call back into component code.
 
 ## License
 
-TBD (experimental).
+- The framework (transpiler, widgets, loader, embed library, shims) is **MIT** — see [LICENSE](LICENSE).
+- The C++ CSS engine in `vendor/qml-css-engine` is **LGPL-3.0-only**: part of its text layout is derived
+  from Qt's `QQuickText` (see its `NOTICE`).
+- Everything links against Qt, which is available under the LGPL-3.0; an application built with
+  solid-qml must meet Qt's license terms (and the engine's LGPL-3.0 terms) when it is distributed.

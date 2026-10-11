@@ -2,9 +2,9 @@ project(
   'solid-qml-native',
   'cpp',
   version: '0.2.0',
-  # No license chosen yet — experimental phase (README: "TBD"). Deliberately NOT asserting MIT here
-  # until the owner decides; there is intentionally no LICENSE file yet.
-  license: 'LicenseRef-NONE',
+  # The framework is MIT; the CSS engine (vendor/qml-css-engine) is LGPL-3.0-only — see README.
+  license: 'MIT',
+  license_files: ['LICENSE'],
   # The CSS engine lives in vendor/ as a git submodule (its own repo, shared with other
   # projects) — meson resolves subproject('qml-css-engine') against this directory.
   subproject_dir: 'vendor',
