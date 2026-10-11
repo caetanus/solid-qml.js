@@ -12,6 +12,17 @@
 #include <QTextDocument>
 #include <QTextBoundaryFinder>
 #include <QVarLengthArray>
+#include <QAbstractTextDocumentLayout>
+#include <QPainter>
+#include <QPainterPath>
+#include <QQuickWindow>
+#include <QSGImageNode>
+#include <QSGRectangleNode>
+#include <QSGTexture>
+#include <QTextLayout>
+#include <QtMath>
+#include <algorithm>
+#include <limits>
 #include <QTextDocumentFragment>
 #include <QTextFragment>
 #include <QTextFrame>
@@ -20,6 +31,9 @@
 #include <QTextTable>
 #include <QAbstractUndoItem>
 #include <QPointer>
+
+class MarksOverlay; // the marks overlay item (defined with the marks, below)
+namespace { QQuickItem *createMarksOverlay(RichTextHandler *handler, QQuickItem *editor); }
 
 RichTextHandler::RichTextHandler(QObject *parent) : QObject(parent)
 {
@@ -32,6 +46,7 @@ RichTextHandler::~RichTextHandler()
 {
     // The document may outlive us (its blocks' BlockInfo must not report to a dead handler).
     detachBlockInfos();
+    delete m_overlay.data();
 }
 
 rt::BlockInfo::~BlockInfo()
@@ -50,8 +65,12 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     QObject::disconnect(m_headingsConn);
     QObject::disconnect(m_undoAddedConn);
     detachBlockInfos();
+    delete m_overlay.data();
     m_document = doc;
     m_doc = doc ? doc->textDocument() : nullptr;
+    // The marks overlay: a child of the editor (QQuickTextEdit parents its QQuickTextDocument).
+    if (auto *editor = doc ? qobject_cast<QQuickItem *>(doc->parent()) : nullptr)
+        m_overlay = createMarksOverlay(this, editor);
     if (QTextDocument *td = doc ? doc->textDocument() : nullptr) {
         // Office item 3: emitted (before contentsChange) for NEW edits only — how trackBlocks()
         // tells an edit from an undo/redo replaying the stack.
@@ -1634,6 +1653,10 @@ void RichTextHandler::rebuildBlockIds()
     m_changedQueue.clear();
     m_idSteps.clear();
     m_newUndoCommand = false;
+    if (!m_marks.isEmpty()) { // marks belong to the document they were added to
+        m_marks.clear();
+        scheduleMarksRepaint();
+    }
     QTextDocument *doc = m_doc;
     m_lastUndoState = doc && doc->isUndoRedoEnabled() ? doc->availableUndoSteps() : 0;
     if (!doc)
@@ -1670,7 +1693,6 @@ void RichTextHandler::rebuildBlockIds()
 
 void RichTextHandler::trackBlocks(int position, int charsRemoved, int charsAdded)
 {
-    Q_UNUSED(charsRemoved);
     QTextDocument *doc = m_doc;
     if (!doc || m_bulkReset)
         return;
@@ -1700,12 +1722,14 @@ void RichTextHandler::trackBlocks(int position, int charsRemoved, int charsAdded
     QTextBlock b = doc->findBlock(qBound(0, position, last));
     const QTextBlock end = doc->findBlock(qBound(0, position + charsAdded, last));
     QVarLengthArray<QTextBlock, 8> fresh;
+    bool textChanged = charsRemoved != charsAdded;
     for (; b.isValid(); b = b.next()) {
         if (rt::BlockInfo *info = rt::blockInfo(b)) {
             const size_t h = qHash(b.text());
             if (info->textHash != h) {
                 info->textHash = h;
                 queueBlockChange(info);
+                textChanged = true;
             }
         } else {
             fresh.append(b);
@@ -1738,6 +1762,14 @@ void RichTextHandler::trackBlocks(int position, int charsRemoved, int charsAdded
         }
     }
     QStringList removed = std::exchange(m_removedNow, {});
+    textChanged = textChanged || !fresh.isEmpty() || !removed.isEmpty();
+    // Marks follow the text (a format-only change leaves them alone); the overlay redraws either
+    // way — the layout under them may have moved.
+    if (!m_marks.isEmpty()) {
+        if (textChanged)
+            adjustMarks(position, charsRemoved, charsAdded);
+        scheduleMarksRepaint();
+    }
 
     // 3. A new edit: the redo history Qt just dropped goes from ours too; a structural edit
     //    (blocks created/removed) is recorded under the stack state it ends at.
@@ -1827,4 +1859,383 @@ QString RichTextHandler::blockText(const QString &blockId) const
     if (it == m_blocksById.cend())
         return QString();
     return it->text().replace(QChar::LineSeparator, QLatin1Char('\n')); // same length: offsets hold
+}
+
+// ─── marks (office item 3) ─────────────────────────────────────────────────────────────────────
+//
+// Marks are an OVERLAY: absolute document positions in one sorted list, shifted on each text
+// edit (O(marks), a tight loop over a contiguous array) and drawn by MarksOverlay, a child item of
+// the editor stacked UNDER its text (z < 0). Nothing touches the QTextDocument, so marks are
+// never saved, copied, undone, counted as `modified` nor relayout anything.
+//
+// Why not a QSyntaxHighlighter / QTextLayout additional formats (verified, Qt 6.11
+// qquicktextnodeengine.cpp mergeFormats()): Qt Quick's text node engine keeps only additional
+// formats carrying a foreground, a background or an anchor, and draws underlines as straight
+// rectangles from QFont::underline() — a WaveUnderline / SpellCheckUnderline format is not
+// drawn by QQuickTextEdit at all. Setting layout formats also re-lays-out the block.
+
+namespace {
+
+// The squiggle: one tile of a sine wave (period 4px) per colour, repeated by image nodes.
+constexpr qreal kWaveTile = 256.0;
+
+class MarksRootNode final : public QSGNode {
+public:
+    ~MarksRootNode() override { qDeleteAll(m_waves); }
+    QSGTexture *wave(QQuickWindow *window, const QColor &color, qreal dpr)
+    {
+        if (!qFuzzyCompare(dpr, m_dpr)) {
+            qDeleteAll(m_waves);
+            m_waves.clear();
+            m_dpr = dpr;
+        }
+        if (QSGTexture *t = m_waves.value(color.rgba()))
+            return t;
+        const qreal h = RichTextHandler::kWaveHeight;
+        QImage img(qCeil(kWaveTile * dpr), qCeil(h * dpr), QImage::Format_ARGB32_Premultiplied);
+        img.fill(Qt::transparent);
+        QPainter p(&img);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.scale(dpr, dpr);
+        p.setPen(QPen(color, 1.0));
+        const qreal mid = h / 2, amp = h / 2 - 0.75;
+        QPainterPath path(QPointF(0, mid));
+        for (qreal x = 0.25; x <= kWaveTile; x += 0.25)
+            path.lineTo(x, mid + amp * qSin(x * M_PI / 2));
+        p.drawPath(path);
+        p.end();
+        QSGTexture *t = window->createTextureFromImage(img);
+        m_waves.insert(color.rgba(), t);
+        return t;
+    }
+
+private:
+    QHash<QRgb, QSGTexture *> m_waves;
+    qreal m_dpr = 0;
+};
+
+} // namespace
+
+// Viewport-bounded: it observes the viewport (QQuickItem::ItemObservesViewport, public since Qt
+// 6.9: ItemTransformHasChanged reaches it while the Flickable scrolls) and only lays out the marks
+// of a band a quarter viewport above and below the visible part; it is re-polished when the visible
+// part leaves the band, or when the marks / the text / the size change.
+class MarksOverlay final : public QQuickItem {
+public:
+    MarksOverlay(RichTextHandler *handler, QQuickItem *editor) : QQuickItem(editor), m_handler(handler)
+    {
+        setFlag(ItemHasContents);
+        setFlag(ItemObservesViewport);
+        setZ(-1); // under the editor's own text (and its selection)
+        setAcceptedMouseButtons(Qt::NoButton);
+        setSize(editor->size());
+        connect(editor, &QQuickItem::widthChanged, this, [this, editor] { setWidth(editor->width()); });
+        connect(editor, &QQuickItem::heightChanged, this, [this, editor] { setHeight(editor->height()); });
+    }
+    void schedule() { polish(); }
+
+protected:
+    bool active() const { return m_handler && (m_handler->hasMarks() || !m_segments.isEmpty()); }
+    void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override
+    {
+        QQuickItem::geometryChange(newGeometry, oldGeometry);
+        if (active())
+            polish();
+    }
+    void itemChange(ItemChange change, const ItemChangeData &value) override
+    {
+        if (change == ItemTransformHasChanged && active() && !m_band.contains(clipRect()))
+            polish();
+        QQuickItem::itemChange(change, value);
+    }
+    void updatePolish() override
+    {
+        // A small margin around the visible part: laying a mark out shapes its line (QTextLine::
+        // cursorToX), and a shaped line keeps its glyphs — exactly the blocks QQuickTextEdit
+        // itself renders (its own viewport culling), not pages around them.
+        const QRectF clip = clipRect();
+        const qreal margin = clip.height() / 4;
+        m_band = clip.adjusted(0, -margin, 0, margin);
+        QList<RichTextHandler::MarkSegment> segs = m_handler && !clip.isEmpty() ? m_handler->markSegments(m_band)
+                                                                                 : QList<RichTextHandler::MarkSegment>();
+        if (segs == m_segments)
+            return; // scrolled within the same marks: the nodes stand
+        m_segments = std::move(segs);
+        update();
+    }
+    QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override
+    {
+        auto *root = static_cast<MarksRootNode *>(old);
+        if (m_segments.isEmpty()) {
+            delete root;
+            return nullptr;
+        }
+        if (!root)
+            root = new MarksRootNode;
+        while (QSGNode *c = root->firstChild()) {
+            root->removeChildNode(c);
+            delete c;
+        }
+        QQuickWindow *w = window();
+        const qreal dpr = w->effectiveDevicePixelRatio();
+        for (const RichTextHandler::MarkSegment &s : std::as_const(m_segments)) {
+            if (s.shape != RichTextHandler::MarkSegment::Wave) {
+                QSGRectangleNode *n = w->createRectangleNode();
+                n->setRect(s.rect);
+                n->setColor(s.color);
+                root->appendChildNode(n);
+                continue;
+            }
+            QSGTexture *tex = root->wave(w, s.color, dpr);
+            for (qreal x = 0; x < s.rect.width(); x += kWaveTile) {
+                const qreal wdt = qMin(kWaveTile, s.rect.width() - x);
+                QSGImageNode *n = w->createImageNode();
+                n->setTexture(tex);
+                n->setOwnsTexture(false);
+                n->setFiltering(QSGTexture::Linear);
+                n->setRect(QRectF(s.rect.x() + x, s.rect.y(), wdt, s.rect.height()));
+                n->setSourceRect(QRectF(0, 0, wdt * dpr, s.rect.height() * dpr));
+                root->appendChildNode(n);
+            }
+        }
+        return root;
+    }
+
+private:
+    QPointer<RichTextHandler> m_handler;
+    QRectF m_band;
+    QList<RichTextHandler::MarkSegment> m_segments;
+};
+
+namespace {
+QQuickItem *createMarksOverlay(RichTextHandler *handler, QQuickItem *editor) { return new MarksOverlay(handler, editor); }
+} // namespace
+
+void RichTextHandler::scheduleMarksRepaint()
+{
+    if (m_overlay)
+        static_cast<MarksOverlay *>(m_overlay.data())->schedule();
+}
+
+int RichTextHandler::kindIndex(const QString &kind)
+{
+    if (const qsizetype i = m_kinds.indexOf(kind); i >= 0)
+        return int(i);
+    // Defaults: spelling a red wave, grammar a blue wave, highlight a yellow background; any
+    // other kind a grey single underline until the app styles it (markStyle).
+    MarkStyle st { 1, QColor(0x80, 0x80, 0x80), QColor() };
+    if (kind == QLatin1String("spelling"))
+        st = { 2, QColor(0xd3, 0x2f, 0x2f), QColor() };
+    else if (kind == QLatin1String("grammar"))
+        st = { 2, QColor(0x1e, 0x66, 0xf5), QColor() };
+    else if (kind == QLatin1String("highlight"))
+        st = { 0, QColor(), QColor(0xff, 0xf1, 0x76) };
+    m_kinds.append(kind);
+    m_kindStyles.append(st);
+    return int(m_kinds.size() - 1);
+}
+
+void RichTextHandler::ensureMarksSorted()
+{
+    if (m_marksSorted)
+        return;
+    std::stable_sort(m_marks.begin(), m_marks.end(), [](const Mark &a, const Mark &b) { return a.start < b.start; });
+    m_marksSorted = true;
+}
+
+QString RichTextHandler::addMark(const QString &kind, const QString &blockId, int start, int end, const QString &id)
+{
+    const auto it = m_blocksById.constFind(blockId);
+    if (it == m_blocksById.cend() || start < 0 || start >= end || end > it->length() - 1)
+        return QString();
+    const int pos = it->position();
+    Mark m { pos + start, pos + end, kindIndex(kind), id.isEmpty() ? QLatin1Char('m') + QString::number(m_nextMarkId++, 36) : id };
+    if (!m_marks.isEmpty() && m.start < m_marks.last().start)
+        m_marksSorted = false; // the app's first pass goes in document order: append stays sorted
+    m_marks.append(std::move(m));
+    scheduleMarksRepaint();
+    return m_marks.last().id;
+}
+
+void RichTextHandler::clearMarks(const QString &kind, const QString &blockId)
+{
+    const qsizetype k = m_kinds.indexOf(kind);
+    if (k < 0 || m_marks.isEmpty())
+        return;
+    int from = 0, to = std::numeric_limits<int>::max();
+    if (!blockId.isEmpty()) {
+        const auto it = m_blocksById.constFind(blockId);
+        if (it == m_blocksById.cend())
+            return;
+        from = it->position();
+        to = from + it->length();
+    }
+    const qsizetype removed = m_marks.removeIf([&](const Mark &m) { return m.kind == k && m.start >= from && m.start < to; });
+    if (removed)
+        scheduleMarksRepaint();
+}
+
+QString RichTextHandler::markStyle(const QString &kind, const QVariantMap &style)
+{
+    MarkStyle st = m_kindStyles[kindIndex(kind)];
+    for (auto it = style.cbegin(); it != style.cend(); ++it) {
+        const QVariant &v = it.value();
+        const bool unset = !v.isValid() || v.isNull();
+        if (it.key() == QLatin1String("underline")) {
+            const QString u = unset ? QStringLiteral("none") : v.toString();
+            if (u == QLatin1String("none")) st.underline = 0;
+            else if (u == QLatin1String("single")) st.underline = 1;
+            else if (u == QLatin1String("wave")) st.underline = 2;
+            else return QStringLiteral("underline: expected \"wave\", \"single\" or \"none\"");
+        } else if (it.key() == QLatin1String("color") || it.key() == QLatin1String("background")) {
+            QColor c;
+            if (!unset) {
+                c = QColor::fromString(v.toString());
+                if (!c.isValid())
+                    return QStringLiteral("%1: not a color: \"%2\"").arg(it.key(), v.toString());
+            }
+            (it.key() == QLatin1String("color") ? st.color : st.background) = c;
+        } else {
+            return QStringLiteral("unknown mark style property \"%1\"").arg(it.key());
+        }
+    }
+    m_kindStyles[m_kinds.indexOf(kind)] = st;
+    scheduleMarksRepaint();
+    return QString();
+}
+
+QVariant RichTextHandler::markAt(int position)
+{
+    if (!m_doc || m_marks.isEmpty() || position < 0 || position >= m_doc->characterCount())
+        return QVariant();
+    ensureMarksSorted();
+    const QTextBlock b = m_doc->findBlock(position);
+    const int bpos = b.position();
+    // The last mark starting at or before `position`, walking back within the block.
+    auto it = std::upper_bound(m_marks.cbegin(), m_marks.cend(), position, [](int p, const Mark &m) { return p < m.start; });
+    while (it != m_marks.cbegin()) {
+        --it;
+        if (it->start < bpos)
+            break;
+        if (it->end > position) {
+            const rt::BlockInfo *info = rt::blockInfo(b);
+            return QVariantMap {
+                { QStringLiteral("kind"), m_kinds.value(it->kind) },
+                { QStringLiteral("id"), it->id },
+                { QStringLiteral("blockId"), info ? info->id : QString() },
+                { QStringLiteral("start"), it->start - bpos },
+                { QStringLiteral("end"), it->end - bpos },
+            };
+        }
+    }
+    return QVariant();
+}
+
+void RichTextHandler::adjustMarks(int position, int charsRemoved, int charsAdded)
+{
+    // Old-document range [position, position + charsRemoved) became charsAdded new characters.
+    // Before it: unchanged. After it: shifted. Touching it — overlapping what was removed, or an
+    // insertion strictly inside — dropped (a spell result for edited text is stale). An insertion
+    // exactly at a mark's start shifts it; at its end leaves it as it was.
+    ensureMarksSorted();
+    const int editEnd = position + charsRemoved;
+    const int delta = charsAdded - charsRemoved;
+    qsizetype w = 0;
+    const qsizetype n = m_marks.size();
+    Mark *m = m_marks.data();
+    for (qsizetype i = 0; i < n; ++i) {
+        Mark &k = m[i];
+        if (k.end <= position) {
+            // before the edit
+        } else if (k.start >= editEnd) {
+            k.start += delta;
+            k.end += delta;
+        } else {
+            continue; // dropped
+        }
+        if (w != i)
+            m[w] = std::move(k);
+        ++w;
+    }
+    if (w != n)
+        m_marks.resize(w);
+}
+
+QList<RichTextHandler::MarkSegment> RichTextHandler::markSegments(const QRectF &band)
+{
+    QList<MarkSegment> out;
+    QTextDocument *doc = m_doc;
+    if (!doc || m_marks.isEmpty())
+        return out;
+    ensureMarksSorted();
+    QAbstractTextDocumentLayout *layout = doc->documentLayout();
+
+    // Document → editor item coordinates: the editor's own caret rectangle at 0 against the
+    // layout's (QQuickTextEdit adds its padding and alignment offsets — xoff/yoff).
+    QPointF offset;
+    const QTextBlock first = doc->begin();
+    QPointF docOrigin = layout->blockBoundingRect(first).topLeft();
+    if (const QTextLine l0 = first.layout()->lineForTextPosition(0); l0.isValid())
+        docOrigin += QPointF(l0.cursorToX(0), l0.y());
+    if (QObject *editor = m_document ? m_document->parent() : nullptr) {
+        QRectF r;
+        if (QMetaObject::invokeMethod(editor, "positionToRectangle", Qt::DirectConnection, Q_RETURN_ARG(QRectF, r), Q_ARG(int, 0)))
+            offset = r.topLeft() - docOrigin;
+    }
+
+    // The marks whose block may meet the band: binary search (marks are in document order, and
+    // so are block tops in the root frame) for the first one whose block reaches the band's
+    // top — O(log marks) block lookups, never a walk over the document. A table's cells are in
+    // row order, not strictly by y: the walk stops a full band past the bottom, not at it.
+    const auto blockBox = [&](int pos) { return layout->blockBoundingRect(doc->findBlock(pos)).translated(offset); };
+    auto it = m_marks.cbegin();
+    if (!band.isNull())
+        it = std::partition_point(m_marks.cbegin(), m_marks.cend(), [&](const Mark &m) { return blockBox(m.start).bottom() < band.top(); });
+    const qreal stopAt = band.isNull() ? std::numeric_limits<qreal>::max() : band.bottom() + band.height();
+    QTextBlock block;
+    int bpos = 0, bend = -1;
+    QRectF box;
+    for (; it != m_marks.cend(); ++it) {
+        const MarkStyle &st = m_kindStyles[it->kind];
+        if (!st.background.isValid() && (st.underline == 0 || !st.color.isValid()))
+            continue;
+        if (it->start >= bend) {
+            block = doc->findBlock(it->start);
+            bpos = block.position();
+            bend = bpos + block.length();
+            box = layout->blockBoundingRect(block).translated(offset);
+            if (box.top() > stopAt)
+                break;
+        }
+        if (!band.isNull() && (box.top() > band.bottom() || box.bottom() < band.top()))
+            continue;
+        const QPointF origin = box.topLeft();
+        const QTextLayout *tl = block.layout();
+        const int s = it->start - bpos, e = it->end - bpos;
+        for (int i = 0, lines = tl->lineCount(); i < lines; ++i) {
+            const QTextLine line = tl->lineAt(i);
+            const int ls = line.textStart(), le = ls + line.textLength();
+            if (le <= s)
+                continue;
+            if (ls >= e)
+                break;
+            qreal x1 = line.cursorToX(qMax(s, ls)), x2 = line.cursorToX(qMin(e, le));
+            if (x1 > x2)
+                std::swap(x1, x2); // right-to-left
+            const qreal top = origin.y() + line.y();
+            if (!band.isNull() && (top > band.bottom() || top + line.height() < band.top()))
+                continue;
+            const QRectF lineBox(origin.x() + x1, top, x2 - x1, line.height());
+            if (st.background.isValid())
+                out.append({ lineBox, st.background, MarkSegment::Background });
+            const qreal baseline = top + line.ascent();
+            if (st.underline == 1 && st.color.isValid())
+                out.append({ QRectF(lineBox.x(), baseline + 1, lineBox.width(), qMax(1.0, qreal(qRound(line.height() / 16.0)))),
+                             st.color, MarkSegment::Underline });
+            else if (st.underline == 2 && st.color.isValid())
+                out.append({ QRectF(lineBox.x(), qMin(baseline + 1, top + line.height() - kWaveHeight), lineBox.width(), kWaveHeight),
+                             st.color, MarkSegment::Wave });
+        }
+    }
+    return out;
 }

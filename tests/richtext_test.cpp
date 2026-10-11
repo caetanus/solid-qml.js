@@ -15,6 +15,9 @@
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickItem>
+#include <QQuickView>
+#include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QRegularExpression>
 #include <QScopedPointer>
 #include <QSignalSpy>
@@ -141,6 +144,15 @@ QByteArray zipEntry(const QString &path, const QString &entry)
 QByteArray withoutBlockIds(const QByteArray &xml)
 {
     return QString::fromUtf8(xml).remove(QRegularExpression(QStringLiteral(" xml:id=\"[^\"]*\""))).toUtf8();
+}
+
+QVariantMap markAtMap(RichTextHandler *fmt, int pos) { return fmt->markAt(pos).toMap(); }
+
+QRectF caretRect(QObject *edit, int pos)
+{
+    QRectF r;
+    QMetaObject::invokeMethod(edit, "positionToRectangle", Q_RETURN_ARG(QRectF, r), Q_ARG(int, pos));
+    return r;
 }
 
 } // namespace
@@ -2284,6 +2296,230 @@ private slots:
         QVERIFY(seen.contains(now[0]) && seen.contains(now[1]));
         QCOMPARE(seen.size(), 2);
         m_fmt->setZoom(1.0);
+    }
+    // ── office item 3: marks ─────────────────────────────────────────────────────────────────────
+
+    void marksMoveWithTheText()
+    {
+        m_fmt->insertText(QStringLiteral("Hello teh world"));
+        const QString a = m_fmt->blockIds().value(0);
+        const QString id = m_fmt->addMark(QStringLiteral("spelling"), a, 6, 9);
+        QVERIFY(!id.isEmpty());
+        QVariantMap m = markAtMap(m_fmt, 6);
+        QCOMPARE(m.value("kind").toString(), QStringLiteral("spelling"));
+        QCOMPARE(m.value("id").toString(), id);
+        QCOMPARE(m.value("blockId").toString(), a);
+        QCOMPARE(m.value("start").toInt(), 6);
+        QCOMPARE(m.value("end").toInt(), 9);
+        QVERIFY(!m_fmt->markAt(5).isValid());
+        QVERIFY(!m_fmt->markAt(9).isValid());
+
+        QTextCursor c(doc());
+        c.setPosition(0);
+        c.insertText(QStringLiteral("XX")); // before: shifts
+        QCOMPARE(markAtMap(m_fmt, 8).value("start").toInt(), 8);
+        QCOMPARE(markAtMap(m_fmt, 8).value("end").toInt(), 11);
+        c.setPosition(11);
+        c.insertText(QStringLiteral("s")); // right after it: not part of it
+        QCOMPARE(markAtMap(m_fmt, 8).value("end").toInt(), 11);
+        c.setPosition(doc()->characterCount() - 1);
+        c.insertText(QStringLiteral("!")); // after: untouched
+        QCOMPARE(markAtMap(m_fmt, 8).value("start").toInt(), 8);
+        c.setPosition(8);
+        c.insertText(QStringLiteral("Y")); // right before it: shifts
+        QCOMPARE(markAtMap(m_fmt, 9).value("start").toInt(), 9);
+        QCOMPARE(markAtMap(m_fmt, 9).value("end").toInt(), 12);
+        QVERIFY(!m_fmt->markAt(8).isValid());
+
+        // a split before it: the mark goes with its text into the new block
+        m_fmt->setCursorPosition(2);
+        m_fmt->insertParagraph();
+        const QStringList ids = m_fmt->blockIds();
+        m = markAtMap(m_fmt, 10);
+        QCOMPARE(m.value("blockId").toString(), ids[1]);
+        QCOMPARE(m.value("start").toInt(), 7);
+        QCOMPARE(m.value("end").toInt(), 10);
+        // a merge: back into the first block, offsets relative to it
+        c.setPosition(doc()->findBlockByNumber(1).position());
+        c.deletePreviousChar();
+        m = markAtMap(m_fmt, 9);
+        QCOMPARE(m.value("blockId").toString(), ids[0]);
+        QCOMPARE(m.value("start").toInt(), 9);
+
+        // typing INSIDE it: the result is stale, the mark goes
+        c.setPosition(10);
+        c.insertText(QStringLiteral("z"));
+        QVERIFY(!m_fmt->markAt(9).isValid());
+        QVERIFY(m_fmt->marks().isEmpty());
+
+        // its whole range deleted, or part of it: gone too
+        m_fmt->addMark(QStringLiteral("spelling"), ids[0], 0, 2);
+        m_fmt->addMark(QStringLiteral("spelling"), ids[0], 3, 6);
+        c.setPosition(0);
+        c.setPosition(2, QTextCursor::KeepAnchor);
+        c.removeSelectedText();
+        c.setPosition(2);
+        c.deleteChar(); // inside the second one
+        QVERIFY(m_fmt->marks().isEmpty());
+    }
+
+    void formatOnlyEditsKeepMarks()
+    {
+        m_fmt->insertText(QStringLiteral("Hello teh world"));
+        const QString a = m_fmt->blockIds().value(0);
+        m_fmt->addMark(QStringLiteral("spelling"), a, 6, 9);
+        m_fmt->setSelectionStart(4);
+        m_fmt->setSelectionEnd(11);
+        m_fmt->toggleBold();
+        m_fmt->setSelectionEnd(4);
+        m_fmt->applyParagraphStyle(QStringLiteral("Heading 1"));
+        m_fmt->setZoom(2.0);
+        m_fmt->setZoom(1.0);
+        QCOMPARE(markAtMap(m_fmt, 6).value("end").toInt(), 9);
+    }
+
+    void clearMarksIsScoped()
+    {
+        m_fmt->insertText(QStringLiteral("aaa bbb\nccc ddd"));
+        const QStringList ids = m_fmt->blockIds();
+        const int p1 = doc()->findBlockByNumber(1).position();
+        QCOMPARE(m_fmt->addMark(QStringLiteral("spelling"), ids[0], 0, 3, QStringLiteral("mine")), QStringLiteral("mine"));
+        m_fmt->addMark(QStringLiteral("grammar"), ids[0], 4, 7);
+        m_fmt->addMark(QStringLiteral("spelling"), ids[1], 0, 3);
+        m_fmt->addMark(QStringLiteral("highlight"), ids[1], 4, 7);
+        m_fmt->clearMarks(QStringLiteral("spelling"), ids[0]);
+        QVERIFY(!m_fmt->markAt(0).isValid());
+        QCOMPARE(markAtMap(m_fmt, 4).value("kind").toString(), QStringLiteral("grammar"));
+        QCOMPARE(markAtMap(m_fmt, p1).value("kind").toString(), QStringLiteral("spelling"));
+        m_fmt->clearMarks(QStringLiteral("highlight"));
+        QVERIFY(!m_fmt->markAt(p1 + 4).isValid());
+        QCOMPARE(markAtMap(m_fmt, p1).value("kind").toString(), QStringLiteral("spelling"));
+        m_fmt->clearMarks(QStringLiteral("nothing"));
+        QCOMPARE(m_fmt->marks().size(), 2);
+
+        // invalid ranges / ids: nothing added
+        QCOMPARE(m_fmt->addMark(QStringLiteral("spelling"), QStringLiteral("nope"), 0, 1), QString());
+        QCOMPARE(m_fmt->addMark(QStringLiteral("spelling"), ids[0], -1, 1), QString());
+        QCOMPARE(m_fmt->addMark(QStringLiteral("spelling"), ids[0], 2, 2), QString());
+        QCOMPARE(m_fmt->addMark(QStringLiteral("spelling"), ids[0], 0, 8), QString()); // the separator is not text
+        QCOMPARE(m_fmt->marks().size(), 2);
+    }
+
+    void marksAreNotDocumentContent()
+    {
+        m_fmt->insertText(QStringLiteral("I saw teh cat"));
+        const QString plain = m_dir.filePath(QStringLiteral("nomarks.odt"));
+        QVERIFY(m_fmt->saveOdf(QUrl::fromLocalFile(plain)));
+        QVERIFY(!m_fmt->isModified());
+        const int undoSteps = doc()->availableUndoSteps();
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(13);
+        m_fmt->copy();
+        const QString htmlBefore = QGuiApplication::clipboard()->mimeData()->html();
+        const QString docHtml = m_fmt->toHtml();
+
+        const QString a = m_fmt->blockIds().value(0);
+        m_fmt->addMark(QStringLiteral("spelling"), a, 6, 9);
+        m_fmt->addMark(QStringLiteral("highlight"), a, 0, 1);
+        QVERIFY(m_fmt->markStyle(QStringLiteral("spelling"), { { QStringLiteral("color"), QStringLiteral("#00aa00") } }).isEmpty());
+        QCoreApplication::processEvents();
+        QVERIFY(!m_fmt->isModified());
+        QCOMPARE(doc()->availableUndoSteps(), undoSteps);
+        QCOMPARE(m_fmt->toHtml(), docHtml);
+        m_fmt->copy();
+        QCOMPARE(QGuiApplication::clipboard()->mimeData()->html(), htmlBefore);
+        const QString marked = m_dir.filePath(QStringLiteral("marks.odt"));
+        QVERIFY(m_fmt->saveOdf(QUrl::fromLocalFile(marked)));
+        QCOMPARE(zipEntry(marked, QStringLiteral("content.xml")), zipEntry(plain, QStringLiteral("content.xml")));
+
+        // a load / new document starts without marks
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(marked)));
+        QVERIFY(m_fmt->marks().isEmpty());
+    }
+
+    void markSegmentsFollowTheTextAndTheStyle()
+    {
+        m_fmt->insertText(QStringLiteral("I saw teh cat"));
+        const QString a = m_fmt->blockIds().value(0);
+        m_fmt->addMark(QStringLiteral("spelling"), a, 6, 9);
+        QList<RichTextHandler::MarkSegment> segs = m_fmt->markSegments();
+        QCOMPARE(segs.size(), 1);
+        QCOMPARE(segs[0].shape, RichTextHandler::MarkSegment::Wave);
+        QCOMPARE(segs[0].color, QColor(0xd3, 0x2f, 0x2f));
+        const QRectF r6 = caretRect(m_edit.data(), 6), r9 = caretRect(m_edit.data(), 9);
+        QVERIFY(qAbs(segs[0].rect.left() - r6.left()) < 0.5);
+        QVERIFY(qAbs(segs[0].rect.right() - r9.left()) < 0.5);
+        QVERIFY(segs[0].rect.top() > r6.top() + r6.height() / 2); // under the baseline...
+        QVERIFY(segs[0].rect.bottom() <= r6.bottom() + 0.5);     // ...inside the line
+
+        // the style is the app's
+        QVERIFY(m_fmt->markStyle(QStringLiteral("spelling"), { { QStringLiteral("underline"), QStringLiteral("single") },
+                                                                { QStringLiteral("color"), QStringLiteral("#00ff00") } }).isEmpty());
+        segs = m_fmt->markSegments();
+        QCOMPARE(segs.size(), 1);
+        QCOMPARE(segs[0].shape, RichTextHandler::MarkSegment::Underline);
+        QCOMPARE(segs[0].color, QColor(0, 255, 0));
+        QVERIFY(m_fmt->markStyle(QStringLiteral("spelling"), { { QStringLiteral("underline"), QStringLiteral("zigzag") } }).size() > 0);
+        QVERIFY(m_fmt->markStyle(QStringLiteral("spelling"), { { QStringLiteral("bogus"), 1 } }).size() > 0);
+        QVERIFY(m_fmt->markStyle(QStringLiteral("spelling"), { { QStringLiteral("underline"), QVariant::fromValue(nullptr) } }).isEmpty());
+        QVERIFY(m_fmt->markSegments().isEmpty()); // no underline, no background: nothing to draw
+
+        // highlight: a background over the whole line height
+        m_fmt->addMark(QStringLiteral("highlight"), a, 0, 1);
+        segs = m_fmt->markSegments();
+        QCOMPARE(segs.size(), 1);
+        QCOMPARE(segs[0].shape, RichTextHandler::MarkSegment::Background);
+        QCOMPARE(segs[0].rect.top(), caretRect(m_edit.data(), 0).top());
+        QCOMPARE(segs[0].rect.height(), caretRect(m_edit.data(), 0).height());
+
+        // a mark over a wrapped paragraph: one segment per line
+        m_fmt->newDocument();
+        m_edit->setProperty("wrapMode", 3); // TextEdit.WrapAnywhere
+        m_edit->setProperty("width", 60);
+        m_fmt->insertText(QStringLiteral("abcdefghijklmnopqrstuvwxyz"));
+        m_fmt->addMark(QStringLiteral("grammar"), m_fmt->blockIds().value(0), 0, 26);
+        segs = m_fmt->markSegments();
+        QVERIFY2(segs.size() >= 2, QByteArray::number(segs.size()).constData());
+        // a band below the text holds nothing
+        QVERIFY(m_fmt->markSegments(QRectF(0, 5000, 60, 100)).isEmpty());
+    }
+
+    void waveIsDrawnUnderTheWord()
+    {
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+        QQuickView view;
+        view.setColor(Qt::white);
+        QQmlComponent c(view.engine());
+        c.setData("import QtQuick\nTextEdit { x: 10; y: 10; width: 280; textFormat: TextEdit.RichText; font.pixelSize: 24; color: \"black\" }", QUrl());
+        QScopedPointer<QQuickItem> edit(qobject_cast<QQuickItem *>(c.create()));
+        QVERIFY2(edit, qPrintable(c.errorString()));
+        view.resize(300, 80);
+        edit->setParentItem(view.contentItem());
+        RichTextHandler fmt(edit.data());
+        fmt.setDocument(edit->property("textDocument").value<QQuickTextDocument *>());
+        fmt.newDocument();
+        fmt.insertText(QStringLiteral("I saw teh cat"));
+        view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+        const auto reddish = [](const QImage &img, const QRect &area) {
+            int n = 0;
+            for (int y = area.top(); y <= area.bottom(); ++y)
+                for (int x = area.left(); x <= area.right(); ++x) {
+                    const QColor px = img.pixelColor(x, y);
+                    if (px.red() > px.green() + 60 && px.red() > px.blue() + 60)
+                        ++n;
+                }
+            return n;
+        };
+        fmt.addMark(QStringLiteral("spelling"), fmt.blockIds().value(0), 6, 9);
+        const QList<RichTextHandler::MarkSegment> segs = fmt.markSegments();
+        QCOMPARE(segs.size(), 1);
+        const qreal dpr = view.effectiveDevicePixelRatio();
+        const QRect area = QRectF(segs[0].rect.translated(10, 10).topLeft() * dpr, segs[0].rect.size() * dpr).toAlignedRect();
+        QTRY_VERIFY(reddish(view.grabWindow(), area) > 6);
+        fmt.clearMarks(QStringLiteral("spelling"));
+        QTRY_COMPARE(reddish(view.grabWindow(), area), 0);
     }
 };
 

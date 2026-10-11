@@ -273,6 +273,37 @@ public:
     // U+2028 reads as "\n", same length). "" for an unknown id.
     Q_INVOKABLE QString blockText(const QString &blockId) const;
 
+    // ── marks (office item 3): an overlay, not document content ──────────────────────────────
+    // A mark is [start, end) inside one block (UTF-16 offsets relative to the block). Returns
+    // its id (`id`, or a generated one), "" when blockId is unknown or the range is not inside
+    // the block's text. Marks are never saved, copied, undone or counted as a modification.
+    Q_INVOKABLE QString addMark(const QString &kind, const QString &blockId, int start, int end,
+                                const QString &id = QString());
+    // Every mark of `kind` (blockId "") or only those in one block. Other kinds/blocks untouched.
+    Q_INVOKABLE void clearMarks(const QString &kind, const QString &blockId = QString());
+    // { underline: "wave"|"single"|"none"|null, color: "#rrggbb"|null, background: color|null }:
+    // properties left out are kept, null clears one. Returns "" or what is wrong (nothing changes).
+    Q_INVOKABLE QString markStyle(const QString &kind, const QVariantMap &style);
+    // { kind, id, blockId, start, end } of the mark covering the character at `position`
+    // (start <= position - blockStart < end), or an invalid QVariant (JS undefined) for none.
+    Q_INVOKABLE QVariant markAt(int position);
+
+    // What the marks overlay draws, in the EDITOR item's coordinates (C++: the overlay and tests).
+    // `band` limits it to marks whose block may intersect it (a null rect = every mark).
+    struct MarkSegment {
+        enum Shape : quint8 { Background, Underline, Wave };
+        QRectF rect;
+        QColor color;
+        Shape shape;
+        bool operator==(const MarkSegment &o) const { return shape == o.shape && rect == o.rect && color == o.color; }
+    };
+    static constexpr qreal kWaveHeight = 4.0; // px (logical), the squiggle's band under the baseline
+    QList<MarkSegment> markSegments(const QRectF &band = QRectF());
+    bool hasMarks() const { return !m_marks.isEmpty(); }
+    // A mark as stored: absolute document positions [start, end) (kept sorted by start).
+    struct Mark { int start; int end; int kind; QString id; };
+    const QList<Mark> &marks() { ensureMarksSorted(); return m_marks; }
+
 signals:
     void documentChanged();
     void selectionChanged();
@@ -391,11 +422,15 @@ private:
     void detachBlockInfos();                      // owner = nullptr on every block (teardown)
     QString newBlockId();
     // contentsChange: ids for new blocks of the edited span (restored on undo/redo), text-change
-    // detection (hash) — O(span).
+    // detection (hash), mark offsets — O(span + marks).
     void trackBlocks(int position, int charsRemoved, int charsAdded);
+    void adjustMarks(int position, int charsRemoved, int charsAdded);
+    void ensureMarksSorted();
     void queueBlockChange(rt::BlockInfo *info);
     void scheduleBlockSignals();
     void flushBlockSignals();
+    void scheduleMarksRepaint();
+    int kindIndex(const QString &kind);
 
     QHash<QString, QTextBlock> m_blocksById;
     QList<QString> m_removedNow;    // ids whose block was deleted during the current edit
@@ -404,6 +439,7 @@ private:
     bool m_signalsQueued = false;
     bool m_bulkReset = false;       // a load/new is replacing every block: ~BlockInfo stays silent
     quint64 m_nextBlockId = 1;
+    quint64 m_nextMarkId = 1;
     // Undo-stable ids: per structural step (keyed by the undo stack state right after it), the
     // ids it removed and created, so undo/redo give recreated blocks their old ids back.
     struct IdStep { int state; QStringList removed; QStringList added; };
@@ -412,6 +448,12 @@ private:
     bool m_newUndoCommand = false;
     QMetaObject::Connection m_undoAddedConn;
 
+    struct MarkStyle { quint8 underline; QColor color; QColor background; }; // underline: 0 none, 1 single, 2 wave
+    QStringList m_kinds;              // kind name → index (a handful of kinds)
+    QList<MarkStyle> m_kindStyles;
+    QList<Mark> m_marks;              // absolute positions, sorted by start once m_marksSorted
+    bool m_marksSorted = true;
+    QPointer<QQuickItem> m_overlay;   // the marks overlay (a child item of the editor, under the text)
     QPointer<QTextDocument> m_doc;
 
     QQuickTextDocument *m_document = nullptr;
