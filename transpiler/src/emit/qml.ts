@@ -4,6 +4,7 @@ import { emitStmt } from "./stmt.ts";
 import { safeName } from "../names/safe.ts";
 import { CONTROL_TAGS, hParts, isFragmentTag, isHCall } from "../ast/h.ts";
 import { nativeTags, requireImport } from "./native/index.ts";
+import { translateArgsHandler } from "./native/inputs.ts";
 import { certifyForRow } from "./forCertify.ts";
 import { checkAttrs, checkElement, forKeyField, rejectForKey, warnOnce } from "./attrs.ts";
 
@@ -15,6 +16,8 @@ interface Props {
   classExpr?: t.Expression; // class={expr}: a dynamic class string (space-separated, like className)
   classList: Array<{ key: string; expr: t.Expression }>;
   onClick: t.Node | undefined;
+  onMouseEnter?: t.Node;
+  onMouseLeave?: t.Node;
   type?: string | undefined; // the `type` attr (e.g. <button type="submit"> → default button)
   ref: string | undefined; // the local var name a ref={ident} binds to
   // HTML5 drag-and-drop subset: draggable + dragData on the source, onDrop on the target.
@@ -179,6 +182,19 @@ function emitInteractions(props: Props, children: t.Node[], scope: Scope, level:
   const clickHandler = clickFn && (t.isArrowFunctionExpression(clickFn) || t.isFunctionExpression(clickFn)) && clickFn.params.length > 0
     ? `(mouse) => { ${translateMouseHandler(clickFn, scope)} }`
     : emitHandler(props.onClick, scope);
+  const wantsHover = !!(props.onMouseEnter || props.onMouseLeave);
+  // A child can own a hover area (including inside a component/conditional). MouseArea's
+  // containsMouse then drops out. Observe the parent passively in that case, without bubbling.
+  const passiveHover = wantsHover && (!clickHandler || hasHoverAreaDescendant(children));
+  const hoverEdge = (condition: string, point: string) => {
+    const handler = (node: t.Node | undefined) => {
+      if (!node) return "";
+      if (t.isArrowFunctionExpression(node) || t.isFunctionExpression(node))
+        return translateArgsHandler(node, [point], scope);
+      return emitHandler(node, scope) ?? "";
+    };
+    return `if (${condition}) { ${handler(props.onMouseEnter)} } else { ${handler(props.onMouseLeave)} }`;
+  };
   let maId: string | null = null;
   if (clickHandler) {
     const counter = scope.hoverCounter ?? { n: 0 };
@@ -196,6 +212,7 @@ function emitInteractions(props: Props, children: t.Node[], scope: Scope, level:
       `${pad}${INDENT}${INDENT}hoverEnabled: true`,
       `${pad}${INDENT}${INDENT}cursorShape: Qt.PointingHandCursor`,
       `${pad}${INDENT}${INDENT}onClicked: ${clickHandler}`,
+      ...(wantsHover && !passiveHover ? [`${pad}${INDENT}${INDENT}onContainsMouseChanged: { ${hoverEdge("containsMouse", "({offsetX: mouseX, offsetY: mouseY})")} }`] : []),
       `${pad}${INDENT}}`,
     );
   }
@@ -335,9 +352,18 @@ function emitInteractions(props: Props, children: t.Node[], scope: Scope, level:
   // title="…" → a hover tooltip (W.ToolTip: Templates behaviour, CSS look). It follows the click
   // area's hover when there is one; otherwise a passive HoverHandler, which takes no clicks.
   const tipLines: string[] = [];
+  let passiveId: string | null = null;
+  if (passiveHover) {
+    const counter = scope.hoverCounter ?? { n: 0 };
+    passiveId = `__enter${counter.n++}`;
+    tipLines.push(`${pad}${INDENT}HoverHandler {`,
+      `${pad}${INDENT}${INDENT}id: ${passiveId}`,
+      `${pad}${INDENT}${INDENT}onHoveredChanged: { ${hoverEdge("hovered", "({offsetX: point.position.x, offsetY: point.position.y})")} }`,
+      `${pad}${INDENT}}`);
+  }
   if (props.title) {
-    let hover = maId ? `${maId}.containsMouse` : "";
-    if (!maId) {
+    let hover = passiveId ? `${passiveId}.hovered` : maId ? `${maId}.containsMouse` : "";
+    if (!hover) {
       const counter = scope.hoverCounter ?? { n: 0 };
       const hid = `__tip${counter.n++}`;
       tipLines.push(`${pad}${INDENT}HoverHandler {`, `${pad}${INDENT}${INDENT}id: ${hid}`, `${pad}${INDENT}}`);
@@ -1841,6 +1867,8 @@ export function readProps(propsArg: t.Node | undefined): Props {
       }
     }
     if (key === "onClick") props.onClick = p.value;
+    if (key === "onMouseEnter") props.onMouseEnter = p.value;
+    if (key === "onMouseLeave") props.onMouseLeave = p.value;
     if (key === "type" && t.isStringLiteral(p.value)) props.type = p.value.value;
     if (key === "draggable") props.draggable = !t.isBooleanLiteral(p.value) || p.value.value;
     if (key === "dragData" && t.isExpression(p.value)) props.dragData = p.value;
@@ -2243,6 +2271,27 @@ function emitVirtualList(propsArg: t.Node | undefined, children: t.Node[], scope
 
 /** Does a subtree hold an element that takes clicks itself — its own onClick, or a native
  *  control (<button>, <input>, <textarea>, <select>)? A shallow AST walk over the h() calls. */
+// Unknown component/control-flow bodies may contain hover areas too. Known passive
+// element trees keep the existing MouseArea; no extra observer for ordinary text content.
+function hasHoverAreaDescendant(nodes: t.Node[]): boolean {
+  const areas = new Set(["button", "input", "textarea", "select"]);
+  const pointerProps = new Set(["onClick", "onContextMenu", "draggable", "title", "onMouseEnter", "onMouseLeave"]);
+  const walk = (n: t.Node): boolean => {
+    if (isHCall(n)) {
+      const { tag, props } = hParts(n);
+      if (!t.isStringLiteral(tag) || areas.has(tag.value)) return true;
+      if (t.isObjectExpression(props) && props.properties.some(p =>
+        t.isSpreadElement(p) || (t.isObjectProperty(p) && t.isIdentifier(p.key) && pointerProps.has(p.key.name)))) return true;
+    }
+    for (const key of t.VISITOR_KEYS[n.type] ?? []) {
+      const value = (n as unknown as Record<string, t.Node | t.Node[]>)[key];
+      if (Array.isArray(value) ? value.some(v => v && walk(v)) : value && walk(value)) return true;
+    }
+    return false;
+  };
+  return nodes.some(walk);
+}
+
 function hasInteractiveDescendant(nodes: t.Node[]): boolean {
   const NATIVE = new Set(["button", "input", "textarea", "select"]);
   let found = false;

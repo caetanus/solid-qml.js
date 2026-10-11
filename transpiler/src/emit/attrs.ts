@@ -53,7 +53,7 @@ const INPUT_TYPES = [...TEXT_INPUT_TYPES, "checkbox", "radio", "range", "number"
 
 export const ELEMENT_ATTRS: Record<string, Attrs> = {
   // ── HTML ──────────────────────────────────────────────────────────────────────────────────────
-  box: { ...DYN, ...POINTER, onScroll: "fn" },
+  box: { ...DYN, ...POINTER, onMouseEnter: "handler", onMouseLeave: "handler", onScroll: "fn" },
   text: { ...DYN, ...POINTER },
   // aria-label/aria-description/aria-describedby (release-plan M5 follow-up): on every native
   // control that takes focus, routed by the emitter onto the inner QtQuick.Templates control's

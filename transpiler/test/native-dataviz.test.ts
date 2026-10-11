@@ -159,3 +159,31 @@ for (const tag of ["RichText", "DocumentEditor"]) {
     assert.match(out, /concat\(x_ \? \["paged"\] : \[\]\)/);
   });
 }
+
+test("boxes: hover-only uses a passive handler and edge signals", async () => {
+  for (const tag of ["div", "section", "article", "aside", "header", "footer", "nav", "main"]) {
+    const out = await qmlType(`export function F(){ const [x,setX]=createSignal(false); return <${tag} onMouseEnter={() => setX(true)} onMouseLeave={() => setX(false)} />; }`);
+    assert.match(out, /HoverHandler/);
+    assert.match(out, /onHoveredChanged:/);
+    assert.doesNotMatch(out, /MouseArea|onPositionChanged|onPointChanged/);
+  }
+});
+test("boxes: leaf click area is reused for hover with offsets", async () => {
+  const out = await qmlType(`export function F(){ const [x,setX]=createSignal(0); return <div onClick={() => setX(1)} onMouseEnter={e => setX(e.offsetX)} onMouseLeave={() => setX(0)} />; }`);
+  assert.equal((out.match(/MouseArea \{/g) || []).length, 1);
+  assert.doesNotMatch(out, /HoverHandler/);
+  assert.match(out, /onContainsMouseChanged:/);
+  assert.match(out, /offsetX: mouseX/);
+});
+test("boxes: parent hover survives entering a child click area", async () => {
+  const out = await qmlType(`export function F(){ const [x,setX]=createSignal(false); return <div onClick={() => setX(true)} onMouseEnter={() => setX(true)} onMouseLeave={() => setX(false)}><div onClick={() => setX(true)} /></div>; }`);
+  assert.match(out, /HoverHandler/);
+  assert.match(out, /onHoveredChanged:/);
+  assert.doesNotMatch(out, /onContainsMouseChanged:/);
+});
+
+test("boxes: passive text children still reuse the parent's click area", async () => {
+  const out = await qmlType(`export function F(){ const [hot,setHot]=createSignal(false); return <div onClick={() => setHot(true)} onMouseEnter={() => setHot(true)}><text>Label</text></div>; }`);
+  assert.match(out, /onContainsMouseChanged:/);
+  assert.doesNotMatch(out, /HoverHandler/);
+});

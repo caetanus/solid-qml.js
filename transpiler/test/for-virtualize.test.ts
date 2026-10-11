@@ -153,3 +153,9 @@ test("not certified: an identifier from the outer (closed-over) scope", async ()
     `import { For } from "solid-js"; export function C(){ const [rows,setRows]=createSignal([]); const prefix = "x: "; return <For each={rows()}>{(row)=><text>{prefix + row.x}</text>}</For>; }`,
   );
 });
+
+for (const event of ["onMouseEnter", "onMouseLeave"]) {
+  test(`not certified: ${event} retains the existing event exclusion`, async () => {
+    await assertNotCertified(`export function C(){ const [rows,setRows]=createSignal([]); const [hot,setHot]=createSignal(""); return <For each={rows()}>{row => <div ${event}={() => setHot(row.id)}><text>{row.id}</text></div>}</For>; }`);
+  });
+}

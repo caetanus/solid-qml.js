@@ -92,6 +92,61 @@ private slots:
         m_tabstop.setEnabled(true);
     }
 
+    // The emitted parent HoverHandler must survive a child's hover-enabled MouseArea.
+    // Count edges and clicks, including entry straight into the child and motion within it.
+    void nestedBoxHoverEdges()
+    {
+        m_theme.loadFromString(".hover-parent { width: 300px; height: 200px; } .hover-child { position: absolute; left: 100px; top: 60px; width: 80px; height: 80px; } .hover-child:hover { background: red; }");
+        QQmlEngine engine;
+        wire(engine);
+        QQuickWindow window;
+        window.resize(320, 240);
+        QScopedPointer<QQuickItem> root(qobject_cast<QQuickItem *>(create(engine, QStringLiteral(R"(
+            import QtQuick
+            import solidqml.Widgets as W
+            W.Div {
+                width: 300; height: 200; cssClass: ["hover-parent"]
+                property int enters: 0
+                property int leaves: 0
+                property int clicks: 0
+                id: box
+                MouseArea { anchors.fill: parent; z: -1; hoverEnabled: true }
+                HoverHandler {
+                    onHoveredChanged: { if (hovered) box.enters++; else box.leaves++ }
+                }
+                W.Div {
+                    cssClass: ["hover-child"]
+                    cssState: childArea.containsMouse ? ["hover"] : []
+                    MouseArea {
+                        id: childArea
+                        anchors.fill: parent; hoverEnabled: true
+                        onClicked: box.clicks++
+                    }
+                }
+            }
+        )"))));
+        QVERIFY(root);
+        root->setParentItem(window.contentItem());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QTest::mouseMove(&window, QPoint(310, 230));
+        const int enters = root->property("enters").toInt();
+        const int leaves = root->property("leaves").toInt();
+        QTest::mouseMove(&window, QPoint(20, 20));
+        QTRY_COMPARE(root->property("enters").toInt(), enters + 1);
+        QTest::mouseMove(&window, QPoint(120, 80));
+        QTest::mouseMove(&window, QPoint(130, 90));
+        QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, QPoint(130, 90));
+        QCOMPARE(root->property("clicks").toInt(), 1);
+        QCOMPARE(root->property("enters").toInt(), enters + 1);
+        QCOMPARE(root->property("leaves").toInt(), leaves);
+        QTest::mouseMove(&window, QPoint(310, 230));
+        QTRY_COMPARE(root->property("leaves").toInt(), leaves + 1);
+        QTest::mouseMove(&window, QPoint(120, 80));
+        QTRY_COMPARE(root->property("enters").toInt(), enters + 2);
+        m_theme.loadFromString("");
+    }
+
     // A <For> row's root is a delegate Component's ROOT object: QQuickItem's revisioned properties
     // (activeFocusOnTab is REVISION(2, 1)) must be available there too — W.* types are registered
     // with the Qt metaobject revision, not 0 (solid-player's sidebar failed to load otherwise).

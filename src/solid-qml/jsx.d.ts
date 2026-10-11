@@ -5,6 +5,16 @@ declare module "solid-js" {
     interface IntrinsicElements {
       Window: WindowProps;
       div: QmlDivProps;
+      section: QmlBoxProps<HTMLElement>;
+      article: QmlBoxProps<HTMLElement>;
+      aside: QmlBoxProps<HTMLElement>;
+      header: QmlBoxProps<HTMLElement>;
+      footer: QmlBoxProps<HTMLElement>;
+      nav: QmlBoxProps<HTMLElement>;
+      main: QmlBoxProps<HTMLElement>;
+      ul: QmlBoxProps<HTMLUListElement>;
+      ol: QmlBoxProps<HTMLOListElement>;
+      li: QmlBoxProps<HTMLLIElement>;
       span: QmlTextProps;
       text: QmlTextProps;
       hr: QmlHrProps;
@@ -48,10 +58,14 @@ type WindowProps = BaseQmlProps & {
   visible?: boolean;
 };
 
-type QmlDivProps = BaseQmlProps &
-  Omit<JSX.HTMLAttributes<HTMLDivElement>, "id" | "class" | "className" | "onDrop"> & {
+type QmlDivProps = QmlBoxProps<HTMLDivElement>;
+
+type QmlBoxProps<T extends HTMLElement> = BaseQmlProps &
+  Omit<JSX.HTMLAttributes<T>, "id" | "class" | "className" | "onDrop" | "onMouseEnter" | "onMouseLeave"> & {
     // Drag-and-drop payload carried on a draggable box (see examples/dashboard reorder). Unlike
     // the DOM, the drop handler receives the SOURCE's dragData (not a DragEvent) — see qml.ts Props.
+    onMouseEnter?: (event?: { offsetX: number; offsetY: number }) => void;
+    onMouseLeave?: (event?: { offsetX: number; offsetY: number }) => void;
     dragData?: unknown;
     onDrop?: (dragData: any) => void;
   };
