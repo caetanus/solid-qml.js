@@ -3,7 +3,7 @@ import _generate from "@babel/generator";
 import { emitQml } from "./qml.ts";
 import { emitExpr, shadowOwnParams, type Scope } from "./expr.ts";
 import { emitStmt, emitValue, emitBindingStmt } from "./stmt.ts";
-import { analyzeSignals, analyzeProps, analyzeSetup, analyzeResources, analyzeMutableLocals, analyzeRenderLocals, analyzeHelpers, analyzeModuleFunctions, moduleLevelMutableNames, collectModuleFunctionClosure, collectFetcherDeps, effectDeps, type HelperInfo, type ProviderInfo, type UseContextBinding } from "../model/symbols.ts";
+import { analyzeSignals, analyzeProps, analyzeSetup, analyzeResources, analyzeMutableLocals, analyzeRenderLocals, assertNoLiveRenderLocalReads, analyzeHelpers, analyzeModuleFunctions, moduleLevelMutableNames, collectModuleFunctionClosure, collectFetcherDeps, effectDeps, type HelperInfo, type ProviderInfo, type UseContextBinding } from "../model/symbols.ts";
 import { safeName } from "../names/safe.ts";
 import { hParts, isHCall, isFragmentTag } from "../ast/h.ts";
 
@@ -33,8 +33,14 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   const resources = analyzeResources(fn);
   const mutableLocalsMap = analyzeMutableLocals(fn);
   const mutableLocals = mutableLocalsMap.size > 0 ? new Set(mutableLocalsMap.keys()) : undefined;
-  const renderLocalsMap = analyzeRenderLocals(fn, render);
+  const renderLocalsMap = analyzeRenderLocals(fn, render, mutableLocals);
+  // `provider.valueLocal` (a context provider's own value object, e.g. `const counter = { count,
+  // increment }`) is a DELIBERATE exception: it is EXPECTED to stay a live QML binding (every
+  // descendant's `counter.count()` must track the signal — that's the whole point of a context
+  // value). Remove it BEFORE the reactive-read guard below, which exists for every OTHER plain
+  // const/let (those must stay frozen, matching Solid's "evaluate once" const semantics).
   if (provider?.valueLocal) renderLocalsMap.delete(provider.valueLocal);
+  assertNoLiveRenderLocalReads(renderLocalsMap, table);
   const renderLocals = renderLocalsMap.size > 0 ? new Set(renderLocalsMap.keys()) : undefined;
   const helpersMap = analyzeHelpers(fn);
   validateChildrenSlot(render, props.param);

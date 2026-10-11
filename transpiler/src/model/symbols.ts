@@ -231,40 +231,137 @@ export function analyzeSetup(fn: t.Function, mutableLocals?: Set<string>, render
   return { setup, onMount, effects };
 }
 
-/** Top-level immutable locals whose values are read by the render tree.
+/** Identifier reads of any name in `names` inside `expr` — skipping a property KEY position
+ *  (`obj.x` / `{x: ...}`, non-computed), which is not a value read of a same-named candidate.
+ *  Shared by the render-usage scan and the inter-candidate reference scan below. */
+function readNamesIn(expr: t.Expression, names: Set<string>): Set<string> {
+  const found = new Set<string>();
+  traverse(t.file(t.program([t.expressionStatement(expr)])), {
+    Identifier(path) {
+      if (t.isMemberExpression(path.parent) && !path.parent.computed && path.parent.property === path.node) return;
+      if (t.isObjectProperty(path.parent) && !path.parent.computed && path.parent.key === path.node) return;
+      if (names.has(path.node.name)) found.add(path.node.name);
+    },
+  });
+  return found;
+}
+
+/** Names of signals/memos/resources read by `expr` (ignoring property-key positions) — used to
+ *  detect a plain const/let whose initializer reads reactive state. */
+function reactiveReadsIn(expr: t.Expression, table: SymbolTable): string[] {
+  const found = new Set<string>();
+  traverse(t.file(t.program([t.expressionStatement(expr)])), {
+    Identifier(path) {
+      if (t.isMemberExpression(path.parent) && !path.parent.computed && path.parent.property === path.node) return;
+      const sym = table.get(path.node.name);
+      if (sym && (sym.kind === "signal" || sym.kind === "memo" || sym.kind === "resource")) found.add(path.node.name);
+    },
+  });
+  return [...found];
+}
+
+/** Top-level immutable locals whose values are read by the render tree — directly, OR
+ *  transitively through another such local's OWN initializer (`const fonts = f(); const opts =
+ *  fonts.map(...); return <Select options={opts}/>` — `fonts` is never named in `render`, only
+ *  inside `opts`'s initializer).
  *
  *  They must be QML properties, not `var` declarations inside Component.onCompleted, because render
- *  bindings are evaluated outside that lifecycle closure. This covers code like:
+ *  bindings are evaluated outside that lifecycle closure (verified against the real engine: a
+ *  property binding referencing a name only assigned in Component.onCompleted throws/undefineds —
+ *  onCompleted runs AFTER the object's own property bindings are first evaluated). This covers
+ *  code like:
  *    const encoded = Base64.encode("solid-qml");
  *    return <text>{encoded}</text>
- */
-export function analyzeRenderLocals(fn: t.Function, render: t.CallExpression): Map<string, t.Expression> {
+ *
+ *  Also covers a `let` with the same shape, AS LONG AS it is never reassigned (same snapshot
+ *  semantics as `const`); `mutableLocals` (already-promoted literal-init reassigned lets, from
+ *  analyzeMutableLocals) is excluded here to avoid double-booking.
+ *
+ *  A `let` that IS reassigned somewhere, selected here (so its init isn't the simple-literal shape
+ *  analyzeMutableLocals already promotes), FAILS LOUD instead of silently emitting wrong semantics
+ *  — as a `readonly property var` it would freeze at its first value, or silently drop the
+ *  reassignment if emitted non-readonly instead.
+ *
+ *  Does NOT check for a signal/memo/resource read in the initializer — see
+ *  assertNoLiveRenderLocalReads below, called separately once the caller (component.ts) has
+ *  removed its own deliberate exception from the map. */
+export function analyzeRenderLocals(fn: t.Function, render: t.CallExpression, mutableLocals?: Set<string>): Map<string, t.Expression> {
   const candidates = new Map<string, t.Expression>();
+  const letCandidates = new Set<string>();
   if (!t.isBlockStatement(fn.body)) return candidates;
 
   for (const s of fn.body.body) {
     if (t.isReturnStatement(s)) break;
-    if (!t.isVariableDeclaration(s) || s.kind !== "const") continue;
+    if (!t.isVariableDeclaration(s) || s.kind === "var") continue; // const or let only
     if (s.declarations.length !== 1) continue;
     const d = s.declarations[0];
     if (!t.isIdentifier(d.id) || !d.init || !t.isExpression(d.init)) continue;
     if (isReactiveDecl(d)) continue;
     if (t.isArrowFunctionExpression(d.init) || t.isFunctionExpression(d.init)) continue;
+    if (mutableLocals?.has(d.id.name)) continue; // already its own mutable `property var`
     candidates.set(d.id.name, d.init);
+    if (s.kind === "let") letCandidates.add(d.id.name);
   }
   if (candidates.size === 0) return candidates;
 
-  const used = new Set<string>();
-  traverse(t.file(t.program([t.expressionStatement(render)])), {
-    Identifier(path) {
-      if (t.isMemberExpression(path.parent) && !path.parent.computed && path.parent.property === path.node) return;
-      if (t.isObjectProperty(path.parent) && !path.parent.computed && path.parent.key === path.node) return;
-      if (candidates.has(path.node.name)) used.add(path.node.name);
-    },
-  });
+  const names = new Set(candidates.keys());
+
+  // Seed from direct render usage, then close over inter-candidate references (BFS).
+  const used = readNamesIn(render, names);
+  const queue = [...used];
+  while (queue.length) {
+    const cur = queue.pop()!;
+    for (const dep of readNamesIn(candidates.get(cur)!, names)) {
+      if (!used.has(dep)) { used.add(dep); queue.push(dep); }
+    }
+  }
 
   for (const name of [...candidates.keys()]) if (!used.has(name)) candidates.delete(name);
+
+  if (letCandidates.size > 0) {
+    const reassigned = new Set<string>();
+    traverse(t.file(t.program(fn.body.body)), {
+      AssignmentExpression(path) {
+        const { left } = path.node;
+        if (t.isIdentifier(left) && letCandidates.has(left.name)) reassigned.add(left.name);
+      },
+      UpdateExpression(path) {
+        const { argument } = path.node;
+        if (t.isIdentifier(argument) && letCandidates.has(argument.name)) reassigned.add(argument.name);
+      },
+    });
+    for (const name of used) {
+      if (reassigned.has(name))
+        throw new Error(`let ${name}: reassigned later but read by a render binding, with a non-literal initializer — give it a literal initial value (so analyzeMutableLocals promotes it to a real mutable property) or avoid reassigning it; as emitted here it would either freeze at its first value (readonly) or silently drop the reassignment (read-only property write).`);
+    }
+  }
+
   return candidates;
+}
+
+/** Guard for the signal-read case, called SEPARATELY (component.ts) from analyzeRenderLocals,
+ *  AFTER a context provider's own value-local (`provider?.valueLocal`) has been deleted from the
+ *  map — that one is a DELIBERATE exception: `const counter = { count, increment: … }` passed as
+ *  `<Ctx.Provider value={counter}>` is EXPECTED to stay live (every descendant's `counter.count()`
+ *  must track the signal — that is the entire point of the context value object; proven by the
+ *  shipped context golden tests, which read a signal bare inside an object literal assigned to
+ *  such a const and rely on it staying reactive). Called on anything STILL in the map:
+ *
+ *  Solid evaluates a plain const/let ONCE, even if its initializer reads a signal/memo/resource —
+ *  unlike createMemo, it does NOT re-run when that cell changes. Emitting it as a QML `readonly
+ *  property var` binding would make it silently LIVE instead (QML tracks any property read during a
+ *  binding's evaluation, including through nested calls — verified against the real engine:
+ *  wrapping the read in an IIFE does not stop it from re-evaluating). There is no snapshot that is
+ *  both synchronously available (render needs the value at construction time, before
+ *  Component.onCompleted runs — also verified: a plain Component.onCompleted assignment arrives too
+ *  late and the binding referencing it already crashed) and untracked. Fail loud instead of
+ *  silently turning a const into a memo. */
+export function assertNoLiveRenderLocalReads(renderLocals: Map<string, t.Expression>, table: SymbolTable): void {
+  for (const [name, init] of renderLocals) {
+    const reads = reactiveReadsIn(init, table);
+    if (reads.length > 0)
+      throw new Error(`const ${name}: its initializer reads reactive state (${reads.join(", ")}) and is read by a render binding — Solid evaluates a plain const/let ONCE, but emitting it as a QML property binding here would make it live (recomputing whenever ${reads[0]} changes) instead. Use createMemo() if ${name} should track ${reads[0]}, or compute it without reading reactive state.`);
+  }
 }
 
 /** Names of signals/memos read by an effect body — used to wire `Connections` dep-tracking so the
