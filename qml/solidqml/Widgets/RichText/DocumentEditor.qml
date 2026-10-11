@@ -225,6 +225,10 @@ RichText {
     function toHtml() { return fmt ? fmt.toHtml() : _editor.text }
     function plainText() { return fmt ? fmt.plainText() : "" }
     function insertText(text) { if (fmt) { fmt.insertText(text); _editor.forceActiveFocus() } }
+    function setCursorPosition(position) {
+        _editor.cursorPosition = Math.max(0, Math.min(_editor.length, Math.floor(position)))
+        _keepCaretVisible()
+    }
     function focusEditor() { _editor.forceActiveFocus() }
     function undo() { _editor.undo() }
     function redo() { _editor.redo() }

@@ -295,6 +295,8 @@ declare global {
     headings(): DocumentHeading[];
     /** Scrolls so `pos` sits near the top of the viewport. */
     scrollToPosition(pos: number): void;
+    /** Move the caret and minimally scroll it into view. */
+    setCursorPosition(pos: number): void;
     /** A plain path or a file:// URL. */
     loadOdf(path: string): DocumentIoResult;
     saveOdf(path: string): DocumentIoResult;

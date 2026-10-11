@@ -2803,6 +2803,23 @@ private slots:
         QCOMPARE(w.body()->property("contentY").toReal(), 2000.0);
         w.edit()->setProperty("cursorPosition", 0);
         QTRY_VERIFY(visible());
+        const int last = w.fmt()->document()->textDocument()->characterCount() - 1;
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "setCursorPosition", Q_ARG(QVariant, last)));
+        QTRY_VERIFY(visible());
+        QTest::keyClick(&w.view, Qt::Key_A);
+        QTRY_VERIFY(visible());
+        QGuiApplication::clipboard()->setText(QString("Pasted line.\n").repeated(80));
+        w.fmt()->paste();
+        QTRY_VERIFY(visible());
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "undo"));
+        QTRY_VERIFY(visible());
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "redo"));
+        QTRY_VERIFY(visible());
+        // Selecting a search hit uses TextEdit.select, the same cursor-change path.
+        auto hit = w.fmt()->document()->textDocument()->find(QStringLiteral("Pasted line."));
+        QVERIFY(!hit.isNull());
+        QVERIFY(QMetaObject::invokeMethod(w.edit(), "select", Q_ARG(int, hit.selectionStart()), Q_ARG(int, hit.selectionEnd())));
+        QTRY_VERIFY(visible());
     }
 
     void pageViewGeometryAndNavigation()

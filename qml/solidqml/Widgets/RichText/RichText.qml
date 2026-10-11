@@ -104,6 +104,18 @@ Css.CssFill {
         else if (x + r.width > body.contentX + body.width)
             body.contentX = Math.min(Math.max(0, body.contentWidth - body.width), x + r.width - body.width)
     }
+    function _followCursor() {
+        _keepCaretVisible()
+        // Paste/undo can finish document layout after cursorPositionChanged. Follow once
+        // more after layout, unless the user or app has moved the viewport in the meantime.
+        Qt.callLater(_finishFollowing, edit.cursorPosition, body.contentX, body.contentY)
+    }
+    function _finishFollowing(position, x, y) {
+        // Flickable can align a fractional content position to its nearest pixel at polish.
+        if (edit.cursorPosition === position && Math.round(body.contentX) === Math.round(x)
+            && Math.round(body.contentY) === Math.round(y))
+            _keepCaretVisible()
+    }
     function _navigatePage(event) {
         var end = (event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_Home || event.key === Qt.Key_End)
         var page = event.key === Qt.Key_PageUp || event.key === Qt.Key_PageDown
@@ -258,7 +270,7 @@ Css.CssFill {
                 font.family: cssTheme.resolveFontFamily(root.inheritedFontFamily || "Sans Serif")
                 font.pixelSize: root._mail ? 14 : cssTheme.parseFontSize(root.inheritedFontSize || "14px", 14)
                 text: root._mail ? root.html : root._initialHtml
-                onCursorPositionChanged: root._keepCaretVisible()
+                onCursorPositionChanged: root._followCursor()
                 onTextChanged: { if (root._pendingAt >= 0) Qt.callLater(root._applyPending); root._report() }
                 // Enter: a new paragraph in the style's next style ("Heading 1" → "Text Body");
                 // Shift+Enter stays a line break. Ctrl+B / Ctrl+I / Ctrl+U, as in every editor.
