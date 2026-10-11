@@ -167,8 +167,8 @@ function emitRichText(propsArg: t.Node | undefined, _children: t.Node[], scope: 
 /** <DocumentEditor> → WRich.DocumentEditor (same opt-in module as <RichText>): the document
  *  variant grown up — the APP drives it. `ref={doc}` is the editor's id, so `doc.saveOdf(p)`,
  *  `doc.toggleBold()`, `doc.bold` (format state, reactive in bindings) resolve to it; `toolbar`
- *  hides the built-in toolbar; `onModifiedChanged(modified)` and the debounced, payload-free
- *  `onContentChanged()` report back. The API lives in DocumentEditor.qml. */
+ *  hides the built-in toolbar; `onModifiedChanged(modified)`, the debounced, payload-free
+ *  `onContentChanged()` and `onStylesChanged()` (the style table changed) report back. The API lives in DocumentEditor.qml. */
 function emitDocumentEditor(propsArg: t.Node | undefined, _children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
@@ -194,6 +194,9 @@ function emitDocumentEditor(propsArg: t.Node | undefined, _children: t.Node[], s
   const onContent = props.get("onContentChanged");
   if (onContent && (t.isArrowFunctionExpression(onContent) || t.isFunctionExpression(onContent)))
     lines.push(`${i(1)}onContentChanged: { ${translateArgsHandler(onContent, [], scope)} }`);
+  const onStyles = props.get("onStylesChanged");
+  if (onStyles && (t.isArrowFunctionExpression(onStyles) || t.isFunctionExpression(onStyles)))
+    lines.push(`${i(1)}onStylesChanged: { ${translateArgsHandler(onStyles, [], scope)} }`);
   lines.push(`${pad}}`);
   return lines;
 }

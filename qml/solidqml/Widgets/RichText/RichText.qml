@@ -1,7 +1,7 @@
 // RichText — the word-like editor, an opt-in module (solidqml.Widgets.RichText). No extra Qt
 // dependency: the formatting/IO engine is the loader-registered RichTextHandler (QTextCursor
-// over the TextArea's document; ODF save via Qt's NATIVE QTextDocumentWriter, ODF load via our
-// content.xml reader — owner: "ods nativo"). The chrome is all CSS boxes: a toolbar of format
+// over the TextArea's document, named paragraph/character styles, our own ODF reader and writer —
+// owner: "ods nativo"). The chrome is all CSS boxes: a toolbar of format
 // toggles (cssState "active" mirrors the format at the cursor), open/save through the native
 // platform file dialogs, and a T.TextArea in RichText mode inside the flickable body.
 //
@@ -205,9 +205,17 @@ Css.CssFill {
                 font.pixelSize: root._mail ? 14 : cssTheme.parseFontSize(root.inheritedFontSize || "14px", 14)
                 text: root._mail ? root.html : root._initialHtml
                 onTextChanged: { if (root._pendingAt >= 0) Qt.callLater(root._applyPending); root._report() }
-                // Ctrl+B / Ctrl+I / Ctrl+U, as in every editor.
+                // Enter: a new paragraph in the style's next style ("Heading 1" → "Text Body");
+                // Shift+Enter stays a line break. Ctrl+B / Ctrl+I / Ctrl+U, as in every editor.
                 Keys.onPressed: (event) => {
-                    if (!root.fmt || !(event.modifiers & Qt.ControlModifier)) return
+                    if (!root.fmt) return
+                    if (!root._mail && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                        && !(event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) {
+                        root.fmt.insertParagraph()
+                        event.accepted = true
+                        return
+                    }
+                    if (!(event.modifiers & Qt.ControlModifier)) return
                     if (event.key === Qt.Key_B) { root._toggle("bold"); event.accepted = true }
                     else if (event.key === Qt.Key_I) { root._toggle("italic"); event.accepted = true }
                     else if (event.key === Qt.Key_U) { root._toggle("underline"); event.accepted = true }

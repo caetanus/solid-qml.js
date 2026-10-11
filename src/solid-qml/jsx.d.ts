@@ -89,6 +89,47 @@ type DocumentEditorProps = {
   onModifiedChanged?: (modified: boolean) => void;
   /** Debounced; no payload — read doc.plainText() / doc.toHtml() when needed. */
   onContentChanged?: () => void;
+  /** The style table changed (defineStyle, a load, newDocument, an undo of a definition). */
+  onStylesChanged?: () => void;
+};
+
+/** A named style's properties (docs/document-editor.md "Named styles"). Lengths are px (or a
+ *  string with a unit: "1cm", "12pt"); fontSize is in points. */
+type DocumentStyleProps = {
+  /** New styles only (default "paragraph"). */
+  family?: "paragraph" | "character";
+  parent?: string | null;
+  /** Paragraph styles: the style Enter gives the next paragraph. */
+  nextStyle?: string | null;
+  fontFamily?: string | null;
+  fontSize?: number | string | null;
+  fontWeight?: number | "bold" | "normal" | null;
+  italic?: boolean | null;
+  underline?: boolean | null;
+  strike?: boolean | null;
+  /** "#rrggbb" */
+  color?: string | null;
+  letterSpacing?: number | string | null;
+  marginTop?: number | string | null;
+  marginBottom?: number | string | null;
+  marginLeft?: number | string | null;
+  marginRight?: number | string | null;
+  textIndent?: number | string | null;
+  /** A multiple of the line (1.5, "150%") or an exact height ("18pt", "24px"). */
+  lineHeight?: number | string | null;
+  alignment?: "left" | "center" | "right" | "justify" | null;
+  keepWithNext?: boolean | null;
+  /** 1..10 makes it a heading style (0 = not a heading). */
+  outlineLevel?: number | null;
+};
+
+/** directFormattingAt(): what overrides the styles (null = a property the style sets and the
+ *  text removes). */
+type DocumentDirectFormatting = {
+  paragraphStyle: string;
+  charStyle: string;
+  paragraph: Partial<Record<keyof DocumentStyleProps, any>>;
+  character: Partial<Record<keyof DocumentStyleProps, any>>;
 };
 
 declare global {
@@ -139,6 +180,10 @@ declare global {
     readonly heading: number;
     readonly alignment: "left" | "center" | "right" | "justify";
     readonly inTable: boolean;
+    /** The caret's paragraph style ("Default Paragraph Style", "Text Body", "Heading 1", …). */
+    readonly currentParagraphStyle: string;
+    /** The character style at the caret ("" = none). */
+    readonly currentCharStyle: string;
     readonly canUndo: boolean;
     readonly canRedo: boolean;
     /** A plain path or a file:// URL. */
@@ -158,7 +203,7 @@ declare global {
     toggleUnderline(): void;
     toggleStrike(): void;
     toggleBulletList(): void;
-    /** 0 = body text, 1..3 sized headings (4..6: bold). */
+    /** 0 = "Text Body", 1..6 = "Heading n" (applyParagraphStyle). */
     setHeading(level: number): void;
     setAlignment(align: "left" | "center" | "right" | "justify"): void;
     insertTable(rows: number, cols: number): void;
@@ -167,6 +212,19 @@ declare global {
     removeTableRow(): void;
     removeTableColumn(): void;
     insertImage(path: string): DocumentIoResult;
+    /** Create / update a named style; paragraphs and runs using it follow (direct formatting kept). */
+    defineStyle(name: string, props: DocumentStyleProps): DocumentIoResult;
+    styleNames(family: "paragraph" | "character"): string[];
+    /** Own properties (+ family, parent, nextStyle); `resolved` = what the whole chain gives. */
+    styleProperties(name: string, resolved?: boolean): DocumentStyleProps;
+    /** On the paragraphs the selection touches. false for an unknown / character style. */
+    applyParagraphStyle(name: string): boolean;
+    /** On the selection (the word at the caret without one); "" removes the character style. */
+    applyCharStyle(name: string): boolean;
+    /** The selection (or the caret's paragraph) back to exactly what its styles give. */
+    clearDirectFormatting(): void;
+    /** Overrides on top of the styles at `pos` (default: the caret). */
+    directFormattingAt(pos?: number): DocumentDirectFormatting;
   }
 
   // Runtime CSS-theme override handle, injected by the loader (see examples/dashboard).

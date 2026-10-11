@@ -6,8 +6,10 @@
 //   - `modified` (+ modifiedChanged), cleared by loadOdf / saveOdf / newDocument (not saveOdfCopy);
 //   - contentChanged(): every edit, formatting included, debounced (no payload — read plainText()/
 //     toHtml() when needed); loadOdf/newDocument count as content changes too;
-//   - the format state at the caret as reactive properties (bold … alignment, canUndo/canRedo);
-//   - methods: file IO returning {ok, error}, content getters, and every formatting operation.
+//   - the format state at the caret as reactive properties (bold … alignment, the named styles,
+//     canUndo/canRedo);
+//   - methods: file IO returning {ok, error}, content getters, every formatting operation and the
+//     named styles (define / list / apply / direct formatting); stylesChanged() when the table changes.
 //
 // The transpiler emits:  WRich.DocumentEditor { id: _ref_doc; toolbar: false; onContentChanged: … }
 // so TSX `doc.saveOdf(path)` / `doc.bold` resolve here. See docs/document-editor.md.
@@ -28,12 +30,17 @@ RichText {
     readonly property int heading: fmt ? fmt.heading : 0 // 0 = body text, 1..6
     readonly property string alignment: fmt ? fmt.alignment : "left" // left|center|right|justify
     readonly property bool inTable: !!fmt && fmt.inTable
+    // Named styles at the caret (paragraph style; character style, "" = none).
+    readonly property string currentParagraphStyle: fmt ? fmt.currentParagraphStyle : "Default Paragraph Style"
+    readonly property string currentCharStyle: fmt ? fmt.currentCharStyle : ""
     readonly property bool canUndo: _editor.canUndo
     readonly property bool canRedo: _editor.canRedo
 
     // Debounced edit notification (ms of quiet before it fires).
     property int contentDelay: 300
     signal contentChanged()
+    // The style table changed (a definition, a load, a new document, an undo of a definition).
+    signal stylesChanged()
 
     Timer {
         id: debounce
@@ -43,6 +50,7 @@ RichText {
     Connections {
         target: root.fmt
         function onContentsChanged() { debounce.restart() }
+        function onStylesChanged() { root.stylesChanged() }
     }
     // The handler arrives in RichText's Component.onCompleted: start from an empty, unmodified
     // document, without reporting that as an edit.
@@ -90,4 +98,22 @@ RichText {
     function removeTableRow() { if (fmt) fmt.removeTableRow() }
     function removeTableColumn() { if (fmt) fmt.removeTableColumn() }
     function insertImage(path) { return fmt ? _result(fmt.insertImage(path)) : _noEngine }
+
+    // ── named styles (LibreOffice's names: "Default Paragraph Style", "Text Body", "Heading 1"…) ──
+    // defineStyle: create / update (props.family "paragraph" | "character" for a new one; a null
+    // property removes it); every paragraph or run using the style follows, direct formatting kept.
+    function defineStyle(name, props) {
+        if (!fmt) return _noEngine
+        var e = fmt.defineStyle(name, props || {})
+        return { ok: e === "", error: e }
+    }
+    function styleNames(family) { return fmt ? fmt.styleNames(family || "paragraph") : [] }
+    function styleProperties(name, resolved) { return fmt ? fmt.styleProperties(name, !!resolved) : ({}) }
+    function applyParagraphStyle(name) { var ok = !!fmt && fmt.applyParagraphStyle(name); _editor.forceActiveFocus(); return ok }
+    function applyCharStyle(name) { var ok = !!fmt && fmt.applyCharStyle(name || ""); _editor.forceActiveFocus(); return ok }
+    function clearDirectFormatting() { if (fmt) fmt.clearDirectFormatting(); _editor.forceActiveFocus() }
+    // What overrides the styles at `pos` (default: the caret).
+    function directFormattingAt(pos) {
+        return fmt ? fmt.directFormattingAt(pos === undefined ? _editor.cursorPosition : pos) : ({})
+    }
 }

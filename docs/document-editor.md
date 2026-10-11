@@ -1,10 +1,11 @@
 # Document editor
 
 `<DocumentEditor>` is the editing surface of a word processor: the **app** drives the document —
-opens and saves it, draws its own toolbar from the format state, and reacts to edits. It shares
-its engine with `<RichText>` (module `solidqml.Widgets.RichText`: a Qt `TextArea` plus the
-loader's `RichTextHandler`, OpenDocument saved by Qt's writer and read by our `content.xml`
-reader). `<RichText>` stays as it is for mail and forms (`html` in, `onChange(html, text)` out).
+opens and saves it, draws its own toolbar from the format state, and reacts to edits. Body text
+and headings are **named styles** (LibreOffice's: "Text Body", "Heading 1", …), not direct
+formatting. It shares its engine with `<RichText>` (module `solidqml.Widgets.RichText`: a Qt
+`TextArea` plus the loader's `RichTextHandler`, with our own OpenDocument reader and writer).
+`<RichText>` stays as it is for mail and forms (`html` in, `onChange(html, text)` out).
 
 It is native-only (no browser equivalent); the module is imported only when the tag is used.
 
@@ -27,7 +28,8 @@ export function Writer() {
     <div class="writer">
       <div class="bar">
         <button classList={{ on: doc.bold }} onClick={() => doc.toggleBold()}>B</button>
-        <button classList={{ on: doc.heading === 1 }} onClick={() => doc.setHeading(1)}>H1</button>
+        <button classList={{ on: doc.currentParagraphStyle === "Heading 1" }}
+          onClick={() => doc.applyParagraphStyle("Heading 1")}>H1</button>
         <button onClick={save}>Save</button>
       </div>
       <DocumentEditor ref={doc} class="editor" toolbar={false}
@@ -50,7 +52,8 @@ A complete example (own toolbar, open/save by path, modified dot, word count) is
 | `ref` | variable | `let doc!: DocumentEditorHandle` — the handle below. |
 | `toolbar` | boolean (binding) | `false` hides the built-in toolbar. Default `true`. |
 | `onModifiedChanged` | `(modified: boolean) => …` | The unsaved-changes flag flipped. |
-| `onContentChanged` | `() => …` | Any edit, formatting included, **debounced** (300 ms of quiet). No payload: read `doc.plainText()` / `doc.toHtml()` when needed. Opening a file and `newDocument()` count as content changes. |
+| `onContentChanged` | `() => …` | Any edit, formatting included, **debounced** (300 ms of quiet). No payload: read `doc.plainText()` / `doc.toHtml()` when needed. Opening a file, `newDocument()` and `defineStyle()` count as content changes. |
+| `onStylesChanged` | `() => …` | The style table changed: `defineStyle`, a load, `newDocument`, an undo/redo of a definition. Refresh a style picker from `doc.styleNames(…)` here. |
 
 The editor starts **empty and unmodified** (no demo text). Anything else is a transpile error.
 
@@ -62,7 +65,9 @@ State — reactive: reading `doc.bold` in a binding (a `classList`, a text) foll
 |---|---|---|
 | `modified` | boolean | Unsaved edits. Cleared by `loadOdf`, `saveOdf`, `newDocument` (not by `saveOdfCopy`). |
 | `bold`, `italic`, `underline`, `strike` | boolean | Character format at the caret / selection. |
-| `heading` | number | `0` body text, `1`–`6` heading level. |
+| `heading` | number | `0` not a heading, `1`–`6` heading (outline) level. |
+| `currentParagraphStyle` | string | The caret's paragraph style (`"Text Body"`, `"Heading 1"`, …). |
+| `currentCharStyle` | string | The character style at the caret, `""` for none. |
 | `alignment` | `"left" \| "center" \| "right" \| "justify"` | Paragraph alignment. |
 | `bulletList`, `inTable` | boolean | The caret is in a bullet list / a table. |
 | `canUndo`, `canRedo` | boolean | |
@@ -71,14 +76,14 @@ Methods:
 
 | Method | Returns | |
 |---|---|---|
-| `loadOdf(path)` | `{ ok, error }` | Opens an `.odt`. On failure (`file not found: …`, `not an OpenDocument file: …`) the current document is kept. The load is not an undo step. |
-| `saveOdf(path)` | `{ ok, error }` | Writes an `.odt` (Qt's native writer, images embedded). Clears `modified` on success. |
+| `loadOdf(path)` | `{ ok, error }` | Opens an `.odt`, with its named styles. On failure (`file not found: …`, `not an OpenDocument file: …`) the current document is kept. The load is not an undo step. |
+| `saveOdf(path)` | `{ ok, error }` | Writes an `.odt` (our writer: named styles, heading levels, images embedded; atomic — a failed write leaves the old file). Clears `modified` on success. |
 | `saveOdfCopy(path)` | `{ ok, error }` | The same `.odt`, for autosave / crash recovery: the document is left as it was — `modified` stays, the undo history is untouched. |
-| `newDocument()` | | Empty, unmodified document; drops undo history and images. |
+| `newDocument()` | | Empty, unmodified document in Default Paragraph Style; drops undo history, images and style definitions (back to the built-in styles). |
 | `toHtml()` / `plainText()` | string | The content; `plainText()` separates paragraphs with `\n`. |
-| `insertText(text)` | | At the caret (replacing a selection); `\n` starts a paragraph. |
+| `insertText(text)` | | At the caret (replacing a selection); `\n` starts a paragraph, as Enter does (next style included). |
 | `toggleBold()`, `toggleItalic()`, `toggleUnderline()`, `toggleStrike()` | | On the selection; with nothing selected, on what is typed next (as the toolbar does). |
-| `setHeading(level)` | | `0` body, `1`–`3` sized headings (`4`–`6` bold). |
+| `setHeading(level)` | | `applyParagraphStyle("Heading " + level)`; `0` → `"Text Body"`. |
 | `setAlignment(align)` | | On every paragraph the selection touches. |
 | `toggleBulletList()` | | |
 | `insertTable(rows, cols)`, `addTableRow()`, `addTableColumn()`, `removeTableRow()`, `removeTableColumn()` | | Row/column edits act on the cell at the caret. |
@@ -88,17 +93,75 @@ Methods:
 Formatting calls give the keyboard back to the editor, so an app toolbar button does not leave
 the caret stranded. Ctrl+B / Ctrl+I / Ctrl+U work with or without the built-in toolbar.
 
+## Named styles
+
+Every paragraph is in one **paragraph style**; a run of text may be in a **character style**. What
+you see is the style chain plus **direct formatting** (bold from Ctrl+B, an alignment button, …):
+direct formatting is the exception on top, and one call clears it. The names are LibreOffice's,
+so files go both ways and LibreOffice lists them as real styles.
+
+Built in: paragraph styles `Default Paragraph Style` (the root every paragraph style inherits),
+`Text Body`, `Heading` (the headings' parent), `Heading 1`…`Heading 6`, `Title`, `Quotations`;
+character styles `Emphasis` and `Strong Emphasis`. A new document is in Default Paragraph Style;
+Enter at the end of a heading starts `Text Body` (the heading's next style).
+
+```tsx
+doc.defineStyle("Text Body", { fontSize: 12, lineHeight: 1.5, alignment: "justify", marginBottom: "0.25cm" });
+doc.defineStyle("Note", { parent: "Text Body", italic: true, nextStyle: "Text Body" });
+doc.defineStyle("Code", { family: "character", fontFamily: "Monospace", color: "#7a3e00" });
+doc.applyParagraphStyle("Heading 2");
+doc.applyCharStyle("Code");
+```
+
+| Method | Returns | |
+|---|---|---|
+| `defineStyle(name, props)` | `{ ok, error }` | Creates (`family` `"paragraph"` — default — or `"character"`) or updates a style. Properties left out are kept, `null` removes one. Every paragraph / run using the style, or a style inheriting from it, is re-styled; their direct formatting stays. One undo step (undo also restores the old definition). Errors (`unknown style property "x"`, a parent cycle, a paragraph property on a character style, …) change nothing. |
+| `styleNames(family)` | `string[]` | `"paragraph"` or `"character"`, in definition order. |
+| `styleProperties(name, resolved?)` | object | The style's own properties plus `family`, `parent`, `nextStyle`; with `resolved` the values its whole chain gives. `{}` for an unknown name. |
+| `applyParagraphStyle(name)` | boolean | On every paragraph the selection touches (the caret's without one). `false` for an unknown or character style. |
+| `applyCharStyle(name)` | boolean | On the selection (the word at the caret without one); `""` removes the character style. |
+| `clearDirectFormatting()` | | The selection's runs and paragraphs back to exactly what their styles give; the caret's paragraph without a selection. |
+| `directFormattingAt(pos?)` | object | `{ paragraphStyle, charStyle, paragraph: {…}, character: {…} }` — the properties that differ from the styles at `pos` (default: the caret). `null` marks a property the style sets and the text removes. |
+
+Style properties (all optional):
+
+| Property | Value | |
+|---|---|---|
+| `parent` | style name | Inherit what this style does not set. Paragraph styles without one inherit Default Paragraph Style. |
+| `nextStyle` | style name | Paragraph styles: the style of the paragraph Enter creates at the end of this one (default: the same). |
+| `fontFamily` | string | |
+| `fontSize` | number (pt) or `"12pt"` | |
+| `fontWeight` | 1–1000, `"bold"`, `"normal"` | |
+| `italic`, `underline`, `strike` | boolean | |
+| `color` | `"#rrggbb"` | |
+| `letterSpacing` | px, or a length string | |
+| `marginTop`, `marginBottom`, `marginLeft`, `marginRight`, `textIndent` | px, or a length string (`"1cm"`, `"0.5in"`, `"6pt"`) | Paragraph styles. |
+| `lineHeight` | a multiple (`1.5`, `"150%"`) or an exact height (`"18pt"`) | Paragraph styles. |
+| `alignment` | `"left"`, `"center"`, `"right"`, `"justify"` | Paragraph styles. |
+| `keepWithNext` | boolean | Paragraph styles (kept in the file; print / PDF). |
+| `outlineLevel` | 0–10 | Paragraph styles: `n > 0` makes it a heading style (`doc.heading`, `<text:h>` in the file). |
+
+Default Paragraph Style's `fontFamily` and `fontSize` are the document's base font: kept and
+saved (a LibreOffice file's 12pt Times stays 12pt Times there), but on screen the editor's own
+font stands in for them, so a file's base font never overrides the app's typography. Every other
+style's font shows as defined.
+
 ## Notes
 
 - Name your component's signals so they don't collide with the handle's properties (`modified`,
   `bold`, `heading`, …) when the editor is the component's root element — a signal becomes a
   property on the root, and two properties of the same name shadow each other.
-- ODF coverage is the word-like subset: paragraphs, headings, bold/italic/underline/strike spans,
-  flat bullet lists, tables, inline images. Paragraph spacing, side margins, first-line indent and
-  alignment are read from the paragraph styles — automatic ones and the named ones in `styles.xml`
-  they inherit from (`Text_20_body`, `Heading`, …); a paragraph whose styles give it no vertical
+- ODF coverage is the word-like subset: paragraphs and headings (`text:h` with its outline
+  level), spans (nested ones too), bullet and numbered lists (nested by level), tables (merged
+  cells), inline images, and the named paragraph/character styles of `styles.xml` with the
+  automatic styles over them as direct formatting. Our writer produces `content.xml`,
+  `styles.xml` (the named styles), `meta.xml` and the manifest — LibreOffice 26.8 opens the result
+  with every named style, parent, next style and heading level in place. Not kept yet: page layout
+  and headers/footers, footnotes as footnotes (their text is kept, inline), bookmarks and links
+  (their text is kept), unknown package entries. A paragraph whose styles give it no vertical
   spacing gets a quarter pixel under it (invisible; it keeps Qt's viewport culling from
-  over-drawing). Named styles as styles (kept on save, character styles) and marks (spell-check
-  squiggles, review highlights) are the next items on the office roadmap.
+  over-drawing). Files saved by the earlier Qt-based writer still open (their headings come back
+  as direct formatting on Default Paragraph Style).
+- Marks (spell-check squiggles, review highlights) are the next item on the office roadmap.
 - Large documents (> 10 000 characters, however they got there: a load, typing, a paste) render
   only the part near the viewport, as Qt's `TextEdit` does for a large `text`.

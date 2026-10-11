@@ -112,6 +112,22 @@ test("document editor: onModifiedChanged receives the flag; onContentChanged tak
   assert.match(out, /onContentChanged: \{[^\n]*n = n \+ 1/);
 });
 
+test("document editor: named styles — onStylesChanged, style calls and state through the ref (office item 2)", async () => {
+  const out = await qmlType(`export function F(){
+    let doc;
+    const [names,setNames]=createSignal([]);
+    return <div>
+      <text>{doc.currentParagraphStyle}</text>
+      <button onClick={() => doc.applyParagraphStyle("Heading 1")}>H1</button>
+      <button onClick={() => doc.defineStyle("Text Body", { fontSize: 13 })}>T</button>
+      <DocumentEditor ref={doc} onStylesChanged={() => setNames(doc.styleNames("paragraph"))} />
+    </div>; }`);
+  assert.match(out, /onStylesChanged: \{[^\n]*_ref_doc\.styleNames\("paragraph"\)/);
+  assert.match(out, /_ref_doc\.currentParagraphStyle/);
+  assert.match(out, /_ref_doc\.applyParagraphStyle\("Heading 1"\)/);
+  assert.match(out, /_ref_doc\.defineStyle\("Text Body", \(?\{\s*fontSize: 13\s*\}\)?\)/);
+});
+
 test("document editor: <RichText> keeps its mail/forms contract (no toolbar/ref/onContentChanged)", async () => {
   await assert.rejects(qmlType(`export function F(){ return <RichText toolbar={false} />; }`), /<RichText> does not support `toolbar`/);
   await assert.rejects(qmlType(`export function F(){ return <DocumentEditor html="<p>x</p>" />; }`), /<DocumentEditor> does not support `html`/);
