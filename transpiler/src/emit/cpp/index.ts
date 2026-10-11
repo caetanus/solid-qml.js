@@ -529,6 +529,11 @@ function emitRepeaterInto(parentVar: string, node: t.CallExpression, c: Ctx, out
   if (props && t.isObjectExpression(props))
     for (const p of props.properties)
       if (t.isObjectProperty(p) && t.isIdentifier(p.key, { name: "each" }) && t.isExpression(p.value)) eachNode = p.value;
+      else if (t.isObjectProperty(p) && t.isIdentifier(p.key, { name: "key" }))
+        // C23: `key` opts a <For> into reuse-by-field. This emitter has no reconciler yet (C7: every
+        // change rebuilds every row), so it can honour neither reuse nor the identity contract.
+        throw new Error("AOT: <For key> is not supported: the C++ emitter rebuilds every row on each model change " +
+          "(no row reuse, keyed or by reference — open item C7); drop `key` or use the QML target");
   const delegate = children.find((ch) => t.isArrowFunctionExpression(ch) || t.isFunctionExpression(ch)) as
     t.ArrowFunctionExpression | t.FunctionExpression | undefined;
   if (!eachNode || !delegate) throw new Error("AOT: <For>/<Index> needs an `each` prop and a delegate function");

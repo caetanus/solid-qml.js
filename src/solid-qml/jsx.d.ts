@@ -1,4 +1,4 @@
-import type { JSX, Component } from "solid-js";
+import type { JSX, Component, Accessor } from "solid-js";
 
 declare module "solid-js" {
   namespace JSX {
@@ -20,6 +20,18 @@ declare module "solid-js" {
       progress: QmlControlProps;
     }
   }
+
+  /** <For> row identity (C23) is the element's REFERENCE, like Solid web: a new object is a new row
+   *  (the old row's local state resets, its onCleanup runs) even when it carries the same id.
+   *  NATIVE-ONLY `key`: `key="id"` (or `key={(r) => r.id}`) reuses the row of a new object whose
+   *  field matches and updates it in place. Solid web's <For> has no `key` prop and ignores it —
+   *  rows recreate by reference there: the one divergence an app opts into. */
+  export function For<T extends readonly any[], U extends JSX.Element>(props: {
+    each: T | undefined | null | false;
+    fallback?: JSX.Element;
+    key?: (keyof T[number] & string) | ((item: T[number]) => unknown);
+    children: (item: T[number], index: Accessor<number>) => U;
+  }): JSX.Element;
 }
 
 type BaseQmlProps = {

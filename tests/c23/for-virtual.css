@@ -1,0 +1,4 @@
+.vlist { display: flex; flex-direction: column; overflow-y: auto; height: 100vh; }
+.vrow { display: flex; flex-direction: row; height: 20px; gap: 4px; }
+.vid { width: 48px; }
+.vlabel { flex-grow: 1; }

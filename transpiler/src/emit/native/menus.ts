@@ -21,7 +21,7 @@ import * as t from "@babel/types";
 import { registerNativeTags, requireImport } from "./index.ts";
 import { emitExpr, type Scope } from "../expr.ts";
 import { boolAttrExpr, buildCssClassLine, emitChildren, enabledFromDisabled, guardLine, INDENT } from "../qml.ts";
-import { checkAttrs } from "../attrs.ts";
+import { checkAttrs, rejectForKey } from "../attrs.ts";
 import { hParts, isHCall } from "../../ast/h.ts";
 import { safeName } from "../../names/safe.ts";
 
@@ -227,6 +227,7 @@ function instantiatorLines(id: string, model: string, menuId: string, baseIndex:
 function renderForBlock(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, owner: string,
                         menuId: string, id: string, baseIndex: string): string[] {
   checkAttrs("For", propsArg);
+  rejectForKey(propsArg, `<${owner}>`);
   const each = menuEachOf(propsArg, scope);
   const delegate = children.find((c) => t.isArrowFunctionExpression(c) || t.isFunctionExpression(c)) as Fn | undefined;
   if (!delegate) throw new Error(`<${owner}><For> needs a row function: {(item) => <MenuItem>…</MenuItem>}`);

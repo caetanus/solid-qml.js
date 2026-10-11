@@ -216,7 +216,7 @@ endif
 
 # `loader` feature: the standalone dev/preview runner.
 if get_option('loader').allowed()
-  executable(
+  loader_exe = executable(
     'solid-qml-loader',
     files('src/loader.cpp'),
     cpp_args: notify_args + richtext_args,
@@ -402,6 +402,18 @@ if sh_prog.found()
     workdir: meson.project_source_root(),
     timeout: 180,
   )
+endif
+
+# C23 <For> row identity, app level (transpiled TSX run in the loader): reference identity by default,
+# key="id" opt-in reuse — mount/cleanup counts and row-local state on an eager list (run.sh), and the
+# rows entering the window of a virtualized one (run-virtual.sh).
+if sh_prog.found() and is_variable('loader_exe')
+  test('for-identity', sh_prog,
+    args: [files('tests/c23/run.sh'), loader_exe, meson.current_build_dir() / 'c23-for-identity'],
+    workdir: meson.project_source_root(), timeout: 120)
+  test('for-identity-virtual', sh_prog,
+    args: [files('tests/c23/run-virtual.sh'), loader_exe, meson.current_build_dir() / 'c23-for-virtual'],
+    workdir: meson.project_source_root(), timeout: 300)
 endif
 
 # Accessibility of the CSS primitives (Text/Image): role/name semantics + the lazy cost contract

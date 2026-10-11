@@ -87,6 +87,7 @@ function sample(spec: AttrSpec | undefined, name: string): string {
     case "object": return `{{ __pk: s() > 0 }}`;
     case "elem": return name === "trigger" ? `{<button>__pk</button>}` : `{<text>__pk</text>}`;
     case "flag": return "";
+    case "key": return `"__pk"`; // a field name (C23); the accessor form is covered in for-key.test.ts
     case "lit": return typeof spec === "string" ? `"__pk"` : `"${(spec as { values: readonly string[] }).values[0]}"`;
     default: return `{__pk}`;
   }
@@ -142,7 +143,7 @@ test("sweep: every tag × attribute is emitted or reported, never silently ignor
       }
       if (!r.out!.includes("__pk")) problems.push(`${where}: declared but its value never reaches the QML`);
       // A dynamic value where only a literal is supported must be rejected, not dropped.
-      if (kind === "lit") {
+      if (kind === "lit" || kind === "key") {
         const dyn = await emit(at(`${name}={__pk}`));
         if (!dyn.err) problems.push(`${where}: a dynamic value is silently accepted for a literal-only attribute`);
       }

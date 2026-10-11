@@ -62,7 +62,7 @@ out-of-band) — "runs without a QML error" alone is NOT proof, since broken cod
 ## Control flow (components)
 | API | Status | Notes |
 |---|---|---|
-| `<For>` | ✅ | → `Repeater`; delegate inlines its body (`item`→`modelData`) |
+| `<For>` | ✅ | → `CssRepeater`; delegate inlines its body (`item`→`modelData`). Row identity is the element's REFERENCE, like Solid web; `key="field"` opts into reuse by that field — see [Row identity](#for-row-identity-c23) |
 | `<Show>` | ✅ | visibility-gated children + `fallback` |
 | `<Switch>`/`<Match>` | ✅ | cascading visibility (first match wins) |
 | `<Suspense>` | ✅ | fallback while any read resource is loading |
@@ -71,6 +71,30 @@ out-of-band) — "runs without a QML error" alone is NOT proof, since broken cod
 | `<Portal>` | ❌ | render elsewhere (overlay layer) |
 | `<ErrorBoundary>` | ❌ | catch render/async errors + fallback |
 | `<SuspenseList>` | ❌ | rare |
+
+### `<For>` row identity (C23)
+
+Owner decision 2026-10-11: **web semantics by default, reuse by key is opt-in.**
+
+- **Default — reference identity, exactly like Solid web.** A row belongs to the element *object*. The same
+  object keeps its row wherever it moves (swap, sort, insert around it: nothing is recreated, row state survives).
+  A **new** object is a **new** row even when it carries the same `id` and the same content: the old row is
+  destroyed (its `onCleanup` runs, its local signals, typed text, focus and animations are gone) and a fresh row is
+  created (its `onMount` runs). A refetch that rebuilds every object recreates every row. An object mutated in
+  place and re-sent is the same element and is not re-read (5c) — produce a new object to update a row.
+- **`<For each={rows()} key="id">` — opt-in reuse by a field (native only).** A new object whose `id` matches an
+  existing row's reuses that row and updates it in place (`modelData` changes; row-local state is kept, nothing is
+  mounted or cleaned up). `key={(r) => r.id}` is accepted as the same thing; a computed key (`(r) => r.a + r.b`,
+  `r.user.id`) fails at compile time — key by a field of the row object. Elements missing the field, or a
+  duplicate key, fall back to matching by value for that update.
+- **On the web `key` is ignored.** Solid's `<For>` has no `key` prop: rows recreate by reference there. This is the
+  one divergence an app opts into by writing `key` (TypeScript accepts it through `src/solid-qml/jsx.d.ts`).
+- **Virtualized lists** (certified passive rows in a scrolling container) follow the same contract; a recycled row
+  taken for a new object is reset exactly like a fresh row (data, index, hover, transitions).
+- **Not supported:** `key` on a `<For>` inside `<select>` or a menu (those rows are rebuilt from the list on every
+  change) and on the AOT C++ target (no reconciler there yet, C7) — both fail loud at compile time.
+- **Non-JS models** (a C++ `QVariantList` handed to the repeater) carry no references: they match by value, or by
+  `key` when it is set.
 
 ## Components & props
 | API | Status | Notes |
@@ -130,7 +154,7 @@ each maps to a known QML construct.
 3. **Lifecycle/reactivity edges**: `onCleanup` (+ effect cleanup), `untrack`, `batch`, `on`.
 4. **Stores depth**: arbitrary deep path setters, `reconcile`, `unwrap`.
 5. **JSX edges**: spread props `{...}`, nested fragments, confirm `?.`/`??` on V4, broader event set.
-6. **Polish**: keyed `<For>`, more DOM events, `createComputed`/`createRenderEffect`/`createSelector`.
+6. **Polish**: ~~keyed `<For>`~~ (✅ `key="field"`, C23), more DOM events, `createComputed`/`createRenderEffect`/`createSelector`.
 
 Out of scope (won't chase for 99%): `lazy`/code-split, `getOwner`/`runWithOwner`, `BigInt`,
 `SuspenseList`. These are rare and/or fundamentally tied to a JS runtime we drop at release (AOT→C++).

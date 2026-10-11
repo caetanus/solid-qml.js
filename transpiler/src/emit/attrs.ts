@@ -19,8 +19,9 @@ import { hParts, isFragmentTag, isHCall } from "../ast/h.ts";
  *  - flag: a bare/boolean literal only.
  *  - ident: an identifier (ref={x}).
  *  - object: an object literal (classList={{ a: cond }}).
- *  - elem: an element (fallback={<text/>}, trigger={<button/>}). */
-type Kind = "lit" | "expr" | "fn" | "handler" | "bool" | "flag" | "ident" | "object" | "elem";
+ *  - elem: an element (fallback={<text/>}, trigger={<button/>}).
+ *  - key: <For key>: a field name literal (key="id") or a field accessor ((r) => r.id). */
+type Kind = "lit" | "expr" | "fn" | "handler" | "bool" | "flag" | "ident" | "object" | "elem" | "key";
 export type AttrSpec = Kind | { kind: "lit"; values: readonly string[] };
 type Attrs = Record<string, AttrSpec>;
 
@@ -125,7 +126,8 @@ export const ELEMENT_ATTRS: Record<string, Attrs> = {
   // ── builtins / control flow ───────────────────────────────────────────────────────────────────
   Window: { title: "expr", width: "expr", height: "expr", visible: "flag" },
   Show: { when: "expr", fallback: "elem" },
-  For: { each: "expr" },
+  // key (C23): opt-in reuse by a field — see forKeyField.
+  For: { each: "expr", key: "key" },
   Index: { each: "expr" },
   VirtualList: { ...DYN, ref: "ident", each: "expr", onEndReached: "fn", onKeyDown: "fn" },
   Switch: { fallback: "elem" },
@@ -202,7 +204,53 @@ function valueOk(spec: AttrSpec, v: t.Node): string | null {
       return t.isObjectExpression(v) ? null : "must be an object literal: classList={{ name: cond }}";
     case "elem":
       return isHCall(v) ? null : "must be an element — wrap text in <text>…</text>";
+    case "key":
+      return forKeyFieldOf(v) !== null ? null
+        : "must be a field name (key=\"id\") or a field accessor (key={(r) => r.id}); a computed key " +
+          "function is not supported natively — key the rows by a field of the row object";
   }
+}
+
+/** <For key> (C23): the row field that keys the rows — from `key="id"` or `key={(r) => r.id}` /
+ *  `key={(r) => r["id"]}`; null when the value is neither (a computed key: not supported). */
+export function forKeyFieldOf(v: t.Node): string | null {
+  const field = (s: string) => /^[A-Za-z_$][\w$]*$/.test(s) ? s : null;
+  if (t.isStringLiteral(v)) return field(v.value);
+  if (t.isTemplateLiteral(v) && v.expressions.length === 0) return field(v.quasis[0].value.cooked ?? "");
+  if ((t.isArrowFunctionExpression(v) || t.isFunctionExpression(v)) && v.params.length === 1 && t.isIdentifier(v.params[0])) {
+    let body: t.Node = v.body;
+    if (t.isBlockStatement(body)) {
+      if (body.body.length !== 1 || !t.isReturnStatement(body.body[0]) || !body.body[0].argument) return null;
+      body = body.body[0].argument;
+    }
+    const p = (v.params[0] as t.Identifier).name;
+    if (!t.isMemberExpression(body) || !t.isIdentifier(body.object, { name: p })) return null;
+    if (!body.computed && t.isIdentifier(body.property)) return field(body.property.name);
+    if (body.computed && t.isStringLiteral(body.property)) return field(body.property.value);
+  }
+  return null;
+}
+
+/** The <For>'s key field (C23), or null without a `key` attribute (reference identity, the default). */
+export function forKeyField(propsArg: t.Node | undefined): string | null {
+  if (!propsArg || !t.isObjectExpression(propsArg)) return null;
+  for (const p of propsArg.properties) {
+    if (!t.isObjectProperty(p) || propKey(p) !== "key") continue;
+    const f = forKeyFieldOf(p.value);
+    if (f === null) throw new Error(`<For> key ${valueOk("key", p.value)}`);
+    return f;
+  }
+  return null;
+}
+
+/** A <For> whose rows are not CssRepeater rows (<select> options, menu items) has no row reuse to opt
+ *  into: `key` there is rejected instead of silently ignored. */
+export function rejectForKey(propsArg: t.Node | undefined, where: string): void {
+  if (!propsArg || !t.isObjectExpression(propsArg)) return;
+  for (const p of propsArg.properties)
+    if (t.isObjectProperty(p) && propKey(p) === "key")
+      throw new Error(`${where}<For key> is not supported: these rows are rebuilt from the list on every change ` +
+        "(no row reuse to opt into) — drop `key`");
 }
 
 /** Attributes that USED to exist, rejected with a migration hint instead of the generic error. */

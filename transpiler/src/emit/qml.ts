@@ -5,7 +5,7 @@ import { safeName } from "../names/safe.ts";
 import { CONTROL_TAGS, hParts, isFragmentTag, isHCall } from "../ast/h.ts";
 import { nativeTags, requireImport } from "./native/index.ts";
 import { certifyForRow } from "./forCertify.ts";
-import { checkAttrs, checkElement } from "./attrs.ts";
+import { checkAttrs, checkElement, forKeyField, rejectForKey } from "./attrs.ts";
 
 export const INDENT = "    ";
 const TEXT_TAGS = new Set(["text", "span", "h1", "h2", "h3", "h4", "h5", "h6", "p", "cite", "bio"]);
@@ -1281,6 +1281,7 @@ function staticOptionSegment(entries: OptionEntry[]): SelectSegment {
  *  delegate convention — no index param (not supported for <For> elsewhere in this plan either). */
 function parseForOptionSegment(forPropsArg: t.Node | undefined, forChildren: t.Node[], scope: Scope): SelectSegment {
   checkAttrs("For", forPropsArg);
+  rejectForKey(forPropsArg, "<select>");
   const each = readEach(forPropsArg, scope);
   const delegate = forChildren.find((c) => t.isArrowFunctionExpression(c) || t.isFunctionExpression(c)) as
     t.ArrowFunctionExpression | t.FunctionExpression | undefined;
@@ -1949,10 +1950,13 @@ function readWhen(propsArg: t.Node | undefined, scope: Scope): string {
 }
 
 /** <For each={E}>{(item) => …}</For> → Css.CssRepeater { model: E; delegate: Component {…} }.
- *  KEYED like Solid's <For>: a changed array reuses/moves surviving rows (flyweight) instead
- *  of tearing everything down the way a plain Repeater does. */
+ *  Row identity (C23) is Solid web's: the element's REFERENCE — a surviving element keeps (moves) its
+ *  row, a new object is a new row even with the same id (the old row's state and onCleanup go with it).
+ *  `key="id"` (or `key={(r) => r.id}`) opts into reuse by that field: a new object with a known key
+ *  updates the existing row in place. Emitted as the repeater's `key` (no line without one). */
 function emitFor(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
   const each = readEach(propsArg, scope);
+  const key = forKeyField(propsArg);
   const pad = INDENT.repeat(level);
   const delegate = children.find((c) => t.isArrowFunctionExpression(c) || t.isFunctionExpression(c)) as t.ArrowFunctionExpression | t.FunctionExpression | undefined;
   // 5v-1 (virtualized CssRepeater): a certified row gets `virtualize: true` right after `model:`,
@@ -1964,6 +1968,7 @@ function emitFor(propsArg: t.Node | undefined, children: t.Node[], scope: Scope,
     `${pad}Css.CssRepeater {`,
     ...guardLine(guard, level),
     `${pad}${INDENT}model: ${each}`,
+    ...(key ? [`${pad}${INDENT}key: ${JSON.stringify(key)}`] : []),
     ...(virtualize ? [`${pad}${INDENT}virtualize: true`] : []),
   ];
   if (delegate) {
