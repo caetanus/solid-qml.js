@@ -3,7 +3,7 @@ import _generate from "@babel/generator";
 import { emitQml } from "./qml.ts";
 import { emitExpr, shadowOwnParams, type Scope } from "./expr.ts";
 import { emitStmt, emitValue, emitBindingStmt } from "./stmt.ts";
-import { analyzeSignals, analyzeProps, analyzeSetup, analyzeResources, analyzeMutableLocals, analyzeRenderLocals, analyzeHelpers, collectFetcherDeps, effectDeps, type ProviderInfo, type UseContextBinding } from "../model/symbols.ts";
+import { analyzeSignals, analyzeProps, analyzeSetup, analyzeResources, analyzeMutableLocals, analyzeRenderLocals, analyzeHelpers, analyzeModuleFunctions, moduleLevelMutableNames, collectModuleFunctionClosure, collectFetcherDeps, effectDeps, type HelperInfo, type ProviderInfo, type UseContextBinding } from "../model/symbols.ts";
 import { safeName } from "../names/safe.ts";
 import { hParts, isHCall, isFragmentTag } from "../ast/h.ts";
 
@@ -37,7 +37,6 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   if (provider?.valueLocal) renderLocalsMap.delete(provider.valueLocal);
   const renderLocals = renderLocalsMap.size > 0 ? new Set(renderLocalsMap.keys()) : undefined;
   const helpersMap = analyzeHelpers(fn);
-  const helpers = helpersMap.size > 0 ? new Set(helpersMap.keys()) : undefined;
   validateChildrenSlot(render, props.param);
   const propAliases = new Set(props.aliases);
   const collectedRefs: string[] = [];
@@ -55,14 +54,39 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   // Radio button group names collected by emitRadioButton; each unique name becomes one
   // T.ButtonGroup { id: __group_<name> } child of the root item (emitted into lifecycle below).
   const buttonGroups = new Map<string, string[]>();
+  // Module-level HELPER FUNCTIONS — `function f(){}` / `const f = (...) => ...` at module scope,
+  // NOT a component — available to EVERY component in the file that references them, in every
+  // position (bindings/text/handlers/memos/other helpers…), same as a local helper (analyzeHelpers
+  // above). Selected transitively: a referenced helper may call another module helper or read a
+  // module const (collectModuleFunctionClosure walks that closure) — so only what's actually
+  // reachable from THIS component is emitted into it (no dead helpers). A name already bound
+  // locally in this component (signal/render-local/mutable-local/own helper/prop) SHADOWS the
+  // module one — real JS lexical scoping — so it is never pulled in under that name.
+  const directRefs = collectIdentifierNames(fn);
+  const moduleFunctionsAll = moduleFile ? analyzeModuleFunctions(moduleFile) : new Map<string, HelperInfo>();
+  let moduleFnDecls = new Map<string, HelperInfo>();
+  let moduleFnReferencedNames = new Set<string>();
+  if (moduleFunctionsAll.size > 0) {
+    const moduleMutableNames = moduleLevelMutableNames(moduleFile!);
+    const locallyBound = new Set<string>([...table.keys(), ...renderLocalsMap.keys(), ...mutableLocalsMap.keys(), ...helpersMap.keys(), ...props.used]);
+    const seeds = [...directRefs].filter((n) => moduleFunctionsAll.has(n) && !locallyBound.has(n));
+    const closure = collectModuleFunctionClosure(seeds, moduleFunctionsAll, moduleMutableNames);
+    moduleFnDecls = closure.selected;
+    moduleFnReferencedNames = closure.referencedNames;
+  }
+  const helpers = (helpersMap.size > 0 || moduleFnDecls.size > 0)
+    ? new Set([...helpersMap.keys(), ...moduleFnDecls.keys()])
+    : undefined;
   // Module-level `const NAME = <pure literal>` data tables (menus, slides, feeds…) referenced by
-  // this component. QML property names cannot start with an upper-case letter (and these usually
-  // do), so each one is surfaced as `__const_NAME` and the identifier is aliased in scope.
+  // this component — directly, OR transitively through a module helper this component calls
+  // (moduleFnReferencedNames). QML property names cannot start with an upper-case letter (and
+  // these usually do), so each one is surfaced as `__const_NAME` and the identifier is aliased
+  // in scope.
   const moduleConstDecls = new Map<string, t.Expression>();
   if (moduleFile) {
     const consts = moduleLevelConsts(moduleFile);
     if (consts.size > 0) {
-      const referenced = collectIdentifierNames(fn);
+      const referenced = new Set([...directRefs, ...moduleFnReferencedNames]);
       for (const [name, init] of consts) {
         if (!referenced.has(name)) continue;
         if (table.has(name) || renderLocalsMap.has(name) || mutableLocalsMap.has(name) || helpersMap.has(name)) continue;
@@ -243,6 +267,30 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
       const bodyScope = info.params.length
         ? { ...helperScope, locals: { ...(helperScope.locals ?? {}), ...Object.fromEntries(info.params.map((p) => [p, safeName(p)])) } }
         : helperScope;
+      const body = info.body.body.map((st) => emitStmt(st, bodyScope)).join(" ");
+      decls.push(`${INDENT}function ${safeName(name)}(${paramStr}) { ${body} }`);
+    }
+  }
+  // Module-level helper functions selected above (moduleFnDecls): emitted as QML object methods
+  // too, but with a DELIBERATELY MINIMAL scope — unlike a local helper, a module-level function is
+  // NOT lexically inside this component (it's defined at module top level, and the SAME body is
+  // copied, unmodified, into every OTHER component that also calls it). It must not see this
+  // component's own signals/props/mutable-locals/refs: giving it `table`/`mutableLocals` etc. would
+  // let it accidentally resolve a bare name against THIS component's unrelated local state instead
+  // of failing the way real JS would. The only things in its real lexical scope are: its own
+  // params (shadowed below, same rule as a local helper) and module-level consts (constAliases —
+  // the same literal alias string regardless of which component embeds it, so sharing this
+  // component's `constAliases` map is exactly the set it needs, already narrowed to what's used).
+  if (moduleFnDecls.size > 0) {
+    const moduleFnScope: Scope = {
+      table: new Map(), mode: "handler", jsImports,
+      ...(Object.keys(constAliases).length ? { locals: constAliases } : {}),
+    };
+    for (const [name, info] of moduleFnDecls) {
+      const paramStr = info.params.map(safeName).join(", ");
+      const bodyScope = info.params.length
+        ? { ...moduleFnScope, locals: { ...(moduleFnScope.locals ?? {}), ...Object.fromEntries(info.params.map((p) => [p, safeName(p)])) } }
+        : moduleFnScope;
       const body = info.body.body.map((st) => emitStmt(st, bodyScope)).join(" ");
       decls.push(`${INDENT}function ${safeName(name)}(${paramStr}) { ${body} }`);
     }

@@ -510,3 +510,137 @@ export function analyzeHelpers(fn: t.Function): Map<string, HelperInfo> {
   }
   return out;
 }
+
+/** True if a function-like body IS a component (returns an `h(...)` call) — the same shape
+ *  `findComponents` (index.ts) looks for. A module-level declaration with this shape is a
+ *  component, not a plain helper, and must never be pulled into another component as a method. */
+function looksLikeComponentBody(body: t.BlockStatement | t.Expression): boolean {
+  if (isHCall(body)) return true; // expression-bodied arrow whose body IS the h() call
+  if (!t.isBlockStatement(body)) return false;
+  return body.body.some((s) => t.isReturnStatement(s) && isHCall(s.argument));
+}
+
+/** Module-level helper functions: `function f(params) { body }` (FunctionDeclaration) and
+ *  `const f = (params) => body` / `const f = function(params) { body }` at the TOP of the file —
+ *  the module-scope analog of `analyzeHelpers`. Excludes anything that is itself a component
+ *  (returns an `h(...)` call — `findComponents` already owns those). Unlike `analyzeHelpers`,
+ *  a zero-param expression arrow IS included here: there is no module-level "derived accessor"
+ *  mechanism to hand it to, so `const f = () => expr` used as `f()` needs to become a method too.
+ *
+ *  Returns every module-level function-shaped binding, regardless of whether any component uses
+ *  it — callers select the subset actually referenced (collectModuleFunctionClosure) so dead
+ *  helpers are never emitted. */
+export function analyzeModuleFunctions(file: t.File): Map<string, HelperInfo> {
+  const out = new Map<string, HelperInfo>();
+  for (const node of file.program.body) {
+    if (t.isFunctionDeclaration(node) && node.id && t.isBlockStatement(node.body)) {
+      if (looksLikeComponentBody(node.body)) continue;
+      const params = node.params.filter((p): p is t.Identifier => t.isIdentifier(p)).map((p) => p.name);
+      out.set(node.id.name, { params, body: node.body });
+      continue;
+    }
+    if (!t.isVariableDeclaration(node) || node.kind !== "const") continue;
+    for (const d of node.declarations) {
+      if (!t.isIdentifier(d.id) || !d.init) continue;
+      const init = d.init;
+      if (t.isArrowFunctionExpression(init)) {
+        if (looksLikeComponentBody(init.body)) continue;
+        const params = init.params.filter((p): p is t.Identifier => t.isIdentifier(p)).map((p) => p.name);
+        const body: t.BlockStatement = t.isBlockStatement(init.body)
+          ? init.body
+          : t.blockStatement([t.returnStatement(init.body as t.Expression)]);
+        out.set(d.id.name, { params, body });
+      } else if (t.isFunctionExpression(init)) {
+        if (looksLikeComponentBody(init.body)) continue;
+        const params = init.params.filter((p): p is t.Identifier => t.isIdentifier(p)).map((p) => p.name);
+        out.set(d.id.name, { params, body: init.body });
+      }
+    }
+  }
+  return out;
+}
+
+/** Every top-level `let`/`var` declared name in the module — mutable module state. A module-level
+ *  helper function closing over one of these cannot be supported correctly: the function is
+ *  emitted as a METHOD COPIED into every component that references it (each component is its own
+ *  QML type/instance), so there is no single shared slot a mutation could land in — two components
+ *  calling the "same" function would silently mutate independent copies instead of shared state.
+ *  `collectModuleFunctionClosure` fails loud (transpile-time error) rather than emit that silently
+ *  wrong behavior. */
+export function moduleLevelMutableNames(file: t.File): Set<string> {
+  const out = new Set<string>();
+  for (const node of file.program.body) {
+    if (!t.isVariableDeclaration(node) || node.kind === "const") continue;
+    for (const d of node.declarations) if (t.isIdentifier(d.id)) out.add(d.id.name);
+  }
+  return out;
+}
+
+/** Every Identifier name referenced inside a helper body (own declaration keys excluded by the
+ *  caller via `paramNames`, since a function's own params shadow same-named outer bindings).
+ *  Over-approximates like `collectIdentifierNames` (component.ts) — deeper shadowing (a nested
+ *  `const`/param with the same name) is not tracked; module helper names are distinctive in
+ *  practice, same tradeoff already accepted for module consts. */
+function identifiersInBody(body: t.BlockStatement): Set<string> {
+  const names = new Set<string>();
+  const walk = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) { for (const e of node) walk(e); return; }
+    const n = node as { type?: string; name?: string };
+    if (n.type === "Identifier" && n.name) names.add(n.name);
+    for (const key of Object.keys(n)) {
+      if (key === "loc" || key === "leadingComments" || key === "trailingComments" || key === "innerComments") continue;
+      walk((n as Record<string, unknown>)[key]);
+    }
+  };
+  walk(body);
+  return names;
+}
+
+/** The transitive closure of module-level helper functions a component needs, starting from the
+ *  names it directly references (`seedNames` — already filtered by the caller for shadowing: a
+ *  name bound locally in the component wins and is never pulled from the module). A selected
+ *  helper may itself call another module helper or read a module const — both are discovered by
+ *  walking the selected helper's own body (excluding ITS OWN params, which shadow same-named
+ *  module decls inside that body — real JS lexical scoping, one function at a time).
+ *
+ *  Throws if a selected helper's body references module-level mutable `let`/`var` state (see
+ *  `moduleLevelMutableNames`) — fail loud at transpile time rather than silently emit a function
+ *  whose semantics (shared mutable state across components) this per-component-copy model can't
+ *  preserve.
+ *
+ *  Returns the selected helpers (name → body/params, ready to emit as QML methods) plus every
+ *  identifier name referenced by their bodies (minus each one's own params) — the caller unions
+ *  this into its module-CONST reference check, so a const only reached transitively through a
+ *  helper (never named directly in the component) is still surfaced. */
+export function collectModuleFunctionClosure(
+  seedNames: Iterable<string>,
+  moduleFunctions: Map<string, HelperInfo>,
+  moduleMutableNames: Set<string>,
+): { selected: Map<string, HelperInfo>; referencedNames: Set<string> } {
+  const selected = new Map<string, HelperInfo>();
+  const referencedNames = new Set<string>();
+  const stack = [...seedNames];
+  while (stack.length) {
+    const name = stack.pop()!;
+    if (selected.has(name)) continue;
+    const info = moduleFunctions.get(name);
+    if (!info) continue; // not a module function (a module const, or an unrelated identifier)
+    selected.set(name, info);
+    const paramNames = new Set(info.params);
+    for (const ref of identifiersInBody(info.body)) {
+      if (paramNames.has(ref)) continue; // the helper's own param shadows a same-named module decl
+      referencedNames.add(ref);
+      if (moduleMutableNames.has(ref)) {
+        throw new Error(
+          `module-level function "${name}" closes over mutable module state "${ref}" (a top-level ` +
+          `\`let\`/\`var\`) — not supported: the function is copied into every component that calls ` +
+          `it, so there is no single shared slot for the mutation. Make "${ref}" a \`const\`, or move ` +
+          `both "${ref}" and "${name}" inside the component(s) that need them.`,
+        );
+      }
+      if (moduleFunctions.has(ref)) stack.push(ref);
+    }
+  }
+  return { selected, referencedNames };
+}
