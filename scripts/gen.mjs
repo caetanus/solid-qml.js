@@ -16,5 +16,9 @@ for (const [name, source] of Object.entries(app.modules)) await writeFile(path.j
 await writeFile(out.replace(/\.qml$/, ".css"), app.css);
 await writeFile(out, app.entry);
 // Static assets referenced as "assets/…" resolve relative to the generated QML — mirror them.
+// Resolved against process.cwd() (an "assets/" dir alongside wherever you invoke this from), not
+// the entry file's own directory — run this with cwd = your app's root if it has one (see
+// docs/getting-started.md, "Your first app outside the checkout"). A missing dir is silently
+// skipped (apps with no static assets are the common case, not an error).
 await cp("assets", path.join(outDir, "assets"), { recursive: true }).catch(() => {});
 console.log(`[gen] ${Object.keys(app.components).length} components + ${Object.keys(app.modules).length} modules → ${out}`);

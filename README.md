@@ -55,13 +55,16 @@ file per component**, plus a stylesheet, running on top of a custom C++ CSS engi
 
 ## Quickstart
 
-Requirements: Node.js + npm, **Qt 6** (Core, Gui, Qml, Quick, Test), **Meson** and **Ninja**.
+Requirements: Node.js + npm, **Qt 6** (Core, Gui, Qml, Quick, Test, + private headers for Qml/Quick/
+QuickTemplates2), **CMake**, **Meson** (≥1.1) and **Ninja**, plus a system font (e.g. `noto-fonts`
+on Arch) — see [docs/getting-started.md](docs/getting-started.md) for the full, verified dependency
+list (clean-room tested on 2026-10-11).
 
 ```sh
 # 1. JS dependencies
 npm install
 
-# 2. build the native loader (the C++ CSS engine is vendored under subprojects/)
+# 2. build the native loader (the C++ CSS engine is vendored under vendor/qml-css-engine)
 meson setup build
 ninja -C build
 
