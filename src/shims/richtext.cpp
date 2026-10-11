@@ -75,6 +75,7 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     if (m_document == doc)
         return;
     QObject::disconnect(m_pagesConn);
+    m_pendingPageCount = m_pageCount; // cancel a queued count from the previous document
     QObject::disconnect(m_pageCursorConn);
     QObject::disconnect(m_modifiedConn);
     QObject::disconnect(m_contentsConn);
@@ -95,12 +96,12 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
             m_pageCursorConn = connect(edit, &QQuickTextEdit::cursorRectangleChanged, this, &RichTextHandler::updateCurrentPage);
     }
     if (QTextDocument *td = doc ? doc->textDocument() : nullptr) {
-        m_pagesConn = connect(td->documentLayout(), &QAbstractTextDocumentLayout::pageCountChanged, this, [this](int count) {
-            count = qMax(1, count);
-            if (m_pageCount == count) return;
-            m_pageCount = count;
-            emit pagesChanged();
-            updateCurrentPage();
+        // Synchronous edits can emit documentSizeChanged without scheduling Qt's
+        // deferred pageCountChanged signal. Use the size already computed by Qt;
+        // querying pageCount() here would force completion of any lazy layout.
+        m_pagesConn = connect(td->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged, this, [this](const QSizeF &size) {
+            const int count = m_pageStride > 0 ? qMax(1, qCeil(size.height() / m_pageStride)) : 1;
+            queuePageCount(count);
         });
         // Office item 3: emitted (before contentsChange) for NEW edits only — how trackBlocks()
         // tells an edit from an undo/redo replaying the stack.
@@ -181,8 +182,27 @@ void RichTextHandler::syncPageCount()
 {
     // Geometry/load boundaries only. Never force whole-document layout from an edit hook.
     const int count = m_doc ? qMax(1, m_doc->pageCount()) : 1;
+    m_pendingPageCount = count; // geometry/load supersedes an older queued edit notification
     if (count != m_pageCount) { m_pageCount = count; emit pagesChanged(); }
     updateCurrentPage();
+}
+
+void RichTextHandler::queuePageCount(int count)
+{
+    if (!m_pageCountUpdatePending && count == m_pageCount) return;
+    m_pendingPageCount = count;
+    if (m_pageCountUpdatePending) return;
+    // Changing sheet height inside TextEdit's size update reenters its QML height
+    // binding. Coalesce actual count changes until that update finishes. Stable
+    // counts take only the comparison above: no event allocation or size copy.
+    m_pageCountUpdatePending = true;
+    QMetaObject::invokeMethod(this, [this] {
+        m_pageCountUpdatePending = false;
+        if (m_pageCount == m_pendingPageCount) return;
+        m_pageCount = m_pendingPageCount;
+        emit pagesChanged();
+        updateCurrentPage();
+    }, Qt::QueuedConnection);
 }
 
 int RichTextHandler::pageAt(int position) const

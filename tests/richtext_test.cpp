@@ -2995,6 +2995,69 @@ private slots:
         qInfo("PAGE_QT_ONLY type_ms=%.3f pages=%d", t.nsecsElapsed() / 1e6, d->pageCount());
     }
 
+    void pageCountChangesAreCoalesced()
+    {
+        QTest::failOnWarning(QRegularExpression(QStringLiteral(".*Binding loop.*")));
+        PageEditor w;
+        QVERIFY(w.root);
+        QCoreApplication::processEvents();
+        auto *d = w.fmt()->document()->textDocument();
+        w.fmt()->insertText(QStringLiteral("First"));
+        QCoreApplication::processEvents();
+        QSignalSpy changed(w.root.data(), SIGNAL(pagesChanged()));
+        QTextCursor c(d);
+        c.movePosition(QTextCursor::End);
+        QTextBlockFormat format;
+        format.setPageBreakPolicy(QTextFormat::PageBreak_AlwaysBefore);
+        c.insertBlock(format);
+        QCOMPARE(d->pageCount(), 2);
+        d->undo();
+        QCOMPARE(d->pageCount(), 1);
+        QCoreApplication::processEvents();
+        QCOMPARE(w.root->property("pageCount").toInt(), 1);
+        QCOMPARE(changed.size(), 0);
+        d->redo();
+        QTRY_COMPARE(w.root->property("pageCount").toInt(), 2);
+        QCOMPARE(changed.size(), 1);
+    }
+
+    void bookPaginationAfterEdits()
+    {
+        QTest::failOnWarning(QRegularExpression(QStringLiteral(".*Binding loop.*")));
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        if (!QFile::exists(book)) QSKIP("book sample unavailable");
+        PageEditor w;
+        QVERIFY(w.root);
+        QCoreApplication::processEvents();
+        QVERIFY(w.fmt()->loadOdf(QUrl::fromLocalFile(book)));
+        QCoreApplication::processEvents();
+        auto *d = w.fmt()->document()->textDocument();
+        for (int location = 0; location < 3; ++location) {
+            for (const QString &text : {QStringLiteral("x"), QStringLiteral("\n"), QStringLiteral("A pasted paragraph that wraps and changes the flow of text on the page.\n")}) {
+                const int pos = location == 0 ? 10 : location == 1 ? d->characterCount()/2 : d->characterCount()-2;
+                QTextCursor c(d); c.setPosition(pos); c.insertText(text);
+                const int pages = d->pageCount();
+                QScopedPointer<QTextDocument> fresh(d->clone());
+                QCOMPARE(pages, fresh->pageCount());
+                auto expected = fresh->begin();
+                for (auto b = d->begin(); b.isValid(); b = b.next(), expected = expected.next()) {
+                    const auto rect = d->documentLayout()->blockBoundingRect(b);
+                    QCOMPARE(rect, fresh->documentLayout()->blockBoundingRect(expected));
+                    for (int i = 0; i < b.layout()->lineCount(); ++i) {
+                        const auto line = b.layout()->lineAt(i);
+                        const qreal y = rect.top()+line.y();
+                        const qreal local = y-qFloor(y/1147)*1147;
+                        QVERIFY(local >= 93 && local+line.height() <= 1030);
+                    }
+                    if (b.blockFormat().pageBreakPolicy() & QTextFormat::PageBreak_AlwaysBefore)
+                        QVERIFY(qAbs(rect.top()-qFloor(rect.top()/1147)*1147-94) < 1);
+                }
+                QTRY_COMPARE(w.root->property("pageCount").toInt(), d->pageCount());
+                d->undo();
+            }
+        }
+    }
+
     void bookPageEditBudget()
     {
         if (!qEnvironmentVariableIsSet("RICHTEXT_PERF_BUDGET"))

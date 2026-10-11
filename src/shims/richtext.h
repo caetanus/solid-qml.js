@@ -430,7 +430,10 @@ private:
     QList<HeadingEntry> m_headings;
     void updateCurrentPage();
     void syncPageCount();
+    void queuePageCount(int count);
     int m_pageCount = 1;
+    int m_pendingPageCount = 1;
+    bool m_pageCountUpdatePending = false;
     int m_currentPage = 1;
     qreal m_pageStride = 0;
     QMetaObject::Connection m_pagesConn;
