@@ -27,6 +27,8 @@ RichText {
     readonly property bool underline: !!fmt && fmt.underline
     readonly property bool strike: !!fmt && fmt.strike
     readonly property bool bulletList: !!fmt && fmt.bulletList
+    // Office item 2b (item 5): mutually exclusive with bulletList.
+    readonly property bool numberedList: !!fmt && fmt.numberedList
     readonly property int heading: fmt ? fmt.heading : 0 // 0 = body text, 1..6
     // Office item 2b (★4): character format at the caret/selection. "" / 0 when unset.
     readonly property string fontFamily: fmt ? fmt.fontFamily : ""
@@ -149,7 +151,12 @@ RichText {
     function toggleUnderline() { _toggle("underline"); _editor.forceActiveFocus() }
     function toggleStrike() { _toggle("strike"); _editor.forceActiveFocus() }
     function toggleBulletList() { if (fmt) fmt.toggleBulletList(); _editor.forceActiveFocus() }
+    function toggleNumberedList() { if (fmt) fmt.toggleNumberedList(); _editor.forceActiveFocus() }
     function setHeading(level) { if (fmt) fmt.setHeading(level); _editor.forceActiveFocus() }
+    // ── paragraph (office item 2b, item 5) ──────────────────────────────────────────────────────
+    function indent() { if (fmt) fmt.indent(); _editor.forceActiveFocus() }
+    function outdent() { if (fmt) fmt.outdent(); _editor.forceActiveFocus() }
+    function insertPageBreak() { if (fmt) fmt.insertPageBreak(); _editor.forceActiveFocus() }
 
     // ── character format (office item 2b, ★4) ────────────────────────────────────────────────────
     // setFontFamily/setFontSize: on the selection, or — like toggleBold — on what is typed next

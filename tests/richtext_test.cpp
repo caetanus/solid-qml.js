@@ -1336,7 +1336,136 @@ private slots:
         const qint64 editMs = t.elapsed();
         QCOMPARE(m_fmt->headings().size(), h.size()); // the edits touched no heading
         qInfo("outlineOnThe300PageBook: %d headings, 50 mid-document edits in %lld ms (%.2f ms/edit)",
-              h.size(), editMs, editMs / 50.0);
+              int(h.size()), editMs, editMs / 50.0);
+    }
+
+    // ── office item 2b, item 5: paragraph ────────────────────────────────────────────────────────
+
+    void numberedListIsMutuallyExclusiveWithBulletList()
+    {
+        m_fmt->insertText(QStringLiteral("one"));
+        m_fmt->setCursorPosition(1);
+        QVERIFY(!m_fmt->bulletList() && !m_fmt->numberedList());
+
+        m_fmt->toggleNumberedList();
+        QVERIFY(m_fmt->numberedList());
+        QVERIFY(!m_fmt->bulletList());
+        QCOMPARE(doc()->findBlockByNumber(0).textList()->format().style(), QTextListFormat::ListDecimal);
+
+        m_fmt->toggleNumberedList(); // mirrors toggleBulletList(): in a list → detach
+        QVERIFY(!m_fmt->numberedList() && !m_fmt->bulletList());
+
+        m_fmt->toggleBulletList();
+        QVERIFY(m_fmt->bulletList() && !m_fmt->numberedList());
+        m_fmt->toggleNumberedList(); // already in A list (bullet) → detaches, does not convert
+        QVERIFY(!m_fmt->bulletList() && !m_fmt->numberedList());
+    }
+
+    void numberedListRoundTripsThroughOdf()
+    {
+        m_fmt->insertText(QStringLiteral("one"));
+        m_fmt->setCursorPosition(1);
+        m_fmt->toggleNumberedList();
+        const QString odt = m_dir.filePath(QStringLiteral("numbered.odt"));
+        QVERIFY(m_fmt->saveOdf(QUrl(odt)));
+        m_fmt->newDocument();
+        QVERIFY(m_fmt->loadOdf(QUrl(odt)));
+        QTextList *l = doc()->findBlockByNumber(0).textList();
+        QVERIFY(l);
+        QCOMPARE(l->format().style(), QTextListFormat::ListDecimal);
+    }
+
+    void indentOutdentStepTheParagraphMarginOutsideAList()
+    {
+        m_fmt->insertText(QStringLiteral("x"));
+        m_fmt->setCursorPosition(1);
+        const qreal before = blockFormat(doc(), 0).leftMargin();
+        m_fmt->indent();
+        const qreal after1 = blockFormat(doc(), 0).leftMargin();
+        QVERIFY(after1 > before);
+        m_fmt->indent();
+        QVERIFY(blockFormat(doc(), 0).leftMargin() > after1);
+        m_fmt->outdent();
+        QCOMPARE(blockFormat(doc(), 0).leftMargin(), after1);
+    }
+
+    void indentStepsScaleWithZoom()
+    {
+        m_fmt->insertText(QStringLiteral("x"));
+        m_fmt->setCursorPosition(1);
+        m_fmt->setZoom(2.0);
+        const qreal before = blockFormat(doc(), 0).leftMargin();
+        m_fmt->indent();
+        QCOMPARE(blockFormat(doc(), 0).leftMargin() - before, 48.0); // 24px step * zoom 2
+    }
+
+    void indentOutdentChangeListLevel()
+    {
+        m_fmt->insertText(QStringLiteral("x"));
+        m_fmt->setCursorPosition(1);
+        m_fmt->toggleBulletList();
+        QCOMPARE(doc()->findBlockByNumber(0).textList()->format().indent(), 1);
+        m_fmt->indent();
+        QTextList *l1 = doc()->findBlockByNumber(0).textList();
+        QVERIFY(l1);
+        QCOMPARE(l1->format().indent(), 2);
+        m_fmt->outdent();
+        QTextList *l0 = doc()->findBlockByNumber(0).textList();
+        QVERIFY(l0);
+        QCOMPARE(l0->format().indent(), 1);
+        m_fmt->outdent(); // past the first level: detaches
+        QVERIFY(!doc()->findBlockByNumber(0).textList());
+    }
+
+    void insertPageBreakSetsThePolicyOnTheNextParagraph()
+    {
+        m_fmt->insertText(QStringLiteral("one"));
+        m_fmt->setCursorPosition(3);
+        m_fmt->insertPageBreak();
+        m_fmt->setCursorPosition(m_fmt->document()->textDocument()->characterCount() - 1);
+        m_fmt->insertText(QStringLiteral("two"));
+        QCOMPARE(doc()->blockCount(), 2);
+        QCOMPARE(blockFormat(doc(), 0).pageBreakPolicy(), QTextFormat::PageBreak_Auto);
+        QCOMPARE(blockFormat(doc(), 1).pageBreakPolicy(), QTextFormat::PageBreak_AlwaysBefore);
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("one\ntwo"));
+    }
+
+    void insertPageBreakRoundTripsThroughOdf()
+    {
+        m_fmt->insertText(QStringLiteral("one"));
+        m_fmt->setCursorPosition(3);
+        m_fmt->insertPageBreak();
+        m_fmt->setCursorPosition(m_fmt->document()->textDocument()->characterCount() - 1);
+        m_fmt->insertText(QStringLiteral("two"));
+        const QString odt = m_dir.filePath(QStringLiteral("pagebreak.odt"));
+        QVERIFY(m_fmt->saveOdf(QUrl(odt)));
+        QVERIFY2(zipEntry(odt, QStringLiteral("content.xml")).contains("fo:break-before=\"page\""),
+                 "our writer must emit fo:break-before=\"page\"");
+
+        m_fmt->newDocument();
+        QVERIFY(m_fmt->loadOdf(QUrl(odt)));
+        QCOMPARE(doc()->blockCount(), 2);
+        QCOMPARE(blockFormat(doc(), 0).pageBreakPolicy(), QTextFormat::PageBreak_Auto);
+        QCOMPARE(blockFormat(doc(), 1).pageBreakPolicy(), QTextFormat::PageBreak_AlwaysBefore);
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("one\ntwo"));
+    }
+
+    void pageBreakSurvivesZoom()
+    {
+        m_fmt->insertText(QStringLiteral("one"));
+        m_fmt->setCursorPosition(3);
+        m_fmt->insertPageBreak();
+        m_fmt->setCursorPosition(m_fmt->document()->textDocument()->characterCount() - 1);
+        m_fmt->insertText(QStringLiteral("two"));
+        m_fmt->setZoom(2.0);
+        QCOMPARE(blockFormat(doc(), 1).pageBreakPolicy(), QTextFormat::PageBreak_AlwaysBefore);
+        const QString at1 = m_dir.filePath(QStringLiteral("pb-zoom1.odt"));
+        m_fmt->setZoom(1.0);
+        QVERIFY(m_fmt->saveOdf(QUrl(at1)));
+        m_fmt->setZoom(2.0);
+        const QString at2 = m_dir.filePath(QStringLiteral("pb-zoom2.odt"));
+        QVERIFY(m_fmt->saveOdf(QUrl(at2)));
+        QCOMPARE(zipEntry(at2, QStringLiteral("content.xml")), zipEntry(at1, QStringLiteral("content.xml")));
     }
 };
 

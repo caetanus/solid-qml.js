@@ -191,6 +191,8 @@ declare global {
     readonly underline: boolean;
     readonly strike: boolean;
     readonly bulletList: boolean;
+    /** Mutually exclusive with bulletList. */
+    readonly numberedList: boolean;
     /** 0 = body text, 1..6 = heading level. */
     readonly heading: number;
     /** "" when unset (Default Paragraph Style carries no explicit font by design). */
@@ -229,6 +231,16 @@ declare global {
     toggleUnderline(): void;
     toggleStrike(): void;
     toggleBulletList(): void;
+    /** Mirrors toggleBulletList() exactly — see the handle's numberedList doc. */
+    toggleNumberedList(): void;
+    /** In a list: one level deeper/shallower; otherwise the paragraph's own left margin, one
+     *  step. outdent() past the first list level detaches it (plain paragraph). */
+    indent(): void;
+    outdent(): void;
+    /** Splits the paragraph at the caret and marks the new one to start on a fresh page
+     *  (written to / read from ODF as fo:break-before="page"). No on-screen effect (★1: the
+     *  editor is continuous). */
+    insertPageBreak(): void;
     /** 0 = "Text Body", 1..6 = "Heading n" (applyParagraphStyle). */
     setHeading(level: number): void;
     /** On the selection, or — like toggleBold — on what is typed next with nothing selected. */

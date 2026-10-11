@@ -76,7 +76,7 @@ State — reactive: reading `doc.bold` in a binding (a `classList`, a text) foll
 | `currentParagraphStyle` | string | The caret's paragraph style (`"Text Body"`, `"Heading 1"`, …). |
 | `currentCharStyle` | string | The character style at the caret, `""` for none. |
 | `alignment` | `"left" \| "center" \| "right" \| "justify"` | Paragraph alignment. |
-| `bulletList`, `inTable` | boolean | The caret is in a bullet list / a table. |
+| `bulletList`, `numberedList`, `inTable` | boolean | The caret is in a bullet / numbered list (mutually exclusive) / a table. |
 | `canUndo`, `canRedo` | boolean | |
 | `currentHeadingIndex` | number | Index into `headings()` of the heading at/before the caret, `-1` if none. |
 
@@ -97,7 +97,9 @@ Methods:
 | `setFontFamily(name)`, `setFontSize(pt)` | | On the selection; with nothing selected, on what is typed next (same mechanics as `toggleBold`). `pt` is canonical (zoom-1) units, applied at the zoom in effect. |
 | `clearFormatting()` | | Drops direct CHARACTER formatting (bold, font, size, …) in the selection; keeps character styles. Unlike `clearDirectFormatting()`, paragraph properties (alignment, margins, …) are untouched. |
 | `setAlignment(align)` | | On every paragraph the selection touches. |
-| `toggleBulletList()` | | |
+| `toggleBulletList()`, `toggleNumberedList()` | | Each mirrors the other exactly: in ANY list, detach it (plain paragraph); otherwise start one of its own kind. Toggling the other kind while already in a list turns the list off, not a conversion. |
+| `indent()`, `outdent()` | | In a list: one level deeper/shallower (`outdent()` past the first level detaches it). Otherwise: the paragraph's own left margin, one ~24px step, at the zoom in effect. |
+| `insertPageBreak()` | | Splits the paragraph at the caret (`insertParagraph()`'s mechanics) and marks the new one to start on a fresh page. No on-screen effect — the editor is continuous (★1) — but round-trips through `saveOdf`/`loadOdf` as `fo:break-before="page"`. |
 | `insertTable(rows, cols)`, `addTableRow()`, `addTableColumn()`, `removeTableRow()`, `removeTableColumn()` | | Row/column edits act on the cell at the caret. |
 | `insertImage(path)` | `{ ok, error }` | Inline image at the caret, capped to the column width. |
 | `undo()`, `redo()`, `focusEditor()` | | |
@@ -200,12 +202,14 @@ touches no heading does not retrigger it.
   `zoom` too.
 - ODF coverage is the word-like subset: paragraphs and headings (`text:h` with its outline
   level), spans (nested ones too), bullet and numbered lists (nested by level), tables (merged
-  cells), inline images, and the named paragraph/character styles of `styles.xml` with the
+  cells), inline images, a manual page break before a paragraph (`fo:break-before="page"`, from
+  `insertPageBreak()`), and the named paragraph/character styles of `styles.xml` with the
   automatic styles over them as direct formatting. Our writer produces `content.xml`,
   `styles.xml` (the named styles), `meta.xml` and the manifest — LibreOffice 26.8 opens the result
-  with every named style, parent, next style and heading level in place. Not kept yet: page layout
-  and headers/footers, footnotes as footnotes (their text is kept, inline), bookmarks and links
-  (their text is kept), unknown package entries. A paragraph whose styles give it no vertical
+  with every named style, parent, next style and heading level in place. Not kept yet: page SETUP
+  (size/margins/printing) and headers/footers, footnotes as footnotes (their text is kept,
+  inline), bookmarks and links (their text is kept), unknown package entries. A paragraph whose
+  styles give it no vertical
   spacing gets a quarter pixel under it (invisible; it keeps Qt's viewport culling from
   over-drawing). Files saved by the earlier Qt-based writer still open (their headings come back
   as direct formatting on Default Paragraph Style).

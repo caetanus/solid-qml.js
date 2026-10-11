@@ -123,6 +123,9 @@ void readParagraphProps(const QXmlStreamAttributes &a, QVariantMap &props)
         putProp(props, Prop::Alignment, al.toString());
     if (const auto k = val("fo:keep-with-next"); !k.isEmpty())
         props.insert(QStringLiteral("keepWithNext"), k == QLatin1String("always"));
+    // insertPageBreak() (item 5): not a rt::Prop — see the matching writer side (writeProps()).
+    if (val("fo:break-before") == QLatin1String("page"))
+        props.insert(QStringLiteral("__pageBreakBefore"), true);
 }
 
 QTextListFormat::Style listKind(const QXmlStreamReader &xml)
@@ -396,8 +399,10 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
         }
         p.block = sheet.blockFormat(p.style);
         if (!direct.isEmpty()) {
-            applyProps(p.block, direct, true);
+            applyProps(p.block, direct, true); // ignores __pageBreakBefore: not a rt::Prop
             ensureMinSpacing(p.block);
+            if (direct.value(QStringLiteral("__pageBreakBefore")).toBool())
+                p.block.setPageBreakPolicy(QTextFormat::PageBreak_AlwaysBefore);
             for (auto it = direct.cbegin(); it != direct.cend(); ++it) {
                 Prop pr;
                 if (propFromName(it.key(), &pr) && isCharProp(pr))
@@ -708,7 +713,11 @@ void writeProps(QXmlStreamWriter &x, const QVariantMap &props, QSet<QString> *fo
     const auto has = [&](const char *k) { const QVariant v = props.value(QLatin1String(k)); return v.isValid() && !v.isNull(); };
     const auto get = [&](const char *k) { return props.value(QLatin1String(k)); };
 
-    bool anyPara = false;
+    // __pageBreakBefore: office item 2b item 5's insertPageBreak() — NOT a rt::Prop (page breaks
+    // are a direct, document-level flag, never part of a named style), set straight from
+    // QTextBlockFormat::pageBreakPolicy() by writeBlock(), read back the same way by readOdt().
+    const bool pageBreak = props.value(QStringLiteral("__pageBreakBefore")).toBool();
+    bool anyPara = pageBreak;
     for (const char *k : { "marginTop", "marginBottom", "marginLeft", "marginRight", "textIndent", "lineHeight",
                            "alignment", "keepWithNext" })
         anyPara = anyPara || has(k);
@@ -734,6 +743,8 @@ void writeProps(QXmlStreamWriter &x, const QVariantMap &props, QSet<QString> *fo
         }
         if (has("keepWithNext"))
             x.writeAttribute(QStringLiteral("fo:keep-with-next"), get("keepWithNext").toBool() ? QStringLiteral("always") : QStringLiteral("auto"));
+        if (pageBreak)
+            x.writeAttribute(QStringLiteral("fo:break-before"), QStringLiteral("page"));
         x.writeEndElement();
     }
 
@@ -928,6 +939,10 @@ private:
         const QString style = paragraphStyleOf(bf);
         QVariantMap direct = directProps(bf, m_sheet.blockFormat(style), true);
         direct.remove(QStringLiteral("outlineLevel")); // text:h's text:outline-level says it
+        // insertPageBreak() (item 5): not a rt::Prop, so directProps() above never sees it —
+        // forced into `direct` straight from the live format so writeProps() picks it up.
+        if (bf.pageBreakPolicy() & QTextFormat::PageBreak_AlwaysBefore)
+            direct.insert(QStringLiteral("__pageBreakBefore"), true);
         const int level = bf.headingLevel();
         m_x.writeStartElement(level > 0 ? QStringLiteral("text:h") : QStringLiteral("text:p"));
         m_x.writeAttribute(QStringLiteral("text:style-name"), direct.isEmpty()

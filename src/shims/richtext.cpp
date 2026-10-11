@@ -351,10 +351,31 @@ bool RichTextHandler::italic() const { return cursor().charFormat().fontItalic()
 bool RichTextHandler::underline() const { return cursor().charFormat().fontUnderline(); }
 bool RichTextHandler::strike() const { return cursor().charFormat().fontStrikeOut(); }
 
+namespace {
+bool isNumberedStyle(QTextListFormat::Style s)
+{
+    switch (s) {
+    case QTextListFormat::ListDecimal: case QTextListFormat::ListLowerAlpha: case QTextListFormat::ListUpperAlpha:
+    case QTextListFormat::ListLowerRoman: case QTextListFormat::ListUpperRoman:
+        return true;
+    default:
+        return false;
+    }
+}
+} // namespace
+
 bool RichTextHandler::bulletList() const
 {
     const QTextCursor c = cursor();
-    return !c.isNull() && c.currentList() != nullptr;
+    const QTextList *l = c.isNull() ? nullptr : c.currentList();
+    return l && !isNumberedStyle(l->format().style());
+}
+
+bool RichTextHandler::numberedList() const
+{
+    const QTextCursor c = cursor();
+    const QTextList *l = c.isNull() ? nullptr : c.currentList();
+    return l && isNumberedStyle(l->format().style());
 }
 
 int RichTextHandler::heading() const
@@ -408,13 +429,33 @@ void RichTextHandler::toggleBulletList()
     if (c.isNull())
         return;
     if (QTextList *list = c.currentList()) {
-        // Detach the block: reset its indentation back to body text.
-        QTextBlockFormat bf = c.blockFormat();
+        // Detach the block: reset its indentation back to body text. blockFormat() must be read
+        // back AFTER remove() (not before) — remove() clears the block's own list association in
+        // the document; a format snapshot taken earlier still carries the OLD one, and writing it
+        // back would silently re-attach the block to the (possibly just-deleted) list.
         list->remove(c.block());
+        QTextBlockFormat bf = c.blockFormat();
         bf.setIndent(0);
         c.setBlockFormat(bf);
     } else {
         c.createList(QTextListFormat::ListDisc);
+    }
+    emit formatChanged();
+}
+
+void RichTextHandler::toggleNumberedList()
+{
+    QTextCursor c = cursor();
+    if (c.isNull())
+        return;
+    if (QTextList *list = c.currentList()) {
+        // See toggleBulletList(): blockFormat() must be read back AFTER remove().
+        list->remove(c.block());
+        QTextBlockFormat bf = c.blockFormat();
+        bf.setIndent(0);
+        c.setBlockFormat(bf);
+    } else {
+        c.createList(QTextListFormat::ListDecimal);
     }
     emit formatChanged();
 }
@@ -1026,6 +1067,72 @@ void RichTextHandler::insertParagraph()
         c.removeSelectedText();
     }
     breakParagraph(c);
+    c.endEditBlock();
+    emit formatChanged();
+}
+
+// ─── paragraph (office item 2b, item 5) ───────────────────────────────────────────────────────
+
+void RichTextHandler::indent()
+{
+    // 24px (~0.25in), the common word-processor step; at the zoom in effect, like setFontSize().
+    constexpr qreal kIndentStep = 24.0;
+    QTextCursor c = cursor();
+    if (c.isNull())
+        return;
+    if (QTextList *list = c.currentList()) {
+        QTextListFormat nf = list->format();
+        nf.setIndent(nf.indent() + 1);
+        list->remove(c.block());
+        c.createList(nf); // a new (or implicitly shared, by Qt) QTextList at the deeper level
+    } else {
+        QTextBlockFormat bf = c.blockFormat();
+        bf.setLeftMargin(bf.leftMargin() + kIndentStep * m_zoom);
+        c.setBlockFormat(bf);
+    }
+    emit formatChanged();
+}
+
+void RichTextHandler::outdent()
+{
+    constexpr qreal kIndentStep = 24.0;
+    QTextCursor c = cursor();
+    if (c.isNull())
+        return;
+    if (QTextList *list = c.currentList()) {
+        QTextListFormat nf = list->format();
+        const int newIndent = nf.indent() - 1;
+        list->remove(c.block()); // see toggleBulletList(): blockFormat() must be read back AFTER this
+        if (newIndent <= 0) {
+            QTextBlockFormat bf = c.blockFormat();
+            bf.setIndent(0);
+            c.setBlockFormat(bf);
+        } else {
+            nf.setIndent(newIndent);
+            c.createList(nf);
+        }
+    } else {
+        QTextBlockFormat bf = c.blockFormat();
+        bf.setLeftMargin(qMax(0.0, bf.leftMargin() - kIndentStep * m_zoom));
+        c.setBlockFormat(bf);
+    }
+    emit formatChanged();
+}
+
+void RichTextHandler::insertPageBreak()
+{
+    QTextCursor c = insertionCursor();
+    if (c.isNull())
+        return;
+    c.beginEditBlock();
+    if (const QTextCursor sel = selectionCursor(); !sel.isNull()) {
+        c = sel;
+        c.removeSelectedText();
+    }
+    breakParagraph(c);
+    QTextBlockFormat bf = c.blockFormat();
+    bf.setPageBreakPolicy(QTextFormat::PageBreak_AlwaysBefore);
+    c.setBlockFormat(bf);
     c.endEditBlock();
     emit formatChanged();
 }

@@ -38,6 +38,9 @@ class RichTextHandler : public QObject {
     Q_PROPERTY(bool underline READ underline NOTIFY formatChanged)
     Q_PROPERTY(bool strike READ strike NOTIFY formatChanged)
     Q_PROPERTY(bool bulletList READ bulletList NOTIFY formatChanged)
+    // Office item 2b (item 5): a numbered (ListDecimal/alpha/roman) list, as opposed to bulletList
+    // (ListDisc/Circle/Square) — the two are mutually exclusive at the caret.
+    Q_PROPERTY(bool numberedList READ numberedList NOTIFY formatChanged)
     Q_PROPERTY(int heading READ heading NOTIFY formatChanged)
     // Office item 2b (★4): character format at the caret/selection, same mechanics as bold. ""/0
     // when unset — Default Paragraph Style carries no explicit font by design (the editor's own
@@ -91,6 +94,7 @@ public:
     bool underline() const;
     bool strike() const;
     bool bulletList() const;
+    bool numberedList() const;
     int heading() const;
     QString fontFamily() const;
     qreal fontSize() const; // pt, canonical (zoom-1) units
@@ -100,6 +104,10 @@ public:
     Q_INVOKABLE void toggleUnderline();
     Q_INVOKABLE void toggleStrike();
     Q_INVOKABLE void toggleBulletList();
+    // Mirrors toggleBulletList() exactly: if the caret is in ANY list, detach it (plain
+    // paragraph); otherwise start a ListDecimal list. Toggling the other kind while already in a
+    // list turns the list off (same as toggling the current kind twice would), not a conversion.
+    Q_INVOKABLE void toggleNumberedList();
     // 0 → "Text Body", 1..6 → "Heading n" (applyParagraphStyle).
     Q_INVOKABLE void setHeading(int level);
     // Office item 2b (★4): on the selection, or on what is typed next with nothing selected —
@@ -141,6 +149,17 @@ public:
     // the new one gets the style's next style ("Heading 1" → "Text Body").
     Q_INVOKABLE void insertParagraph();
     const rt::StyleSheet &styleSheet() const { return m_sheet; }
+
+    // ── paragraph (office item 2b, item 5) ────────────────────────────────────────────────────
+    // In a list: one level deeper/shallower (a new/different QTextList; outdent() past level 1
+    // detaches, plain paragraph). Otherwise: the paragraph's own left margin, one step (at the
+    // zoom in effect — a length, like setFontSize()).
+    Q_INVOKABLE void indent();
+    Q_INVOKABLE void outdent();
+    // Splits the paragraph at the caret (insertParagraph()'s mechanics) and sets
+    // QTextFormat::PageBreak_AlwaysBefore on the NEW (next) paragraph. Written to ODF as
+    // fo:break-before="page" on an automatic paragraph style; read back the same way.
+    Q_INVOKABLE void insertPageBreak();
 
     // ── outline (office item 2b, ★3) ──────────────────────────────────────────────────────────
     // [{position, level, text}] in document order (level: the paragraph's heading/outline level).
