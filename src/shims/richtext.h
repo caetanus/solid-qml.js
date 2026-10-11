@@ -241,14 +241,21 @@ public:
 
     // ── clipboard (office item 2b, item 6) ────────────────────────────────────────────────────
     // HTML (rich: formatting kept) AND plain text, so both a paste back into this/another
-    // DocumentEditor and a paste into a plain text field work. No-op without a selection.
+    // DocumentEditor and a paste into a plain text field work. No-op without a selection. The
+    // HTML is built from an UNSCALED copy of the selection (office item 2b, ★2 follow-up): at any
+    // zoom, what lands on the clipboard reads in the document's canonical (zoom-1) sizes, so a
+    // paste into another app — or back into this one at a different zoom — is never doubled.
     Q_INVOKABLE void copy() const;
     Q_INVOKABLE void cut();
     // Prefers HTML when the clipboard has it, else plain text; no-op (and !canPaste) otherwise.
-    // Inserted as-is, at whatever size its source gives — see docs/document-editor.md "Clipboard"
-    // for the (minor, cosmetic) interaction with zoom.
+    // HTML goes through insertHtml() below (rescaled to the zoom in effect on entry); plain text
+    // takes the caret's own already-zoomed character format, like typed text.
     Q_INVOKABLE void paste();
     bool canPaste() const;
+    // Inserts `html` at the caret (replacing a selection, like insertText) and rescales exactly
+    // the inserted range to the zoom in effect — the SAME choke point paste() uses, so any other
+    // entry path (a host embedding this handler, a future drag-and-drop) gets it for free.
+    Q_INVOKABLE void insertHtml(const QString &html);
 
 signals:
     void documentChanged();
@@ -288,6 +295,23 @@ private:
     // touched block(s) (and the block's own empty-paragraph charFormat), true only the runs
     // actually inside [from, to). Must run inside the caller's own edit block (one undo step).
     void rescaleRange(int from, int to, qreal ratio, bool clipChars);
+    // Rescales [from, to) of a just-inserted range (e.g. insertHtml's pasted content) by `ratio`.
+    // Unlike rescaleRange (a selection/zoom-change operation on content already in the document,
+    // where every overlapping block is understood to be wholly affected), an inserted range may
+    // begin or end mid-paragraph, and whether a touched block's OWN blockFormat just came off the
+    // pasted source (canonical — needs scaling) or is pre-existing (already correctly zoomed —
+    // must not be touched) follows Qt's own QTextCursor::insertHtml/insertFragment rule, not a
+    // "which block is bigger" guess: every block the paste starts a NEW paragraph at (including
+    // one whose tail absorbs pre-existing text after the last pasted paragraph) got a fresh
+    // format from the source; only the ONE block the paste merely merges inline INTO at its start
+    // keeps that block's own pre-existing format — unless the paste landed at document position
+    // 0, which Qt special-cases to overwrite even that block's format. Character runs are always
+    // rescaled when they fall inside [from, to), regardless of which block they end up in. Must
+    // run inside the caller's own edit block.
+    void rescaleInsertedRange(int from, int to, qreal ratio);
+    // The unscaled (zoom / ratio) HTML of a selection fragment, for the clipboard (office item 2b,
+    // ★2 follow-up): builds it in a throwaway QTextDocument so the live document is never touched.
+    QString unscaledHtml(const QTextDocumentFragment &frag) const;
     void breakParagraph(QTextCursor &c);
     QTextCursor selectionCursor() const; // the selection exactly (no word expansion); null cursor if none
     void setError(const QString &message); // "" = success; non-empty also emits ioError

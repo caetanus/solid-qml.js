@@ -436,7 +436,10 @@ void RichTextHandler::copy() const
         return;
     const QTextDocumentFragment sel = c.selection();
     auto *data = new QMimeData;
-    data->setHtml(sel.toHtml());
+    // Unscaled (office item 2b, ★2 follow-up): the clipboard always carries the document's
+    // canonical (zoom-1) sizes, so a paste elsewhere — or back into this document at a different
+    // zoom — reads at the original size instead of whatever this document's zoom happened to be.
+    data->setHtml(unscaledHtml(sel));
     data->setText(sel.toPlainText());
     QGuiApplication::clipboard()->setMimeData(data);
 }
@@ -456,6 +459,24 @@ void RichTextHandler::paste()
     const QMimeData *data = QGuiApplication::clipboard()->mimeData();
     if (!data || !(data->hasHtml() || data->hasText()))
         return;
+    // HTML preferred (keeps formatting) and routed through insertHtml() — the SAME choke point
+    // used for a direct insertHtml() call — so it is rescaled to the zoom in effect on entry
+    // (office item 2b, ★2 follow-up); plain text has no size of its own, so insertText() just
+    // takes the caret's own (already-zoomed) character format, like typed text.
+    if (data->hasHtml())
+        insertHtml(data->html());
+    else
+        insertText(data->text());
+}
+
+bool RichTextHandler::canPaste() const
+{
+    const QMimeData *data = QGuiApplication::clipboard()->mimeData();
+    return data && (data->hasHtml() || data->hasText());
+}
+
+void RichTextHandler::insertHtml(const QString &html)
+{
     QTextCursor c = insertionCursor();
     if (c.isNull())
         return;
@@ -464,20 +485,105 @@ void RichTextHandler::paste()
         c = sel;
         c.removeSelectedText();
     }
-    // HTML preferred (keeps formatting); inserted at whatever size its source gives (see
-    // docs/document-editor.md "Clipboard" for the zoom interaction).
-    if (data->hasHtml())
-        c.insertHtml(data->html());
-    else
-        c.insertText(data->text());
+    const int from = c.position();
+    c.insertHtml(html);
+    // The HTML's own declared sizes (font-size, margins, …) are canonical, zoom-1 values — bring
+    // just-inserted range up to the zoom in effect, same as typed text (office item 2b, ★2
+    // follow-up). Content outside [from, to) (what the caret already sat in/next to) is untouched.
+    if (!qFuzzyCompare(m_zoom, 1.0))
+        rescaleInsertedRange(from, c.position(), m_zoom);
     c.endEditBlock();
     emit formatChanged();
 }
 
-bool RichTextHandler::canPaste() const
+void RichTextHandler::rescaleInsertedRange(int from, int to, qreal ratio)
 {
-    const QMimeData *data = QGuiApplication::clipboard()->mimeData();
-    return data && (data->hasHtml() || data->hasText());
+    QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
+    if (!doc || qFuzzyCompare(ratio, 1.0) || to <= from)
+        return;
+    QTextCursor c(doc);
+    const std::function<void(QTextFrame::iterator, const QTextFrame::iterator &)> walk =
+        [&](QTextFrame::iterator it, const QTextFrame::iterator &end) {
+            for (; it != end; ++it) {
+                if (QTextFrame *f = it.currentFrame()) {
+                    walk(f->begin(), f->end());
+                    continue;
+                }
+                const QTextBlock b = it.currentBlock();
+                if (!b.isValid())
+                    continue;
+                const int bpos = b.position(), bend = bpos + b.length();
+                if (bend <= from || bpos >= to)
+                    continue; // no overlap with the inserted range at all
+                // Whether THIS block's own blockFormat/blockCharFormat just came off the pasted
+                // source (canonical size — needs scaling) or is pre-existing (already correctly
+                // zoomed — must NOT be touched) follows QTextCopyHelper::appendFragment's own
+                // rule (qtextdocumentfragment.cpp), not a position heuristic: a paragraph
+                // separator FROM THE PASTE (bpos > from: this block starts strictly inside the
+                // inserted range, so Qt itself just created/restyled it off the pasted content —
+                // true for every block after the first one touched, even when its tail end
+                // absorbs pre-existing text after the paste, e.g. a 2-paragraph paste landing
+                // before "Tail" leaves the SECOND pasted paragraph's format on "…Tail") ALWAYS
+                // got a fresh format from the source. The one block the range merely starts
+                // inside of (bpos <= from) keeps its own pre-existing format UNCHANGED — *unless*
+                // the paste landed at the very start of the document (from == 0), the one case
+                // where Qt's insertFragment special-cases position 0 and overwrites even that
+                // block's format from the pasted source (verified against Qt 6.11 QTextGui).
+                if (bpos > from || from == 0) {
+                    c.setPosition(bpos);
+                    c.setBlockFormat(rt::scaledLengths(b.blockFormat(), ratio));
+                    c.setBlockCharFormat(rt::scaledLengths(b.charFormat(), ratio));
+                }
+                for (auto it2 = b.begin(); !it2.atEnd(); ++it2) {
+                    const QTextFragment frag = it2.fragment();
+                    if (!frag.isValid())
+                        continue;
+                    const int s = qMax(frag.position(), from);
+                    const int e = qMin(frag.position() + frag.length(), to);
+                    if (s >= e)
+                        continue;
+                    c.setPosition(s);
+                    c.setPosition(e, QTextCursor::KeepAnchor);
+                    c.setCharFormat(rt::scaledLengths(frag.charFormat(), ratio));
+                }
+            }
+        };
+    walk(doc->rootFrame()->begin(), doc->rootFrame()->end());
+}
+
+QString RichTextHandler::unscaledHtml(const QTextDocumentFragment &frag) const
+{
+    if (qFuzzyCompare(m_zoom, 1.0))
+        return frag.toHtml();
+    QTextDocument tmp;
+    QTextCursor c(&tmp);
+    c.insertFragment(frag);
+    const qreal ratio = 1.0 / m_zoom;
+    const std::function<void(QTextFrame::iterator, const QTextFrame::iterator &)> walk =
+        [&](QTextFrame::iterator it, const QTextFrame::iterator &end) {
+            for (; it != end; ++it) {
+                if (QTextFrame *f = it.currentFrame()) {
+                    walk(f->begin(), f->end());
+                    continue;
+                }
+                const QTextBlock b = it.currentBlock();
+                if (!b.isValid())
+                    continue;
+                c.setPosition(b.position());
+                c.setBlockFormat(rt::scaledLengths(b.blockFormat(), ratio));
+                c.setBlockCharFormat(rt::scaledLengths(b.charFormat(), ratio));
+                for (auto it2 = b.begin(); !it2.atEnd(); ++it2) {
+                    const QTextFragment f2 = it2.fragment();
+                    if (!f2.isValid())
+                        continue;
+                    c.setPosition(f2.position());
+                    c.setPosition(f2.position() + f2.length(), QTextCursor::KeepAnchor);
+                    c.setCharFormat(rt::scaledLengths(f2.charFormat(), ratio));
+                }
+            }
+        };
+    walk(tmp.rootFrame()->begin(), tmp.rootFrame()->end());
+    return tmp.toHtml();
 }
 
 void RichTextHandler::setSelectionStart(int v)

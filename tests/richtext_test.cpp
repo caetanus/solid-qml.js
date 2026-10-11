@@ -1546,6 +1546,192 @@ private slots:
         QCOMPARE(m_fmt->plainText(), QStringLiteral("x"));
     }
 
+    // ── office item 2b, ★2 follow-up: zoom vs. content entering/leaving the live document ───────
+    //
+    // 2a87a2c made zoom a real relayout of content ALREADY in the document, but anything crossing
+    // the document's boundary (clipboard paste/copy, a direct insertHtml) was left at face value:
+    // a 12pt paste at zoom 2 was saved as 6pt (data loss); a copy at zoom 2 put doubled sizes on
+    // the clipboard. These tests pin the fix: entry is scaled UP to the zoom in effect (like typed
+    // text), exit is scaled back DOWN to canonical, so the clipboard and the saved file are always
+    // zoom-independent, at any zoom, in either direction.
+
+    void insertHtmlAtZoomRescalesLikeTypedText()
+    {
+        m_fmt->setZoom(2.0);
+        m_fmt->setCursorPosition(doc()->characterCount() - 1);
+        m_fmt->insertHtml(QStringLiteral("<p style=\"font-size:12pt;\">Direct</p>"));
+        const int pos = m_fmt->plainText().indexOf(QStringLiteral("Direct"));
+        QVERIFY(pos >= 0);
+        QCOMPARE(charAt(doc(), pos).fontPointSize(), 24.0); // baked in at zoom 2, like setFontSize does
+    }
+
+    void insertHtmlAtZoomRescalesANewBlocksMargin()
+    {
+        // A block-level length (margin) declared by the pasted HTML itself, as opposed to a
+        // character-level one (fontSize above) — exercises rescaleInsertedRange's block-format
+        // path. Qt's own HTML importer only understands margin units it can convert to px — not
+        // cm/pt/in (verified against Qt 6.11's QCss::ValueExtractor::lengthValue, which only
+        // recognizes "px"/"ex"/"em" and silently reads anything else as 0) — so the probe itself
+        // uses px; that is a pre-existing Qt limitation, unrelated to this fix. Pasting into the
+        // lone empty paragraph of a fresh document inserts at position 0, where Qt's own
+        // QTextCursor::insertFragment overwrites even that (merged-into) block's format from the
+        // pasted source — see rescaleInsertedRange's doc comment.
+        const QString html = QStringLiteral("<p style=\"margin-left:48px;\">Indented</p>");
+        m_fmt->setCursorPosition(0);
+        m_fmt->insertHtml(html);
+        QCOMPARE(blockFormat(doc(), 0).leftMargin(), 48.0);
+
+        m_fmt->newDocument();
+        m_fmt->setZoom(2.0);
+        m_fmt->setCursorPosition(0);
+        m_fmt->insertHtml(html);
+        QCOMPARE(blockFormat(doc(), 0).leftMargin(), 96.0);
+    }
+
+    void insertHtmlAtZoomDoesNotRescaleThePreexistingFirstBlock()
+    {
+        // A multi-paragraph paste in the middle of existing text: per
+        // QTextCopyHelper::appendFragment (qtextdocumentfragment.cpp), Qt only ever overwrites
+        // the format of a block the paste itself just started (every block strictly after the
+        // first one touched, even when its tail end absorbs pre-existing text past the LAST
+        // pasted paragraph) — the ONE block the paste merely merges inline into at its start
+        // keeps that block's own, already-correctly-zoomed format untouched.
+        m_fmt->insertText(QStringLiteral("HeadTail"));
+        m_fmt->setCursorPosition(4);
+        m_fmt->indent(); // gives the lone paragraph a non-zero, non-pasted-looking margin
+        const qreal headMarginAtZoom1 = blockFormat(doc(), 0).leftMargin();
+        QVERIFY(headMarginAtZoom1 > 0);
+
+        m_fmt->setZoom(2.0);
+        const qreal headMarginAtZoom2 = blockFormat(doc(), 0).leftMargin(); // setZoom already rescaled it
+        QCOMPARE(headMarginAtZoom2, headMarginAtZoom1 * 2.0);
+
+        m_fmt->setCursorPosition(4); // between "Head" and "Tail"
+        m_fmt->insertHtml(QStringLiteral("<p style=\"margin-left:16px;\">Mid1</p><p style=\"margin-left:32px;\">Mid2</p>"));
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("HeadMid1\nMid2Tail"));
+
+        // Block 0 ("HeadMid1" — the block the paste merely merged INTO): untouched by the paste.
+        QCOMPARE(blockFormat(doc(), 0).leftMargin(), headMarginAtZoom2);
+        // Block 1 ("Mid2Tail" — entirely new, from the paste's LAST paragraph): the pasted
+        // canonical margin (32px), rescaled UP to the zoom in effect, like everything else
+        // entering the document.
+        QCOMPARE(blockFormat(doc(), 1).leftMargin(), 64.0);
+    }
+
+    void pasteHtmlAtZoomSavesTheSameOdfAtAnyZoom()
+    {
+        const QString html = QStringLiteral("<p style=\"font-size:12pt;margin-left:48px;\">Pasted</p>");
+        auto pasteAndSave = [&](qreal zoom, const QString &path) {
+            m_fmt->newDocument();
+            m_fmt->setZoom(zoom);
+            m_fmt->setCursorPosition(doc()->characterCount() - 1);
+            auto *data = new QMimeData;
+            data->setHtml(html);
+            QGuiApplication::clipboard()->setMimeData(data);
+            m_fmt->paste();
+            QVERIFY(m_fmt->saveOdf(QUrl::fromLocalFile(path)));
+        };
+        const QString at1 = m_dir.filePath(QStringLiteral("paste-zoom1.odt"));
+        const QString at2 = m_dir.filePath(QStringLiteral("paste-zoom2.odt"));
+        pasteAndSave(1.0, at1);
+        pasteAndSave(2.0, at2);
+        QCOMPARE(zipEntry(at2, QStringLiteral("content.xml")), zipEntry(at1, QStringLiteral("content.xml")));
+    }
+
+    void pasteAtZoomRoundTripsToTheSourceSizeAtZoomOne()
+    {
+        m_fmt->setZoom(2.0);
+        auto *data = new QMimeData;
+        data->setHtml(QStringLiteral("<p style=\"font-size:12pt;\">Pasted</p>"));
+        QGuiApplication::clipboard()->setMimeData(data);
+        m_fmt->setCursorPosition(doc()->characterCount() - 1);
+        m_fmt->paste();
+        m_fmt->setZoom(1.0); // zoom back down: the whole document, including the paste, rescales
+        const int pos = m_fmt->plainText().indexOf(QStringLiteral("Pasted"));
+        QVERIFY(pos >= 0);
+        QCOMPARE(charAt(doc(), pos).fontPointSize(), 12.0); // exactly the source size, not half of it
+    }
+
+    void pastePlainTextAtZoomTakesTheCaretsScaledFormat()
+    {
+        // Plain-text paste has no size of its own to (mis)scale — it must take whatever format is
+        // already at the caret, same as typed text (insertText/insertionCursor), not fall back to
+        // some canonical default.
+        m_fmt->setZoom(2.0);
+        m_fmt->insertText(QStringLiteral("Hello"));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(5);
+        m_fmt->setFontSize(10.0); // canonical 10pt; live format baked at 20pt (zoom 2)
+        QCOMPARE(charAt(doc(), 2).fontPointSize(), 20.0);
+
+        m_fmt->setSelectionStart(5);
+        m_fmt->setSelectionEnd(5);
+        m_fmt->setCursorPosition(5); // right after "Hello"
+        auto *data = new QMimeData;
+        data->setText(QStringLiteral(" world"));
+        QGuiApplication::clipboard()->setMimeData(data);
+        m_fmt->paste();
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("Hello world"));
+        QCOMPARE(charAt(doc(), 7).fontPointSize(), 20.0);
+    }
+
+    void copyAtZoomPutsUnscaledSizesOnTheClipboard()
+    {
+        m_fmt->setZoom(2.0);
+        m_fmt->insertText(QStringLiteral("Hello"));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(5);
+        m_fmt->setFontSize(12.0); // canonical; live format baked at 24pt (zoom 2)
+        QCOMPARE(charAt(doc(), 2).fontPointSize(), 24.0); // sanity: the live doc really is zoomed
+
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(5);
+        m_fmt->copy();
+        const QString html = QGuiApplication::clipboard()->mimeData()->html();
+        QVERIFY2(html.contains(QStringLiteral("font-size:12pt")), qPrintable(html));
+        QVERIFY2(!html.contains(QStringLiteral("font-size:24pt")), qPrintable(html));
+        QCOMPARE(charAt(doc(), 2).fontPointSize(), 24.0); // copy() must not touch the live document
+    }
+
+    void cutAtZoomAlsoPutsUnscaledSizesOnTheClipboard()
+    {
+        // cut() is copy() + removeSelectedText() — confirm the unscaling isn't copy()-only.
+        m_fmt->setZoom(2.0);
+        m_fmt->insertText(QStringLiteral("Hello"));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(5);
+        m_fmt->setFontSize(12.0);
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(5);
+        m_fmt->cut();
+        const QString html = QGuiApplication::clipboard()->mimeData()->html();
+        QVERIFY2(html.contains(QStringLiteral("font-size:12pt")), qPrintable(html));
+        QVERIFY2(!html.contains(QStringLiteral("font-size:24pt")), qPrintable(html));
+    }
+
+    void copyPasteRoundTripAtDifferentZoomsStaysAtTheSourceSize()
+    {
+        // Copy at zoom 2, paste into a fresh zoom-1 document: must read exactly like copying at
+        // zoom 1 in the first place — the clipboard content must not carry any memory of the zoom
+        // it was copied FROM.
+        m_fmt->setZoom(2.0);
+        m_fmt->insertText(QStringLiteral("Hello"));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(5);
+        m_fmt->setFontSize(12.0);
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(5);
+        m_fmt->copy();
+
+        m_fmt->setZoom(1.0);
+        m_fmt->newDocument();
+        m_fmt->setCursorPosition(0);
+        m_fmt->paste();
+        const int pos = m_fmt->plainText().indexOf(QStringLiteral("Hello"));
+        QVERIFY(pos >= 0);
+        QCOMPARE(charAt(doc(), pos).fontPointSize(), 12.0);
+    }
+
     // ── office item 2b, item 7: counts ───────────────────────────────────────────────────────────
 
     void countsAreZeroOnAFreshDocument()

@@ -245,12 +245,18 @@ declare global {
     focusEditor(): void;
     undo(): void;
     redo(): void;
-    /** HTML (formatting kept) and plain text; no-op without a selection. Ctrl+C/X/V already work
-     *  natively (the editor's own built-in handling) — these are for an app's own toolbar. */
+    /** HTML (formatting kept, rescaled to canonical zoom-1 sizes) and plain text; no-op without a
+     *  selection. Ctrl+C/X/V are routed to these (not the editor's own built-in handling) so the
+     *  zoom rescaling below applies either way — these are also there for an app's own toolbar. */
     cut(): void;
     copy(): void;
-    /** Prefers HTML when the clipboard has it, else plain text; no-op when !canPaste. */
+    /** Prefers HTML when the clipboard has it, else plain text; no-op when !canPaste. HTML goes
+     *  through insertHtml() (rescaled to the zoom in effect); plain text takes the caret's own
+     *  already-zoomed character format. */
     paste(): void;
+    /** Inserts HTML at the caret (replacing a selection), rescaled to the zoom in effect — the
+     *  same choke point paste() uses for its HTML branch. */
+    insertHtml(html: string): void;
     toggleBold(): void;
     toggleItalic(): void;
     toggleUnderline(): void;

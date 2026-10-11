@@ -217,10 +217,27 @@ Css.CssFill {
                         event.accepted = true
                         return
                     }
+                    // Shift+Insert: the traditional Ctrl-less paste shortcut — route it like
+                    // Ctrl+V below so it goes through the handler's paste() (office item 2b, ★2
+                    // follow-up: zoom rescaling on entry) instead of the editor's own built-in,
+                    // unscaled paste.
+                    if (event.key === Qt.Key_Insert && (event.modifiers & Qt.ShiftModifier)
+                        && !(event.modifiers & Qt.ControlModifier)) {
+                        root.fmt.paste()
+                        event.accepted = true
+                        return
+                    }
                     if (!(event.modifiers & Qt.ControlModifier)) return
                     if (event.key === Qt.Key_B) { root._toggle("bold"); event.accepted = true }
                     else if (event.key === Qt.Key_I) { root._toggle("italic"); event.accepted = true }
                     else if (event.key === Qt.Key_U) { root._toggle("underline"); event.accepted = true }
+                    // Ctrl+C/X/V: routed to the handler, NOT the editor's own built-in copy/cut/
+                    // paste, so the clipboard-boundary zoom rescaling at the C++ choke point
+                    // (RichTextHandler::copy/cut/paste) always runs — see
+                    // docs/document-editor.md "Clipboard".
+                    else if (event.key === Qt.Key_C) { root.fmt.copy(); event.accepted = true }
+                    else if (event.key === Qt.Key_X) { root.fmt.cut(); event.accepted = true }
+                    else if (event.key === Qt.Key_V) { root.fmt.paste(); event.accepted = true }
                 }
             }
         }

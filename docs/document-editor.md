@@ -107,7 +107,8 @@ Methods:
 | `insertTable(rows, cols)`, `addTableRow()`, `addTableColumn()`, `removeTableRow()`, `removeTableColumn()` | | Row/column edits act on the cell at the caret. |
 | `insertImage(path)` | `{ ok, error }` | Inline image at the caret, capped to the column width. |
 | `undo()`, `redo()`, `focusEditor()` | | |
-| `cut()`, `copy()`, `paste()` | | HTML (formatting kept) and plain text on the SYSTEM clipboard; `cut()`/`copy()` are no-ops without a selection, `paste()` when `!canPaste`. Ctrl+C/X/V already work natively (the editor's own built-in handling) — these are for an app's own toolbar/menu. |
+| `cut()`, `copy()`, `paste()` | | HTML (formatting kept, rescaled to canonical zoom-1 sizes — see "Clipboard" below) and plain text on the SYSTEM clipboard; `cut()`/`copy()` are no-ops without a selection, `paste()` when `!canPaste`. Ctrl+C/X/V are routed to these (not the editor's own built-in handling) — these are also there for an app's own toolbar/menu. |
+| `insertHtml(html)` | | At the caret (replacing a selection), rescaled to the zoom in effect — the same choke point `paste()` uses for its HTML branch. |
 
 Formatting calls give the keyboard back to the editor, so an app toolbar button does not leave
 the caret stranded. Ctrl+B / Ctrl+I / Ctrl+U work with or without the built-in toolbar.
@@ -223,13 +224,48 @@ touches no heading does not retrigger it.
 
 `copy()`/`cut()` put both HTML and plain text on the system clipboard; `paste()` prefers the
 HTML (so formatting survives a round trip through this or another app) and falls back to plain
-text. Pasted content is inserted at whatever size its source gives it — unlike typed text or a
-style change, it is **not** rescaled to the zoom in effect (doing so correctly would mean
-telling apart the part of the paste that lands in an existing, already-zoomed paragraph from
-whole new paragraphs the paste creates; not worth the complexity for what is a purely cosmetic
-mismatch — the pasted text may look a touch off size until the next zoom change, which does
-rescale the whole document). `canPaste` tracks the clipboard, not this document, so it also
-updates when another app copies something.
+text. `canPaste` tracks the clipboard, not this document, so it also updates when another app
+copies something.
+
+Zoom (★2) and the clipboard boundary (office item 2b, ★2 follow-up): every length baked into the
+live document is at the zoom in effect, but anything crossing the document's boundary is not
+automatically at that zoom, so both directions are handled explicitly:
+
+- **Entry** (`paste()`'s HTML branch, and `insertHtml()` directly): the pasted HTML's own declared
+  sizes (font size, margins, …) are canonical, zoom-1 values — exactly like a style's values in
+  `m_sheet`. The inserted range is rescaled UP to the zoom in effect right after insertion, the
+  same way typed text already is, before the edit block closes (one undo step). A new paragraph
+  the paste creates gets its whole block format (margins, line height) scaled; content that only
+  lands inside, or splits, a pre-existing paragraph keeps that paragraph's own already-correctly-
+  zoomed block format — only the character runs actually pasted are touched. Plain-text paste has
+  no size of its own: it takes the caret's own (already-zoomed) character format, same as typed
+  text, so there is nothing to rescale.
+- **Exit** (`copy()`/`cut()`): the HTML placed on the clipboard is built from an UNSCALED copy of
+  the selection (rescaled DOWN by `1/zoom` into a throwaway document before `toHtml()`), so it
+  always reads in the document's canonical sizes — a paste into another app, or back into this
+  one at a different zoom, lands at the original size instead of whatever zoom this document
+  happened to be at.
+
+Net effect: the clipboard and a saved file are zoom-independent in both directions, at any zoom —
+copy at zoom 2, paste at zoom 1 (or vice versa) reproduces the exact source size.
+
+`insertImage()` and `insertTable()` need no equivalent fix: `insertImage` already computes its
+cap at the zoom in effect (★2) and the writer unscales it on save; `insertTable`'s format has no
+zoom-dependent absolute length (border width and cell padding are fixed constants, column width
+is percentage-based) — nothing in it is lossy across a zoom change.
+
+Native entry paths: `RichText.qml`'s text item intercepts Ctrl+V, Shift+Insert, Ctrl+C and Ctrl+X
+(the same `Keys.onPressed` mechanism already used for Ctrl+B/I/U) and routes them to
+`paste()`/`copy()`/`cut()`, so the platform's own `QQuickTextEdit::paste()`/`copy()`/`cut()` —
+which would bypass the rescaling above — never runs. Qt Quick's `TextEdit` has no built-in
+drag-and-drop target (unlike a `QTextEdit` widget, it needs an explicit `DropArea`, which this
+module does not add), so there is no drag-and-drop bypass to route. Middle-click paste of the X11
+primary selection (`QQuickTextControl`'s own `mouseReleaseEvent`, calling
+`QQuickTextEdit::insertFromMimeData` directly) is a theoretical residual gap — it requires
+`QGuiApplication::clipboard()->supportsSelection()`, which is false under the offscreen test
+platform and on this project's Wayland target (no primary-selection protocol in play), so it is
+inert here; fixing it for real X11 use would need a C++ event filter on the text item (installed
+from `RichTextHandler`) rather than anything QML's `Keys` attached property can intercept.
 
 ## Counts
 
