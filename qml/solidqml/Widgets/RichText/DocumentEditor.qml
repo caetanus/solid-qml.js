@@ -51,7 +51,8 @@ RichText {
 
     // ── page look (office item 2b, ★1) ──────────────────────────────────────────────────────────
     // `pageWidth` (px): the editor's implicit width when set (0 = the plain editor's 560 default).
-    // Continuous — no on-screen page breaks (see insertPageBreak() for the content-level marker).
+    // Continuous view, with overlay markers for explicit page breaks.
+    property string pageBreakLabel: "Quebra de página"
     property real pageWidth: 0
     implicitWidth: pageWidth > 0 ? pageWidth : 560
     // `pageMargins`: [top, right, bottom, left] px, or null for the plain editor's 12px uniform
@@ -129,7 +130,11 @@ RichText {
     }
     // The handler arrives in RichText's Component.onCompleted: start from an empty, unmodified
     // document, without reporting that as an edit.
-    onFmtChanged: if (fmt) { fmt.newDocument(); debounce.stop() }
+    onFmtChanged: if (fmt) {
+        fmt.pageBreakLabel = Qt.binding(function() { return root.pageBreakLabel })
+        fmt.newDocument()
+        debounce.stop()
+    }
 
     // ── file IO and content ──────────────────────────────────────────────────────────────────────
     // `path`: a plain filesystem path or a file:// URL.

@@ -3,6 +3,7 @@
 #include <QColor>
 #include <QObject>
 #include <QPointer>
+#include <QSet>
 #include <QQuickItem>
 #include <QQuickTextDocument>
 #include <QTextBlock>
@@ -61,6 +62,7 @@ class RichTextHandler : public QObject {
     Q_PROPERTY(QString alignment READ alignment NOTIFY formatChanged)
     // The document has unsaved edits (QTextDocument::isModified). Cleared by saveOdf/loadOdf/
     // newDocument; writable so a host can mark its own save points.
+    Q_PROPERTY(QString pageBreakLabel READ pageBreakLabel WRITE setPageBreakLabel NOTIFY pageBreakLabelChanged)
     Q_PROPERTY(bool modified READ isModified WRITE setModified NOTIFY modifiedChanged)
     // Why the last loadOdf/saveOdf failed ("" after a success).
     Q_PROPERTY(QString errorString READ errorString NOTIFY errorStringChanged)
@@ -179,6 +181,11 @@ public:
     // QTextFormat::PageBreak_AlwaysBefore on the NEW (next) paragraph. Written to ODF as
     // fo:break-before="page" on an automatic paragraph style; read back the same way.
     Q_INVOKABLE void insertPageBreak();
+    QString pageBreakLabel() const { return m_pageBreakLabel; }
+    void setPageBreakLabel(const QString &label);
+    bool hasPageBreaks() const { return !m_pageBreaks.isEmpty(); }
+    struct PageBreakSegment { QString id; QRectF rect; };
+    QList<PageBreakSegment> pageBreakSegments(const QRectF &band = {}) const;
 
     // ── outline (office item 2b, ★3) ──────────────────────────────────────────────────────────
     // [{position, level, text}] in document order (level: the paragraph's heading/outline level).
@@ -316,6 +323,7 @@ public:
 
 signals:
     void saveCopyFinished(bool ok, const QString &error);
+    void pageBreakLabelChanged();
     void documentChanged();
     void selectionChanged();
     void formatChanged();
@@ -412,6 +420,9 @@ private:
     // always read as "unchanged"), kept in document order.
     struct HeadingEntry { QString blockId; int level; QString text; };
     QList<HeadingEntry> m_headings;
+    QSet<QString> m_pageBreaks;
+    QString m_pageBreakLabel = QStringLiteral("Quebra de página");
+    QPointer<QQuickItem> m_pageBreakOverlay;
 
     // ── counts (item 7) ───────────────────────────────────────────────────────────────────────
     // One entry per block in the WHOLE document (not just headings), document order, identified by

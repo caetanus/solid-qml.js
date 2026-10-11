@@ -2783,6 +2783,53 @@ private slots:
         }
     }
 
+    void pageBreakMarkerFollowsItsBlockWithoutEditing()
+    {
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+        QQuickWindow window;
+        window.resize(400, 200);
+        auto *edit = qobject_cast<QQuickItem *>(m_edit.data());
+        edit->setParentItem(window.contentItem());
+        edit->setSize(QSizeF(400, 800));
+        m_fmt->insertText(QStringLiteral("beforeafter"));
+        m_fmt->setCursorPosition(6);
+        m_fmt->insertPageBreak();
+        const QString id = m_fmt->blockIds().at(1);
+        const int position = doc()->findBlockByNumber(1).position();
+        const int undo = doc()->availableUndoSteps();
+        const bool modified = doc()->isModified();
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QTRY_VERIFY(edit->findChild<QQuickItem *>(QStringLiteral("pageBreakMarker")));
+        auto *marker = edit->findChild<QQuickItem *>(QStringLiteral("pageBreakMarker"));
+        QCOMPARE(marker->property("blockId").toString(), id);
+        QCOMPARE(marker->property("label").toString(), QStringLiteral("Quebra de página"));
+        QVERIFY(qAbs(marker->y() + marker->height() - caretRect(edit, position).y()) < 1);
+        QCOMPARE(marker->width(), edit->width());
+        const QString before = m_dir.filePath(QStringLiteral("marker-before.odt"));
+        QVERIFY(m_fmt->saveOdfCopy(QUrl(before)));
+        QVERIFY(m_fmt->setProperty("pageBreakLabel", QStringLiteral("Page break")));
+        QTRY_COMPARE(marker->property("label").toString(), QStringLiteral("Page break"));
+        QCOMPARE(doc()->availableUndoSteps(), undo);
+        QCOMPARE(doc()->isModified(), modified);
+        const QString after = m_dir.filePath(QStringLiteral("marker-after.odt"));
+        QVERIFY(m_fmt->saveOdfCopy(QUrl(after)));
+        QCOMPARE(zipEntry(before, QStringLiteral("content.xml")), zipEntry(after, QStringLiteral("content.xml")));
+        m_fmt->setZoom(1.5);
+        QTRY_VERIFY(qAbs(marker->height() - 21) < 1);
+        QVERIFY(qAbs(marker->y() + marker->height() - caretRect(edit, position).y()) < 1);
+        edit->setY(-200);
+        QTRY_VERIFY(!edit->findChild<QQuickItem *>(QStringLiteral("pageBreakMarker")));
+        edit->setY(0);
+        QTRY_VERIFY(edit->findChild<QQuickItem *>(QStringLiteral("pageBreakMarker")));
+        doc()->undo(); // zoom
+        doc()->undo(); // page break
+        QTRY_VERIFY(!edit->findChild<QQuickItem *>(QStringLiteral("pageBreakMarker")));
+        QVERIFY(m_fmt->loadOdf(QUrl(before)));
+        QTRY_VERIFY(edit->findChild<QQuickItem *>(QStringLiteral("pageBreakMarker")));
+        edit->setParentItem(nullptr);
+    }
+
     void waveIsDrawnUnderTheWord()
     {
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);

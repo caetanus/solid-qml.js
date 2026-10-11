@@ -104,7 +104,7 @@ type DocumentEditorProps = {
   /** The style table changed (defineStyle, a load, newDocument, an undo of a definition). */
   onStylesChanged?: () => void;
   /** Page width in px (e.g. 794 ≈ A4 at 96dpi). 0/unset = the plain editor's default. The editor
-   *  is continuous (no on-screen page breaks) either way. */
+   *  is continuous, with markers for explicit page breaks. */
   pageWidth?: number;
   /** [top, right, bottom, left] px. null/unset = the plain editor's default (12px uniform). */
   pageMargins?: [number, number, number, number] | null;
@@ -317,9 +317,10 @@ declare global {
     indent(): void;
     outdent(): void;
     /** Splits the paragraph at the caret and marks the new one to start on a fresh page
-     *  (written to / read from ODF as fo:break-before="page"). No on-screen effect (★1: the
-     *  editor is continuous). */
+     *  (written to / read from ODF as fo:break-before="page"). Shown as a dashed marker in the continuous view. */
     insertPageBreak(): void;
+    /** Label on page-break overlay markers; default "Quebra de página". */
+    pageBreakLabel: string;
     /** 0 = "Text Body", 1..6 = "Heading n" (applyParagraphStyle). */
     setHeading(level: number): void;
     /** On the selection, or only on what is typed next with nothing selected.

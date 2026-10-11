@@ -13,6 +13,7 @@
 #include <QImage>
 #include <QMimeData>
 #include <QQuickItem>
+#include <QQuickPaintedItem>
 #include <QTextBlock>
 #include <QTextDocument>
 #include <QTextBoundaryFinder>
@@ -42,7 +43,10 @@
 #include <private/qquicktextcontrol_p_p.h>
 
 class MarksOverlay; // the marks overlay item (defined with the marks, below)
-namespace { QQuickItem *createMarksOverlay(RichTextHandler *handler, QQuickItem *editor); }
+namespace {
+QQuickItem *createMarksOverlay(RichTextHandler *handler, QQuickItem *editor);
+QQuickItem *createPageBreakOverlay(RichTextHandler *handler, QQuickItem *editor);
+}
 
 RichTextHandler::RichTextHandler(QObject *parent) : QObject(parent)
 {
@@ -56,6 +60,7 @@ RichTextHandler::~RichTextHandler()
     // The document may outlive us (its blocks' BlockInfo must not report to a dead handler).
     detachBlockInfos();
     delete m_overlay.data();
+    delete m_pageBreakOverlay.data();
 }
 
 rt::BlockInfo::~BlockInfo()
@@ -75,12 +80,15 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     QObject::disconnect(m_undoAddedConn);
     detachBlockInfos();
     delete m_overlay.data();
+    delete m_pageBreakOverlay.data();
     m_pendingFont = {};
     m_document = doc;
     m_doc = doc ? doc->textDocument() : nullptr;
     // The marks overlay: a child of the editor (QQuickTextEdit parents its QQuickTextDocument).
-    if (auto *editor = doc ? qobject_cast<QQuickItem *>(doc->parent()) : nullptr)
+    if (auto *editor = doc ? qobject_cast<QQuickItem *>(doc->parent()) : nullptr) {
         m_overlay = createMarksOverlay(this, editor);
+        m_pageBreakOverlay = createPageBreakOverlay(this, editor);
+    }
     if (QTextDocument *td = doc ? doc->textDocument() : nullptr) {
         // Office item 3: emitted (before contentsChange) for NEW edits only — how trackBlocks()
         // tells an edit from an undo/redo replaying the stack.
@@ -188,6 +196,7 @@ void RichTextHandler::rebuildIndex()
     QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
     const QList<HeadingEntry> before = m_headings;
     m_headings.clear();
+    m_pageBreaks.clear();
     m_blockCounts.clear();
     m_totalChars = 0;
     m_totalWords = 0;
@@ -195,13 +204,16 @@ void RichTextHandler::rebuildIndex()
         for (QTextBlock b = doc->begin(); b.isValid(); b = b.next()) {
             const rt::BlockInfo *info = rt::blockInfo(b);
             const QString id = info ? info->id : QString();
+            const QTextBlockFormat format = b.blockFormat();
+            if (format.pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysBefore))
+                m_pageBreaks.insert(id);
             const QString text = b.text();
             const int chars = text.size();
             const int words = countWords(text);
             m_blockCounts << BlockCount { id, chars, words };
             m_totalChars += chars;
             m_totalWords += words;
-            const int level = b.blockFormat().headingLevel();
+            const int level = format.headingLevel();
             if (level > 0)
                 m_headings << HeadingEntry { id, level, text };
         }
@@ -243,13 +255,18 @@ void RichTextHandler::handleContentsChange(int position, int charsRemoved, int c
     for (QTextBlock b = from; b.isValid(); b = b.next()) {
         const rt::BlockInfo *info = rt::blockInfo(b);
         const QString id = info ? info->id : QString();
+        const QTextBlockFormat format = b.blockFormat();
+        if (format.pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysBefore))
+            m_pageBreaks.insert(id);
+        else
+            m_pageBreaks.remove(id);
         const QString text = b.text();
         const int chars = text.size();
         const int words = countWords(text);
         rescannedCounts << BlockCount { id, chars, words };
         newChars += chars;
         newWords += words;
-        const int level = b.blockFormat().headingLevel();
+        const int level = format.headingLevel();
         if (level > 0)
             rescannedHeadings << HeadingEntry { id, level, text };
         if (b == to)
@@ -1801,6 +1818,7 @@ void RichTextHandler::blockInfoDestroyed(rt::BlockInfo *info)
     // bookkeeping below stays skipped during a bulk reset: rebuildBlockIds() wipes and rebuilds it
     // from scratch right after, so queuing one blockRemoved per block would be wasted work.
     m_blocksById.remove(info->id);
+    m_pageBreaks.remove(info->id);
     if (m_bulkReset)
         return;
     m_removedNow.append(info->id);
@@ -2448,4 +2466,130 @@ bool RichTextHandler::replaceRange(const QString &blockId, int start, int end, c
     c.endEditBlock();
     emit formatChanged();
     return true;
+}
+
+// Page breaks are view decorations: only the nearby marker items exist, and changing
+// their label or geometry never changes the QTextDocument or its undo history.
+class PageBreakMarker final : public QQuickPaintedItem {
+public:
+    explicit PageBreakMarker(QQuickItem *parent) : QQuickPaintedItem(parent) {
+        setObjectName(QStringLiteral("pageBreakMarker"));
+        setAcceptedMouseButtons(Qt::NoButton);
+        setAntialiasing(true);
+    }
+    void setLabel(const QString &text, qreal zoom) {
+        if (m_text == text && m_zoom == zoom) return;
+        m_text = text;
+        m_zoom = zoom;
+        setProperty("label", text);
+        update();
+    }
+    void paint(QPainter *p) override {
+        QFont font;
+        font.setPixelSize(qMax(1, qRound(10 * m_zoom)));
+        p->setFont(font);
+        const qreal gap = QFontMetricsF(font).horizontalAdvance(m_text) + 12 * m_zoom;
+        const qreal center = width() / 2;
+        QPen pen(QColor(QStringLiteral("#808080")), 1, Qt::DashLine);
+        p->setPen(pen);
+        p->drawLine(QPointF(0, height() / 2), QPointF(qMax(0.0, center - gap / 2), height() / 2));
+        p->drawLine(QPointF(qMin(width(), center + gap / 2), height() / 2), QPointF(width(), height() / 2));
+        p->drawText(boundingRect(), Qt::AlignCenter, m_text);
+    }
+private:
+    QString m_text;
+    qreal m_zoom = 1;
+};
+
+class PageBreakOverlay final : public QQuickItem {
+public:
+    PageBreakOverlay(RichTextHandler *handler, QQuickItem *editor) : QQuickItem(editor), m_handler(handler) {
+        setFlag(ItemObservesViewport);
+        setAcceptedMouseButtons(Qt::NoButton);
+        setSize(editor->size());
+        connect(editor, &QQuickItem::widthChanged, this, [this, editor] { setWidth(editor->width()); polish(); });
+        connect(editor, &QQuickItem::heightChanged, this, [this, editor] { setHeight(editor->height()); polish(); });
+        connect(handler, &RichTextHandler::contentsChanged, this, [this] { polish(); });
+        connect(handler, &RichTextHandler::pageBreakLabelChanged, this, [this] { polish(); });
+        connect(handler, &RichTextHandler::zoomChanged, this, [this] { polish(); });
+        auto *doc = handler->document()->textDocument();
+        connect(doc->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged, this, [this] { polish(); });
+        if (auto *edit = qobject_cast<QQuickTextEdit *>(editor)) {
+            connect(edit, &QQuickTextEdit::topPaddingChanged, this, [this] { polish(); });
+            connect(edit, &QQuickTextEdit::leftPaddingChanged, this, [this] { polish(); });
+            connect(edit, &QQuickTextEdit::rightPaddingChanged, this, [this] { polish(); });
+        }
+        polish();
+    }
+protected:
+    void itemChange(ItemChange change, const ItemChangeData &value) override {
+        if (change == ItemTransformHasChanged && m_handler &&
+            (m_handler->hasPageBreaks() || !m_items.isEmpty())) polish();
+        QQuickItem::itemChange(change, value);
+    }
+    void updatePolish() override {
+        if (!m_handler) return;
+        const QRectF band = clipRect().adjusted(0, -32, 0, 32);
+        const auto segments = m_handler->pageBreakSegments(band);
+        QSet<QString> visible;
+        for (const auto &segment : segments) {
+            visible.insert(segment.id);
+            auto *item = m_items.value(segment.id);
+            if (!item) {
+                item = new PageBreakMarker(this);
+                item->setProperty("blockId", segment.id);
+                m_items.insert(segment.id, item);
+            }
+            item->setPosition(segment.rect.topLeft());
+            item->setSize(segment.rect.size());
+            item->setLabel(m_handler->pageBreakLabel(), m_handler->zoom());
+        }
+        for (auto it = m_items.begin(); it != m_items.end();) {
+            if (!visible.contains(it.key())) {
+                delete it.value();
+                it = m_items.erase(it);
+            } else ++it;
+        }
+    }
+private:
+    QPointer<RichTextHandler> m_handler;
+    QHash<QString, PageBreakMarker *> m_items;
+};
+
+namespace {
+QQuickItem *createPageBreakOverlay(RichTextHandler *handler, QQuickItem *editor) {
+    return new PageBreakOverlay(handler, editor);
+}
+}
+
+QList<RichTextHandler::PageBreakSegment> RichTextHandler::pageBreakSegments(const QRectF &band) const
+{
+    QList<PageBreakSegment> result;
+    if (!m_doc || m_pageBreaks.isEmpty()) return result;
+    auto *edit = qobject_cast<QQuickTextEdit *>(m_document->parent());
+    if (!edit) return result;
+    auto *layout = m_doc->documentLayout();
+    const QTextBlock first = m_doc->begin();
+    QPointF origin = layout->blockBoundingRect(first).topLeft();
+    if (const auto line = first.layout()->lineForTextPosition(0); line.isValid())
+        origin += QPointF(line.cursorToX(0), line.y());
+    const QPointF offset = edit->positionToRectangle(0).topLeft() - origin;
+    const qreal height = 14 * m_zoom;
+    const qreal left = edit->leftPadding() + m_doc->documentMargin();
+    const qreal width = qMax(0.0, edit->width() - left - edit->rightPadding() - m_doc->documentMargin());
+    for (const auto &id : m_pageBreaks) {
+        const auto it = m_blocksById.constFind(id);
+        if (it == m_blocksById.cend()) continue;
+        const qreal top = layout->blockBoundingRect(*it).top() + offset.y();
+        const QRectF rect(left, top - height, width, height);
+        if (band.isNull() || band.intersects(rect)) result.append({id, rect});
+    }
+    return result;
+}
+
+void RichTextHandler::setPageBreakLabel(const QString &label)
+{
+    if (m_pageBreakLabel == label) return;
+    m_pageBreakLabel = label;
+    emit pageBreakLabelChanged();
 }

@@ -4,7 +4,7 @@
 opens and saves it, draws its own toolbar from the format state, and reacts to edits. Body text
 and headings are **named styles** (LibreOffice's: "Text Body", "Heading 1", …), not direct
 formatting. It shares its engine with `<RichText>` (module `solidqml.Widgets.RichText`: a Qt
-`TextArea` plus the loader's `RichTextHandler`, with our own OpenDocument reader and writer).
+`TextEdit` plus the loader's `RichTextHandler`, with our own OpenDocument reader and writer).
 `<RichText>` stays as it is for mail and forms (`html` in, `onChange(html, text)` out).
 
 It is native-only (no browser equivalent); the module is imported only when the tag is used.
@@ -54,7 +54,7 @@ A complete example (own toolbar, open/save by path, modified dot, word count) is
 | `onModifiedChanged` | `(modified: boolean) => …` | The unsaved-changes flag flipped. |
 | `onContentChanged` | `() => …` | Any edit, formatting included, **debounced** (300 ms of quiet). No payload: read `doc.plainText()` / `doc.toHtml()` when needed. Opening a file, `newDocument()` and `defineStyle()` count as content changes. |
 | `onStylesChanged` | `() => …` | The style table changed: `defineStyle`, a load, `newDocument`, an undo/redo of a definition. Refresh a style picker from `doc.styleNames(…)` here. |
-| `pageWidth` | number (px) | The editor's implicit width when set (e.g. `794` ≈ A4 at 96dpi). `0`/unset keeps the plain editor's default. Continuous — no on-screen page breaks (see `insertPageBreak()` for the content-level marker that round-trips to the file). |
+| `pageWidth` | number (px) | The editor's implicit width when set (e.g. `794` ≈ A4 at 96dpi). `0`/unset keeps the plain editor's default. Continuous text with overlay markers for explicit page breaks (see `insertPageBreak()`). |
 | `pageMargins` | `[top, right, bottom, left]` (px), or `null`/unset | Insets around the text item within the scrolling sheet; the caret and selection respect them. `null`/unset keeps the plain editor's default (12px uniform). |
 | `zoom` | number, clamped `0.5`–`3.0` | A **real relayout**: font/point sizes, margins and inline images are rebuilt at the new size (not a scale transform — text stays sharp). Does not change what `saveOdf` writes. The app owns the value; see `onZoomRequested`. |
 | `onZoomRequested` | `(delta: number) => …` | Ctrl+wheel (±0.1 per notch), Ctrl+= / Ctrl+- (±0.1), Ctrl+0 (`0`, meaning "reset"). The editor only asks; set `zoom` in response (e.g. `setZoom(z => delta === 0 ? 1 : clamp(z + delta))`). |
@@ -110,7 +110,7 @@ Methods:
 | `setAlignment(align)` | | On every paragraph the selection touches. |
 | `toggleBulletList()`, `toggleNumberedList()` | | Each mirrors the other exactly: in ANY list, detach it (plain paragraph); otherwise start one of its own kind. Toggling the other kind while already in a list turns the list off, not a conversion. |
 | `indent()`, `outdent()` | | In a list: one level deeper/shallower (`outdent()` past the first level detaches it). Otherwise: the paragraph's own left margin, one ~24px step, at the zoom in effect. |
-| `insertPageBreak()` | | Splits the paragraph at the caret (`insertParagraph()`'s mechanics) and marks the new one to start on a fresh page. No on-screen effect — the editor is continuous (★1) — but round-trips through `saveOdf`/`loadOdf` as `fo:break-before="page"`. |
+| `insertPageBreak()` | | Splits the paragraph at the caret (`insertParagraph()`'s mechanics) and marks the new one to start on a fresh page. Shown above the new block as a dashed overlay labelled "Quebra de página". The `pageBreakLabel` QML/ref property overrides the label. Markers follow scrolling and zoom, never enter saved content or undo, and the break round-trips through `saveOdf`/`loadOdf` as `fo:break-before="page"`. |
 | `insertTable(rows, cols)`, `addTableRow()`, `addTableColumn()`, `removeTableRow()`, `removeTableColumn()` | | Row/column edits act on the cell at the caret. |
 | `insertImage(path)` | `{ ok, error }` | Inline image at the caret, capped to the column width. |
 | `undo()`, `redo()`, `focusEditor()` | | |
