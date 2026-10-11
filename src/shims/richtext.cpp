@@ -51,6 +51,9 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     emit documentChanged();
     emit formatChanged();
     emit modifiedChanged();
+    // Same reasoning as loadOdf()/newDocument(): rebuildIndex() just computed wordCount/charCount
+    // for the newly-attached document — tell any binding on them (office item 2b, item 7).
+    emit contentsChanged();
 }
 
 namespace {
@@ -388,6 +391,11 @@ QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
     setError(QString());
     emit stylesChanged();
     emit formatChanged();
+    // wordCount/charCount's NOTIFY (office item 2b, item 7): doc->clear() above already relayed
+    // its OWN contentsChanged through m_contentsConn, but that fired before rebuildIndex() ran,
+    // so any listener (a QML binding) last saw the counts mid-reset, not the correct final ones
+    // rebuildIndex() just computed — emit it again now that they're right.
+    emit contentsChanged();
     return result(true, QString());
 }
 
@@ -944,6 +952,12 @@ bool RichTextHandler::loadOdf(const QUrl &file)
     emit stylesChanged();
     setError(why);
     emit formatChanged();
+    // wordCount/charCount's NOTIFY (office item 2b, item 7): readOdt()'s own edits already
+    // relayed contentsChanged through m_contentsConn repeatedly WHILE building the document, all
+    // of it before rebuildIndex() ran just above — a listener (a QML binding) last saw whatever
+    // the counts were mid-build (0, or the PREVIOUS document's counts), never the correct final
+    // ones. Emit it again now that they're right.
+    emit contentsChanged();
     return ok;
 }
 

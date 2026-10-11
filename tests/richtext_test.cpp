@@ -1751,6 +1751,65 @@ private slots:
         QCOMPARE(m_fmt->charCount(), 16);
     }
 
+    // loadOdf()/newDocument() rebuild the index (rebuildIndex()) with the CORRECT totals, but the
+    // ONLY contentsChanged() emissions during the rebuild come from QTextDocument::clear()/the
+    // reader's own edits — all BEFORE rebuildIndex() runs — so a live QML binding on wordCount/
+    // charCount (NOTIFY contentsChanged) last reads whatever the counts were mid-rebuild, not the
+    // correct final ones rebuildIndex() just computed. These check the LAST value a listener
+    // actually observes, not just that some signal fired (which already happens, for the wrong
+    // reason) — the same "seen.last()" shape as newDocumentNotifiesUnmodified above.
+    void loadOdfNotifiesWordAndCharCountWithTheFinalValue()
+    {
+        const QString odt = m_dir.filePath(QStringLiteral("counts.odt"));
+        writeOdt(odt, "<text:p>one two three</text:p><text:h text:outline-level=\"1\">Chapter</text:h>");
+
+        QList<int> seenWords, seenChars;
+        connect(m_fmt, &RichTextHandler::contentsChanged, this, [&] {
+            seenWords << m_fmt->wordCount();
+            seenChars << m_fmt->charCount();
+        });
+        QVERIFY(m_fmt->loadOdf(QUrl(odt)));
+        QCOMPARE(m_fmt->headings().size(), 1);
+        QVERIFY2(!seenWords.isEmpty(), "wordCount/charCount's NOTIFY must fire after a load");
+        QCOMPARE(seenWords.last(), 4); // one, two, three, Chapter
+        QCOMPARE(seenChars.last(), 20); // "one two three" (13) + "Chapter" (7)
+    }
+
+    void loadOdfOfASecondFileReplacesCountsRatherThanAdding()
+    {
+        const QString first = m_dir.filePath(QStringLiteral("first.odt"));
+        const QString second = m_dir.filePath(QStringLiteral("second.odt"));
+        writeOdt(first, "<text:p>one two three four five</text:p>");
+        writeOdt(second, "<text:p>a b</text:p>");
+
+        QVERIFY(m_fmt->loadOdf(QUrl(first)));
+        QCOMPARE(m_fmt->wordCount(), 5);
+
+        QList<int> seenWords;
+        connect(m_fmt, &RichTextHandler::contentsChanged, this, [&] { seenWords << m_fmt->wordCount(); });
+        QVERIFY(m_fmt->loadOdf(QUrl(second)));
+        QVERIFY(!seenWords.isEmpty());
+        QCOMPARE(seenWords.last(), 2); // replaced, not 5 + 2
+        QCOMPARE(m_fmt->charCount(), 3);
+    }
+
+    void newDocumentNotifiesWordAndCharCountThenInsertTextKeepsWorking()
+    {
+        m_fmt->insertText(QStringLiteral("one two three"));
+        QCOMPARE(m_fmt->wordCount(), 3);
+
+        QList<int> seenWords;
+        connect(m_fmt, &RichTextHandler::contentsChanged, this, [&] { seenWords << m_fmt->wordCount(); });
+        m_fmt->newDocument();
+        QVERIFY2(!seenWords.isEmpty(), "wordCount/charCount's NOTIFY must fire after newDocument(), even resetting to 0");
+        QCOMPARE(seenWords.last(), 0);
+        QCOMPARE(m_fmt->charCount(), 0);
+
+        m_fmt->insertText(QStringLiteral("four five"));
+        QCOMPARE(m_fmt->wordCount(), 2); // the normal incremental path still works after a reset
+        QCOMPARE(m_fmt->charCount(), 9);
+    }
+
     void charCountExcludesTheParagraphSeparatorNotLineBreaks()
     {
         m_fmt->insertText(QStringLiteral("one"));
