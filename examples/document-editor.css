@@ -35,6 +35,10 @@
   color: #ffffff;
 }
 
+.de-btn.off {
+  color: #aab3bd;
+}
+
 .de-path {
   width: 220px;
   height: 28px;

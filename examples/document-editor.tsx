@@ -11,8 +11,8 @@ export function DocumentEditorDemo() {
   let doc!: DocumentEditorHandle;
   const [path, setPath] = createSignal("document.odt");
   const [dirty, setDirty] = createSignal(false);
-  const [words, setWords] = createSignal(0);
   const [status, setStatus] = createSignal("New document");
+  const [headingCount, setHeadingCount] = createSignal(0);
   // Named zoomLevel, not zoom: a signal with the SAME name as a native prop it is bound to
   // shadows itself in the emitted QML (`zoom: zoom` becomes self-referential — see
   // docs/document-editor.md's naming note).
@@ -20,10 +20,8 @@ export function DocumentEditorDemo() {
   const applyZoomDelta = (delta: number) =>
     setZoomLevel(delta === 0 ? 1.0 : Math.max(0.5, Math.min(3.0, zoomLevel() + delta)));
 
-  const countWords = () => {
-    const parts = doc.plainText().split("\n").join(" ").split(" ");
-    setWords(parts.filter((w) => w.length > 0).length);
-  };
+  // doc.wordCount/charCount (item 7) are kept incrementally by the engine — no app-side counting.
+  const refreshOutline = () => setHeadingCount(doc.headings().length);
   const open = () => {
     const r = doc.loadOdf(path());
     setStatus(r.ok ? "Opened " + path() : "Open failed: " + r.error);
@@ -33,8 +31,8 @@ export function DocumentEditorDemo() {
     setStatus(r.ok ? "Saved " + path() : "Save failed: " + r.error);
   };
   const fresh = () => {
-    doc.newDocument();
-    setStatus("New document");
+    const r = doc.newDocument();
+    setStatus(r.ok ? "New document" : "New document failed: " + r.error);
   };
 
   return (
@@ -53,7 +51,15 @@ export function DocumentEditorDemo() {
         <button class="de-btn" classList={{ on: doc.heading === 2 }} onClick={() => doc.setHeading(2)}>H2</button>
         <button class="de-btn" classList={{ on: doc.alignment === "center" }} onClick={() => doc.setAlignment(doc.alignment === "center" ? "left" : "center")}>Center</button>
         <button class="de-btn" classList={{ on: doc.bulletList }} onClick={() => doc.toggleBulletList()}>List</button>
+        <button class="de-btn" classList={{ on: doc.numberedList }} onClick={() => doc.toggleNumberedList()}>1.</button>
+        <button class="de-btn" onClick={() => doc.outdent()}>⇤</button>
+        <button class="de-btn" onClick={() => doc.indent()}>⇥</button>
         <button class="de-btn" onClick={() => doc.insertTable(2, 2)}>Table</button>
+        <button class="de-btn" onClick={() => doc.insertPageBreak()}>Page break</button>
+        <div class="de-sep" />
+        <button class="de-btn" onClick={() => doc.cut()}>Cut</button>
+        <button class="de-btn" onClick={() => doc.copy()}>Copy</button>
+        <button class="de-btn" classList={{ off: !doc.canPaste }} onClick={() => doc.paste()}>Paste</button>
         <div class="de-sep" />
         <button class="de-btn" onClick={() => applyZoomDelta(-0.1)}>−</button>
         <text class="de-status-t">{Math.round(zoomLevel() * 100) + "%"}</text>
@@ -65,11 +71,13 @@ export function DocumentEditorDemo() {
           pageWidth={794} pageMargins={[48, 48, 48, 48]} zoom={zoomLevel()}
           onZoomRequested={(delta) => applyZoomDelta(delta)}
           onModifiedChanged={(m) => setDirty(m)}
-          onContentChanged={() => countWords()} />
+          onContentChanged={() => {}}
+          onHeadingsChanged={() => refreshOutline()} />
       </div>
       <div class="de-status">
         <text class="de-status-t">{(dirty() ? "● " : "") + status()}</text>
-        <text class="de-status-t">{words() + " words"}</text>
+        <text class="de-status-t">{doc.wordCount + " words, " + doc.charCount + " chars"}</text>
+        <text class="de-status-t">{headingCount() + " headings"}</text>
       </div>
     </div>
   );
