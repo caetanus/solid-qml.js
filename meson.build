@@ -426,6 +426,17 @@ test('widgets-a11y',
     dependencies: a11y_test_deps),
   env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)
 
+# Keyboard & accessibility for PLAIN elements (release-plan M5): tabIndex/role/aria-* transpiled
+# onto a generic Div/Text — Tab order, Enter/Space activation, Accessible.role/name/state — using
+# the SAME standard QtQuick facilities (activeFocusOnTab, Keys, the Accessible attached type) a
+# native widget's own .qml already relies on. No engine change; see docs/keyboard-accessibility.md.
+test('widgets-a11y-generic',
+  executable('test-widgets-a11y-generic', files('tests/a11y_generic_test.cpp'),
+    qt6.preprocess(moc_sources: files('tests/a11y_generic_test.cpp'), dependencies: a11y_test_deps),
+    include_directories: include_directories('src'),
+    dependencies: a11y_test_deps),
+  env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)
+
 # <select>'s SolidWidgets::Select: model/values/disabledFlags default empty + round-trip with
 # NOTIFY, and `model: <reactive list>` keeps following a changing context property — the mechanism
 # the dynamic <select> options plan (transpiler/src/emit/qml.ts emitSelect) depends on.
