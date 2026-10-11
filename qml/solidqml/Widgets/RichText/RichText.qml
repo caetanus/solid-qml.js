@@ -89,6 +89,41 @@ Css.CssFill {
         edit.cursorPosition = to
         _applying = false
     }
+    // Cursor changes alone drive following: a wheel/track/drag never snaps back.
+    function _keepCaretVisible() {
+        var r = edit.positionToRectangle(edit.cursorPosition)
+        var context = Math.min(r.height, Math.max(0, (body.height - r.height) / 2))
+        var top = r.y + edit.y - context
+        var bottom = r.y + edit.y + r.height + context
+        var y = body.contentY
+        if (top < y) y = top
+        else if (bottom > y + body.height) y = bottom - body.height
+        body.contentY = Math.max(0, Math.min(y, Math.max(0, body.contentHeight - body.height)))
+        var x = r.x + edit.x
+        if (x < body.contentX) body.contentX = Math.max(0, x)
+        else if (x + r.width > body.contentX + body.width)
+            body.contentX = Math.min(Math.max(0, body.contentWidth - body.width), x + r.width - body.width)
+    }
+    function _navigatePage(event) {
+        var end = (event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_Home || event.key === Qt.Key_End)
+        var page = event.key === Qt.Key_PageUp || event.key === Qt.Key_PageDown
+        if (!end && !page) return false
+        var from = edit.cursorPosition
+        var to
+        if (end) to = event.key === Qt.Key_Home ? 0 : edit.length
+        else {
+            var r = edit.positionToRectangle(from)
+            to = edit.positionAt(r.x, r.y + r.height / 2 + (event.key === Qt.Key_PageUp ? -body.height : body.height))
+        }
+        if (event.modifiers & Qt.ShiftModifier) {
+            var anchor = from === edit.selectionStart ? edit.selectionEnd : edit.selectionStart
+            edit.select(anchor, to)
+        } else edit.cursorPosition = to
+        // Also handles Home/End when already at the boundary but scrolled away.
+        _keepCaretVisible()
+        event.accepted = true
+        return true
+    }
     function _refreshScrolledViewport() { if (fmt) fmt.refreshViewport() }
     function _report() {
         if (!root._mail || root._loading) return
@@ -223,10 +258,12 @@ Css.CssFill {
                 font.family: cssTheme.resolveFontFamily(root.inheritedFontFamily || "Sans Serif")
                 font.pixelSize: root._mail ? 14 : cssTheme.parseFontSize(root.inheritedFontSize || "14px", 14)
                 text: root._mail ? root.html : root._initialHtml
+                onCursorPositionChanged: root._keepCaretVisible()
                 onTextChanged: { if (root._pendingAt >= 0) Qt.callLater(root._applyPending); root._report() }
                 // Enter: a new paragraph in the style's next style ("Heading 1" → "Text Body");
                 // Shift+Enter stays a line break. Ctrl+B / Ctrl+I / Ctrl+U, as in every editor.
                 Keys.onPressed: (event) => {
+                    if (root._navigatePage(event)) return
                     if (!root.fmt) return
                     if (!root._mail && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                         && !(event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) {

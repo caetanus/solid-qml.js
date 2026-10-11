@@ -2754,6 +2754,57 @@ private slots:
         QCOMPARE(doc()->pageSize(), QSizeF(794, 1147));
     }
 
+    void keyboardKeepsCaretVisible_data()
+    {
+        QTest::addColumn<bool>("pages");
+        QTest::addColumn<qreal>("zoom");
+        for (bool pages : {false, true})
+            for (qreal zoom : {0.5, 1.0, 2.0})
+                QTest::newRow(qPrintable(QString("%1-%2").arg(pages).arg(zoom))) << pages << zoom;
+    }
+
+    void keyboardKeepsCaretVisible()
+    {
+        QFETCH(bool, pages);
+        QFETCH(qreal, zoom);
+        PageEditor w(zoom);
+        QVERIFY(w.root);
+        w.root->setProperty("pageView", pages);
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
+        if (!book.isEmpty()) QVERIFY(w.fmt()->loadOdf(QUrl::fromLocalFile(book)));
+        else w.fmt()->insertText(QString("A line of text to navigate.\n").repeated(1000));
+        w.view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        w.edit()->forceActiveFocus();
+        auto visible = [&] {
+            const auto r = caretRect(w.edit(), w.edit()->property("cursorPosition").toInt());
+            const auto p = w.edit()->mapToItem(w.body(), r.topLeft());
+            return p.y() >= -1 && p.y() + r.height() <= w.body()->height() + 1;
+        };
+        for (auto key : {Qt::Key_End, Qt::Key_Home}) {
+            QTest::keyClick(&w.view, key, Qt::ControlModifier);
+            QTRY_VERIFY(visible());
+        }
+        for (auto key : {Qt::Key_Down, Qt::Key_End, Qt::Key_PageDown, Qt::Key_PageUp}) {
+            const int before = w.edit()->property("cursorPosition").toInt();
+            QTest::keyClick(&w.view, key);
+            QTRY_VERIFY(visible());
+            if (key != Qt::Key_End) QVERIFY2(w.edit()->property("cursorPosition").toInt() != before, qPrintable(QString::number(key)));
+        }
+        QTest::keyClick(&w.view, Qt::Key_Down, Qt::ShiftModifier);
+        QTRY_VERIFY(visible());
+        QVERIFY(w.edit()->property("selectionStart") != w.edit()->property("selectionEnd"));
+        QTest::keyClick(&w.view, Qt::Key_PageDown, Qt::ShiftModifier);
+        QTRY_VERIFY(visible());
+        QVERIFY(w.edit()->property("selectionStart") != w.edit()->property("selectionEnd"));
+        // Independent viewport movement must never pull the caret back into view.
+        w.body()->setProperty("contentY", 2000);
+        QTest::qWait(50);
+        QCOMPARE(w.body()->property("contentY").toReal(), 2000.0);
+        w.edit()->setProperty("cursorPosition", 0);
+        QTRY_VERIFY(visible());
+    }
+
     void pageViewGeometryAndNavigation()
     {
         PageEditor w;

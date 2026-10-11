@@ -152,12 +152,6 @@ RichText {
     Shortcut { sequence: "Ctrl++"; onActivated: root.zoomRequested(0.1) }
     Shortcut { sequence: "Ctrl+-"; onActivated: root.zoomRequested(-0.1) }
     Shortcut { sequence: "Ctrl+0"; onActivated: root.zoomRequested(0) }
-    function _keepCaretVisible() {
-        var r = _editor.positionToRectangle(_editor.cursorPosition)
-        r.y += _editor.y
-        if (r.y < _body.contentY) _body.contentY = Math.max(0, r.y)
-        else if (r.y + r.height > _body.contentY + _body.height) _body.contentY = r.y + r.height - _body.height
-    }
 
     // Debounced edit notification (ms of quiet before it fires).
     property int contentDelay: 300
