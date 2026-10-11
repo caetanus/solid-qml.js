@@ -62,6 +62,8 @@ class RichTextHandler : public QObject {
     Q_PROPERTY(QString alignment READ alignment NOTIFY formatChanged)
     // The document has unsaved edits (QTextDocument::isModified). Cleared by saveOdf/loadOdf/
     // newDocument; writable so a host can mark its own save points.
+    Q_PROPERTY(int pageCount READ pageCount NOTIFY pagesChanged)
+    Q_PROPERTY(int currentPage READ currentPage NOTIFY currentPageChanged)
     Q_PROPERTY(QString pageBreakLabel READ pageBreakLabel WRITE setPageBreakLabel NOTIFY pageBreakLabelChanged)
     Q_PROPERTY(bool modified READ isModified WRITE setModified NOTIFY modifiedChanged)
     // Why the last loadOdf/saveOdf failed ("" after a success).
@@ -181,6 +183,10 @@ public:
     // QTextFormat::PageBreak_AlwaysBefore on the NEW (next) paragraph. Written to ODF as
     // fo:break-before="page" on an automatic paragraph style; read back the same way.
     Q_INVOKABLE void insertPageBreak();
+    int pageCount() const { return m_pageCount; }
+    int currentPage() const { return m_currentPage; }
+    Q_INVOKABLE int pageAt(int position) const;
+    Q_INVOKABLE void configurePages(qreal width, qreal height, qreal gap, const QVariantList &margins);
     QString pageBreakLabel() const { return m_pageBreakLabel; }
     void setPageBreakLabel(const QString &label);
     bool hasPageBreaks() const { return !m_pageBreaks.isEmpty(); }
@@ -324,6 +330,8 @@ public:
 signals:
     void saveCopyFinished(bool ok, const QString &error);
     void pageBreakLabelChanged();
+    void pagesChanged();
+    void currentPageChanged();
     void documentChanged();
     void selectionChanged();
     void formatChanged();
@@ -420,6 +428,13 @@ private:
     // always read as "unchanged"), kept in document order.
     struct HeadingEntry { QString blockId; int level; QString text; };
     QList<HeadingEntry> m_headings;
+    void updateCurrentPage();
+    void syncPageCount();
+    int m_pageCount = 1;
+    int m_currentPage = 1;
+    qreal m_pageStride = 0;
+    QMetaObject::Connection m_pagesConn;
+    QMetaObject::Connection m_pageCursorConn;
     QSet<QString> m_pageBreaks;
     QString m_pageBreakLabel = QStringLiteral("Quebra de página");
     QPointer<QQuickItem> m_pageBreakOverlay;

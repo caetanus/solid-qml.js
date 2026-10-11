@@ -37,6 +37,7 @@
 #include <QTextTable>
 #include <QAbstractUndoItem>
 #include <QPointer>
+#include <private/qtextdocument_p.h>
 #include <private/qquicktextedit_p.h>
 #include <private/qquicktextedit_p_p.h>
 #include <private/qquicktextcontrol_p.h>
@@ -73,6 +74,8 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
 {
     if (m_document == doc)
         return;
+    QObject::disconnect(m_pagesConn);
+    QObject::disconnect(m_pageCursorConn);
     QObject::disconnect(m_modifiedConn);
     QObject::disconnect(m_contentsConn);
     QObject::disconnect(m_cullingConn);
@@ -88,8 +91,17 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     if (auto *editor = doc ? qobject_cast<QQuickItem *>(doc->parent()) : nullptr) {
         m_overlay = createMarksOverlay(this, editor);
         m_pageBreakOverlay = createPageBreakOverlay(this, editor);
+        if (auto *edit = qobject_cast<QQuickTextEdit *>(editor))
+            m_pageCursorConn = connect(edit, &QQuickTextEdit::cursorRectangleChanged, this, &RichTextHandler::updateCurrentPage);
     }
     if (QTextDocument *td = doc ? doc->textDocument() : nullptr) {
+        m_pagesConn = connect(td->documentLayout(), &QAbstractTextDocumentLayout::pageCountChanged, this, [this](int count) {
+            count = qMax(1, count);
+            if (m_pageCount == count) return;
+            m_pageCount = count;
+            emit pagesChanged();
+            updateCurrentPage();
+        });
         // Office item 3: emitted (before contentsChange) for NEW edits only — how trackBlocks()
         // tells an edit from an undo/redo replaying the stack.
         m_undoAddedConn = connect(td, &QTextDocument::undoCommandAdded, this, [this] { m_newUndoCommand = true; });
@@ -130,6 +142,65 @@ QString localPath(const QUrl &file)
 QString buildStyle(const rt::StyleSheet &sheet, const QString &name, const QVariantMap &props, rt::NamedStyle *out);
 
 } // namespace
+
+// Page geometry is view state. Qt owns pagination and incremental text layout.
+void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const QVariantList &margins)
+{
+    if (!m_doc || margins.size() != 4) return;
+    m_pageStride = height > 0 ? height + gap : 0;
+    auto f = m_doc->rootFrame()->frameFormat();
+    f.setTopMargin(height > 0 ? margins[0].toReal() : 0);
+    f.setRightMargin(height > 0 ? margins[1].toReal() : 0);
+    f.setBottomMargin(height > 0 ? margins[2].toReal() + gap : 0);
+    f.setLeftMargin(height > 0 ? margins[3].toReal() : 0);
+    const bool marginsChanged = f != m_doc->rootFrame()->frameFormat();
+    const bool layoutEnabled = m_doc->isLayoutEnabled();
+    if (marginsChanged) {
+        // QTextFrame::setFrameFormat is an undoable content edit. These margins belong to
+        // the viewport: change only the root object's format and invalidate its layout.
+        // The existing Qt private dependency lets us preserve undo, redo and modified state.
+        m_doc->setLayoutEnabled(false);
+        auto *priv = static_cast<QTextDocumentPrivate *>(QObjectPrivate::get(m_doc));
+        priv->formatCollection()->setObjectFormat(m_doc->rootFrame()->objectIndex(), f);
+        m_doc->markContentsDirty(0, m_doc->characterCount());
+    }
+    m_doc->setPageSize(QSizeF(width, m_pageStride > 0 ? m_pageStride : -1));
+    if (marginsChanged) m_doc->setLayoutEnabled(layoutEnabled);
+    if (layoutEnabled)
+        QMetaObject::invokeMethod(m_document->parent(), "updateSize", Qt::DirectConnection);
+    if (layoutEnabled) syncPageCount();
+    if (m_pageBreakOverlay) {
+        m_pageBreakOverlay->setVisible(height <= 0);
+        if (height <= 0) m_pageBreakOverlay->polish();
+    }
+    if (hasMarks()) scheduleMarksRepaint();
+    updateCurrentPage();
+}
+
+void RichTextHandler::syncPageCount()
+{
+    // Geometry/load boundaries only. Never force whole-document layout from an edit hook.
+    const int count = m_doc ? qMax(1, m_doc->pageCount()) : 1;
+    if (count != m_pageCount) { m_pageCount = count; emit pagesChanged(); }
+    updateCurrentPage();
+}
+
+int RichTextHandler::pageAt(int position) const
+{
+    if (!m_doc || m_pageStride <= 0) return 1;
+    auto *edit = qobject_cast<QQuickTextEdit *>(m_document->parent());
+    if (!edit) return 1;
+    const auto r = edit->positionToRectangle(qBound(0, position, m_doc->characterCount() - 1));
+    return qBound(1, int(qFloor(r.top() / m_pageStride)) + 1, m_pageCount);
+}
+
+void RichTextHandler::updateCurrentPage()
+{
+    const int page = pageAt(m_cursorPosition);
+    if (page == m_currentPage) return;
+    m_currentPage = page;
+    emit currentPageChanged();
+}
 
 void RichTextHandler::updateViewportCulling()
 {
@@ -741,6 +812,7 @@ void RichTextHandler::setCursorPosition(int v)
         return;
     m_pendingFont = {};
     m_cursorPosition = v;
+    updateCurrentPage();
     emit selectionChanged();
     emit formatChanged();
 }
@@ -1240,8 +1312,11 @@ bool RichTextHandler::loadOdf(const QUrl &file)
     // readOdt() calls doc->clear() internally when it does touch the document — see newDocument()
     // for why that no longer requires disconnecting handleContentsChange around it.
     m_bulkReset = true; // see newDocument(): a load replaces every block at once
+    const bool layoutEnabled = doc->isLayoutEnabled();
+    doc->setLayoutEnabled(false);
     const bool ok = rt::readOdt(localPath(file), doc, &sheet, &why);
     if (!ok && sheet.isEmpty()) { // not found / not an .odt: the document was not touched
+        doc->setLayoutEnabled(layoutEnabled);
         m_bulkReset = false;
         setError(why);
         return false;
@@ -1270,6 +1345,14 @@ bool RichTextHandler::loadOdf(const QUrl &file)
     // ones. Emit it again now that they're right.
     emit contentsChanged();
     emit blocksLoaded();
+    doc->setLayoutEnabled(layoutEnabled);
+    // While layout was suspended TextEdit observed the contents change with the old size.
+    // Reconcile its contentHeight once, now that the replacement's final geometry is known.
+    if (layoutEnabled) {
+        QMetaObject::invokeMethod(m_document->parent(), "updateSize", Qt::DirectConnection);
+        // Qt need not emit pageCountChanged when a replacement has the same page count.
+        syncPageCount();
+    }
     return ok;
 }
 
@@ -2528,7 +2611,7 @@ protected:
         QQuickItem::itemChange(change, value);
     }
     void updatePolish() override {
-        if (!m_handler) return;
+        if (!m_handler || !isVisible()) return;
         const QRectF band = clipRect().adjusted(0, -32, 0, 32);
         const auto segments = m_handler->pageBreakSegments(band);
         QSet<QString> visible;

@@ -104,7 +104,7 @@ type DocumentEditorProps = {
   /** The style table changed (defineStyle, a load, newDocument, an undo of a definition). */
   onStylesChanged?: () => void;
   /** Page width in px (e.g. 794 ≈ A4 at 96dpi). 0/unset = the plain editor's default. The editor
-   *  is continuous, with markers for explicit page breaks. */
+   *  displays paginated sheets by default. */
   pageWidth?: number;
   /** [top, right, bottom, left] px. null/unset = the plain editor's default (12px uniform). */
   pageMargins?: [number, number, number, number] | null;
@@ -227,6 +227,18 @@ declare global {
 
   /** What `ref={doc}` on <DocumentEditor> gives the app (see docs/document-editor.md). */
   interface DocumentEditorHandle {
+    /** View geometry in layout pixels at zoom 1; configure through the ref or QML. */
+    pageHeight: number;
+    pageGap: number;
+    pageView: boolean;
+    deskColor: string;
+    readonly pageCount: number;
+    /** One-based page containing the caret. */
+    readonly currentPage: number;
+    pageAt(position: number): number;
+    scrollToPage(page: number): void;
+    /** QML signal; use doc.pagesChanged.connect(callback) from the ref. */
+    readonly pagesChanged: { connect(callback: () => void): void; disconnect(callback: () => void): void };
     readonly modified: boolean;
     readonly bold: boolean;
     readonly italic: boolean;

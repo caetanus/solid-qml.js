@@ -51,17 +51,79 @@ RichText {
 
     // ── page look (office item 2b, ★1) ──────────────────────────────────────────────────────────
     // `pageWidth` (px): the editor's implicit width when set (0 = the plain editor's 560 default).
-    // Continuous view, with overlay markers for explicit page breaks.
+    property real pageHeight: 1123
+    property real pageGap: 24
+    property bool pageView: pageHeight > 0
+    property color deskColor: "#e9e8e6"
+    readonly property bool _pages: pageView && pageHeight > 0
+    readonly property real _pageZoom: Math.max(0.5, Math.min(3.0, zoom))
+    readonly property real _pageStride: (pageHeight + Math.max(0, pageGap)) * _pageZoom
+    readonly property int pageCount: fmt ? fmt.pageCount : 1
+    readonly property int currentPage: fmt ? fmt.currentPage : 1
+    signal pagesChanged()
+    function pageAt(position) { return fmt ? fmt.pageAt(position) : 1 }
+    function scrollToPage(n) {
+        if (!_pages) return
+        _body.contentY = Math.max(0, Math.min((Math.max(1, Math.min(pageCount, Math.floor(n))) - 1) * _pageStride,
+                                             _body.contentHeight - _body.height))
+    }
+    _sheetWidth: _pages ? (pageWidth > 0 ? pageWidth : 794) * _pageZoom : 0
+    _sheetContentHeight: _pages ? pageCount * _pageStride - Math.max(0, pageGap) * _pageZoom : 0
+    function _configurePages() {
+        if (!fmt || !fmt.document) return
+        var m = pageMargins || [12, 12, 12, 12]
+        fmt.configurePages(_editor.width, _pages ? pageHeight * _pageZoom : 0,
+                           Math.max(0, pageGap) * _pageZoom, m.map(v => v * _pageZoom))
+    }
+    on_PagesChanged: Qt.callLater(_configurePages)
+    on_PageStrideChanged: Qt.callLater(_configurePages)
+    onPageMarginsChanged: Qt.callLater(_configurePages)
+    Connections {
+        target: root._editor
+        function onWidthChanged() { Qt.callLater(root._configurePages) }
+    }
+    Rectangle {
+        parent: root._body
+        anchors.fill: parent
+        z: -2
+        visible: root._pages
+        color: root.deskColor
+    }
+    Item {
+        parent: root._body.contentItem
+        z: -1
+        visible: root._pages
+        // A bounded pool is moved as the viewport scrolls. No binding depends on text edits.
+        readonly property int firstPage: root._pages ? Math.max(0, Math.ceil((root._body.contentY - root._body.height - root.pageHeight * root._pageZoom) / root._pageStride)) : 0
+        readonly property int poolSize: root._pages ? Math.max(0, Math.min(root.pageCount - 1,
+                                                    Math.floor((root._body.contentY + 2 * root._body.height) / root._pageStride)) - firstPage + 1) : 0
+        Repeater {
+            model: parent.poolSize
+            delegate: Rectangle {
+                required property int index
+                objectName: "documentSheet"
+                x: root._editor.x
+                y: (parent.firstPage + index) * root._pageStride
+                width: root._sheetWidth
+                height: root.pageHeight * root._pageZoom
+                color: "white"
+                // Small translucent layers give a soft edge without a texture/effect per sheet.
+                Rectangle { anchors.fill: parent; anchors.margins: -3; z: -2; color: "#08000000"; radius: 3 }
+                Rectangle { anchors.fill: parent; anchors.margins: -1; z: -1; color: "#18000000"; radius: 1 }
+            }
+        }
+    }
+    // Explicit breaks retain their draft marker in continuous view.
     property string pageBreakLabel: "Quebra de página"
     property real pageWidth: 0
     implicitWidth: pageWidth > 0 ? pageWidth : 560
     // `pageMargins`: [top, right, bottom, left] px, or null for the plain editor's 12px uniform
-    // default. Applied outside the text item, so viewport culling uses document coordinates.
+    // default. Page view uses document margins; continuous view uses outer item insets.
     property var pageMargins: null
-    _textTopMargin: pageMargins ? pageMargins[0] : 12
-    _textRightMargin: pageMargins ? pageMargins[1] : 12
-    _textBottomMargin: pageMargins ? pageMargins[2] : 12
-    _textLeftMargin: pageMargins ? pageMargins[3] : 12
+    _textTopMargin: _pages ? 0 : (pageMargins ? pageMargins[0] : 12)
+    _textRightMargin: _pages ? 0 : (pageMargins ? pageMargins[1] : 12)
+    _textBottomMargin: _pages ? 0 : (pageMargins ? pageMargins[2] : 12)
+    _textLeftMargin: _pages ? 0 : (pageMargins ? pageMargins[3] : 12)
 
     // ── zoom (office item 2b, ★2) ────────────────────────────────────────────────────────────────
     // The app owns the value; clamped the same way the engine clamps it (defensive — a value
@@ -73,7 +135,7 @@ RichText {
     // docs: plain body text carries no explicit per-run font size), so zoom must scale it too —
     // everything ELSE (headings, direct formatting, named styles with their own fontSize) is
     // already baked per-run into the document and rescaled by RichTextHandler::setZoom.
-    _editor.font.pixelSize: cssTheme.parseFontSize(root.inheritedFontSize || "14px", 14) * zoom
+    _editor.font.pixelSize: cssTheme.parseFontSize(root.inheritedFontSize || "14px", 14) * _pageZoom
     onZoomChanged: {
         if (fmt) fmt.zoom = Math.max(0.5, Math.min(3.0, zoom))
         Qt.callLater(root._keepCaretVisible)
@@ -124,13 +186,16 @@ RichText {
         function onSaveCopyFinished(ok, error) { root.saveCopyFinished(ok, error) }
         function onStylesChanged() { root.stylesChanged() }
         function onHeadingsChanged() { headingsDebounce.restart() }
-        function onBlocksLoaded() { root.blocksLoaded() }
+        function onBlocksLoaded() { root._configurePages(); root.blocksLoaded() }
+        function onDocumentChanged() { root._configurePages() }
+        function onPagesChanged() { root.pagesChanged() }
         function onBlockChanged(blockId) { root.blockChanged(blockId) }
         function onBlockRemoved(blockId) { root.blockRemoved(blockId) }
     }
     // The handler arrives in RichText's Component.onCompleted: start from an empty, unmodified
     // document, without reporting that as an edit.
     onFmtChanged: if (fmt) {
+        fmt.zoom = _pageZoom
         fmt.pageBreakLabel = Qt.binding(function() { return root.pageBreakLabel })
         fmt.newDocument()
         debounce.stop()

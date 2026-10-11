@@ -5,6 +5,7 @@
 // paragraph/character styles (define, apply, re-apply, next style on Enter, direct formatting)
 // and their styles.xml round-trip.
 #include "shims/richtext.h"
+#include "shims/richtext_odf.h"
 #include "qmlcss/QMLCss.h"
 #include <QQmlContext>
 
@@ -162,6 +163,36 @@ QRectF caretRect(QObject *edit, int pos)
 
 } // namespace
 
+// Exercise the actual widget and QQuickTextEdit layout, including its width/viewport hooks.
+struct PageEditor {
+    QmlCss::CssTheme theme;
+    QmlCss::CssLayoutEngine layout{&theme};
+    QQuickView view;
+    QScopedPointer<QQuickItem> root;
+    explicit PageEditor(qreal initialZoom = 1) {
+        view.engine()->rootContext()->setContextProperty("cssTheme", &theme);
+        view.engine()->rootContext()->setContextProperty("cssLayout", &layout);
+        QQmlComponent c(view.engine());
+        c.setData("import QtQuick\nimport solidqml.Widgets.RichText\n"
+                  "DocumentEditor { width: 900; height: 600; toolbar: false; pageWidth: 794; pageMargins: [94,113,94,113] }", QUrl());
+        root.reset(qobject_cast<QQuickItem *>(c.createWithInitialProperties({{QStringLiteral("zoom"), initialZoom}})));
+        if (!root) qWarning().noquote() << c.errorString();
+        view.resize(900, 600);
+        if (root) root->setParentItem(view.contentItem());
+    }
+    static QList<QQuickItem *> sheets(QQuickItem *parent) {
+        QList<QQuickItem *> result;
+        for (auto *item : parent->childItems()) {
+            if (item->objectName() == QStringLiteral("documentSheet")) result.append(item);
+            result.append(sheets(item));
+        }
+        return result;
+    }
+    RichTextHandler *fmt() { return root->findChild<RichTextHandler *>(); }
+    QQuickItem *edit() { return root->property("_editor").value<QQuickItem *>(); }
+    QQuickItem *body() { return root->property("_body").value<QQuickItem *>(); }
+};
+
 class RichTextTest : public QObject {
     Q_OBJECT
 
@@ -232,6 +263,7 @@ class RichTextTest : public QObject {
 private slots:
     void initTestCase()
     {
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
         QmlCss::registerTypes();
         qmlRegisterType<RichTextHandler>("solidqml.native", 1, 0, "RichTextHandler");
     }
@@ -2697,8 +2729,316 @@ private slots:
         QVERIFY(m_fmt->markSegments(QRectF(0, 5000, 60, 100)).isEmpty());
     }
 
+    void qtPaginationExperiment()
+    {
+        m_edit->setProperty("width", 794);
+        m_edit->setProperty("wrapMode", 1);
+        m_fmt->insertText(QStringLiteral("First\nSecond"));
+        QTextCursor c(doc());
+        c.setPosition(6);
+        QTextBlockFormat bf;
+        bf.setPageBreakPolicy(QTextFormat::PageBreak_AlwaysBefore);
+        c.mergeBlockFormat(bf);
+        auto frame = doc()->rootFrame()->frameFormat();
+        frame.setTopMargin(94); frame.setBottomMargin(94 + 24);
+        frame.setLeftMargin(113); frame.setRightMargin(113);
+        doc()->rootFrame()->setFrameFormat(frame);
+        doc()->setPageSize(QSizeF(794, 1123 + 24));
+        QCOMPARE(doc()->pageCount(), 2);
+        QVERIFY(qAbs(doc()->documentLayout()->blockBoundingRect(doc()->findBlock(6)).top() - (1147.0 + 94)) < 1);
+        QVERIFY(qAbs(caretRect(m_edit.data(), 6).top() - (1147.0 + 94)) < 1);
+        m_edit->setProperty("cursorPosition", 6);
+        m_fmt->setCursorPosition(6);
+        m_fmt->insertText(QStringLiteral("x"));
+        QCOMPARE(doc()->pageSize(), QSizeF(794, 1147));
+    }
+
+    void pageViewGeometryAndNavigation()
+    {
+        PageEditor w;
+        QVERIFY(w.root);
+        QVERIFY(w.root->property("pageView").toBool());
+        QCOMPARE(w.root->property("pageCount").toInt(), 1);
+        w.fmt()->insertText(QStringLiteral("First"));
+        w.fmt()->setCursorPosition(5);
+        w.fmt()->insertPageBreak();
+        w.fmt()->insertText(QStringLiteral("Second"));
+        QTRY_COMPARE(w.root->property("pageCount").toInt(), 2);
+        QVERIFY(w.edit()->height() >= w.body()->property("contentHeight").toReal());
+        auto *d = w.fmt()->document()->textDocument();
+        const int second = d->lastBlock().position();
+        QVERIFY(qAbs(caretRect(w.edit(), second).top() - (1147.0 + 94)) < 1);
+        w.edit()->setProperty("cursorPosition", second);
+        QTRY_COMPARE(w.root->property("currentPage").toInt(), 2);
+        QVariant result;
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "pageAt", Q_RETURN_ARG(QVariant, result), Q_ARG(QVariant, second)));
+        QCOMPARE(result.toInt(), 2);
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "scrollToPage", Q_ARG(QVariant, 2)));
+        QTRY_COMPARE(w.body()->property("contentY").toReal(), 1147.0);
+        w.view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        QTest::qWait(30);
+        for (auto *marker : w.edit()->findChildren<QQuickItem *>(QStringLiteral("pageBreakMarker")))
+            QVERIFY(!marker->isVisible());
+        auto *textEdit = qobject_cast<QQuickTextEdit *>(w.edit());
+        QVERIFY(textEdit);
+        // The gap is nearer the next page's first line than the preceding short page's text.
+        const int gapPosition = textEdit->positionAt(114, 1135);
+        QCOMPARE(d->findBlock(gapPosition).position(), second);
+        w.root->setProperty("zoom", 1.5);
+        QTRY_COMPARE(d->pageSize(), QSizeF(1191, 1720.5));
+        QVERIFY(qAbs(caretRect(w.edit(), second).top() - (1720.5 + 141)) < 1);
+        w.root->setWidth(1000);
+        QCoreApplication::processEvents();
+        QCOMPARE(d->pageSize(), QSizeF(1191, 1720.5));
+        for (auto *sheet : PageEditor::sheets(w.root.data())) {
+            QCOMPARE(sheet->width(), 1191.0);
+            QCOMPARE(sheet->height(), 1684.5);
+        }
+        w.root->setProperty("pageView", false);
+        QTRY_VERIFY(d->pageSize().height() <= 0);
+        w.body()->setProperty("contentY", 0);
+        QTRY_VERIFY(w.edit()->findChild<QQuickItem *>(QStringLiteral("pageBreakMarker")));
+        QVERIFY(w.edit()->findChild<QQuickItem *>(QStringLiteral("pageBreakMarker"))->isVisible());
+    }
+
+    void pagesStartAtRequestedZoomAndSurviveReload()
+    {
+        PageEditor w(1.5);
+        QVERIFY(w.root);
+        QCOMPARE(w.fmt()->zoom(), 1.5);
+        w.fmt()->insertText(QStringLiteral("First"));
+        w.edit()->setProperty("cursorPosition", 5);
+        w.fmt()->insertPageBreak();
+        w.fmt()->insertText(QStringLiteral("Second"));
+        const QUrl file = QUrl::fromLocalFile(m_dir.filePath("two-pages.odt"));
+        QVERIFY(w.fmt()->saveOdfCopy(file));
+        for (int i = 0; i < 2; ++i) {
+            QVERIFY(w.fmt()->loadOdf(file));
+            QTRY_COMPARE(w.root->property("pageCount").toInt(), 2);
+            QCOMPARE(w.fmt()->document()->textDocument()->pageSize(), QSizeF(1191, 1720.5));
+        }
+        w.root->setProperty("pageWidth", 1000);
+        QTRY_COMPARE(w.fmt()->document()->textDocument()->pageSize(), QSizeF(1500, 1720.5));
+    }
+
+    void pageGeometryIsNotAnEdit()
+    {
+        PageEditor w;
+        QVERIFY(w.root);
+        QCoreApplication::processEvents();
+        auto *d = w.fmt()->document()->textDocument();
+        QVERIFY(!d->isModified());
+        QVERIFY(!d->isUndoAvailable());
+        w.fmt()->insertText(QStringLiteral("Keep my undo"));
+        d->setModified(false);
+        const int steps = d->availableUndoSteps();
+        const auto before = QUrl::fromLocalFile(m_dir.filePath("page-view.odt"));
+        const auto after = QUrl::fromLocalFile(m_dir.filePath("continuous-view.odt"));
+        QVERIFY(w.fmt()->saveOdfCopy(before));
+        w.root->setProperty("pageGap", 36);
+        QCoreApplication::processEvents();
+        QCOMPARE(d->availableUndoSteps(), steps);
+        QVERIFY(!d->isModified());
+        w.root->setProperty("pageView", false);
+        QCoreApplication::processEvents();
+        QCOMPARE(d->availableUndoSteps(), steps);
+        QVERIFY(w.fmt()->saveOdfCopy(after));
+        QCOMPARE(zipEntry(before.toLocalFile(), "content.xml"), zipEntry(after.toLocalFile(), "content.xml"));
+        d->undo();
+        QVERIFY(d->toPlainText().isEmpty());
+    }
+
+    void bookPagesKeepLinesOutOfGapsAndRecycleSheets()
+    {
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        if (!QFile::exists(book)) QSKIP("book sample unavailable");
+        PageEditor w;
+        QVERIFY(w.root);
+        QVERIFY(w.fmt()->loadOdf(QUrl::fromLocalFile(book)));
+        auto *d = w.fmt()->document()->textDocument();
+        QVERIFY(d->pageCount() > 100);
+        int lines = 0, spanning = 0;
+        for (auto b = d->begin(); b.isValid(); b = b.next()) {
+            const QRectF rect = d->documentLayout()->blockBoundingRect(b);
+            if (int(rect.top() / 1147) != int(rect.bottom() / 1147)) ++spanning;
+            for (int i = 0; i < b.layout()->lineCount(); ++i) {
+                const auto line = b.layout()->lineAt(i);
+                const qreal top = rect.top() + line.y();
+                const qreal local = top - qFloor(top / 1147) * 1147;
+                QVERIFY2(local >= 93 && local + line.height() <= 1030,
+                         qPrintable(QStringLiteral("block %1 line %2: y=%3 h=%4 local=%5").arg(b.blockNumber()).arg(i).arg(top).arg(line.height()).arg(local)));
+                ++lines;
+            }
+        }
+        qInfo("PAGE_GEOMETRY lines=%d spanning_blocks=%d pages=%d", lines, spanning, d->pageCount());
+        w.view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        for (int page : {1, 50, 100, 2}) {
+            QVERIFY(QMetaObject::invokeMethod(w.root.data(), "scrollToPage", Q_ARG(QVariant, page)));
+            QCoreApplication::processEvents();
+            const auto sheets = PageEditor::sheets(w.root.data());
+            QVERIFY(!sheets.isEmpty());
+            QVERIFY(sheets.size() <= 4);
+            for (auto *sheet : sheets) {
+                QCOMPARE(sheet->width(), 794.0);
+                QCOMPARE(sheet->height(), 1123.0);
+                QVERIFY(sheet->y() + sheet->height() >= w.body()->property("contentY").toReal() - 600);
+                QVERIFY(sheet->y() <= w.body()->property("contentY").toReal() + 1200);
+            }
+            const auto oldSheets = sheets;
+            w.edit()->setProperty("cursorPosition", 100);
+            w.fmt()->setCursorPosition(100);
+            QSignalSpy changed(w.root.data(), SIGNAL(pagesChanged()));
+            w.fmt()->insertText(QStringLiteral("x"));
+            QCoreApplication::processEvents();
+            QCOMPARE(changed.size(), 0);
+            for (auto *sheet : oldSheets) QVERIFY(PageEditor::sheets(w.root.data()).contains(sheet));
+        }
+    }
+
+    void paginatedTablesAndOversizeImages()
+    {
+        PageEditor w;
+        QVERIFY(w.root);
+        auto *d = w.fmt()->document()->textDocument();
+        QTextCursor c(d);
+        auto *table = c.insertTable(100, 2);
+        for (int row = 0; row < 100; ++row)
+            table->cellAt(row, 0).firstCursorPosition().insertText(QStringLiteral("A table row"));
+        table->cellAt(50, 0).firstCursorPosition().insertText(QStringLiteral("A long cell that crosses page boundaries. ").repeated(400));
+        QVERIFY(d->pageCount() >= 3);
+        QVERIFY(d->documentLayout()->blockBoundingRect(table->cellAt(50, 0).firstCursorPosition().block()).height() > 1147);
+        for (int row = 0; row < 100; ++row) {
+            const auto block = table->cellAt(row, 0).firstCursorPosition().block();
+            const auto rect = d->documentLayout()->blockBoundingRect(block);
+            for (int i = 0; i < block.layout()->lineCount(); ++i) {
+                const auto line = block.layout()->lineAt(i);
+                const qreal y = rect.top() + line.y();
+                const qreal local = y - qFloor(y / 1147) * 1147;
+                QVERIFY(local >= 93 && local + line.height() <= 1030);
+            }
+        }
+        c.movePosition(QTextCursor::End);
+        c.insertBlock();
+        QImage image(20, 1400, QImage::Format_ARGB32); image.fill(Qt::red);
+        d->addResource(QTextDocument::ImageResource, QUrl("test:tall"), image);
+        QTextImageFormat imageFormat; imageFormat.setName("test:tall");
+        imageFormat.setWidth(20); imageFormat.setHeight(900);
+        c.insertImage(imageFormat);
+        const auto fitting = d->documentLayout()->blockBoundingRect(c.block());
+        const auto imageLine = c.block().layout()->lineAt(0);
+        const qreal imageTop = fitting.top() + imageLine.y();
+        const qreal fittingLocal = imageTop - qFloor(imageTop / 1147) * 1147;
+        QVERIFY2(fittingLocal >= 93 && fittingLocal + imageLine.height() <= 1030,
+                 qPrintable(QStringLiteral("image top=%1 local=%2 height=%3 block=%4,%5").arg(imageTop).arg(fittingLocal).arg(imageLine.height()).arg(fitting.top()).arg(fitting.height())));
+        c.insertBlock();
+        imageFormat.setHeight(1400);
+        c.insertImage(imageFormat);
+        const auto rect = d->documentLayout()->blockBoundingRect(c.block());
+        QVERIFY(rect.height() >= 1400);
+        qInfo("PAGE_OVERSIZE image y=%.2f height=%.2f: indivisible image overflows page text area", rect.y(), rect.height());
+    }
+
+    void paginatedMarksSelectionFindAndOutline()
+    {
+        PageEditor w;
+        QVERIFY(w.root);
+        w.fmt()->insertText(QStringLiteral("First"));
+        w.edit()->setProperty("cursorPosition", 5);
+        w.fmt()->insertPageBreak();
+        w.fmt()->insertText(QStringLiteral("Second"));
+        auto *d = w.fmt()->document()->textDocument();
+        const int pos = d->lastBlock().position();
+        w.edit()->setProperty("cursorPosition", pos);
+        w.fmt()->setHeading(1);
+        QCOMPARE(w.fmt()->headings().size(), 1);
+        QCOMPARE(w.fmt()->headings().first().toMap().value("position").toInt(), pos);
+        QCOMPARE(d->find(QStringLiteral("Second")).selectionStart(), pos);
+        w.fmt()->addMark(QStringLiteral("spelling"), w.fmt()->blockIdAt(pos), 0, 6);
+        const auto segments = w.fmt()->markSegments();
+        QCOMPARE(segments.size(), 1);
+        QVERIFY(segments.first().rect.top() >= 1241);
+        QVERIFY(segments.first().rect.bottom() < 1300);
+        QTRY_COMPARE(w.root->property("pageCount").toInt(), 2);
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "scrollToPosition", Q_ARG(QVariant, pos)));
+        QCOMPARE(w.body()->property("contentY").toReal(), caretRect(w.edit(), pos).top());
+        QVERIFY(QMetaObject::invokeMethod(w.edit(), "select", Q_ARG(int, 0), Q_ARG(int, d->characterCount() - 1)));
+        w.fmt()->copy();
+        QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("First\nSecond"));
+    }
+
+    void bookBareQtPaginationPerformance()
+    {
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        if (!QFile::exists(book)) QSKIP("book sample unavailable");
+        PageEditor reference;
+        QVERIFY(reference.root);
+        m_edit->setProperty("font", reference.edit()->property("font"));
+        m_edit->setProperty("width", 794);
+        m_edit->setProperty("wrapMode", 1);
+        auto *d = doc();
+        delete m_fmt; m_fmt = nullptr; // only QQuickTextEdit and Qt's layout remain
+        rt::StyleSheet sheet;
+        QString error;
+        QVERIFY(rt::readOdt(book, d, &sheet, &error));
+        auto f = d->rootFrame()->frameFormat();
+        f.setTopMargin(94); f.setBottomMargin(118); f.setLeftMargin(113); f.setRightMargin(113);
+        d->rootFrame()->setFrameFormat(f);
+        d->setPageSize(QSizeF(794, 1147));
+        d->documentLayout()->documentSize();
+        QTextCursor cursor(d);
+        cursor.setPosition(d->characterCount() / 2);
+        QElapsedTimer t; t.start();
+        cursor.insertText(QStringLiteral("x"));
+        d->documentLayout()->blockBoundingRect(cursor.block());
+        qInfo("PAGE_QT_ONLY type_ms=%.3f pages=%d", t.nsecsElapsed() / 1e6, d->pageCount());
+    }
+
+    void bookPagePerformance()
+    {
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        if (!QFile::exists(book)) QSKIP("book sample unavailable");
+        PageEditor w;
+        QVERIFY(w.root);
+        QElapsedTimer t; t.start();
+        QVERIFY(w.fmt()->loadOdf(QUrl::fromLocalFile(book)));
+        auto *d = w.fmt()->document()->textDocument();
+        d->documentLayout()->documentSize();
+        const double open = t.nsecsElapsed() / 1e6;
+        const int mid = d->characterCount() / 2;
+        w.edit()->setProperty("cursorPosition", mid);
+        w.fmt()->setCursorPosition(mid);
+        t.restart();
+        w.fmt()->insertText(QStringLiteral("x"));
+        d->documentLayout()->blockBoundingRect(d->findBlock(mid));
+        const double typing = t.nsecsElapsed() / 1e6;
+        w.view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        t.restart();
+        for (int i = 0; i < 100; ++i) {
+            w.body()->setProperty("contentY", 1000 + i * 150);
+            QCoreApplication::processEvents();
+            w.view.grabWindow();
+        }
+        const double scrolling = t.nsecsElapsed() / 1e6;
+        QFile smaps(QStringLiteral("/proc/self/smaps_rollup"));
+        QVERIFY(smaps.open(QIODevice::ReadOnly));
+        const auto memory = smaps.readAll();
+        const auto pss = QRegularExpression(QStringLiteral("Pss: +([0-9]+)")).match(QString::fromLatin1(memory)).captured(1);
+        qInfo("PAGE_PERF open_ms=%.3f type_ms=%.3f scroll100_ms=%.3f pss_kb=%s pages=%d", open, typing, scrolling, qPrintable(pss), d->pageCount());
+    }
+
+    void bookViewportPaintsBottomLines_data()
+    {
+        QTest::addColumn<bool>("pageView");
+        QTest::newRow("continuous") << false;
+        QTest::newRow("pages") << true;
+    }
+
     void bookViewportPaintsBottomLines()
     {
+        QFETCH(bool, pageView);
         const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
         if (!QFile::exists(book)) QSKIP("book sample unavailable");
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
@@ -2710,12 +3050,15 @@ private slots:
             window.engine()->rootContext()->setContextProperty(QStringLiteral("cssLayout"), &layout);
             QQmlComponent component(window.engine());
             component.setData("import QtQuick\nimport solidqml.Widgets.RichText\n"
-                              "DocumentEditor { width: 794; height: 600; toolbar: false; pageWidth: 794; pageMargins: [94,113,94,113] }", QUrl());
+                              "DocumentEditor { width: 794; height: 600; toolbar: false; pageView: false; pageWidth: 794; pageMargins: [94,113,94,113] }", QUrl());
             auto *root = qobject_cast<QQuickItem *>(component.create());
             if (!root) qWarning().noquote() << component.errorString();
             window.resize(794, 600);
             window.setColor(Qt::white);
-            if (root) root->setParentItem(window.contentItem());
+            if (root) {
+                root->setProperty("pageView", pageView);
+                root->setParentItem(window.contentItem());
+            }
             return root;
         };
         QScopedPointer<QQuickItem> root(create(view)), reference(create(referenceView));
@@ -2741,7 +3084,8 @@ private slots:
             referenceEdit->setFlag(QQuickItem::ItemObservesViewport, false);
             QTest::qWait(30);
             const QRectF last = caretRect(edit, fmt->document()->textDocument()->characterCount() - 1);
-            QVERIFY(body->property("contentHeight").toReal() >= edit->y() + last.bottom() + 93);
+            QVERIFY2(body->property("contentHeight").toReal() >= edit->y() + last.bottom() + 93,
+                     qPrintable(QStringLiteral("contentHeight=%1 editY=%2 lastBottom=%3 editHeight=%4").arg(body->property("contentHeight").toReal()).arg(edit->y()).arg(last.bottom()).arg(edit->height())));
             for (qreal scroll : {0.0, 1800.0, 12000.0, 28000.0, 1800.0, 3500.0}) {
                 body->setProperty("contentY", scroll);
                 referenceBody->setProperty("contentY", scroll);
@@ -2767,7 +3111,11 @@ private slots:
                     }
                 }
                 qInfo("viewport zoom %.1f scroll %.0f: bottom ink %d, missing %d", zoom, scroll, ink, missing);
-                QVERIFY(ink > 100);
+                if (!pageView) QVERIFY(ink > 100); // a page gap legitimately has no text
+                if (missing >= 10) {
+                    culled.save(QStringLiteral(".scratch/pages-culled.png"));
+                    complete.save(QStringLiteral(".scratch/pages-reference.png"));
+                }
                 QVERIFY2(missing < 10, qPrintable(QStringLiteral("missing bottom glyph pixels at scroll %1: %2").arg(scroll).arg(missing)));
                 // A tiny backward move wholly inside the rendered band only needs the
                 // scene transform, not rebuilding the text nodes again.

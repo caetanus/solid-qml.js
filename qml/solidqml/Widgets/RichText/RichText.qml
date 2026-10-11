@@ -37,6 +37,8 @@ Css.CssFill {
     readonly property alias _editor: edit
     // Insets belong to the scrolling sheet, not the observed text viewport. TextArea
     // subtracts its padding from that viewport on every frame, cutting off bottom lines.
+    property real _sheetWidth: 0
+    property real _sheetContentHeight: 0
     property real _textTopMargin: 12
     property real _textRightMargin: 12
     property real _textBottomMargin: 12
@@ -195,8 +197,8 @@ Css.CssFill {
             anchors.top: bar.bottom
             anchors.bottom: parent.bottom
             clip: true
-            contentWidth: width
-            contentHeight: edit.y + edit.height + root._textBottomMargin
+            contentWidth: Math.max(width, root._sheetWidth)
+            contentHeight: root._sheetContentHeight > 0 ? root._sheetContentHeight : edit.y + edit.height + root._textBottomMargin
             boundsBehavior: Flickable.StopAtBounds
             property real _previousContentY: 0
             onContentYChanged: {
@@ -208,10 +210,10 @@ Css.CssFill {
 
             TextEdit {
                 id: edit
-                x: root._textLeftMargin
+                x: root._sheetWidth > 0 ? Math.max(0, (body.width - root._sheetWidth) / 2) : root._textLeftMargin
                 y: root._textTopMargin
-                width: Math.max(0, body.width - root._textLeftMargin - root._textRightMargin)
-                height: Math.max(body.height - root._textTopMargin - root._textBottomMargin, contentHeight)
+                width: root._sheetWidth > 0 ? root._sheetWidth : Math.max(0, body.width - root._textLeftMargin - root._textRightMargin)
+                height: Math.max(body.height - root._textTopMargin - root._textBottomMargin, root._sheetContentHeight, contentHeight)
                 padding: 0
                 textFormat: TextEdit.RichText
                 wrapMode: TextEdit.Wrap

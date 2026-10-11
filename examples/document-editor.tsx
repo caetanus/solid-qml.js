@@ -109,6 +109,7 @@ export function DocumentEditorDemo() {
       </div>
       <div class="de-status">
         <text class="de-status-t">{(dirty() ? "● " : "") + status()}</text>
+        <text class="de-status-t">{"Página " + doc.currentPage + " de " + doc.pageCount}</text>
         <text class="de-status-t">{doc.wordCount + " words, " + doc.charCount + " chars"}</text>
         <text class="de-status-t">{headingCount() + " headings"}</text>
       </div>

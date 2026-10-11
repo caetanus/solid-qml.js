@@ -54,8 +54,8 @@ A complete example (own toolbar, open/save by path, modified dot, word count) is
 | `onModifiedChanged` | `(modified: boolean) => …` | The unsaved-changes flag flipped. |
 | `onContentChanged` | `() => …` | Any edit, formatting included, **debounced** (300 ms of quiet). No payload: read `doc.plainText()` / `doc.toHtml()` when needed. Opening a file, `newDocument()` and `defineStyle()` count as content changes. |
 | `onStylesChanged` | `() => …` | The style table changed: `defineStyle`, a load, `newDocument`, an undo/redo of a definition. Refresh a style picker from `doc.styleNames(…)` here. |
-| `pageWidth` | number (px) | The editor's implicit width when set (e.g. `794` ≈ A4 at 96dpi). `0`/unset keeps the plain editor's default. Continuous text with overlay markers for explicit page breaks (see `insertPageBreak()`). |
-| `pageMargins` | `[top, right, bottom, left]` (px), or `null`/unset | Insets around the text item within the scrolling sheet; the caret and selection respect them. `null`/unset keeps the plain editor's default (12px uniform). |
+| `pageWidth` | number (px) | Sheet width at zoom 1 (e.g. `794` ≈ A4 at 96dpi). `0`/unset uses 794px sheets; in continuous view it keeps the plain editor's default. |
+| `pageMargins` | `[top, right, bottom, left]` (px), or `null`/unset | Text margins repeated on every sheet; the caret and selection respect them. `null`/unset keeps the plain editor's default (12px uniform). |
 | `zoom` | number, clamped `0.5`–`3.0` | A **real relayout**: font/point sizes, margins and inline images are rebuilt at the new size (not a scale transform — text stays sharp). Does not change what `saveOdf` writes. The app owns the value; see `onZoomRequested`. |
 | `onZoomRequested` | `(delta: number) => …` | Ctrl+wheel (±0.1 per notch), Ctrl+= / Ctrl+- (±0.1), Ctrl+0 (`0`, meaning "reset"). The editor only asks; set `zoom` in response (e.g. `setZoom(z => delta === 0 ? 1 : clamp(z + delta))`). |
 | `onHeadingsChanged` | `() => …` | The outline changed, **debounced** (300 ms) and only when `doc.headings()` actually differs from before. Refresh a table of contents from `doc.headings()` here. |
@@ -110,7 +110,7 @@ Methods:
 | `setAlignment(align)` | | On every paragraph the selection touches. |
 | `toggleBulletList()`, `toggleNumberedList()` | | Each mirrors the other exactly: in ANY list, detach it (plain paragraph); otherwise start one of its own kind. Toggling the other kind while already in a list turns the list off, not a conversion. |
 | `indent()`, `outdent()` | | In a list: one level deeper/shallower (`outdent()` past the first level detaches it). Otherwise: the paragraph's own left margin, one ~24px step, at the zoom in effect. |
-| `insertPageBreak()` | | Splits the paragraph at the caret (`insertParagraph()`'s mechanics) and marks the new one to start on a fresh page. Shown above the new block as a dashed overlay labelled "Quebra de página". The `pageBreakLabel` QML/ref property overrides the label. Markers follow scrolling and zoom, never enter saved content or undo, and the break round-trips through `saveOdf`/`loadOdf` as `fo:break-before="page"`. |
+| `insertPageBreak()` | | Splits the paragraph at the caret (`insertParagraph()`'s mechanics) and marks the new one to start on a fresh page. Starts a new sheet in page view. In continuous view, shown above the new block as a dashed overlay labelled "Quebra de página". The `pageBreakLabel` QML/ref property overrides the label. Markers follow scrolling and zoom, never enter saved content or undo, and the break round-trips through `saveOdf`/`loadOdf` as `fo:break-before="page"`. |
 | `insertTable(rows, cols)`, `addTableRow()`, `addTableColumn()`, `removeTableRow()`, `removeTableColumn()` | | Row/column edits act on the cell at the caret. |
 | `insertImage(path)` | `{ ok, error }` | Inline image at the caret, capped to the column width. |
 | `undo()`, `redo()`, `focusEditor()` | | |
@@ -209,8 +209,49 @@ success it behaves like the plain `newDocument()` otherwise: no undo step, `modi
 
 ## Page look & zoom
 
-`pageWidth`/`pageMargins` only size the editing surface and its outer insets — they do not change any
-character or paragraph format. `zoom` does: `setZoom()` walks every block and run already in the
+The default is print layout: white A4-height sheets on a grey desk, with text flowing across
+pages. Sheet items are recycled for the viewport plus one screen above and below. The text
+column stays centred in the sheet; wide sheets can be scrolled horizontally.
+
+These additional properties are available in **QML and through the handle** (new TSX attribute
+emission is deliberately outside this change):
+
+| Property | Default | Meaning |
+| --- | --- | --- |
+| `pageHeight` | `1123` | Sheet height in layout pixels at zoom 1. Nonpositive disables pagination. |
+| `pageGap` | `24` | Desk space between sheets, in layout pixels at zoom 1; negative values clamp to zero. |
+| `pageView` | `pageHeight > 0` | Set `false` for the continuous editor and explicit-break markers. |
+| `deskColor` | `"#e9e8e6"` | Background behind and between sheets. |
+| `pageCount` | read-only | Reactive number of laid-out pages (at least one). |
+| `currentPage` | read-only | Reactive, one-based page containing the caret, independent of scroll position. |
+
+`pageAt(position)` returns the one-based page of a document character position (clamped to the
+document). `scrollToPage(n)` clamps the page number and brings the sheet's top to the viewport
+top, subject to the scroll range at the end. It does not move the caret. `pagesChanged` is emitted
+when the page count changes; use `onPagesChanged` in QML or `doc.pagesChanged.connect(callback)`
+from a ref. `currentPage` has its own property-change notification. In continuous view, page
+queries return 1 and `scrollToPage` does nothing. Existing `scrollToPosition`, outline, marks,
+selection and clipboard methods keep document character positions.
+
+An app's status label can bind directly to the editor:
+
+```qml
+Text { text: "Página " + editor.currentPage + " de " + editor.pageCount }
+```
+
+Qt's existing `QTextDocumentLayout` owns pagination; no custom document layout is installed.
+Its page height is `(pageHeight + pageGap) * zoom`, with the gap added to each root-frame bottom
+margin. Paragraphs and table rows can span sheets: their *bounding rectangles* may cover a gap,
+but their individual text lines stay inside page text areas. Explicit breaks land at the next
+text top, subject to subpixel font rounding and the paragraph's own spacing. Clicking a gap uses
+Qt's nearest-text hit testing. An inline image taller than the text area is indivisible: Qt allows
+it to overflow through the bottom margin/gap, rather than splitting or shrinking it. Very large
+unbreakable content or margins that leave no text area have the same Qt layout limitations.
+Page counts reflect this editor's fonts and supported ODF content, not LibreOffice's page count.
+Headers, footers, printed page numbers and PDF export are not part of this feature.
+
+`pageWidth`/`pageHeight`/`pageGap`/`pageMargins` are view geometry, do not modify document content,
+and do not add undo steps or change saved ODF page setup. `zoom` does: `setZoom()` walks every block and run already in the
 live document and multiplies every absolute length baked into it (font point size, letter
 spacing, margins/indent, an exact line height, inline image width/height) by the new/old ratio,
 in place — the same mechanism `defineStyle`/`applyParagraphStyle` use to re-apply a style, not a
