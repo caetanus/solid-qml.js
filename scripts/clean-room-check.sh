@@ -81,57 +81,13 @@ else
   pexec "cd /work/app && git log -1 --oneline && git submodule status"
 fi
 
-echo "== clean-room-check: npm ci =="
-pexec "cd /work/app && npm ci"
-
-echo "== clean-room-check: meson setup =="
-pexec "cd /work/app && meson setup build"
-
-echo "== clean-room-check: ninja -j $JOBS =="
-pexec "cd /work/app && ninja -C build -j $JOBS"
-
-echo "== clean-room-check: meson test (offscreen) =="
-# qml-css-engine:text is a strict pixel/metric oracle against the live QQuickText; it is sensitive
-# to the EXACT installed font/harfbuzz version and is known to drift on a rolling-release distro's
-# "latest" packages even with the right font FAMILY installed (release-plan M6 finding — not a
-# missing dependency). Every other suite (13/14, incl. the transpiler's own 580+ tests) is a hard
-# requirement; that one is reported but does not fail the script.
-set +e
-test_out="$(pexec "cd /work/app && QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 meson test -C build --timeout-multiplier 3" 2>&1)"
-test_status=$?
-set -e
-echo "$test_out"
-if [ $test_status -ne 0 ]; then
-  # Meson's summary lines look like "9/14 qml-css-engine:text  FAIL  2.71s  ...". Collect the
-  # suite names that failed and allow EXACTLY the known font-oracle drift through.
-  failed_names="$(printf '%s\n' "$test_out" | awk '/ FAIL /{print $2}' | sort -u)"
-  if [ "$failed_names" != "qml-css-engine:text" ]; then
-    echo "clean-room-check: unexpected test failures (not just the known font-oracle drift): $failed_names — aborting." >&2
-    exit 1
-  fi
-  echo "clean-room-check: only the known qml-css-engine:text font-metric drift failed; continuing."
-fi
-
-echo "== clean-room-check: meson install =="
-pexec "cd /work/app && meson install -C build --destdir /opt/solidqml"
-PREFIX="/opt/solidqml/usr/local"
-
-echo "== clean-room-check: author + transpile a NEW app OUTSIDE the checkout =="
-pexec "mkdir -p /work/myapp"
-podman cp "$SELF_DIR/tests/clean-room/hello-app/counter.tsx" "$CONTAINER_NAME:/work/myapp/counter.tsx"
-podman cp "$SELF_DIR/tests/clean-room/hello-app/counter.css" "$CONTAINER_NAME:/work/myapp/counter.css"
-pexec "sed -i 's#__RUNTIME__#/work/app/src/solid-qml/runtime#' /work/myapp/counter.tsx"
-# The supported transpile path for a preview app (no npm-published CLI yet — release-plan M6
-# finding + fix): `node --import <checkout>/node_modules/tsx/dist/loader.mjs`, an ABSOLUTE path to
-# tsx's loader. A bare `--import tsx` resolves the 'tsx' package starting from the INVOKING file's
-# own directory, which is outside the checkout here and fails with ERR_MODULE_NOT_FOUND — found on
-# the first clean-room run. The transpiler's own Babel setup had the same class of bug one level
-# deeper (resolving plugin NAMES from the entry file's directory); fixed upstream in
-# transpiler/src/babel/transform.ts by importing the plugins directly instead of by string name.
-pexec "cd /work/myapp && node --import /work/app/node_modules/tsx/dist/loader.mjs /work/app/scripts/gen.mjs /work/myapp/counter.tsx /work/myapp/qmlout/App.generated.qml"
-
-echo "== clean-room-check: run the NEW app with the INSTALLED loader, offscreen =="
-pexec "cd /work/myapp && QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 LD_LIBRARY_PATH=$PREFIX/lib $PREFIX/bin/solid-qml-loader --qml /work/myapp/qmlout/App.generated.qml --click 60,60,300 --grab /work/myapp/shot.png"
+# The in-container steps (npm ci, typecheck, transpiler tests, native build + tests, install, and
+# the "new app outside the checkout" smoke test) live in scripts/ci-steps.sh, shared with the
+# release-plan M7 GitHub Actions workflow (.github/workflows/ci.yml) so the two never drift.
+# qml-css-engine:text (the CssTextLayout-vs-live-QQuickText pixel/metric oracle) is a HARD
+# requirement here, same as every other suite — see docs/RELEASE-PLAN.md M7 notes for the fix.
+echo "== clean-room-check: delegating to scripts/ci-steps.sh inside the container =="
+pexec "cd /work/app && APP_DIR=/work/app PREFIX_DIR=/opt/solidqml SMOKE_DIR=/work/myapp JOBS=$JOBS bash scripts/ci-steps.sh"
 podman cp "$CONTAINER_NAME:/work/myapp/shot.png" "$SHOTS_DIR/clean-room-counter.png"
 
 echo "== clean-room-check: PASSED. Screenshot: $SHOTS_DIR/clean-room-counter.png =="
