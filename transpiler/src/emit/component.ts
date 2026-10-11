@@ -34,7 +34,11 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   const resources = analyzeResources(fn);
   const mutableLocalsMap = analyzeMutableLocals(fn);
   const mutableLocals = mutableLocalsMap.size > 0 ? new Set(mutableLocalsMap.keys()) : undefined;
-  const renderLocalsMap = analyzeRenderLocals(fn, render, mutableLocals);
+  // Computed BEFORE analyzeRenderLocals (moved up from its old position below) — it needs both
+  // `table` and `helpersMap` to seed candidates from every eagerly-evaluated position, not just
+  // `render` itself (see analyzeRenderLocals' and eagerBindingSeeds' own doc comments).
+  const helpersMap = analyzeHelpers(fn);
+  const renderLocalsMap = analyzeRenderLocals(fn, render, mutableLocals, table, helpersMap);
   // `provider.valueLocal` (a context provider's own value object, e.g. `const counter = { count,
   // increment }`) is a DELIBERATE exception: it is EXPECTED to stay a live QML binding (every
   // descendant's `counter.count()` must track the signal — that's the whole point of a context
@@ -53,7 +57,6 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   };
   const renderLocalsLive = renderLocalLiveTaint(renderLocalsMap, isLiveName);
   const renderLocals = renderLocalsMap.size > 0 ? new Set(renderLocalsMap.keys()) : undefined;
-  const helpersMap = analyzeHelpers(fn);
   validateChildrenSlot(render, props.param);
   const collectedRefs: string[] = [];
   // Consumer wiring: local → ctx, so `c.member` resolves to `__ctx_<ctx>.member` in render bindings.

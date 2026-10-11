@@ -164,6 +164,75 @@ export function App(props) {
   assert.match(app.entry, /Component\.onCompleted: \{ doubledCount = doubledCount;/);
 });
 
+test("a const read ONLY by a createMemo body (not render directly) is promoted — the office WriterApp case", async () => {
+  const src = `
+import { text } from "../src/solid-qml/runtime";
+const usableFonts = (all) => all.filter((f) => f.length > 0);
+export function WriterApp() {
+  const fonts = usableFonts(Qt.fontFamilies());
+  const fontOptions = createMemo(() => fonts.map((f) => ({ value: f, label: f })));
+  return <select options={fontOptions()} />;
+}
+`;
+  const app = await generate(src, "t.tsx");
+  // `fonts` is read ONLY inside fontOptions' memo body — never named in render (render only calls
+  // fontOptions()) — but it must still be a real QML property, not a plain `var` left for
+  // Component.onCompleted (which runs AFTER the memo's own property binding is first evaluated).
+  assert.match(app.entry, /readonly property var fonts: usableFonts\(Qt\.fontFamilies\(\)\)/);
+  assert.doesNotMatch(app.entry, /Component\.onCompleted:[^\n]*fonts\s*=/);
+  // The module-level helper call (usableFonts) and the Qt global in the SAME initializer do not
+  // disqualify the const from promotion, and the helper itself is still inlined as a method.
+  assert.match(app.entry, /function usableFonts\(all\)/);
+});
+
+test("a const read ONLY by a createSignal initial value is promoted", async () => {
+  const src = `
+import { text } from "../src/solid-qml/runtime";
+function base(x) { return x * 10; }
+export function App() {
+  const step = base(2);
+  const [count, setCount] = createSignal(step);
+  return <text>{count()}</text>;
+}
+`;
+  const app = await generate(src, "t.tsx");
+  assert.match(app.entry, /readonly property var step: base\(2\)/);
+  assert.doesNotMatch(app.entry, /Component\.onCompleted:[^\n]*step\s*=/);
+});
+
+test("a const read ONLY by a local HELPER's body (called from a render binding) is promoted", async () => {
+  const src = `
+import { text } from "../src/solid-qml/runtime";
+export function App() {
+  const prefix = ["Mr", "Ms"].join("/");
+  function label(n) { return prefix + " " + n; }
+  return <text>{label("Smith")}</text>;
+}
+`;
+  const app = await generate(src, "t.tsx");
+  // \`prefix\` is read only inside the helper \`label\`'s own body — the helper is emitted as a
+  // method on the component object, which cannot see a plain onCompleted-local \`var\`.
+  assert.match(app.entry, /readonly property var prefix: \["Mr", "Ms"\]\.join\("\/"\)/);
+  assert.doesNotMatch(app.entry, /Component\.onCompleted:[^\n]*prefix\s*=/);
+});
+
+test("a const read ONLY by a DEPENDENT createEffect's body is promoted (its re-run handler is a separate Connections function, not nested in onCompleted)", async () => {
+  const src = `
+import { text } from "../src/solid-qml/runtime";
+export function App() {
+  const [count, setCount] = createSignal(1);
+  const label = "n=";
+  createEffect(() => { console.log(label + count()); });
+  return <text>{count()}</text>;
+}
+`;
+  const app = await generate(src, "t.tsx");
+  assert.match(app.entry, /readonly property var label: "n="/);
+  assert.doesNotMatch(app.entry, /Component\.onCompleted:[^\n]*label\s*=/);
+  // The effect's dependent re-run is its own Connections function — `label` must resolve there too.
+  assert.match(app.entry, /function onCountChanged\(\) \{ console\.log\(label \+ count\); \}/);
+});
+
 test("a plain const NOT read by render at all, even if it reads a signal, does not throw (analyzeSetup owns it)", async () => {
   const src = `
 import { text } from "../src/solid-qml/runtime";

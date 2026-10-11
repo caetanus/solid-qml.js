@@ -233,10 +233,12 @@ export function analyzeSetup(fn: t.Function, mutableLocals?: Set<string>, render
 
 /** Identifier reads of any name in `names` inside `expr` — skipping a property KEY position
  *  (`obj.x` / `{x: ...}`, non-computed), which is not a value read of a same-named candidate.
- *  Shared by the render-usage scan and the inter-candidate reference scan below. */
-function readNamesIn(expr: t.Expression, names: Set<string>): Set<string> {
+ *  Shared by the render-usage scan and the inter-candidate reference scan below. Also accepts a
+ *  BlockStatement directly (a memo/helper/effect body), not just a bare expression. */
+function readNamesIn(expr: t.Expression | t.BlockStatement, names: Set<string>): Set<string> {
   const found = new Set<string>();
-  traverse(t.file(t.program([t.expressionStatement(expr)])), {
+  const program = t.isBlockStatement(expr) ? t.program(expr.body) : t.program([t.expressionStatement(expr)]);
+  traverse(t.file(program), {
     Identifier(path) {
       if (t.isMemberExpression(path.parent) && !path.parent.computed && path.parent.property === path.node) return;
       if (t.isObjectProperty(path.parent) && !path.parent.computed && path.parent.key === path.node) return;
@@ -244,6 +246,63 @@ function readNamesIn(expr: t.Expression, names: Set<string>): Set<string> {
     },
   });
   return found;
+}
+
+/** Every OTHER position in a component whose expression is evaluated EAGERLY, as part of a QML
+ *  binding or a detached function body — NOT sequentially inside Component.onCompleted, where a
+ *  plain `var` declared earlier in the same block would already be in scope. A render-local read
+ *  ONLY from one of these is just as broken as one read only from `render` itself (the gap
+ *  analyzeRenderLocals existed to close for `render` — see its own doc comment): the name is a
+ *  `var` local to onCompleted's own anonymous function, invisible to any OTHER function.
+ *
+ *   - createMemo bodies, createSignal/createStore initial values, a zero-arg "derived" accessor's
+ *     body — all become a QML property's binding expression, evaluated at CONSTRUCTION, before
+ *     onCompleted ever runs.
+ *   - createResource's `source` — just the bare name itself; it is read directly inside
+ *     onCompleted's loader statements (safe), but ALSO inside the Connections re-run handler the
+ *     loader wires for a source that is itself a signal/memo — a SEPARATE function, same
+ *     disconnected-scope problem as createEffect below.
+ *   - createEffect bodies — the ONE-TIME run happens inside onCompleted itself (textually after
+ *     every plain setup statement — verified by reading component.ts's assembly order, so that
+ *     part is safe), but a DEPENDENT effect ALSO gets a `Connections { function on<Dep>Changed()
+ *     {…} }` re-run handler, which is its own top-level QML function — NOT nested inside
+ *     onCompleted, so it has no closure over onCompleted's local `var`s at all. (onMount bodies
+ *     have no such re-run handler, so they are NOT included here — they stay in onCompleted,
+ *     sequential and safe.)
+ *   - every local helper's body (analyzeHelpers) — emitted as a method ON THE COMPONENT OBJECT,
+ *     again not nested inside onCompleted, reachable from a binding (`text: helperFn()`) OR a
+ *     handler either way the method itself cannot see onCompleted's locals.
+ *
+ *  A context provider's own value-local object is NOT special-cased here: it is already named
+ *  directly in `render` (`<Ctx.Provider value={counter}>`), so the existing render-seed already
+ *  reaches it, and the existing inter-candidate BFS already follows ITS initializer for further
+ *  render-locals it reads — no separate treatment needed. */
+function eagerBindingSeeds(table: SymbolTable, helpers: Map<string, HelperInfo>, names: Set<string>): Set<string> {
+  const found = new Set<string>();
+  const add = (s: Set<string>) => { for (const n of s) found.add(n); };
+  for (const sym of table.values()) {
+    if (sym.kind === "memo") add(readNamesIn(sym.body, names));
+    else if ((sym.kind === "signal" || sym.kind === "store") && sym.init) add(readNamesIn(sym.init, names));
+    else if (sym.kind === "derived") add(readNamesIn(sym.body, names));
+    else if (sym.kind === "resource" && names.has(sym.source)) found.add(sym.source);
+  }
+  for (const helper of helpers.values()) add(readNamesIn(helper.body, names));
+  return found;
+}
+
+/** `createEffect(fn)` callback bodies at the top level of a component — a LOCAL re-scan (not
+ *  shared with analyzeSetup's bucketing, which also needs `renderLocals` as an input and so runs
+ *  too late to seed it) used only to feed eagerBindingSeeds' effect-body reasoning above. */
+function collectEffectBodies(fn: t.Function): (t.Expression | t.BlockStatement)[] {
+  const out: (t.Expression | t.BlockStatement)[] = [];
+  if (!t.isBlockStatement(fn.body)) return out;
+  for (const s of fn.body.body) {
+    if (!t.isExpressionStatement(s) || !t.isCallExpression(s.expression)) continue;
+    if (!t.isIdentifier(s.expression.callee, { name: "createEffect" })) continue;
+    const cb = s.expression.arguments[0];
+    if (cb && (t.isArrowFunctionExpression(cb) || t.isFunctionExpression(cb))) out.push(cb.body);
+  }
+  return out;
 }
 
 /** Top-level immutable locals whose values are read by the render tree — directly, OR
@@ -270,8 +329,13 @@ function readNamesIn(expr: t.Expression, names: Set<string>): Set<string> {
  *
  *  Does NOT decide which of these must be FROZEN once (a signal/memo/resource/prop read in the
  *  initializer) — see renderLocalLiveTaint below, called separately once the caller (component.ts)
- *  has removed its own deliberate exception (a context provider's value-local) from the map. */
-export function analyzeRenderLocals(fn: t.Function, render: t.CallExpression, mutableLocals?: Set<string>): Map<string, t.Expression> {
+ *  has removed its own deliberate exception (a context provider's value-local) from the map.
+ *
+ *  `table`/`helpers` (optional, passed by component.ts — it already has both before calling this)
+ *  seed `used` from every OTHER eagerly-evaluated position too, not just `render` itself — see
+ *  eagerBindingSeeds' own doc comment. Omitting them keeps the OLD render-only seeding (every
+ *  existing call site that does not pass them is unaffected). */
+export function analyzeRenderLocals(fn: t.Function, render: t.CallExpression, mutableLocals?: Set<string>, table?: SymbolTable, helpers?: Map<string, HelperInfo>): Map<string, t.Expression> {
   const candidates = new Map<string, t.Expression>();
   const letCandidates = new Set<string>();
   if (!t.isBlockStatement(fn.body)) return candidates;
@@ -292,8 +356,12 @@ export function analyzeRenderLocals(fn: t.Function, render: t.CallExpression, mu
 
   const names = new Set(candidates.keys());
 
-  // Seed from direct render usage, then close over inter-candidate references (BFS).
+  // Seed from direct render usage AND every other eager-binding position (memo/signal/store
+  // inits, derived accessors, resource sources, dependent-effect re-run bodies, helper bodies —
+  // see eagerBindingSeeds), then close over inter-candidate references (BFS).
   const used = readNamesIn(render, names);
+  if (table) for (const n of eagerBindingSeeds(table, helpers ?? new Map(), names)) used.add(n);
+  for (const effectBody of collectEffectBodies(fn)) for (const n of readNamesIn(effectBody, names)) used.add(n);
   const queue = [...used];
   while (queue.length) {
     const cur = queue.pop()!;
