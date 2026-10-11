@@ -85,8 +85,10 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
         m_headingsConn = connect(td, &QTextDocument::contentsChange, this, &RichTextHandler::handleContentsChange);
     }
     updateViewportCulling();
-    rebuildIndex(); // a full, but infrequent (document-attach-time) scan establishes the baseline
+    // rebuildBlockIds() first: rebuildIndex() keys every heading/count entry by blockId, so every
+    // block must already carry a BlockInfo/id by the time it runs.
     rebuildBlockIds();
+    rebuildIndex(); // a full, but infrequent (document-attach-time) scan establishes the baseline
     emit documentChanged();
     emit formatChanged();
     emit modifiedChanged();
@@ -149,6 +151,8 @@ int countWords(const QString &text)
 
 void RichTextHandler::rebuildIndex()
 {
+    // Requires rebuildBlockIds() to have already run (setDocument/newDocument/loadOdf all call it
+    // first): every block below must already carry a BlockInfo/id to be keyed by.
     QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
     const QList<HeadingEntry> before = m_headings;
     m_headings.clear();
@@ -157,20 +161,22 @@ void RichTextHandler::rebuildIndex()
     m_totalWords = 0;
     if (doc) {
         for (QTextBlock b = doc->begin(); b.isValid(); b = b.next()) {
+            const rt::BlockInfo *info = rt::blockInfo(b);
+            const QString id = info ? info->id : QString();
             const QString text = b.text();
             const int chars = text.size();
             const int words = countWords(text);
-            m_blockCounts << BlockCount { b, chars, words };
+            m_blockCounts << BlockCount { id, chars, words };
             m_totalChars += chars;
             m_totalWords += words;
             const int level = b.blockFormat().headingLevel();
             if (level > 0)
-                m_headings << HeadingEntry { b, level, text };
+                m_headings << HeadingEntry { id, level, text };
         }
     }
     bool same = before.size() == m_headings.size();
     for (int i = 0; same && i < before.size(); ++i)
-        same = before[i].block == m_headings[i].block && before[i].level == m_headings[i].level
+        same = before[i].blockId == m_headings[i].blockId && before[i].level == m_headings[i].level
             && before[i].text == m_headings[i].text;
     if (!same)
         emit headingsChanged();
@@ -179,13 +185,23 @@ void RichTextHandler::rebuildIndex()
 void RichTextHandler::handleContentsChange(int position, int charsRemoved, int charsAdded)
 {
     QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
-    if (!doc)
+    // A load/new/clear is about to rebuild (or just rebuilt) the WHOLE document at once: skip both
+    // trackBlocks() (which already no-ops under m_bulkReset on its own) and the headings/counts
+    // rescan+splice below for every intermediate contentsChange a bulk rebuild fires — rebuildBlockIds()/
+    // rebuildIndex(), called once after the bulk op finishes, fully recompute everything instead,
+    // which is cheaper (no incremental upkeep repeated across potentially thousands of edits) and
+    // safe (no liveness bookkeeping needs to run while the document is mid-reinitialization; see
+    // blockInfoDestroyed()). This is what makes newDocument()/loadOdf() safe to run doc->clear()
+    // (and readOdt()'s own many edits) with handleContentsChange left connected throughout.
+    if (!doc || m_bulkReset)
         return;
     const int last = doc->characterCount() - 1;
     const QTextBlock from = doc->findBlock(qBound(0, position, last));
     const QTextBlock to = doc->findBlock(qBound(0, position + charsAdded, last));
     const int fromNum = from.blockNumber(), toNum = to.blockNumber();
-    trackBlocks(position, charsRemoved, charsAdded); // office item 3: ids, text changes
+    trackBlocks(position, charsRemoved, charsAdded); // office item 3: ids, text changes — also the
+        // point after which every block of [from, to] is guaranteed a BlockInfo/id (fresh blocks
+        // get one there), which the rescan walk below relies on.
 
     // What the re-scanned span gives NOW (document order, since we walk from→to forward) — both
     // the headings in it and every block's counts (item 7), in the SAME walk.
@@ -193,29 +209,40 @@ void RichTextHandler::handleContentsChange(int position, int charsRemoved, int c
     QList<BlockCount> rescannedCounts;
     qint64 newChars = 0, newWords = 0;
     for (QTextBlock b = from; b.isValid(); b = b.next()) {
+        const rt::BlockInfo *info = rt::blockInfo(b);
+        const QString id = info ? info->id : QString();
         const QString text = b.text();
         const int chars = text.size();
         const int words = countWords(text);
-        rescannedCounts << BlockCount { b, chars, words };
+        rescannedCounts << BlockCount { id, chars, words };
         newChars += chars;
         newWords += words;
         const int level = b.blockFormat().headingLevel();
         if (level > 0)
-            rescannedHeadings << HeadingEntry { b, level, text };
+            rescannedHeadings << HeadingEntry { id, level, text };
         if (b == to)
             break;
     }
 
-    // Splice m_headings: keep every OLD heading outside [from, to] and not deleted; everything
-    // inside that span — deleted or not — is replaced by `rescannedHeadings`, inserted where the
-    // span's old entries were (they are contiguous, since m_headings is kept in document order).
+    // Splice m_headings: keep every OLD heading outside [from, to] and still alive; everything
+    // inside that span — dead or not — is replaced by `rescannedHeadings`, inserted where the
+    // span's old entries were (they are contiguous, since m_headings is kept in document order,
+    // and every block that died in THIS edit was, before it, somewhere inside the old
+    // [position, position + charsRemoved) range the edit replaced).
+    //
+    // "Alive" is a m_blocksById lookup — NEVER a stale QTextBlock handle. blockInfoDestroyed()
+    // (the ~BlockInfo hook) removes a dying block's id from m_blocksById SYNCHRONOUSLY, as part of
+    // the document edit itself, strictly before this slot runs; resolving a LIVE entry's current
+    // blockNumber() through that same live handle is safe and behaves exactly as the entry's own
+    // (no longer stored) handle would have.
     QList<HeadingEntry> splicedHeadings;
     splicedHeadings.reserve(m_headings.size() + rescannedHeadings.size());
     int insertAt = -1;
     for (const HeadingEntry &e : std::as_const(m_headings)) {
-        const bool invalid = !e.block.isValid();
-        const bool inSpan = !invalid && e.block.blockNumber() >= fromNum && e.block.blockNumber() <= toNum;
-        if (invalid || inSpan) {
+        const auto it = m_blocksById.constFind(e.blockId);
+        const bool dead = it == m_blocksById.cend();
+        const bool inSpan = !dead && it->blockNumber() >= fromNum && it->blockNumber() <= toNum;
+        if (dead || inSpan) {
             if (insertAt < 0)
                 insertAt = splicedHeadings.size();
             continue;
@@ -229,7 +256,7 @@ void RichTextHandler::handleContentsChange(int position, int charsRemoved, int c
 
     bool same = splicedHeadings.size() == m_headings.size();
     for (int i = 0; same && i < splicedHeadings.size(); ++i)
-        same = splicedHeadings[i].block == m_headings[i].block && splicedHeadings[i].level == m_headings[i].level
+        same = splicedHeadings[i].blockId == m_headings[i].blockId && splicedHeadings[i].level == m_headings[i].level
             && splicedHeadings[i].text == m_headings[i].text;
     m_headings = splicedHeadings;
     if (!same)
@@ -243,9 +270,10 @@ void RichTextHandler::handleContentsChange(int position, int charsRemoved, int c
     qint64 oldChars = 0, oldWords = 0;
     int countsInsertAt = -1;
     for (const BlockCount &e : std::as_const(m_blockCounts)) {
-        const bool invalid = !e.block.isValid();
-        const bool inSpan = !invalid && e.block.blockNumber() >= fromNum && e.block.blockNumber() <= toNum;
-        if (invalid || inSpan) {
+        const auto it = m_blocksById.constFind(e.blockId);
+        const bool dead = it == m_blocksById.cend();
+        const bool inSpan = !dead && it->blockNumber() >= fromNum && it->blockNumber() <= toNum;
+        if (dead || inSpan) {
             oldChars += e.chars;
             oldWords += e.words;
             if (countsInsertAt < 0)
@@ -268,12 +296,13 @@ QVariantList RichTextHandler::headings() const
     QVariantList out;
     out.reserve(m_headings.size());
     for (const HeadingEntry &e : m_headings) {
-        if (!e.block.isValid())
+        const auto it = m_blocksById.constFind(e.blockId);
+        if (it == m_blocksById.cend())
             continue; // defensive: handleContentsChange keeps this pruned
         out << QVariantMap {
-            { QStringLiteral("position"), e.block.position() },
-            { QStringLiteral("level"), e.block.blockFormat().headingLevel() },
-            { QStringLiteral("text"), e.block.text() },
+            { QStringLiteral("position"), it->position() },
+            { QStringLiteral("level"), it->blockFormat().headingLevel() },
+            { QStringLiteral("text"), it->text() },
         };
     }
     return out;
@@ -284,9 +313,10 @@ int RichTextHandler::currentHeadingIndex() const
     const int pos = insertionCursor().position();
     int idx = -1;
     for (int i = 0; i < m_headings.size(); ++i) {
-        if (!m_headings[i].block.isValid())
+        const auto it = m_blocksById.constFind(m_headings[i].blockId);
+        if (it == m_blocksById.cend())
             continue;
-        if (m_headings[i].block.position() > pos)
+        if (it->position() > pos)
             break;
         idx = i;
     }
@@ -403,13 +433,13 @@ QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
         firstStyle = paragraphStyleOpt;
     }
 
-    // doc->clear() invalidates every existing QTextBlock handle at once, as part of its OWN
-    // contentsChange it fires while reinitializing — unlike a normal cursor edit, querying an
-    // OLD handle still sitting in m_headings/m_blockCounts from inside that signal is a
-    // use-after-free (observed crashing in QTextBlock::blockNumber(), reliably on a large
-    // document). Disconnect handleContentsChange around it; rebuildIndex() below is a full,
-    // safe rescan of the (now stable) fresh document anyway.
-    QObject::disconnect(m_headingsConn);
+    // doc->clear() fires its OWN contentsChange (handleContentsChange runs, same as for any other
+    // edit) WHILE reinitializing. That used to be unsafe (an old QTextBlock handle in m_headings/
+    // m_blockCounts, read after clear() freed its block, is a use-after-free: observed crashing in
+    // QTextBlock::blockNumber() on a large document) — fixed now that those are keyed by blockId,
+    // resolved through m_blocksById, which blockInfoDestroyed() keeps free of dead ids
+    // UNCONDITIONALLY (even mid-m_bulkReset; see its definition). No disconnect/reconnect needed
+    // around clear(): rebuildIndex() below still re-derives the correct final state regardless.
     m_bulkReset = true; // every block goes: blocksLoaded below, not one blockRemoved each
     // Undo off: the reset (and styling the first paragraph) leaves no history.
     doc->setUndoRedoEnabled(false);
@@ -424,9 +454,8 @@ QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
         rescaleRange(-1, -1, m_zoom, false);
     doc->setUndoRedoEnabled(true);
     doc->setModified(false);
-    m_headingsConn = connect(doc, &QTextDocument::contentsChange, this, &RichTextHandler::handleContentsChange);
+    rebuildBlockIds(); // first: rebuildIndex() keys its entries by the blockId this assigns
     rebuildIndex(); // cheap full scan: infrequent (a new document), not a keystroke (★3)
-    rebuildBlockIds();
     // clear() signals modificationChanged(true) and then resets the flag WITHOUT a signal, so
     // setModified(false) is a no-op: tell the bindings the flag is false again.
     emit modifiedChanged();
@@ -1048,12 +1077,9 @@ bool RichTextHandler::loadOdf(const QUrl &file)
     QString why;
     rt::StyleSheet sheet;
     // readOdt() calls doc->clear() internally when it does touch the document — see newDocument()
-    // for why handleContentsChange must not run across that (a use-after-free on old QTextBlock
-    // handles still in m_headings/m_blockCounts).
-    QObject::disconnect(m_headingsConn);
+    // for why that no longer requires disconnecting handleContentsChange around it.
     m_bulkReset = true; // see newDocument(): a load replaces every block at once
     const bool ok = rt::readOdt(localPath(file), doc, &sheet, &why);
-    m_headingsConn = connect(doc, &QTextDocument::contentsChange, this, &RichTextHandler::handleContentsChange);
     if (!ok && sheet.isEmpty()) { // not found / not an .odt: the document was not touched
         m_bulkReset = false;
         setError(why);
@@ -1069,8 +1095,8 @@ bool RichTextHandler::loadOdf(const QUrl &file)
         doc->setUndoRedoEnabled(true);
         doc->setModified(false);
     }
+    rebuildBlockIds(); // the file's xml:id, generated where absent — first: rebuildIndex() needs it
     rebuildIndex(); // cheap full scan: infrequent (a load), not a keystroke (★3)
-    rebuildBlockIds(); // the file's xml:id, generated where absent
     emit modifiedChanged(); // see newDocument: clear() can leave the last signal saying "true"
     emit stylesChanged();
     setError(why);
@@ -1619,9 +1645,15 @@ constexpr qsizetype kMaxIdSteps = 1000; // undo-id history kept (Qt's own stack 
 
 void RichTextHandler::blockInfoDestroyed(rt::BlockInfo *info)
 {
+    // m_blocksById must drop the id UNCONDITIONALLY, even mid-bulk-reset: it is the liveness index
+    // handleContentsChange()'s headings/counts splice (★3/item 7) resolves every surviving entry
+    // through, and a doc->clear() (newDocument/loadOdf) can fire an intermediate contentsChange
+    // while m_bulkReset is still true — see the note above trackBlocks(). The removedNow/signal
+    // bookkeeping below stays skipped during a bulk reset: rebuildBlockIds() wipes and rebuilds it
+    // from scratch right after, so queuing one blockRemoved per block would be wasted work.
+    m_blocksById.remove(info->id);
     if (m_bulkReset)
         return;
-    m_blocksById.remove(info->id);
     m_removedNow.append(info->id);
 }
 

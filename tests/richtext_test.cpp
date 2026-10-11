@@ -23,6 +23,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTextBoundaryFinder>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextFrame>
@@ -166,6 +167,60 @@ class RichTextTest : public QObject {
     QTemporaryDir m_dir;
 
     QTextDocument *doc() const { return m_fmt->document()->textDocument(); }
+
+    // Independent oracle for wordAndCharCountRules-style checks: a FULL, fresh per-block recount
+    // of the LIVE document (the same algorithm countWords() in richtext.cpp uses, duplicated here
+    // on purpose — it must never share the incremental bookkeeping it is meant to catch mistakes
+    // in). Also walks headings()/currentHeadingIndex() against the live document directly, so a
+    // latent use-after-free (a stale QTextBlock handle read after its block died) cannot produce a
+    // value that merely LOOKS plausible: every position/level/text headings() reports is checked
+    // against doc()->findBlock(pos) right now.
+    static int referenceWordCount(const QString &text)
+    {
+        if (text.isEmpty())
+            return 0;
+        QTextBoundaryFinder bf(QTextBoundaryFinder::Word, text);
+        int count = 0, prev = 0;
+        for (bf.toStart(); bf.toNextBoundary() != -1; prev = bf.position()) {
+            const QStringView seg = QStringView(text).mid(prev, bf.position() - prev);
+            if (!seg.isEmpty() && seg.at(0).isLetterOrNumber())
+                ++count;
+        }
+        return count;
+    }
+
+    void verifyHeadingsAndCountsConsistent()
+    {
+        const QVariantList h = m_fmt->headings();
+        int lastPos = -1;
+        for (const QVariant &v : h) {
+            const QVariantMap m = v.toMap();
+            const int pos = m.value(QStringLiteral("position")).toInt();
+            QVERIFY(pos > lastPos);
+            lastPos = pos;
+            const QTextBlock b = doc()->findBlock(pos);
+            QVERIFY(b.isValid());
+            QCOMPARE(b.position(), pos);
+            QVERIFY(b.blockFormat().headingLevel() > 0);
+            QCOMPARE(b.blockFormat().headingLevel(), m.value(QStringLiteral("level")).toInt());
+            QCOMPARE(b.text(), m.value(QStringLiteral("text")).toString());
+        }
+        int idx = -1;
+        for (int i = 0; i < h.size(); ++i) {
+            if (h[i].toMap().value(QStringLiteral("position")).toInt() > m_fmt->cursorPosition())
+                break;
+            idx = i;
+        }
+        QCOMPARE(m_fmt->currentHeadingIndex(), idx);
+
+        int words = 0, chars = 0;
+        for (QTextBlock b = doc()->begin(); b.isValid(); b = b.next()) {
+            chars += b.text().size();
+            words += referenceWordCount(b.text());
+        }
+        QCOMPARE(m_fmt->wordCount(), words);
+        QCOMPARE(m_fmt->charCount(), chars);
+    }
 
 private slots:
     void init()
@@ -2555,6 +2610,172 @@ private slots:
         QVERIFY(!m_fmt->replaceRange(a, 2, 1, QStringLiteral("x")));
         QVERIFY(!m_fmt->replaceRange(a, 0, 99, QStringLiteral("x")));
         QCOMPARE(m_fmt->blockText(a), QStringLiteral("We!"));
+    }
+
+    // ── latent crash fix: m_headings/m_blockCounts must never read a dead QTextBlock ────────────
+    //
+    // handleContentsChange() used to hold a QTextBlock PER heading/block directly; isValid() only
+    // checks the handle's pointers are non-null, which stays true for a REMOVED block (Qt frees
+    // the node's data but the handle itself doesn't know) — reading blockNumber()/position()/
+    // text() on one is a use-after-free. Every path below removes a block some other way than
+    // doc->clear() (the one path already guarded): a multi-block selection delete, an HTML paste
+    // over a multi-block selection, Enter/Backspace + undo/redo of splits and merges, a table
+    // (with a heading inside it) removed whole, and the two bulk-reset entry points themselves
+    // exercised back to back. verifyHeadingsAndCountsConsistent() re-derives every value from the
+    // LIVE document, so a surviving stale read would have to coincidentally match it to pass.
+
+    void headingsAndCountsSurviveMultiBlockDeleteAcrossThreeBlocks()
+    {
+        m_fmt->insertText(QStringLiteral("Intro"));
+        m_fmt->setCursorPosition(0);
+        m_fmt->setHeading(1);
+        m_fmt->setCursorPosition(5);
+        m_fmt->insertText(QStringLiteral("\nMiddle\nChapter"));
+        m_fmt->setCursorPosition(13); // start of "Chapter"
+        m_fmt->setHeading(2);
+        QCOMPARE(m_fmt->headings().size(), 2);
+        verifyHeadingsAndCountsConsistent();
+
+        // Selects from inside "Intro" through all of "Middle" to inside "Chapter": removes the
+        // "Middle" block AND the "Chapter" block's own identity (its text merges into "Intro"'s
+        // surviving block), while "Intro" itself (and its heading format) survives.
+        m_fmt->setSelectionStart(2);
+        m_fmt->setSelectionEnd(17); // through "...Chap|ter": keeps "In" + "ter"
+        m_fmt->insertText(QString()); // typing nothing over a selection removes it
+        verifyHeadingsAndCountsConsistent();
+        QCOMPARE(doc()->blockCount(), 1);
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("Inter"));
+    }
+
+    void headingsAndCountsSurviveHtmlPasteOverAMultiBlockSelection()
+    {
+        m_fmt->insertText(QStringLiteral("Intro"));
+        m_fmt->setCursorPosition(0);
+        m_fmt->setHeading(1);
+        m_fmt->setCursorPosition(5);
+        m_fmt->insertText(QStringLiteral("\nMiddle\nChapter"));
+        m_fmt->setCursorPosition(13);
+        m_fmt->setHeading(2);
+        QCOMPARE(m_fmt->headings().size(), 2);
+        verifyHeadingsAndCountsConsistent();
+
+        m_fmt->setSelectionStart(2);
+        m_fmt->setSelectionEnd(16);
+        m_fmt->insertHtml(QStringLiteral("<p>X</p><p>Y</p><p>Z</p>")); // a multi-block paste
+        verifyHeadingsAndCountsConsistent();
+
+        // Repeat, this time replacing a span that keeps no heading at all (pure body text).
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(doc()->characterCount() - 1);
+        m_fmt->insertText(QString());
+        m_fmt->insertText(QStringLiteral("a\nb\nc\nd"));
+        m_fmt->setSelectionStart(1);
+        m_fmt->setSelectionEnd(5);
+        m_fmt->insertHtml(QStringLiteral("<p>q</p><p>r</p>"));
+        verifyHeadingsAndCountsConsistent();
+    }
+
+    void headingsAndCountsSurviveEnterBackspaceUndoRedoCycles()
+    {
+        m_fmt->insertText(QStringLiteral("Intro"));
+        m_fmt->setCursorPosition(0);
+        m_fmt->setHeading(1);
+        m_fmt->setCursorPosition(5);
+        m_fmt->insertParagraph(); // Enter: splits "Intro" at the end
+        m_fmt->setCursorPosition(6); // insertParagraph() does not move the handler's own cursor
+        m_fmt->insertText(QStringLiteral("Body"));
+        QCOMPARE(doc()->blockCount(), 2);
+        verifyHeadingsAndCountsConsistent();
+
+        // Backspace at the start of "Body" merges it back into the heading block.
+        QTextCursor c(doc());
+        c.setPosition(6);
+        c.deletePreviousChar();
+        QCOMPARE(doc()->blockCount(), 1);
+        verifyHeadingsAndCountsConsistent();
+
+        doc()->undo(); // the split comes back
+        QCOMPARE(doc()->blockCount(), 2);
+        verifyHeadingsAndCountsConsistent();
+        doc()->redo(); // merged again
+        QCOMPARE(doc()->blockCount(), 1);
+        verifyHeadingsAndCountsConsistent();
+        doc()->undo();
+        doc()->undo(); // further back: undoes insertParagraph() itself
+        verifyHeadingsAndCountsConsistent();
+        doc()->redo();
+        doc()->redo();
+        verifyHeadingsAndCountsConsistent();
+    }
+
+    void headingsAndCountsSurviveTableRemovalContainingHeadings()
+    {
+        m_fmt->insertText(QStringLiteral("Before"));
+        m_fmt->setCursorPosition(6);
+        m_fmt->insertTable(1, 1);
+        QTextTable *table = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().value(0));
+        QVERIFY(table);
+        const int cellPos = table->cellAt(0, 0).firstCursorPosition().position();
+        m_fmt->setCursorPosition(cellPos);
+        m_fmt->insertText(QStringLiteral("Head"));
+        m_fmt->setCursorPosition(cellPos);
+        m_fmt->setHeading(1);
+        m_fmt->setCursorPosition(doc()->characterCount() - 1);
+        m_fmt->insertText(QStringLiteral("After"));
+        QCOMPARE(m_fmt->headings().size(), 1);
+        verifyHeadingsAndCountsConsistent();
+
+        // Select from inside "Before" to inside "After": removes the whole table (its ONE cell's
+        // block may itself survive the merge, same remove_block() mechanics as the plain-block
+        // tests above — not asserted here; what matters is that the table is gone and whatever
+        // headings() reports afterward is checked against the live document).
+        m_fmt->setSelectionStart(2);
+        m_fmt->setSelectionEnd(doc()->characterCount() - 2);
+        m_fmt->insertText(QString());
+        QCOMPARE(countTables(doc()), 0);
+        verifyHeadingsAndCountsConsistent();
+    }
+
+    void headingsAndCountsSurviveLoadOdfTwice()
+    {
+        const QString odtA = m_dir.filePath(QStringLiteral("twice-a.odt"));
+        writeOdt(odtA, "<text:h text:outline-level=\"1\">Alpha</text:h><text:p>alpha body</text:p>");
+        const QString odtB = m_dir.filePath(QStringLiteral("twice-b.odt"));
+        writeOdt(odtB, "<text:h text:outline-level=\"1\">Beta</text:h>"
+                        "<text:h text:outline-level=\"2\">Gamma</text:h><text:p>beta body text here</text:p>");
+
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(odtA)));
+        QCOMPARE(m_fmt->headings().size(), 1);
+        verifyHeadingsAndCountsConsistent();
+
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(odtB)));
+        QCOMPARE(m_fmt->headings().size(), 2);
+        verifyHeadingsAndCountsConsistent();
+    }
+
+    void headingsAndCountsSurviveNewDocumentWhileHeadingsExist()
+    {
+        m_fmt->insertText(QStringLiteral("Intro"));
+        m_fmt->setCursorPosition(0);
+        m_fmt->setHeading(1);
+        m_fmt->setCursorPosition(5);
+        m_fmt->insertText(QStringLiteral("\nChapter"));
+        m_fmt->setCursorPosition(6);
+        m_fmt->setHeading(2);
+        QCOMPARE(m_fmt->headings().size(), 2);
+
+        m_fmt->newDocument();
+        QCOMPARE(m_fmt->headings(), QVariantList());
+        QCOMPARE(m_fmt->wordCount(), 0);
+        QCOMPARE(m_fmt->charCount(), 0);
+        QCOMPARE(m_fmt->currentHeadingIndex(), -1);
+
+        // the handler keeps working correctly afterward
+        m_fmt->insertText(QStringLiteral("Fresh"));
+        m_fmt->setCursorPosition(0);
+        m_fmt->setHeading(1);
+        QCOMPARE(m_fmt->headings().size(), 1);
+        verifyHeadingsAndCountsConsistent();
     }
 };
 

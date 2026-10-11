@@ -393,18 +393,24 @@ private:
     void mergeCharFormat(const QTextCharFormat &fmt);
 
     // ── outline (★3) ──────────────────────────────────────────────────────────────────────────
-    // A stable QTextBlock handle (survives edits elsewhere in the document; .isValid() goes false
-    // only once the block itself is removed) + its heading level, kept in document order. `text`
-    // is a SNAPSHOT (QTextBlock::text() is live — comparing it against itself after the same
-    // block was just edited in place would always read as "unchanged").
-    struct HeadingEntry { QTextBlock block; int level; QString text; };
+    // Identified by blockId (rt::BlockInfo::id), NOT a QTextBlock handle: QTextBlock::isValid()
+    // only checks the handle's internal pointers are non-null, which STAYS true after the block
+    // itself is removed (Qt frees the node's data, not the wrapper) — reading blockNumber()/
+    // position()/text() on one then is a use-after-free. A handle is resolved fresh, on demand,
+    // via m_blocksById (the SAME liveness index blockInfoDestroyed() keeps in sync, synchronously,
+    // before this signal path even runs — see the office item 3 note above trackBlocks()); an id
+    // absent from m_blocksById means that block died. `text` is a SNAPSHOT (QTextBlock::text() is
+    // live — comparing it against itself after the same block was just edited in place would
+    // always read as "unchanged"), kept in document order.
+    struct HeadingEntry { QString blockId; int level; QString text; };
     QList<HeadingEntry> m_headings;
 
     // ── counts (item 7) ───────────────────────────────────────────────────────────────────────
-    // One entry per block in the WHOLE document (not just headings), document order — lets
-    // handleContentsChange() turn "whole document" counts into a running total updated by the
-    // DELTA of only the blocks an edit actually touched, instead of re-summing every block.
-    struct BlockCount { QTextBlock block; int chars; int words; };
+    // One entry per block in the WHOLE document (not just headings), document order, identified by
+    // blockId for the same reason as HeadingEntry above — lets handleContentsChange() turn "whole
+    // document" counts into a running total updated by the DELTA of only the blocks an edit
+    // actually touched, instead of re-summing every block.
+    struct BlockCount { QString blockId; int chars; int words; };
     QList<BlockCount> m_blockCounts;
     qint64 m_totalChars = 0;
     qint64 m_totalWords = 0;
