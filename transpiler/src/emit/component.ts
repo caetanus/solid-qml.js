@@ -1,7 +1,7 @@
 import * as t from "@babel/types";
 import _generate from "@babel/generator";
 import { emitQml } from "./qml.ts";
-import { emitExpr, type Scope } from "./expr.ts";
+import { emitExpr, shadowOwnParams, type Scope } from "./expr.ts";
 import { emitStmt, emitValue, emitBindingStmt } from "./stmt.ts";
 import { analyzeSignals, analyzeProps, analyzeSetup, analyzeResources, analyzeMutableLocals, analyzeRenderLocals, analyzeHelpers, collectFetcherDeps, effectDeps, type ProviderInfo, type UseContextBinding } from "../model/symbols.ts";
 import { safeName } from "../names/safe.ts";
@@ -95,11 +95,15 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     };
     walk(render);
   }
+  // Module-const aliases + ref aliases apply in EVERY expression position this component emits —
+  // not just the render tree. ONE place owns the combined map so no Scope built below can forget it.
+  const baseLocals: Record<string, string> | undefined =
+    (moduleConstDecls.size > 0 || Object.keys(refAliases).length > 0) ? { ...constAliases, ...refAliases } : undefined;
   const lazyRefs = new Set<string>();
   const scope: Scope = {
     table, mode: "binding", propsParam: props.param ?? undefined, propAliases, components, contexts, refs: collectedRefs, lazyRefs, foreignQml, foreignImports,
     inputCounter, hoverCounter, usedWidgets, buttonGroups, resources: resources.map((r) => r.name), jsImports,
-    ...((moduleConstDecls.size > 0 || Object.keys(refAliases).length > 0) ? { locals: { ...constAliases, ...refAliases } } : {}),
+    ...(baseLocals ? { locals: baseLocals } : {}),
     ...(mutableLocals ? { mutableLocals } : {}),
     ...(helpers ? { helpers } : {}),
     ...(hasCtxBindings ? { ctxBindings, ctxValueShape: ctx?.ctxValueShape } : {}),
@@ -151,7 +155,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   for (const name of lazyRefs) decls.push(`${INDENT}property var ${name}: null`);
   // Prop reads inside reactive initializers (e.g. createSignal(props.x || 0)) resolve through the
   // props param to the sibling prop property. (init mode is non-self-qualified → bare property ref.)
-  const initScope: Scope = { table, mode: "init", propsParam: props.param ?? undefined, propAliases, jsImports };
+  const initScope: Scope = { table, mode: "init", propsParam: props.param ?? undefined, propAliases, jsImports, ...(baseLocals ? { locals: baseLocals } : {}) };
   for (const name of props.used) {
     if (name === "children") continue;
     // A signal/memo of the same name already owns this property (the prop binds to it); skip the
@@ -177,11 +181,11 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
         // `const visible = createMemo(() => { const f = filter(); return items.filter(...) })`
         // →  `readonly property var visible: (function() { var f = filter; return items.filter(...) })()`
         // emitBindingStmt reads signals bare (no __self.) so QML's binding tracker sees the deps.
-        const bindStmtScope: Scope = { table, mode: "binding", jsImports };
+        const bindStmtScope: Scope = { table, mode: "binding", jsImports, ...(baseLocals ? { locals: baseLocals } : {}) };
         const body = sym.body.body.map((s) => emitBindingStmt(s, bindStmtScope)).join(" ");
         decls.push(`${INDENT}readonly property var ${safeName(sym.name)}: (function() { ${body} })()`);
       } else {
-        const binding = emitExpr(sym.body, { table, mode: "binding", jsImports });
+        const binding = emitExpr(sym.body, { table, mode: "binding", jsImports, ...(baseLocals ? { locals: baseLocals } : {}) });
         decls.push(`${INDENT}readonly property var ${safeName(sym.name)}: ${binding}`);
       }
     }
@@ -218,7 +222,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   // (the function mutates the provider's own signals). Accessor members are already signal/memo
   // properties above, so the provider INSTANCE carries the whole context value.
   if (provider) {
-    const fnScope: Scope = { table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, jsImports, ...(mutableLocals ? { mutableLocals } : {}) };
+    const fnScope: Scope = { table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, jsImports, ...(baseLocals ? { locals: baseLocals } : {}), ...(mutableLocals ? { mutableLocals } : {}) };
     for (const [name, node] of Object.entries(provider.fnMembers))
       decls.push(`${INDENT}property var ${safeName(name)}: ${emitValue(node, fnScope)}`);
   }
@@ -228,13 +232,18 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   if (helpersMap.size > 0) {
     const helperScope: Scope = {
       table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, jsImports,
-      ...((moduleConstDecls.size > 0 || Object.keys(refAliases).length > 0) ? { locals: { ...constAliases, ...refAliases } } : {}),
+      ...(baseLocals ? { locals: baseLocals } : {}),
       ...(mutableLocals ? { mutableLocals } : {}),
       ...(helpers ? { helpers } : {}),
     };
     for (const [name, info] of helpersMap) {
       const paramStr = info.params.map(safeName).join(", "); // safeName so a reserved param (e.g. `id`→`id_`) matches its body refs
-      const body = info.body.body.map((st) => emitStmt(st, helperScope)).join(" ");
+      // The helper's own params shadow any same-named const alias / mutable local inherited above —
+      // real JS lexical scoping (e.g. `function f(RULE_FIELDS) { … }` must NOT rewrite its own param).
+      const bodyScope = info.params.length
+        ? { ...helperScope, locals: { ...(helperScope.locals ?? {}), ...Object.fromEntries(info.params.map((p) => [p, safeName(p)])) } }
+        : helperScope;
+      const body = info.body.body.map((st) => emitStmt(st, bodyScope)).join(" ");
       decls.push(`${INDENT}function ${safeName(name)}(${paramStr}) { ${body} }`);
     }
   }
@@ -264,7 +273,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
       )
     );
   });
-  const setupScope: Scope = { table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, locals: { ...constAliases, ...refAliases, ...refLocals }, jsImports, ...(mutableLocals ? { mutableLocals } : {}) };
+  const setupScope: Scope = { table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, locals: { ...(baseLocals ?? {}), ...refLocals }, jsImports, ...(mutableLocals ? { mutableLocals } : {}) };
   const onCompletedBody: string[] = [
     // Hoisted module-level statements (already emitted in their own module's import scope):
     // import-time code runs before any component setup.

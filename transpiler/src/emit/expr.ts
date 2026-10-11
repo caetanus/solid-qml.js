@@ -102,6 +102,21 @@ function cellRef(name: string, _scope: Scope): string {
   return safeName(name);
 }
 
+/** A function/arrow's own identifier params shadow any same-named entry inherited from the
+ *  enclosing scope — a module-const alias (`__const_NAME`), a mutable local, an event-handler
+ *  substitution, … — exactly like real JS lexical scoping. `toName` must match whatever string the
+ *  function's own signature uses for that param (callers emit the signature separately). One place
+ *  owns this so every site that emits a function/arrow with real params applies it the same way. */
+export function shadowOwnParams(scope: Scope, params: t.Function["params"], toName: (name: string) => string = safeName): Scope {
+  let locals: Record<string, string> | undefined;
+  for (const p of params) {
+    if (!t.isIdentifier(p)) continue;
+    locals = locals ?? { ...(scope.locals ?? {}) };
+    locals[p.name] = toName(p.name);
+  }
+  return locals ? { ...scope, locals } : scope;
+}
+
 /** Translate a Babel expression node to a QML-JS string, resolving names through the SymbolTable. */
 // An operand whose natural precedence is looser than member access / call needs grouping when it
 // becomes the OBJECT of `.`/`[]` or the CALLEE of `()`. (Identifiers, member/call chains, literals
@@ -244,14 +259,15 @@ export function emitExpr(node: t.Node, scope: Scope): string {
 
   if (t.isArrowFunctionExpression(node) || t.isFunctionExpression(node)) {
     const params = node.params.map((p) => (t.isIdentifier(p) ? safeName(p.name) : "_")).join(", ");
+    const inner = shadowOwnParams(scope, node.params);
     if (t.isBlockStatement(node.body)) {
       // Block-bodied callback in an expression context (e.g. a .filter()/.map() argument). Statements
       // are emitted inline here because expr.ts can't import stmt.ts (circular); only the subset
       // callbacks need is implemented. Reads stay bare (the object scope resolves them).
-      const body = node.body.body.map((st) => emitInlineStmt(st, scope)).join(" ");
+      const body = node.body.body.map((st) => emitInlineStmt(st, inner)).join(" ");
       return `function(${params}) { ${body} }`;
     }
-    return `function(${params}) { return ${emitExpr(node.body, scope)} }`;
+    return `function(${params}) { return ${emitExpr(node.body, inner)} }`;
   }
 
   // `!x` / `-x` / `typeof x` etc — prefix (or postfix) unary operators. Word operators

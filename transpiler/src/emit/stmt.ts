@@ -1,6 +1,6 @@
 import * as t from "@babel/types";
 import { safeName } from "../names/safe.ts";
-import { emitExpr, type Scope } from "./expr.ts";
+import { emitExpr, shadowOwnParams, type Scope } from "./expr.ts";
 
 /** Emit one statement in BINDING mode — for use inside a block-memo IIFE body where reactive cells
  *  must be read BARE (no `__self.`) so QML's binding tracker sees the dependency.
@@ -63,7 +63,8 @@ export function emitStmt(node: t.Statement, scope: Scope): string {
 export function emitValue(node: t.Node, scope: Scope): string {
   if ((t.isArrowFunctionExpression(node) || t.isFunctionExpression(node)) && t.isBlockStatement(node.body)) {
     const params = node.params.map((p) => (t.isIdentifier(p) ? p.name : "_")).join(", ");
-    const body = node.body.body.map((st) => emitStmt(st, scope)).join(" ");
+    const inner = shadowOwnParams(scope, node.params, (n) => n); // signature above uses the bare name, not safeName
+    const body = node.body.body.map((st) => emitStmt(st, inner)).join(" ");
     return `function(${params}) { ${body} }`;
   }
   return emitExpr(node, scope);
