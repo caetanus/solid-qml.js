@@ -10,6 +10,7 @@
     <file>Media/MediaPlayer.qml</file>
     <file>Media/qmldir</file>
     <file>qmldir</file>
+    <file>RichText/DocumentEditor.qml</file>
     <file>RichText/qmldir</file>
     <file>RichText/RichText.qml</file>
     <file>Scene3D/qmldir</file>
