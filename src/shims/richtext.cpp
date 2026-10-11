@@ -3,6 +3,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
+#include <QQuickItem>
 #include <QTextBlock>
 #include <QTextDocument>
 #include <QTextDocumentWriter>
@@ -20,11 +21,16 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
         return;
     QObject::disconnect(m_modifiedConn);
     QObject::disconnect(m_contentsConn);
+    QObject::disconnect(m_cullingConn);
     m_document = doc;
     if (QTextDocument *td = doc ? doc->textDocument() : nullptr) {
         m_modifiedConn = connect(td, &QTextDocument::modificationChanged, this, &RichTextHandler::modifiedChanged);
         m_contentsConn = connect(td, &QTextDocument::contentsChanged, this, &RichTextHandler::contentsChanged);
+        // Every edit can cross the threshold (a load, a paste, a select-all + delete). A load is
+        // one edit block, so this runs once per load, not once per paragraph.
+        m_cullingConn = connect(td, &QTextDocument::contentsChanged, this, &RichTextHandler::updateViewportCulling);
     }
+    updateViewportCulling();
     emit documentChanged();
     emit formatChanged();
     emit modifiedChanged();
@@ -39,6 +45,21 @@ QString localPath(const QUrl &file)
 }
 
 } // namespace
+
+void RichTextHandler::updateViewportCulling()
+{
+    // The QQuickTextDocument's parent is the TextEdit that owns it (QQuickTextEdit creates it with
+    // `this`), the same item Qt's own setText rule flips.
+    auto *editor = m_document ? qobject_cast<QQuickItem *>(m_document->parent()) : nullptr;
+    const QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
+    if (!editor || !doc)
+        return;
+    // characterCount() is O(1). Qt counts the setText() string (markup included for rich text);
+    // the document's characters are what the culling saves rendering of.
+    const bool large = doc->characterCount() > kLargeTextThreshold;
+    if (editor->flags().testFlag(QQuickItem::ItemObservesViewport) != large)
+        editor->setFlag(QQuickItem::ItemObservesViewport, large);
+}
 
 void RichTextHandler::setError(const QString &message)
 {
@@ -442,29 +463,81 @@ bool RichTextHandler::saveOdf(const QUrl &file)
 
 namespace {
 
+// ODF lengths ("3.5in", "2.4cm", "12pt", …) → CSS pixels (96 dpi, Qt's rich-text unit). NaN for
+// anything that is not an absolute length (a percentage, garbage).
+qreal odfLengthPx(QStringView v)
+{
+    if (v.isEmpty())
+        return qQNaN();
+    int i = 0;
+    while (i < v.size() && (v.at(i).isDigit() || v.at(i) == QLatin1Char('.') || v.at(i) == QLatin1Char('-')))
+        ++i;
+    bool ok = false;
+    const qreal n = v.left(i).toDouble(&ok);
+    if (!ok)
+        return qQNaN();
+    const QStringView unit = v.mid(i);
+    if (unit == QLatin1String("in")) return n * 96.0;
+    if (unit == QLatin1String("cm")) return n * 96.0 / 2.54;
+    if (unit == QLatin1String("mm")) return n * 96.0 / 25.4;
+    if (unit == QLatin1String("pt")) return n * 96.0 / 72.0;
+    if (unit.isEmpty() || unit == QLatin1String("px")) return n;
+    return qQNaN();
+}
+
+// A paragraph property an ODF style may or may not declare: unset ones inherit from the parent
+// style (style:parent-style-name), then from the paragraph default-style.
+template <typename T>
+struct Inherited {
+    T value {};
+    bool set = false;
+    void operator=(T v) { value = v; set = true; }
+    void inherit(const Inherited &parent) { if (!set && parent.set) *this = parent.value; }
+};
+
 struct OdfStyle {
+    QString parent;               // style:parent-style-name
+    // Text properties — from the automatic style itself (not inherited: a named style's font/size
+    // would override the editor's font for the whole document; named styles are office item 2).
     bool bold = false;
     bool italic = false;
     bool underline = false;
     bool strike = false;
     qreal pointSize = -1;         // fo:font-size in pt (Qt's writer keeps a heading's size there)
-    Qt::Alignment align = {};     // paragraph styles: fo:text-align
+    // Paragraph properties — inherited along the parent chain (Text_20_body → Standard → default).
+    Inherited<Qt::Alignment> align;   // fo:text-align
+    Inherited<qreal> marginTop, marginBottom, marginLeft, marginRight, textIndent; // px
 };
 
-// Automatic styles from content.xml: style:style with its text-properties / paragraph-properties.
-QHash<QString, OdfStyle> readAutomaticStyles(QXmlStreamReader &xml)
+using OdfStyles = QHash<QString, OdfStyle>;
+
+// The key the paragraph <style:default-style> is stored under (not a valid style:name).
+const QString kDefaultParagraphStyle = QStringLiteral("\x01default");
+
+// style:style / style:default-style elements up to the end of `section` (office:styles in
+// styles.xml, office:automatic-styles in content.xml), with their text and paragraph properties.
+void readStyles(QXmlStreamReader &xml, QLatin1String section, OdfStyles &styles)
 {
-    QHash<QString, OdfStyle> styles;
     QString current;
     while (!xml.atEnd()) {
         const auto tok = xml.readNext();
-        if (tok == QXmlStreamReader::EndElement && xml.name() == QLatin1String("automatic-styles"))
+        if (tok == QXmlStreamReader::EndElement && xml.name() == section)
             break;
+        if (tok == QXmlStreamReader::EndElement
+            && (xml.name() == QLatin1String("style") || xml.name() == QLatin1String("default-style"))) {
+            current.clear();
+            continue;
+        }
         if (tok != QXmlStreamReader::StartElement)
             continue;
         const auto a = xml.attributes();
         if (xml.name() == QLatin1String("style")) {
             current = a.value(QLatin1String("style:name")).toString();
+            if (!current.isEmpty())
+                styles[current].parent = a.value(QLatin1String("style:parent-style-name")).toString();
+        } else if (xml.name() == QLatin1String("default-style")) {
+            if (a.value(QLatin1String("style:family")) == QLatin1String("paragraph"))
+                current = kDefaultParagraphStyle;
         } else if (xml.name() == QLatin1String("text-properties") && !current.isEmpty()) {
             OdfStyle &s = styles[current];
             s.bold = a.value(QLatin1String("fo:font-weight")) == QLatin1String("bold");
@@ -475,15 +548,59 @@ QHash<QString, OdfStyle> readAutomaticStyles(QXmlStreamReader &xml)
             if (size.endsWith(QLatin1String("pt")))
                 s.pointSize = size.chopped(2).toDouble();
         } else if (xml.name() == QLatin1String("paragraph-properties") && !current.isEmpty()) {
-            const QStringView al = a.value(QLatin1String("fo:text-align"));
             OdfStyle &s = styles[current];
+            const QStringView al = a.value(QLatin1String("fo:text-align"));
             if (al == QLatin1String("center")) s.align = Qt::AlignHCenter;
             else if (al == QLatin1String("end") || al == QLatin1String("right")) s.align = Qt::AlignRight;
             else if (al == QLatin1String("justify")) s.align = Qt::AlignJustify;
             else if (!al.isEmpty()) s.align = Qt::AlignLeft;
+            const auto length = [&](const char *attr, Inherited<qreal> &into) {
+                const qreal px = odfLengthPx(a.value(QLatin1String(attr)));
+                if (!qIsNaN(px))
+                    into = px;
+            };
+            // fo:margin is the shorthand the four sides start from.
+            const qreal all = odfLengthPx(a.value(QLatin1String("fo:margin")));
+            if (!qIsNaN(all)) {
+                s.marginTop = all; s.marginBottom = all; s.marginLeft = all; s.marginRight = all;
+            }
+            length("fo:margin-top", s.marginTop);
+            length("fo:margin-bottom", s.marginBottom);
+            length("fo:margin-left", s.marginLeft);
+            length("fo:margin-right", s.marginRight);
+            length("fo:text-indent", s.textIndent);
         }
     }
-    return styles;
+}
+
+// `name` with its paragraph properties resolved along the parent chain (memoized in `resolved`).
+const OdfStyle &resolveStyle(const QString &name, const OdfStyles &styles, OdfStyles &resolved)
+{
+    if (auto it = resolved.constFind(name); it != resolved.cend())
+        return *it;
+    OdfStyle s = styles.value(name);
+    QString parent = s.parent;
+    for (int depth = 0; !parent.isEmpty() && depth < 32; ++depth) { // a cycle is a broken file: stop
+        const auto it = styles.constFind(parent);
+        if (it == styles.cend())
+            break;
+        s.align.inherit(it->align);
+        s.marginTop.inherit(it->marginTop);
+        s.marginBottom.inherit(it->marginBottom);
+        s.marginLeft.inherit(it->marginLeft);
+        s.marginRight.inherit(it->marginRight);
+        s.textIndent.inherit(it->textIndent);
+        parent = it->parent;
+    }
+    if (const auto it = styles.constFind(kDefaultParagraphStyle); it != styles.cend()) {
+        s.align.inherit(it->align);
+        s.marginTop.inherit(it->marginTop);
+        s.marginBottom.inherit(it->marginBottom);
+        s.marginLeft.inherit(it->marginLeft);
+        s.marginRight.inherit(it->marginRight);
+        s.textIndent.inherit(it->textIndent);
+    }
+    return *resolved.insert(name, s);
 }
 
 QTextCharFormat formatFor(const OdfStyle &s)
@@ -500,28 +617,25 @@ QTextCharFormat formatFor(const OdfStyle &s)
 QTextBlockFormat blockFormatFor(const OdfStyle &s)
 {
     QTextBlockFormat f;
-    if (s.align) f.setAlignment(s.align);
+    if (s.align.set && s.align.value) f.setAlignment(s.align.value);
+    if (s.marginLeft.set) f.setLeftMargin(s.marginLeft.value);
+    if (s.marginRight.set) f.setRightMargin(s.marginRight.value);
+    if (s.textIndent.set) f.setTextIndent(s.textIndent.value);
+    const qreal top = s.marginTop.set ? s.marginTop.value : 0;
+    const qreal bottom = s.marginBottom.set ? s.marginBottom.value : 0;
+    if (top <= 0 && bottom <= 0) {
+        // No vertical spacing at all (Standard, tight lists, table cells, footnotes): give the
+        // paragraph RichTextHandler::kMinParagraphSpacing below it. A run of zero-margin blocks
+        // before a table makes QQuickTextEdit's viewport culling grow its rendered region over
+        // most of the document on every keystroke (qquicktextedit.cpp, updatePaintNode:
+        // viewport.united(renderedRegion) while table frames are pending) — ~3x over-draw.
+        f.setBottomMargin(RichTextHandler::kMinParagraphSpacing);
+        if (top < 0) f.setTopMargin(top);
+    } else {
+        f.setTopMargin(top);
+        f.setBottomMargin(bottom);
+    }
     return f;
-}
-
-// ODF lengths ("3.5in", "2.4cm", "12pt", …) → CSS pixels (96 dpi, Qt's rich-text unit).
-qreal odfLengthPx(QStringView v)
-{
-    if (v.isEmpty())
-        return -1;
-    int i = 0;
-    while (i < v.size() && (v.at(i).isDigit() || v.at(i) == QLatin1Char('.') || v.at(i) == QLatin1Char('-')))
-        ++i;
-    bool ok = false;
-    const qreal n = v.left(i).toDouble(&ok);
-    if (!ok)
-        return -1;
-    const QStringView unit = v.mid(i);
-    if (unit == QLatin1String("in")) return n * 96.0;
-    if (unit == QLatin1String("cm")) return n * 96.0 / 2.54;
-    if (unit == QLatin1String("mm")) return n * 96.0 / 25.4;
-    if (unit == QLatin1String("pt")) return n * 96.0 / 72.0;
-    return n; // px or unitless
 }
 
 } // namespace
@@ -543,8 +657,22 @@ bool RichTextHandler::loadOdf(const QUrl &file)
         return false;
     }
 
+    // Named paragraph styles (styles.xml: Standard, Text_20_body, Heading, …) first: the automatic
+    // styles in content.xml and the paragraphs themselves inherit their spacing from them.
+    OdfStyles styles;
+    {
+        QXmlStreamReader sx(zip.fileData(QStringLiteral("styles.xml")));
+        while (!sx.atEnd()) {
+            if (sx.readNext() == QXmlStreamReader::StartElement && sx.name() == QLatin1String("styles"))
+                readStyles(sx, QLatin1String("styles"), styles);
+        }
+    }
+    OdfStyles resolved;
+    const auto style = [&](QStringView name) -> const OdfStyle & {
+        return resolveStyle(name.toString(), styles, resolved);
+    };
+
     QXmlStreamReader xml(content);
-    QHash<QString, OdfStyle> styles;
 
     // Opening a file is not an undoable edit: with undo off, clear() + the build leave no history
     // (re-enabling it starts an empty stack), so Ctrl+Z can't empty the freshly opened document.
@@ -602,13 +730,14 @@ bool RichTextHandler::loadOdf(const QUrl &file)
         if (tok == QXmlStreamReader::StartElement) {
             const auto name = xml.name();
             if (name == QLatin1String("automatic-styles")) {
-                styles = readAutomaticStyles(xml);
+                readStyles(xml, QLatin1String("automatic-styles"), styles);
+                resolved.clear();
             } else if (name == QLatin1String("list")) {
                 ++listDepth;
             } else if (name == QLatin1String("h")) {
                 inParagraph = true;
                 const int level = xml.attributes().value(QLatin1String("text:outline-level")).toString().toInt();
-                QTextBlockFormat bf = blockFormatFor(styles.value(xml.attributes().value(QLatin1String("text:style-name")).toString()));
+                QTextBlockFormat bf = blockFormatFor(style(xml.attributes().value(QLatin1String("text:style-name"))));
                 bf.setHeadingLevel(qBound(1, level ? level : 1, 6));
                 beginBlock(bf);
                 QTextCharFormat cf;
@@ -619,12 +748,11 @@ bool RichTextHandler::loadOdf(const QUrl &file)
                 act().setCharFormat(cf);
             } else if (name == QLatin1String("p")) {
                 inParagraph = true;
-                const OdfStyle st = styles.value(xml.attributes().value(QLatin1String("text:style-name")).toString());
+                const OdfStyle &st = style(xml.attributes().value(QLatin1String("text:style-name")));
                 beginBlock(blockFormatFor(st));
                 act().setCharFormat(formatFor(st));
             } else if (name == QLatin1String("span")) {
-                const QString styleName = xml.attributes().value(QLatin1String("text:style-name")).toString();
-                act().setCharFormat(formatFor(styles.value(styleName)));
+                act().setCharFormat(formatFor(style(xml.attributes().value(QLatin1String("text:style-name")))));
             } else if (name == QLatin1String("tab")) {
                 act().insertText(QStringLiteral("\t"));
             } else if (name == QLatin1String("line-break")) {

@@ -43,6 +43,16 @@ class RichTextHandler : public QObject {
 public:
     using QObject::QObject;
 
+    // QQuickTextEdit only renders the blocks near the viewport (ItemObservesViewport) when its
+    // `text` is set to more than this many characters (QQuickTextEditPrivate::largeTextSizeThreshold,
+    // checked in setText only). Documents built through QTextCursor — loadOdf, typing, pasting —
+    // never trip it, so the handler applies the same rule to the document's character count.
+    static constexpr int kLargeTextThreshold = 10000;
+    // Vertical space (px) under an ODF paragraph whose style chain has none (see blockFormatFor).
+    // LibreOffice draws such paragraphs with no gap; a quarter of a CSS pixel is invisible, and
+    // any positive value avoids the culling over-draw (measured: 0.25 px == 1 px, 0 px ~3x).
+    static constexpr qreal kMinParagraphSpacing = 0.25;
+
     QQuickTextDocument *document() const { return m_document; }
     void setDocument(QQuickTextDocument *doc);
 
@@ -115,6 +125,7 @@ signals:
 
 private:
     void setError(const QString &message); // "" = success; non-empty also emits ioError
+    void updateViewportCulling();           // kLargeTextThreshold → the editor's ItemObservesViewport
 
     QTextCursor cursor() const;              // covers the selection, or the word at the cursor
     QTextCursor insertionCursor() const;     // plain caret position (no word expansion) — inserts
@@ -127,4 +138,5 @@ private:
     QString m_error;
     QMetaObject::Connection m_modifiedConn;
     QMetaObject::Connection m_contentsConn;
+    QMetaObject::Connection m_cullingConn;
 };

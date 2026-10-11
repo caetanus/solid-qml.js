@@ -93,5 +93,11 @@ the caret stranded. Ctrl+B / Ctrl+I / Ctrl+U work with or without the built-in t
   `bold`, `heading`, …) when the editor is the component's root element — a signal becomes a
   property on the root, and two properties of the same name shadow each other.
 - ODF coverage is the word-like subset: paragraphs, headings, bold/italic/underline/strike spans,
-  flat bullet lists, tables, inline images. Named paragraph/character styles (`styles.xml`) and
-  marks (spell-check squiggles, review highlights) are the next items on the office roadmap.
+  flat bullet lists, tables, inline images. Paragraph spacing, side margins, first-line indent and
+  alignment are read from the paragraph styles — automatic ones and the named ones in `styles.xml`
+  they inherit from (`Text_20_body`, `Heading`, …); a paragraph whose styles give it no vertical
+  spacing gets a quarter pixel under it (invisible; it keeps Qt's viewport culling from
+  over-drawing). Named styles as styles (kept on save, character styles) and marks (spell-check
+  squiggles, review highlights) are the next items on the office roadmap.
+- Large documents (> 10 000 characters, however they got there: a load, typing, a paste) render
+  only the part near the viewport, as Qt's `TextEdit` does for a large `text`.

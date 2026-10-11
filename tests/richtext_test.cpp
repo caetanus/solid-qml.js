@@ -34,18 +34,34 @@ int countTables(QTextDocument *doc, int *columns = nullptr)
     return n;
 }
 
-// A minimal .odt whose content.xml body is `body`.
-void writeOdt(const QString &path, const QByteArray &body)
+#define ODF_NS \
+    " xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"" \
+    " xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"" \
+    " xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"" \
+    " xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\"" \
+    " xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\""
+
+// A minimal .odt whose content.xml body is `body`, with optional automatic styles (content.xml)
+// and named styles (styles.xml office:styles).
+void writeOdt(const QString &path, const QByteArray &body, const QByteArray &automaticStyles = {},
+              const QByteArray &namedStyles = {})
 {
     QZipWriter zip(path);
     zip.addFile(QStringLiteral("mimetype"), "application/vnd.oasis.opendocument.text");
+    if (!namedStyles.isEmpty())
+        zip.addFile(QStringLiteral("styles.xml"),
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-styles" ODF_NS ">"
+            "<office:styles>" + namedStyles + "</office:styles></office:document-styles>");
     zip.addFile(QStringLiteral("content.xml"),
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\""
-        " xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\""
-        " xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\">"
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-content" ODF_NS ">"
+        "<office:automatic-styles>" + automaticStyles + "</office:automatic-styles>"
         "<office:body><office:text>" + body + "</office:text></office:body></office:document-content>");
     zip.close();
+}
+
+QTextBlockFormat blockFormat(QTextDocument *doc, int block)
+{
+    return doc->findBlockByNumber(block).blockFormat();
 }
 
 } // namespace
@@ -262,6 +278,100 @@ private slots:
         const QString text = m_fmt->plainText();
         QVERIFY2(text.contains(QStringLiteral("inner")) && text.contains(QStringLiteral("right"))
                  && text.endsWith(QStringLiteral("after")), qPrintable(text));
+    }
+
+    void largeDocumentsCullToTheViewport()
+    {
+        // QQuickTextEdit renders only the blocks near the viewport (ItemObservesViewport) when its
+        // text is set to > 10 000 chars — in setText only. A document built through QTextCursor
+        // (loadOdf, typing) must get the same: a 300-page .odt otherwise re-renders every block
+        // on each keystroke (~400 ms/key, 345 MB vs 17-32 ms/key, 83 MB).
+        auto *edit = qobject_cast<QQuickItem *>(m_edit.data());
+        QVERIFY(edit);
+        QCOMPARE(m_fmt->document()->parent(), edit); // the item the flag belongs on
+        const auto culling = [&] { return edit->flags().testFlag(QQuickItem::ItemObservesViewport); };
+        QVERIFY(!culling());
+
+        m_fmt->insertText(QString(RichTextHandler::kLargeTextThreshold + 1, QLatin1Char('a'))); // typing/pasting
+        QVERIFY(culling());
+        m_fmt->newDocument();
+        QVERIFY(!culling());
+
+        const QString odt = m_dir.filePath(QStringLiteral("large.odt"));
+        QByteArray body;
+        for (int i = 0; i < 200; ++i)
+            body += "<text:p>" + QByteArray(60, 'w') + "</text:p>";
+        writeOdt(odt, body);
+        QVERIFY(m_fmt->loadOdf(QUrl(odt)));
+        QVERIFY(culling());
+
+        // Shrinking back below the threshold turns it off again, as setText does.
+        QTextCursor all(doc());
+        all.select(QTextCursor::Document);
+        all.insertText(QStringLiteral("small"));
+        QVERIFY(!culling());
+    }
+
+    void odfParagraphSpacingFollowsTheStyleChain()
+    {
+        const QString odt = m_dir.filePath(QStringLiteral("styles.odt"));
+        writeOdt(odt,
+            "<text:p text:style-name=\"Text_20_body\">body</text:p>"
+            "<text:p text:style-name=\"P1\">centered</text:p>"
+            "<text:p text:style-name=\"Quotations\">quote</text:p>"
+            "<text:p text:style-name=\"Standard\">plain</text:p>"
+            "<text:p text:style-name=\"Tight\">tight</text:p>"
+            "<text:h text:style-name=\"Heading_20_1\" text:outline-level=\"1\">head</text:h>",
+            // content.xml: an automatic style on top of a named one (what LibreOffice writes)
+            "<style:style style:name=\"P1\" style:family=\"paragraph\" style:parent-style-name=\"Text_20_body\">"
+            "<style:paragraph-properties fo:text-align=\"center\"/></style:style>",
+            "<style:default-style style:family=\"paragraph\"><style:paragraph-properties/></style:default-style>"
+            "<style:style style:name=\"Standard\" style:family=\"paragraph\"/>"
+            "<style:style style:name=\"Text_20_body\" style:family=\"paragraph\" style:parent-style-name=\"Standard\">"
+            "<style:paragraph-properties fo:margin-top=\"0.0598in\" fo:margin-bottom=\"0.0598in\"/></style:style>"
+            "<style:style style:name=\"Quotations\" style:family=\"paragraph\" style:parent-style-name=\"Standard\">"
+            "<style:paragraph-properties fo:margin-left=\"0.3937in\" fo:margin-right=\"0.3937in\""
+            " fo:margin-top=\"0.1in\" fo:margin-bottom=\"0.1in\" fo:text-indent=\"-0.1in\"/></style:style>"
+            "<style:style style:name=\"Tight\" style:family=\"paragraph\" style:parent-style-name=\"Text_20_body\">"
+            "<style:paragraph-properties fo:margin-top=\"0in\" fo:margin-bottom=\"0in\"/></style:style>"
+            "<style:style style:name=\"Heading\" style:family=\"paragraph\" style:parent-style-name=\"Standard\">"
+            "<style:paragraph-properties fo:margin-top=\"0.1665in\" fo:margin-bottom=\"0.0835in\"/></style:style>"
+            "<style:style style:name=\"Heading_20_1\" style:family=\"paragraph\" style:parent-style-name=\"Heading\"/>");
+        QVERIFY(m_fmt->loadOdf(QUrl(odt)));
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("body\ncentered\nquote\nplain\ntight\nhead"));
+        const qreal in = 96.0;
+        const auto near = [](qreal a, qreal b) { return qAbs(a - b) < 0.01; };
+
+        const QTextBlockFormat body = blockFormat(doc(), 0); // named style
+        QVERIFY2(near(body.topMargin(), 0.0598 * in) && near(body.bottomMargin(), 0.0598 * in),
+                 qPrintable(QString::number(body.topMargin())));
+        const QTextBlockFormat centered = blockFormat(doc(), 1); // automatic style → its parent's margins
+        QVERIFY(near(centered.topMargin(), 0.0598 * in) && near(centered.bottomMargin(), 0.0598 * in));
+        QVERIFY(centered.alignment() & Qt::AlignHCenter);
+        const QTextBlockFormat quote = blockFormat(doc(), 2);
+        QVERIFY(near(quote.leftMargin(), 0.3937 * in) && near(quote.rightMargin(), 0.3937 * in));
+        QVERIFY(near(quote.topMargin(), 0.1 * in) && near(quote.bottomMargin(), 0.1 * in));
+        QVERIFY(near(quote.textIndent(), -0.1 * in));
+        const QTextBlockFormat head = blockFormat(doc(), 5);
+        QCOMPARE(head.headingLevel(), 1);
+        QVERIFY(near(head.topMargin(), 0.1665 * in) && near(head.bottomMargin(), 0.0835 * in));
+
+        // No vertical spacing anywhere in the chain (inherited or explicit 0): the small default.
+        for (int b : { 3, 4 }) {
+            const QTextBlockFormat f = blockFormat(doc(), b);
+            QCOMPARE(f.topMargin(), 0.0);
+            QCOMPARE(f.bottomMargin(), RichTextHandler::kMinParagraphSpacing);
+        }
+
+        // Qt's writer keeps the spacing as fo:margin-* on its automatic styles: a reload agrees.
+        const QString again = m_dir.filePath(QStringLiteral("styles-again.odt"));
+        QVERIFY(m_fmt->saveOdf(QUrl(again)));
+        m_fmt->newDocument();
+        QVERIFY(m_fmt->loadOdf(QUrl(again)));
+        QVERIFY(near(blockFormat(doc(), 2).leftMargin(), 0.3937 * in));
+        QVERIFY(near(blockFormat(doc(), 2).textIndent(), -0.1 * in));
+        QVERIFY(near(blockFormat(doc(), 0).topMargin(), 0.0598 * in));
+        QCOMPARE(blockFormat(doc(), 3).bottomMargin(), RichTextHandler::kMinParagraphSpacing);
     }
 
     void saveErrorIsReported()
