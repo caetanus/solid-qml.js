@@ -374,6 +374,33 @@ private slots:
         QCOMPARE(blockFormat(doc(), 3).bottomMargin(), RichTextHandler::kMinParagraphSpacing);
     }
 
+    void saveOdfCopyLeavesTheDocumentAlone()
+    {
+        // Autosave / crash recovery: the file gets the edit, the document stays "unsaved".
+        m_fmt->insertText(QStringLiteral("draft"));
+        QVERIFY(m_fmt->isModified());
+        QVERIFY(doc()->isUndoAvailable());
+        QSignalSpy modified(m_fmt, &RichTextHandler::modifiedChanged);
+        const QString copy = m_dir.filePath(QStringLiteral("autosave.odt"));
+        QVERIFY(m_fmt->saveOdfCopy(QUrl(copy)));
+        QCOMPARE(m_fmt->errorString(), QString());
+        QCOMPARE(m_fmt->isModified(), true);
+        QCOMPARE(modified.count(), 0);
+        QVERIFY(doc()->isUndoAvailable());
+        QVERIFY(!m_fmt->saveOdfCopy(QUrl::fromLocalFile(m_dir.filePath(QStringLiteral("no/such/dir/x.odt")))));
+        QVERIFY(!m_fmt->errorString().isEmpty());
+        QCOMPARE(m_fmt->isModified(), true);
+
+        // saveOdf still clears it.
+        QVERIFY(m_fmt->saveOdf(QUrl(m_dir.filePath(QStringLiteral("saved.odt")))));
+        QCOMPARE(m_fmt->isModified(), false);
+
+        // The copy holds the edit.
+        m_fmt->newDocument();
+        QVERIFY(m_fmt->loadOdf(QUrl(copy)));
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("draft"));
+    }
+
     void saveErrorIsReported()
     {
         m_fmt->insertText(QStringLiteral("x"));

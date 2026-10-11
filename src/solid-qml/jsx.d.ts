@@ -144,6 +144,8 @@ declare global {
     /** A plain path or a file:// URL. */
     loadOdf(path: string): DocumentIoResult;
     saveOdf(path: string): DocumentIoResult;
+    /** Same .odt as saveOdf, for autosave / crash recovery: `modified` and undo stay untouched. */
+    saveOdfCopy(path: string): DocumentIoResult;
     newDocument(): void;
     toHtml(): string;
     plainText(): string;

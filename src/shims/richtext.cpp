@@ -440,12 +440,12 @@ void RichTextHandler::removeTableColumn()
     emit formatChanged();
 }
 
-bool RichTextHandler::saveOdf(const QUrl &file)
+bool RichTextHandler::writeOdf(const QUrl &file)
 {
     QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
     if (!doc)
         return false;
-    // Qt's NATIVE OpenDocument writer.
+    // Qt's NATIVE OpenDocument writer (it only reads the document).
     const QString path = localPath(file);
     QTextDocumentWriter writer(path);
     writer.setFormat("odf");
@@ -454,9 +454,21 @@ bool RichTextHandler::saveOdf(const QUrl &file)
         setError(QStringLiteral("could not write ") + path + (why.isEmpty() ? QString() : QStringLiteral(": ") + why));
         return false;
     }
-    doc->setModified(false);
     setError(QString());
     return true;
+}
+
+bool RichTextHandler::saveOdf(const QUrl &file)
+{
+    if (!writeOdf(file))
+        return false;
+    m_document->textDocument()->setModified(false);
+    return true;
+}
+
+bool RichTextHandler::saveOdfCopy(const QUrl &file)
+{
+    return writeOdf(file);
 }
 
 // ─── minimal ODF reader (Qt ships none): content.xml → QTextDocument ───────────────────────────

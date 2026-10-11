@@ -60,7 +60,7 @@ State — reactive: reading `doc.bold` in a binding (a `classList`, a text) foll
 
 | Property | Type | |
 |---|---|---|
-| `modified` | boolean | Unsaved edits. Cleared by `loadOdf`, `saveOdf`, `newDocument`. |
+| `modified` | boolean | Unsaved edits. Cleared by `loadOdf`, `saveOdf`, `newDocument` (not by `saveOdfCopy`). |
 | `bold`, `italic`, `underline`, `strike` | boolean | Character format at the caret / selection. |
 | `heading` | number | `0` body text, `1`–`6` heading level. |
 | `alignment` | `"left" \| "center" \| "right" \| "justify"` | Paragraph alignment. |
@@ -73,6 +73,7 @@ Methods:
 |---|---|---|
 | `loadOdf(path)` | `{ ok, error }` | Opens an `.odt`. On failure (`file not found: …`, `not an OpenDocument file: …`) the current document is kept. The load is not an undo step. |
 | `saveOdf(path)` | `{ ok, error }` | Writes an `.odt` (Qt's native writer, images embedded). Clears `modified` on success. |
+| `saveOdfCopy(path)` | `{ ok, error }` | The same `.odt`, for autosave / crash recovery: the document is left as it was — `modified` stays, the undo history is untouched. |
 | `newDocument()` | | Empty, unmodified document; drops undo history and images. |
 | `toHtml()` / `plainText()` | string | The content; `plainText()` separates paragraphs with `\n`. |
 | `insertText(text)` | | At the caret (replacing a selection); `\n` starts a paragraph. |

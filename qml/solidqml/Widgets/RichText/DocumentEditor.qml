@@ -3,7 +3,7 @@
 // RichTextHandler); this type adds the app-facing contract:
 //   - starts EMPTY (no demo text), unmodified;
 //   - `toolbar` (inherited) hides the built-in toolbar so the app draws its own;
-//   - `modified` (+ modifiedChanged), cleared by loadOdf / saveOdf / newDocument;
+//   - `modified` (+ modifiedChanged), cleared by loadOdf / saveOdf / newDocument (not saveOdfCopy);
 //   - contentChanged(): every edit, formatting included, debounced (no payload — read plainText()/
 //     toHtml() when needed); loadOdf/newDocument count as content changes too;
 //   - the format state at the caret as reactive properties (bold … alignment, canUndo/canRedo);
@@ -60,6 +60,8 @@ RichText {
         return r
     }
     function saveOdf(path) { return fmt ? _result(fmt.saveOdf(path)) : _noEngine }
+    // Autosave / crash recovery: the same file, but `modified` and the undo stack stay as they are.
+    function saveOdfCopy(path) { return fmt ? _result(fmt.saveOdfCopy(path)) : _noEngine }
     function newDocument() {
         if (!fmt) return
         fmt.newDocument()

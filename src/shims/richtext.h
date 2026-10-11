@@ -102,6 +102,9 @@ public:
     // failure; on success errorString is "" and `modified` is cleared. A failed load leaves the
     // current document untouched; a load is not an undo step.
     Q_INVOKABLE bool saveOdf(const QUrl &file);
+    // The same .odt as saveOdf, for autosave / crash recovery: the document is left exactly as it
+    // was — `modified` stays, the undo stack is untouched. errorString reports the result.
+    Q_INVOKABLE bool saveOdfCopy(const QUrl &file);
     Q_INVOKABLE bool loadOdf(const QUrl &file);
     // An empty, unmodified document (no undo history, no image resources).
     Q_INVOKABLE void newDocument();
@@ -125,6 +128,7 @@ signals:
 
 private:
     void setError(const QString &message); // "" = success; non-empty also emits ioError
+    bool writeOdf(const QUrl &file);        // saveOdf/saveOdfCopy: the write + its errorString
     void updateViewportCulling();           // kLargeTextThreshold → the editor's ItemObservesViewport
 
     QTextCursor cursor() const;              // covers the selection, or the word at the cursor
