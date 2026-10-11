@@ -626,6 +626,41 @@ void ensureMinSpacing(QTextBlockFormat &f)
         f.setBottomMargin(kMinParagraphSpacing);
 }
 
+QTextBlockFormat scaledLengths(const QTextBlockFormat &f, qreal ratio)
+{
+    QTextBlockFormat out = f;
+    if (qFuzzyCompare(ratio, 1.0))
+        return out;
+    for (int id : { int(QTextFormat::BlockTopMargin), int(QTextFormat::BlockBottomMargin),
+                    int(QTextFormat::BlockLeftMargin), int(QTextFormat::BlockRightMargin),
+                    int(QTextFormat::TextIndent) })
+        if (out.hasProperty(id))
+            out.setProperty(id, out.property(id).toDouble() * ratio);
+    if (out.hasProperty(QTextFormat::LineHeight)
+        && out.intProperty(QTextFormat::LineHeightType) == QTextBlockFormat::FixedHeight)
+        out.setProperty(QTextFormat::LineHeight, out.doubleProperty(QTextFormat::LineHeight) * ratio);
+    return out;
+}
+
+QTextCharFormat scaledLengths(const QTextCharFormat &f, qreal ratio)
+{
+    QTextCharFormat out = f;
+    if (qFuzzyCompare(ratio, 1.0))
+        return out;
+    if (out.hasProperty(QTextFormat::FontPointSize))
+        out.setProperty(QTextFormat::FontPointSize, out.doubleProperty(QTextFormat::FontPointSize) * ratio);
+    if (out.hasProperty(QTextFormat::FontLetterSpacing)
+        && out.intProperty(QTextFormat::FontLetterSpacingType) == QFont::AbsoluteSpacing)
+        out.setProperty(QTextFormat::FontLetterSpacing, out.doubleProperty(QTextFormat::FontLetterSpacing) * ratio);
+    // Inline images (QTextImageFormat is a QTextCharFormat): the explicit display size we set in
+    // insertImage, scaled the same way as everything else baked into the live document.
+    if (out.hasProperty(QTextFormat::ImageWidth))
+        out.setProperty(QTextFormat::ImageWidth, out.doubleProperty(QTextFormat::ImageWidth) * ratio);
+    if (out.hasProperty(QTextFormat::ImageHeight))
+        out.setProperty(QTextFormat::ImageHeight, out.doubleProperty(QTextFormat::ImageHeight) * ratio);
+    return out;
+}
+
 QString odfEncodeName(const QString &name)
 {
     QString out;

@@ -8,6 +8,7 @@
 #include <QTextBlock>
 #include <QTextDocument>
 #include <QTextFragment>
+#include <QTextFrame>
 #include <QTextImageFormat>
 #include <QTextList>
 #include <QTextTable>
@@ -120,6 +121,10 @@ void RichTextHandler::newDocument()
     QTextCursor c(doc);
     c.setBlockFormat(m_sheet.blockFormat(rt::defaultParagraphStyle()));
     c.setBlockCharFormat(m_sheet.charFormat(rt::defaultParagraphStyle(), QString()));
+    // m_sheet.blockFormat/charFormat() always materialize at zoom 1 (canonical units): bring the
+    // fresh document up to the zoom already in effect (office item 2b, ★2), still with undo off.
+    if (!qFuzzyCompare(m_zoom, 1.0))
+        rescaleRange(-1, -1, m_zoom, false);
     doc->setUndoRedoEnabled(true);
     doc->setModified(false);
     // clear() signals modificationChanged(true) and then resets the flag WITHOUT a signal, so
@@ -318,11 +323,13 @@ bool RichTextHandler::insertImage(const QUrl &file)
     doc->addResource(QTextDocument::ImageResource, key, img);
     QTextImageFormat fmt;
     fmt.setName(key.toString());
-    // Word-like cap: images wider than the page column scale down, keeping aspect.
-    constexpr qreal kMaxWidth = 480.0;
-    if (img.width() > kMaxWidth) {
-        fmt.setWidth(kMaxWidth);
-        fmt.setHeight(img.height() * kMaxWidth / img.width());
+    // Word-like cap: images wider than the page column scale down, keeping aspect — at the zoom
+    // in effect (★2), like every other length already in the document; the writer divides it back
+    // out to the canonical 480px cap on save.
+    const qreal maxWidth = 480.0 * m_zoom;
+    if (img.width() > maxWidth) {
+        fmt.setWidth(maxWidth);
+        fmt.setHeight(img.height() * maxWidth / img.width());
     }
     insertionCursor().insertImage(fmt);
     setError(QString());
@@ -396,8 +403,10 @@ bool RichTextHandler::writeOdf(const QUrl &file)
     if (!doc)
         return false;
     // Our writer (not QTextDocumentWriter's "odf"): named styles in styles.xml, headings as text:h.
+    // It reads back the live (possibly zoomed) formats in canonical units itself (★2) — m_sheet
+    // stays the unscaled source of truth either way.
     QString why;
-    if (!rt::writeOdt(localPath(file), doc, m_sheet, &why)) {
+    if (!rt::writeOdt(localPath(file), doc, m_sheet, m_zoom, &why)) {
         setError(why);
         return false;
     }
@@ -431,6 +440,15 @@ bool RichTextHandler::loadOdf(const QUrl &file)
         return false;
     }
     m_sheet = sheet;
+    // readOdt materialized at zoom 1 (canonical units): bring the document up to the zoom already
+    // in effect (office item 2b, ★2). Undo is briefly disabled around it, as readOdt's own build
+    // already was, so this still reads as "the load is not an undo step".
+    if (!qFuzzyCompare(m_zoom, 1.0)) {
+        doc->setUndoRedoEnabled(false);
+        rescaleRange(-1, -1, m_zoom, false);
+        doc->setUndoRedoEnabled(true);
+        doc->setModified(false);
+    }
     emit modifiedChanged(); // see newDocument: clear() can leave the last signal saying "true"
     emit stylesChanged();
     setError(why);
@@ -633,6 +651,72 @@ void RichTextHandler::restyle(int from, int to, const rt::StyleSheet &oldSheet,
         if (from >= 0 && b == endBlock)
             break;
     }
+    // rebase() above always takes raw values from m_sheet (canonical, zoom-1 units): bring what
+    // was just touched back up to the zoom in effect (office item 2b, ★2). Every restyle() caller
+    // already runs inside its own edit block, so this stays part of the same undo step. Mirrors
+    // clipChars exactly: a whole-block operation (false) rescales every run of the touched
+    // block(s); a selection-scoped one (true) only the runs inside [from, to] — the others were
+    // never touched by rebase() above and are already at the right zoom.
+    if (!qFuzzyCompare(m_zoom, 1.0))
+        rescaleRange(from, to, m_zoom, clipChars);
+}
+
+void RichTextHandler::rescaleRange(int from, int to, qreal ratio, bool clipChars)
+{
+    QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
+    if (!doc || qFuzzyCompare(ratio, 1.0))
+        return;
+    QTextCursor c(doc);
+    const auto scaleBlock = [&](const QTextBlock &b) {
+        if (from >= 0 && (b.position() + b.length() <= from || b.position() > to))
+            return;
+        c.setPosition(b.position());
+        c.setBlockFormat(rt::scaledLengths(b.blockFormat(), ratio));
+        if (!clipChars)
+            c.setBlockCharFormat(rt::scaledLengths(b.charFormat(), ratio));
+        for (auto it = b.begin(); !it.atEnd(); ++it) {
+            const QTextFragment frag = it.fragment();
+            if (!frag.isValid())
+                continue;
+            int s = frag.position(), e = s + frag.length();
+            if (clipChars) {
+                s = qMax(s, from);
+                e = qMin(e, to);
+                if (s >= e)
+                    continue;
+            }
+            c.setPosition(s);
+            c.setPosition(e, QTextCursor::KeepAnchor);
+            c.setCharFormat(rt::scaledLengths(frag.charFormat(), ratio));
+        }
+    };
+    const std::function<void(QTextFrame::iterator, const QTextFrame::iterator &)> walk =
+        [&](QTextFrame::iterator it, const QTextFrame::iterator &end) {
+            for (; it != end; ++it) {
+                if (QTextFrame *f = it.currentFrame())
+                    walk(f->begin(), f->end());
+                else if (const QTextBlock b = it.currentBlock(); b.isValid())
+                    scaleBlock(b);
+            }
+        };
+    walk(doc->rootFrame()->begin(), doc->rootFrame()->end());
+}
+
+void RichTextHandler::setZoom(qreal z)
+{
+    z = qBound(0.5, z, 3.0);
+    if (qFuzzyCompare(z, m_zoom))
+        return;
+    QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
+    const qreal ratio = z / m_zoom;
+    if (doc) {
+        QTextCursor edit(doc);
+        edit.beginEditBlock(); // one undo step, like any other formatting change
+        rescaleRange(-1, -1, ratio, false);
+        edit.endEditBlock();
+    }
+    m_zoom = z;
+    emit zoomChanged();
 }
 
 QTextCursor RichTextHandler::selectionCursor() const

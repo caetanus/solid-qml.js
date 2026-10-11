@@ -125,6 +125,14 @@ QTextCharFormat charAt(QTextDocument *doc, int pos)
     return c.charFormat();
 }
 
+// One entry's bytes out of a .odt (content.xml/styles.xml), for a save output comparison that
+// must ignore meta.xml's timestamp.
+QByteArray zipEntry(const QString &path, const QString &entry)
+{
+    QZipReader zip(path);
+    return zip.fileData(entry);
+}
+
 } // namespace
 
 class RichTextTest : public QObject {
@@ -1050,6 +1058,109 @@ private slots:
         QVERIFY(!m_fmt->saveOdf(QUrl::fromLocalFile(m_dir.filePath(QStringLiteral("no/such/dir/x.odt")))));
         QVERIFY(!m_fmt->errorString().isEmpty());
         QCOMPARE(m_fmt->isModified(), true);
+    }
+
+    // ── office item 2b, ★2: zoom ──────────────────────────────────────────────────────────────────
+
+    void zoomDefaultsToOneAndClamps()
+    {
+        QCOMPARE(m_fmt->zoom(), 1.0);
+        m_fmt->setZoom(5.0);
+        QCOMPARE(m_fmt->zoom(), 3.0);
+        m_fmt->setZoom(0.1);
+        QCOMPARE(m_fmt->zoom(), 0.5);
+    }
+
+    void zoomRescalesFontSizeInPlace()
+    {
+        // Plain Default Paragraph Style text carries NO explicit QTextCharFormat::FontPointSize
+        // by design (the editor's own font stands in for it — see docs: "Default Paragraph
+        // Style's fontFamily/fontSize"), so it has nothing for the handler to rescale; that path
+        // is the QML layer's _editor.font.pixelSize, scaled by `zoom` in DocumentEditor.qml. A
+        // style that DOES set fontSize (a heading) is what exercises rescaleRange() here.
+        m_fmt->insertText(QStringLiteral("Title"));
+        m_fmt->setHeading(1);
+        const qreal before = charAt(doc(), 0).fontPointSize();
+        QVERIFY(before > 0);
+        m_fmt->setZoom(2.0);
+        QCOMPARE(charAt(doc(), 0).fontPointSize(), before * 2.0);
+        m_fmt->setZoom(1.0);
+        QCOMPARE(charAt(doc(), 0).fontPointSize(), before);
+    }
+
+    void zoomDoesNotChangeStyleProperties()
+    {
+        // The canonical style sheet is never scaled — only the live document's actual formats are.
+        const qreal before = m_fmt->styleProperties(QStringLiteral("Heading 1")).value("fontSize").toDouble();
+        QVERIFY(before > 0);
+        m_fmt->setZoom(2.0);
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("Heading 1")).value("fontSize").toDouble(), before);
+    }
+
+    void formattingAfterZoomKeepsTheZoomedSize()
+    {
+        // restyle() always rebases from m_sheet (canonical, zoom-1 units): a style change made
+        // while zoomed must come back up to the current zoom, not silently drop to zoom 1.
+        m_fmt->insertText(QStringLiteral("Title"));
+        m_fmt->setZoom(2.0);
+        m_fmt->setHeading(1); // applyParagraphStyle() → restyle()
+        const qreal canonical = m_fmt->styleProperties(QStringLiteral("Heading 1")).value("fontSize").toDouble();
+        QCOMPARE(charAt(doc(), 0).fontPointSize(), canonical * 2.0);
+    }
+
+    void zoomChangeIsUndoableNotAHistoryWipe()
+    {
+        m_fmt->insertText(QStringLiteral("x"));
+        QVERIFY(doc()->isUndoAvailable());
+        m_fmt->setZoom(2.0); // must not disable/re-enable undo like a load or newDocument does
+        QVERIFY(doc()->isUndoAvailable());
+    }
+
+    void saveOdfIsIdenticalAtAnyZoom()
+    {
+        m_fmt->insertText(QStringLiteral("Title"));
+        m_fmt->setHeading(1);
+        m_fmt->setCursorPosition(5);
+        m_fmt->insertText(QStringLiteral("\nBody text"));
+        m_fmt->setAlignment(QStringLiteral("center"));
+        const QString png = m_dir.filePath(QStringLiteral("z.png"));
+        QImage img(1000, 1000, QImage::Format_RGB32); // over the 480px cap: insertImage sets an
+        img.fill(Qt::blue);                           // explicit width/height, so zoom has something
+        QVERIFY(img.save(png));                        // to rescale (and the writer to unscale back)
+        m_fmt->setCursorPosition(doc()->characterCount() - 1);
+        QVERIFY(m_fmt->insertImage(QUrl(png)));
+
+        const QString at1 = m_dir.filePath(QStringLiteral("zoom1.odt"));
+        QVERIFY(m_fmt->saveOdf(QUrl(at1)));
+
+        m_fmt->setZoom(2.0);
+        const QString at2 = m_dir.filePath(QStringLiteral("zoom2.odt"));
+        QVERIFY(m_fmt->saveOdf(QUrl(at2)));
+
+        QCOMPARE(zipEntry(at2, QStringLiteral("content.xml")), zipEntry(at1, QStringLiteral("content.xml")));
+        QCOMPARE(zipEntry(at2, QStringLiteral("styles.xml")), zipEntry(at1, QStringLiteral("styles.xml")));
+    }
+
+    void loadAndNewDocumentApplyTheCurrentZoom()
+    {
+        m_fmt->setZoom(2.0);
+        m_fmt->newDocument();
+        QCOMPARE(m_fmt->zoom(), 2.0);
+        QCOMPARE(m_fmt->isModified(), false);
+        QVERIFY(!doc()->isUndoAvailable()); // still "not an undo step" at zoom != 1
+
+        m_fmt->insertText(QStringLiteral("x"));
+        const qreal zoomedSize = charAt(doc(), 0).fontPointSize();
+        const QString odt = m_dir.filePath(QStringLiteral("zoomed-load.odt"));
+        QVERIFY(m_fmt->saveOdf(QUrl(odt)));
+
+        m_fmt->setZoom(1.0);
+        m_fmt->newDocument();
+        m_fmt->setZoom(2.0);
+        QVERIFY(m_fmt->loadOdf(QUrl(odt)));
+        QCOMPARE(m_fmt->isModified(), false);
+        QVERIFY(!doc()->isUndoAvailable());
+        QCOMPARE(charAt(doc(), 0).fontPointSize(), zoomedSize);
     }
 };
 

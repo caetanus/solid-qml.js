@@ -91,6 +91,16 @@ type DocumentEditorProps = {
   onContentChanged?: () => void;
   /** The style table changed (defineStyle, a load, newDocument, an undo of a definition). */
   onStylesChanged?: () => void;
+  /** Page width in px (e.g. 794 ≈ A4 at 96dpi). 0/unset = the plain editor's default. The editor
+   *  is continuous (no on-screen page breaks) either way. */
+  pageWidth?: number;
+  /** [top, right, bottom, left] px. null/unset = the plain editor's default (12px uniform). */
+  pageMargins?: [number, number, number, number] | null;
+  /** Clamped 0.5..3.0. A REAL relayout (font/point sizes, image sizes rebuilt, not a scale
+   *  transform): saveOdf's output does not depend on it. The app owns the value. */
+  zoom?: number;
+  /** Ctrl+wheel / Ctrl+= / Ctrl+- / Ctrl+0: +0.1 / -0.1 / 0 (reset). The app applies it to `zoom`. */
+  onZoomRequested?: (delta: number) => void;
 };
 
 /** A named style's properties (docs/document-editor.md "Named styles"). Lengths are px (or a

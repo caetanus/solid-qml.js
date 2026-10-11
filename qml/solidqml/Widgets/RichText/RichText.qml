@@ -36,6 +36,8 @@ Css.CssFill {
                                   "<u>OpenDocument</u> round-trip.</p>"
     // The text area, for DocumentEditor (ids don't cross the file boundary).
     readonly property alias _editor: edit
+    // The scrolling viewport around it — DocumentEditor keeps the caret visible after a zoom change.
+    readonly property alias _body: body
     signal edited(string html, string text)
     readonly property bool _mail: variant === "mail"
     property string _reported: ""

@@ -801,7 +801,11 @@ QByteArray propsKey(const QVariantMap &props)
 
 class OdtWriter {
 public:
-    OdtWriter(const QTextDocument *doc, const StyleSheet &sheet) : m_doc(doc), m_sheet(sheet), m_x(&m_body) {}
+    // `zoom`: divides every length read off `doc`'s actual (possibly zoomed) formats before it is
+    // compared against `sheet` or written out, so the file does not depend on the zoom in effect
+    // (office item 2b, ★2) — `sheet` itself is always the canonical, unscaled one.
+    OdtWriter(const QTextDocument *doc, const StyleSheet &sheet, qreal zoom)
+        : m_doc(doc), m_sheet(sheet), m_x(&m_body), m_unzoom(1.0 / zoom) {}
 
     bool write(QIODevice *dev, QString *error)
     {
@@ -918,7 +922,9 @@ private:
         if (listItem)
             m_x.writeStartElement(QStringLiteral("text:list-item"));
 
-        const QTextBlockFormat bf = b.blockFormat();
+        // Unzoom first: direct/style comparisons and whatever we write out must be in the
+        // document's CANONICAL units, independent of the zoom in effect (office item 2b, ★2).
+        const QTextBlockFormat bf = scaledLengths(b.blockFormat(), m_unzoom);
         const QString style = paragraphStyleOf(bf);
         QVariantMap direct = directProps(bf, m_sheet.blockFormat(style), true);
         direct.remove(QStringLiteral("outlineLevel")); // text:h's text:outline-level says it
@@ -944,7 +950,7 @@ private:
             const QTextFragment frag = it.fragment();
             if (!frag.isValid())
                 continue;
-            const QTextCharFormat cf = frag.charFormat();
+            const QTextCharFormat cf = scaledLengths(frag.charFormat(), m_unzoom);
             if (cf.isImageFormat()) {
                 closeSpans();
                 const QString text = frag.text();
@@ -1290,18 +1296,19 @@ private:
     bool m_atStart = true;
     bool m_prevSpace = false;
     int m_pendingSpaces = 0;
+    qreal m_unzoom = 1.0; // 1 / zoom: divides every length read off the (possibly zoomed) document
 };
 
 } // namespace
 
-bool writeOdt(const QString &path, const QTextDocument *doc, const StyleSheet &sheet, QString *error)
+bool writeOdt(const QString &path, const QTextDocument *doc, const StyleSheet &sheet, qreal zoom, QString *error)
 {
     // The package is built in memory (QZipWriter closes its device, which QSaveFile forbids),
     // then committed atomically: a failed write leaves the previous file intact.
     QByteArray package;
     QBuffer buffer(&package);
     buffer.open(QIODevice::WriteOnly);
-    OdtWriter w(doc, sheet);
+    OdtWriter w(doc, sheet, zoom);
     QString why;
     if (!w.write(&buffer, &why)) {
         *error = QStringLiteral("could not write ") + path + (why.isEmpty() ? QString() : QStringLiteral(": ") + why);

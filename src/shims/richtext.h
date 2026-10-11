@@ -50,6 +50,11 @@ class RichTextHandler : public QObject {
     Q_PROPERTY(bool modified READ isModified WRITE setModified NOTIFY modifiedChanged)
     // Why the last loadOdf/saveOdf failed ("" after a success).
     Q_PROPERTY(QString errorString READ errorString NOTIFY errorStringChanged)
+    // Office item 2b (★2): a REAL relayout, clamped 0.5..3.0 — every absolute length already
+    // baked into the live document's formats (font sizes, margins, letter spacing, exact line
+    // heights, inline images) is rescaled in place; NOT a visual transform. m_sheet (the
+    // canonical, unscaled styles saveOdf/styleProperties use) is never touched by zoom.
+    Q_PROPERTY(qreal zoom READ zoom WRITE setZoom NOTIFY zoomChanged)
 
 public:
     using QObject::QObject;
@@ -135,6 +140,10 @@ public:
     QString alignment() const;
     Q_INVOKABLE void setAlignment(const QString &align); // on every paragraph of the selection
 
+    // ── zoom (office item 2b, ★2) ─────────────────────────────────────────────────────────────
+    qreal zoom() const { return m_zoom; }
+    void setZoom(qreal z);
+
     bool isModified() const;
     void setModified(bool m);
     QString errorString() const { return m_error; }
@@ -169,6 +178,8 @@ signals:
     void contentsChanged();
     // The style table changed: a definition, a load, a new document (or an undo of a definition).
     void stylesChanged();
+    // The zoom factor changed (the live document was just rescaled to it).
+    void zoomChanged();
 
 private:
     friend class StyleUndo;
@@ -177,8 +188,16 @@ private:
     // Re-styles blocks/runs of [from, to] (whole document when from < 0): paragraph style through
     // paraMap, character style through charMap, formats rebased from `oldSheet` to m_sheet;
     // `force` drops direct formatting. Character runs are clipped to [from, to) when clipChars.
+    // Re-applies the CURRENT zoom (m_zoom) to whatever restyle() just wrote at zoom 1 — restyle
+    // always materializes from m_sheet, which is unscaled.
     void restyle(int from, int to, const rt::StyleSheet &oldSheet, const std::function<QString(const QString &)> &paraMap,
                  const std::function<QString(const QString &)> &charMap, bool force, bool clipChars);
+    // Rescales every length already baked into [from, to] (whole document when from < 0) by
+    // `ratio`: font point sizes, letter spacing, margins/indent, exact (fixed) line heights and
+    // inline image width/height. `clipChars` mirrors restyle()'s: false touches every run of the
+    // touched block(s) (and the block's own empty-paragraph charFormat), true only the runs
+    // actually inside [from, to). Must run inside the caller's own edit block (one undo step).
+    void rescaleRange(int from, int to, qreal ratio, bool clipChars);
     void breakParagraph(QTextCursor &c);
     QTextCursor selectionCursor() const; // the selection exactly (no word expansion); null cursor if none
     void setError(const QString &message); // "" = success; non-empty also emits ioError
@@ -198,4 +217,5 @@ private:
     QMetaObject::Connection m_modifiedConn;
     QMetaObject::Connection m_contentsConn;
     QMetaObject::Connection m_cullingConn;
+    qreal m_zoom = 1.0; // the live document's CURRENT zoom; m_sheet itself is never scaled
 };

@@ -114,7 +114,10 @@ export const ELEMENT_ATTRS: Record<string, Attrs> = {
   MediaPlayer: { class: "lit", src: "expr", subtitles: "expr", autoplay: "expr" },
   WebView: { class: "lit", src: "expr", html: "expr", remoteContent: "expr" },
   RichText: { class: "lit", html: "expr", variant: "expr", onChange: "fn" },
-  DocumentEditor: { class: "lit", ref: "ident", toolbar: "bool", onModifiedChanged: "fn", onContentChanged: "fn", onStylesChanged: "fn" },
+  DocumentEditor: {
+    class: "lit", ref: "ident", toolbar: "bool", onModifiedChanged: "fn", onContentChanged: "fn", onStylesChanged: "fn",
+    pageWidth: "expr", pageMargins: "expr", zoom: "expr", onZoomRequested: "fn",
+  },
   CodeEditor: { class: "lit", language: "expr", text: "expr" },
   Shortcut: { keys: "expr", enabled: "expr", onActivated: "fn" },
   Calendar: { ...DYN, value: "expr", onChange: "fn" },

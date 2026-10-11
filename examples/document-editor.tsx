@@ -13,6 +13,12 @@ export function DocumentEditorDemo() {
   const [dirty, setDirty] = createSignal(false);
   const [words, setWords] = createSignal(0);
   const [status, setStatus] = createSignal("New document");
+  // Named zoomLevel, not zoom: a signal with the SAME name as a native prop it is bound to
+  // shadows itself in the emitted QML (`zoom: zoom` becomes self-referential — see
+  // docs/document-editor.md's naming note).
+  const [zoomLevel, setZoomLevel] = createSignal(1.0);
+  const applyZoomDelta = (delta: number) =>
+    setZoomLevel(delta === 0 ? 1.0 : Math.max(0.5, Math.min(3.0, zoomLevel() + delta)));
 
   const countWords = () => {
     const parts = doc.plainText().split("\n").join(" ").split(" ");
@@ -48,9 +54,16 @@ export function DocumentEditorDemo() {
         <button class="de-btn" classList={{ on: doc.alignment === "center" }} onClick={() => doc.setAlignment(doc.alignment === "center" ? "left" : "center")}>Center</button>
         <button class="de-btn" classList={{ on: doc.bulletList }} onClick={() => doc.toggleBulletList()}>List</button>
         <button class="de-btn" onClick={() => doc.insertTable(2, 2)}>Table</button>
+        <div class="de-sep" />
+        <button class="de-btn" onClick={() => applyZoomDelta(-0.1)}>−</button>
+        <text class="de-status-t">{Math.round(zoomLevel() * 100) + "%"}</text>
+        <button class="de-btn" onClick={() => applyZoomDelta(0.1)}>+</button>
+        <button class="de-btn" onClick={() => applyZoomDelta(0)}>100%</button>
       </div>
       <div class="de-page">
         <DocumentEditor ref={doc} class="de-editor" toolbar={false}
+          pageWidth={794} pageMargins={[48, 48, 48, 48]} zoom={zoomLevel()}
+          onZoomRequested={(delta) => applyZoomDelta(delta)}
           onModifiedChanged={(m) => setDirty(m)}
           onContentChanged={() => countWords()} />
       </div>

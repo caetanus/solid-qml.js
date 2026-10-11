@@ -26,6 +26,9 @@ namespace rt {
 bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheet, QString *error);
 
 // Writes `doc` with its `sheet` to `path` (atomically: a failed write leaves the old file).
-bool writeOdt(const QString &path, const QTextDocument *doc, const StyleSheet &sheet, QString *error);
+// `zoom`: the live document's current zoom (office item 2b, ★2) — every length read off `doc`'s
+// actual formats is divided by it before being compared/written, so the file is identical at any
+// zoom (the StyleSheet itself is never scaled).
+bool writeOdt(const QString &path, const QTextDocument *doc, const StyleSheet &sheet, qreal zoom, QString *error);
 
 } // namespace rt

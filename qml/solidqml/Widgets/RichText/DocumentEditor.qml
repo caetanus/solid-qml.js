@@ -36,6 +36,52 @@ RichText {
     readonly property bool canUndo: _editor.canUndo
     readonly property bool canRedo: _editor.canRedo
 
+    // ── page look (office item 2b, ★1) ──────────────────────────────────────────────────────────
+    // `pageWidth` (px): the editor's implicit width when set (0 = the plain editor's 560 default).
+    // Continuous — no on-screen page breaks (see insertPageBreak() for the content-level marker).
+    property real pageWidth: 0
+    implicitWidth: pageWidth > 0 ? pageWidth : 560
+    // `pageMargins`: [top, right, bottom, left] px, or null for the plain editor's 12px uniform
+    // default. Applied as the TextArea's padding, so the caret and selection respect them.
+    property var pageMargins: null
+    _editor.topPadding: pageMargins ? pageMargins[0] : 12
+    _editor.rightPadding: pageMargins ? pageMargins[1] : 12
+    _editor.bottomPadding: pageMargins ? pageMargins[2] : 12
+    _editor.leftPadding: pageMargins ? pageMargins[3] : 12
+
+    // ── zoom (office item 2b, ★2) ────────────────────────────────────────────────────────────────
+    // The app owns the value; clamped the same way the engine clamps it (defensive — a value
+    // outside 0.5..3.0 would otherwise just silently clamp one call later). A REAL relayout (see
+    // RichTextHandler::setZoom): never a scale transform, so text stays sharp and saveOdf's
+    // output does not depend on it.
+    property real zoom: 1.0
+    // The editor's OWN base font stands in for Default Paragraph Style's (see RichText.qml /
+    // docs: plain body text carries no explicit per-run font size), so zoom must scale it too —
+    // everything ELSE (headings, direct formatting, named styles with their own fontSize) is
+    // already baked per-run into the document and rescaled by RichTextHandler::setZoom.
+    _editor.font.pixelSize: cssTheme.parseFontSize(root.inheritedFontSize || "14px", 14) * zoom
+    onZoomChanged: {
+        if (fmt) fmt.zoom = Math.max(0.5, Math.min(3.0, zoom))
+        Qt.callLater(root._keepCaretVisible)
+    }
+    // Ctrl+wheel / Ctrl+= / Ctrl+- / Ctrl+0: the app owns `zoom`, so these only ask for a change
+    // (delta +0.1/-0.1, 0 = reset) — set zoom from an onZoomRequested handler to act on it.
+    signal zoomRequested(real delta)
+    WheelHandler {
+        target: null
+        acceptedModifiers: Qt.ControlModifier
+        onWheel: (event) => root.zoomRequested(event.angleDelta.y > 0 ? 0.1 : -0.1)
+    }
+    Shortcut { sequence: "Ctrl+="; onActivated: root.zoomRequested(0.1) }
+    Shortcut { sequence: "Ctrl++"; onActivated: root.zoomRequested(0.1) }
+    Shortcut { sequence: "Ctrl+-"; onActivated: root.zoomRequested(-0.1) }
+    Shortcut { sequence: "Ctrl+0"; onActivated: root.zoomRequested(0) }
+    function _keepCaretVisible() {
+        var r = _editor.positionToRectangle(_editor.cursorPosition)
+        if (r.y < _body.contentY) _body.contentY = Math.max(0, r.y)
+        else if (r.y + r.height > _body.contentY + _body.height) _body.contentY = r.y + r.height - _body.height
+    }
+
     // Debounced edit notification (ms of quiet before it fires).
     property int contentDelay: 300
     signal contentChanged()

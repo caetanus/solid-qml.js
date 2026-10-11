@@ -134,6 +134,16 @@ void applyProps(QTextFormat &f, const QVariantMap &props, bool blockProps);
 void rebase(QTextFormat &f, const QTextFormat &oldBase, const QTextFormat &newBase, bool blockProps, bool force);
 void ensureMinSpacing(QTextBlockFormat &f);
 
+// Office item 2b (★2, zoom): a COPY of `f` with every absolute length already baked into it —
+// font point size, letter spacing, margins/indent, an exact (fixed) line height, inline image
+// width/height — multiplied by `ratio`. Everything else (alignment, bold, the style-name
+// properties, …) is untouched, so the result still carries kParagraphStyleProperty/
+// kCharStyleProperty. Used both to rescale the LIVE document (ratio = the zoom factor) and, by
+// the ODF writer, to read it back in CANONICAL units (ratio = 1 / zoom) — never touching the
+// StyleSheet itself, so saveOdf's output does not depend on the zoom in effect.
+QTextBlockFormat scaledLengths(const QTextBlockFormat &f, qreal ratio);
+QTextCharFormat scaledLengths(const QTextCharFormat &f, qreal ratio);
+
 // ODF style:name ↔ display name: characters outside an NCName are written _XX_ (hex), as
 // LibreOffice does ("Heading 1" ↔ "Heading_20_1").
 QString odfEncodeName(const QString &name);

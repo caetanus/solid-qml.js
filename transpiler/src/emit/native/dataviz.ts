@@ -197,6 +197,16 @@ function emitDocumentEditor(propsArg: t.Node | undefined, _children: t.Node[], s
   const onStyles = props.get("onStylesChanged");
   if (onStyles && (t.isArrowFunctionExpression(onStyles) || t.isFunctionExpression(onStyles)))
     lines.push(`${i(1)}onStylesChanged: { ${translateArgsHandler(onStyles, [], scope)} }`);
+  // Office item 2b (★1 page look, ★2 zoom).
+  const pageWidth = props.get("pageWidth");
+  if (pageWidth) lines.push(`${i(1)}pageWidth: ${bind(pageWidth)}`);
+  const pageMargins = props.get("pageMargins");
+  if (pageMargins) lines.push(`${i(1)}pageMargins: ${bind(pageMargins)}`);
+  const zoom = props.get("zoom");
+  if (zoom) lines.push(`${i(1)}zoom: ${bind(zoom)}`);
+  const onZoomRequested = props.get("onZoomRequested");
+  if (onZoomRequested && (t.isArrowFunctionExpression(onZoomRequested) || t.isFunctionExpression(onZoomRequested)))
+    lines.push(`${i(1)}onZoomRequested: (__delta) => { ${translateArgsHandler(onZoomRequested, ["__delta"], scope)} }`);
   lines.push(`${pad}}`);
   return lines;
 }

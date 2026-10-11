@@ -54,6 +54,10 @@ A complete example (own toolbar, open/save by path, modified dot, word count) is
 | `onModifiedChanged` | `(modified: boolean) => …` | The unsaved-changes flag flipped. |
 | `onContentChanged` | `() => …` | Any edit, formatting included, **debounced** (300 ms of quiet). No payload: read `doc.plainText()` / `doc.toHtml()` when needed. Opening a file, `newDocument()` and `defineStyle()` count as content changes. |
 | `onStylesChanged` | `() => …` | The style table changed: `defineStyle`, a load, `newDocument`, an undo/redo of a definition. Refresh a style picker from `doc.styleNames(…)` here. |
+| `pageWidth` | number (px) | The editor's implicit width when set (e.g. `794` ≈ A4 at 96dpi). `0`/unset keeps the plain editor's default. Continuous — no on-screen page breaks (see `insertPageBreak()` for the content-level marker that round-trips to the file). |
+| `pageMargins` | `[top, right, bottom, left]` (px), or `null`/unset | Applied as the editing surface's padding, so the caret and selection respect them. `null`/unset keeps the plain editor's default (12px uniform). |
+| `zoom` | number, clamped `0.5`–`3.0` | A **real relayout**: font/point sizes, margins and inline images are rebuilt at the new size (not a scale transform — text stays sharp). Does not change what `saveOdf` writes. The app owns the value; see `onZoomRequested`. |
+| `onZoomRequested` | `(delta: number) => …` | Ctrl+wheel (±0.1 per notch), Ctrl+= / Ctrl+- (±0.1), Ctrl+0 (`0`, meaning "reset"). The editor only asks; set `zoom` in response (e.g. `setZoom(z => delta === 0 ? 1 : clamp(z + delta))`). |
 
 The editor starts **empty and unmodified** (no demo text). Anything else is a transpile error.
 
@@ -146,11 +150,31 @@ saved (a LibreOffice file's 12pt Times stays 12pt Times there), but on screen th
 font stands in for them, so a file's base font never overrides the app's typography. Every other
 style's font shows as defined.
 
+## Page look & zoom
+
+`pageWidth`/`pageMargins` only size the editing surface and its padding — they do not change any
+character or paragraph format. `zoom` does: `setZoom()` walks every block and run already in the
+live document and multiplies every absolute length baked into it (font point size, letter
+spacing, margins/indent, an exact line height, inline image width/height) by the new/old ratio,
+in place — the same mechanism `defineStyle`/`applyParagraphStyle` use to re-apply a style, not a
+`scale: transform` (so hinting/antialiasing stay correct at any zoom). The named styles
+(`m_sheet`) themselves are never touched: `styleProperties()` always reads canonical, zoom-1
+values, and `saveOdf`/`saveOdfCopy` divide every length they read off the live document by the
+zoom in effect before writing it out — the file is byte-for-byte the same at any zoom. Loading a
+file or starting a new document always (re)builds at zoom 1 first, then is brought up to the
+zoom already in effect, without becoming an undo step; a zoom change through `zoom` itself is one
+ordinary undo step, like any other formatting change.
+
 ## Notes
 
 - Name your component's signals so they don't collide with the handle's properties (`modified`,
   `bold`, `heading`, …) when the editor is the component's root element — a signal becomes a
-  property on the root, and two properties of the same name shadow each other.
+  property on the root, and two properties of the same name shadow each other. The same trap
+  bites an *attribute* binding too: `<DocumentEditor zoom={zoom()}>` with a signal also named
+  `zoom` emits `zoom: zoom`, which QML resolves against the element's own property first — a
+  self-reference, not the outer signal. Name the signal something else (`zoomLevel`, as
+  `examples/document-editor.tsx` does) when it shares a name with `pageWidth`/`pageMargins`/
+  `zoom` too.
 - ODF coverage is the word-like subset: paragraphs and headings (`text:h` with its outline
   level), spans (nested ones too), bullet and numbered lists (nested by level), tables (merged
   cells), inline images, and the named paragraph/character styles of `styles.xml` with the
