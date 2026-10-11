@@ -254,6 +254,17 @@ int RichTextHandler::heading() const
     return c.isNull() ? 0 : c.blockFormat().headingLevel();
 }
 
+QString RichTextHandler::fontFamily() const
+{
+    return rt::readProp(cursor().charFormat(), rt::Prop::FontFamily).toString();
+}
+
+qreal RichTextHandler::fontSize() const
+{
+    const QVariant v = rt::readProp(cursor().charFormat(), rt::Prop::FontSize);
+    return v.isValid() ? v.toDouble() / m_zoom : 0.0; // unset: the editor's own base font stands in
+}
+
 void RichTextHandler::toggleBold()
 {
     QTextCharFormat f;
@@ -302,6 +313,24 @@ void RichTextHandler::toggleBulletList()
 void RichTextHandler::setHeading(int level)
 {
     applyParagraphStyle(level >= 1 && level <= 6 ? QStringLiteral("Heading %1").arg(level) : rt::textBodyStyle());
+}
+
+void RichTextHandler::setFontFamily(const QString &name)
+{
+    if (name.trimmed().isEmpty())
+        return;
+    QTextCharFormat f;
+    f.setProperty(QTextFormat::FontFamilies, QStringList { name });
+    mergeCharFormat(f);
+}
+
+void RichTextHandler::setFontSize(qreal pt)
+{
+    if (pt <= 0)
+        return;
+    QTextCharFormat f;
+    f.setProperty(QTextFormat::FontPointSize, pt * m_zoom); // canonical in, baked in at the current zoom
+    mergeCharFormat(f);
 }
 
 bool RichTextHandler::insertImage(const QUrl &file)
@@ -793,6 +822,49 @@ void RichTextHandler::clearDirectFormatting()
     edit.beginEditBlock();
     restyle(from, to, m_sheet, same, same, true, !sel.isNull());
     edit.endEditBlock();
+    emit formatChanged();
+}
+
+void RichTextHandler::clearFormatting()
+{
+    // Office item 2b (★4): character properties only — restyle()'s `force` can't be split into
+    // block/char halves, so this walks the runs itself and replaces each one with exactly what
+    // its (kept) character style gives, leaving the block/paragraph format untouched.
+    QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
+    if (!doc)
+        return;
+    const QTextCursor sel = selectionCursor();
+    const QTextBlock block = insertionCursor().block();
+    const int from = sel.isNull() ? block.position() : sel.selectionStart();
+    const int to = sel.isNull() ? block.position() + block.length() - 1 : sel.selectionEnd();
+    const int last = doc->characterCount() - 1;
+    QTextCursor edit(doc);
+    edit.beginEditBlock();
+    QTextCursor c(doc);
+    QTextBlock b = doc->findBlock(qBound(0, from, last));
+    const QTextBlock endBlock = doc->findBlock(qBound(0, to, last));
+    for (; b.isValid(); b = b.next()) {
+        const QString para = rt::paragraphStyleOf(b);
+        for (auto it = b.begin(); !it.atEnd(); ++it) {
+            const QTextFragment frag = it.fragment();
+            if (!frag.isValid() || frag.charFormat().isImageFormat())
+                continue;
+            const int s = qMax(frag.position(), from);
+            const int e = qMin(frag.position() + frag.length(), to);
+            if (s >= e)
+                continue;
+            const QString cs = rt::charStyleOf(frag.charFormat());
+            c.setPosition(s);
+            c.setPosition(e, QTextCursor::KeepAnchor);
+            c.setCharFormat(m_sheet.charFormat(para, cs)); // the style chain exactly — keeps cs, drops direct overrides
+        }
+        if (b == endBlock)
+            break;
+    }
+    edit.endEditBlock();
+    // m_sheet.charFormat() above materializes at zoom 1 (canonical units), like restyle() does.
+    if (!qFuzzyCompare(m_zoom, 1.0))
+        rescaleRange(from, to, m_zoom, true);
     emit formatChanged();
 }
 

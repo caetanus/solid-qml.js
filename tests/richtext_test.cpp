@@ -1162,6 +1162,68 @@ private slots:
         QVERIFY(!doc()->isUndoAvailable());
         QCOMPARE(charAt(doc(), 0).fontPointSize(), zoomedSize);
     }
+
+    // ── office item 2b, ★4: character format ─────────────────────────────────────────────────────
+
+    void fontFamilyAndSizeDefaultToUnset()
+    {
+        m_fmt->insertText(QStringLiteral("x"));
+        m_fmt->setCursorPosition(1);
+        QCOMPARE(m_fmt->fontFamily(), QString()); // Default Paragraph Style sets neither (★2 docs)
+        QCOMPARE(m_fmt->fontSize(), 0.0);
+    }
+
+    void setFontFamilyAndSizeApplyToSelection()
+    {
+        m_fmt->insertText(QStringLiteral("Hello"));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(5);
+        m_fmt->setFontFamily(QStringLiteral("Monospace"));
+        m_fmt->setFontSize(16.0);
+        QCOMPARE(m_fmt->fontFamily(), QStringLiteral("Monospace"));
+        QCOMPARE(m_fmt->fontSize(), 16.0);
+        QCOMPARE(charAt(doc(), 2).fontPointSize(), 16.0);
+        const QStringList families = charAt(doc(), 2).property(QTextFormat::FontFamilies).toStringList();
+        QCOMPARE(families, QStringList { QStringLiteral("Monospace") });
+    }
+
+    void fontSizeStaysCanonicalAcrossZoom()
+    {
+        // Like a word processor's font-size box: the same number at any zoom, even though the
+        // live, on-screen point size (fontPointSize()) is baked in at the zoom in effect.
+        m_fmt->insertText(QStringLiteral("Hello"));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(5);
+        m_fmt->setZoom(2.0);
+        m_fmt->setFontSize(14.0);
+        QCOMPARE(m_fmt->fontSize(), 14.0);
+        QCOMPARE(charAt(doc(), 2).fontPointSize(), 28.0);
+        m_fmt->setZoom(1.0);
+        QCOMPARE(m_fmt->fontSize(), 14.0);
+        QCOMPARE(charAt(doc(), 2).fontPointSize(), 14.0);
+    }
+
+    void clearFormattingDropsDirectButKeepsCharStyle()
+    {
+        m_fmt->insertText(QStringLiteral("Hello"));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(5);
+        QVERIFY(m_fmt->applyCharStyle(QStringLiteral("Strong Emphasis")));
+        m_fmt->setFontSize(20.0); // direct, on top of the character style
+        m_fmt->setAlignment(QStringLiteral("center")); // a PARAGRAPH property — must survive
+        QCOMPARE(charAt(doc(), 2).fontPointSize(), 20.0);
+
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(5);
+        m_fmt->clearFormatting();
+
+        m_fmt->setCursorPosition(2);
+        QCOMPARE(m_fmt->currentCharStyle(), QStringLiteral("Strong Emphasis")); // kept
+        QVERIFY(m_fmt->bold()); // "Strong Emphasis" is bold — still applied through the style
+        QVERIFY2(!qFuzzyCompare(charAt(doc(), 2).fontPointSize(), 20.0),
+                  "direct fontSize must be dropped"); // the direct override is gone
+        QCOMPARE(m_fmt->alignment(), QStringLiteral("center")); // paragraph property untouched
+    }
 };
 
 QTEST_MAIN(RichTextTest)

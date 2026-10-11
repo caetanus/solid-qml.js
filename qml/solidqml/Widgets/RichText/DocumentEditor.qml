@@ -28,6 +28,9 @@ RichText {
     readonly property bool strike: !!fmt && fmt.strike
     readonly property bool bulletList: !!fmt && fmt.bulletList
     readonly property int heading: fmt ? fmt.heading : 0 // 0 = body text, 1..6
+    // Office item 2b (★4): character format at the caret/selection. "" / 0 when unset.
+    readonly property string fontFamily: fmt ? fmt.fontFamily : ""
+    readonly property real fontSize: fmt ? fmt.fontSize : 0
     readonly property string alignment: fmt ? fmt.alignment : "left" // left|center|right|justify
     readonly property bool inTable: !!fmt && fmt.inTable
     // Named styles at the caret (paragraph style; character style, "" = none).
@@ -137,6 +140,50 @@ RichText {
     function toggleStrike() { _toggle("strike"); _editor.forceActiveFocus() }
     function toggleBulletList() { if (fmt) fmt.toggleBulletList(); _editor.forceActiveFocus() }
     function setHeading(level) { if (fmt) fmt.setHeading(level); _editor.forceActiveFocus() }
+
+    // ── character format (office item 2b, ★4) ────────────────────────────────────────────────────
+    // setFontFamily/setFontSize: on the selection, or — like toggleBold — on what is typed next
+    // when nothing is selected (own pending state, parallel to RichText.qml's B/I/U/S one: that
+    // one lives in the base file and only knows booleans, this one a {fontFamily, fontSize} value
+    // map, applied by cursorPosition once the typed range is known).
+    property var _pendingFont: ({})
+    property int _pendingFontAt: -1
+    function _setFontPendingOrNow(what, value) {
+        if (!fmt) return
+        if (_editor.selectionStart !== _editor.selectionEnd) {
+            if (what === "fontFamily") fmt.setFontFamily(value); else fmt.setFontSize(value)
+            _editor.forceActiveFocus()
+            return
+        }
+        if (_pendingFontAt !== _editor.cursorPosition) { _pendingFont = ({}); _pendingFontAt = _editor.cursorPosition }
+        var p = _pendingFont
+        p[what] = value
+        _pendingFont = p
+        _editor.forceActiveFocus()
+    }
+    function _applyPendingFont() {
+        if (_pendingFontAt < 0) return
+        var from = _pendingFontAt, to = _editor.cursorPosition
+        var p = _pendingFont
+        _pendingFontAt = -1
+        _pendingFont = ({})
+        if (to <= from || !fmt) return
+        _editor.select(from, to)
+        if (p.fontFamily !== undefined) fmt.setFontFamily(p.fontFamily)
+        if (p.fontSize !== undefined) fmt.setFontSize(p.fontSize)
+        _editor.deselect()
+        _editor.cursorPosition = to
+    }
+    Connections {
+        target: root._editor
+        function onTextChanged() { if (root._pendingFontAt >= 0) Qt.callLater(root._applyPendingFont) }
+    }
+    function setFontFamily(name) { _setFontPendingOrNow("fontFamily", name) }
+    function setFontSize(pt) { _setFontPendingOrNow("fontSize", pt) }
+    // Drops direct CHARACTER formatting in the selection (bold/font/size/…); keeps character
+    // styles. Reuses the engine's clearFormatting() — paragraph properties are untouched, unlike
+    // clearDirectFormatting().
+    function clearFormatting() { if (fmt) fmt.clearFormatting(); _editor.forceActiveFocus() }
     function setAlignment(align) { if (fmt) fmt.setAlignment(align); _editor.forceActiveFocus() }
     function insertTable(rows, cols) { if (fmt) fmt.insertTable(rows, cols); _editor.forceActiveFocus() }
     function addTableRow() { if (fmt) fmt.addTableRow() }

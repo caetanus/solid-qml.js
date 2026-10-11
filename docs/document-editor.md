@@ -70,6 +70,8 @@ State — reactive: reading `doc.bold` in a binding (a `classList`, a text) foll
 | `modified` | boolean | Unsaved edits. Cleared by `loadOdf`, `saveOdf`, `newDocument` (not by `saveOdfCopy`). |
 | `bold`, `italic`, `underline`, `strike` | boolean | Character format at the caret / selection. |
 | `heading` | number | `0` not a heading, `1`–`6` heading (outline) level. |
+| `fontFamily` | string | Character format at the caret / selection; `""` when unset (Default Paragraph Style carries no explicit font by design — the editor's own font stands in). |
+| `fontSize` | number | pt, in canonical (zoom-1) units — like a word processor's font-size box, the same number at any zoom; `0` when unset. |
 | `currentParagraphStyle` | string | The caret's paragraph style (`"Text Body"`, `"Heading 1"`, …). |
 | `currentCharStyle` | string | The character style at the caret, `""` for none. |
 | `alignment` | `"left" \| "center" \| "right" \| "justify"` | Paragraph alignment. |
@@ -88,6 +90,8 @@ Methods:
 | `insertText(text)` | | At the caret (replacing a selection); `\n` starts a paragraph, as Enter does (next style included). |
 | `toggleBold()`, `toggleItalic()`, `toggleUnderline()`, `toggleStrike()` | | On the selection; with nothing selected, on what is typed next (as the toolbar does). |
 | `setHeading(level)` | | `applyParagraphStyle("Heading " + level)`; `0` → `"Text Body"`. |
+| `setFontFamily(name)`, `setFontSize(pt)` | | On the selection; with nothing selected, on what is typed next (same mechanics as `toggleBold`). `pt` is canonical (zoom-1) units, applied at the zoom in effect. |
+| `clearFormatting()` | | Drops direct CHARACTER formatting (bold, font, size, …) in the selection; keeps character styles. Unlike `clearDirectFormatting()`, paragraph properties (alignment, margins, …) are untouched. |
 | `setAlignment(align)` | | On every paragraph the selection touches. |
 | `toggleBulletList()` | | |
 | `insertTable(rows, cols)`, `addTableRow()`, `addTableColumn()`, `removeTableRow()`, `removeTableColumn()` | | Row/column edits act on the cell at the caret. |

@@ -38,6 +38,12 @@ class RichTextHandler : public QObject {
     Q_PROPERTY(bool strike READ strike NOTIFY formatChanged)
     Q_PROPERTY(bool bulletList READ bulletList NOTIFY formatChanged)
     Q_PROPERTY(int heading READ heading NOTIFY formatChanged)
+    // Office item 2b (★4): character format at the caret/selection, same mechanics as bold. ""/0
+    // when unset — Default Paragraph Style carries no explicit font by design (the editor's own
+    // font stands in; see ★2). fontSize is in points, in CANONICAL (zoom-1) units either way —
+    // like a word processor's font-size box, it reads the same number at any zoom.
+    Q_PROPERTY(QString fontFamily READ fontFamily NOTIFY formatChanged)
+    Q_PROPERTY(qreal fontSize READ fontSize NOTIFY formatChanged)
     // Named styles at the caret: the paragraph style, the character style ("" = none).
     Q_PROPERTY(QString currentParagraphStyle READ currentParagraphStyle NOTIFY formatChanged)
     Q_PROPERTY(QString currentCharStyle READ currentCharStyle NOTIFY formatChanged)
@@ -83,6 +89,8 @@ public:
     bool strike() const;
     bool bulletList() const;
     int heading() const;
+    QString fontFamily() const;
+    qreal fontSize() const; // pt, canonical (zoom-1) units
 
     Q_INVOKABLE void toggleBold();
     Q_INVOKABLE void toggleItalic();
@@ -91,6 +99,14 @@ public:
     Q_INVOKABLE void toggleBulletList();
     // 0 → "Text Body", 1..6 → "Heading n" (applyParagraphStyle).
     Q_INVOKABLE void setHeading(int level);
+    // Office item 2b (★4): on the selection, or on what is typed next with nothing selected —
+    // same mechanics as toggleBold. `pt` is canonical (zoom-1); applied at the zoom in effect.
+    Q_INVOKABLE void setFontFamily(const QString &name);
+    Q_INVOKABLE void setFontSize(qreal pt);
+    // The selection's runs back to exactly what their (character) style gives — named character
+    // styles are KEPT, only direct character formatting (bold, font, size, …) is dropped. Unlike
+    // clearDirectFormatting(), paragraph properties (alignment, margins, …) are untouched.
+    Q_INVOKABLE void clearFormatting();
 
     // ── named styles ──────────────────────────────────────────────────────────────────────────
     // Creates or updates a style. props: { family: "paragraph"|"character" (new styles; default

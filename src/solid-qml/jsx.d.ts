@@ -188,6 +188,10 @@ declare global {
     readonly bulletList: boolean;
     /** 0 = body text, 1..6 = heading level. */
     readonly heading: number;
+    /** "" when unset (Default Paragraph Style carries no explicit font by design). */
+    readonly fontFamily: string;
+    /** pt, canonical (zoom-1) units; 0 when unset. */
+    readonly fontSize: number;
     readonly alignment: "left" | "center" | "right" | "justify";
     readonly inTable: boolean;
     /** The caret's paragraph style ("Default Paragraph Style", "Text Body", "Heading 1", …). */
@@ -215,6 +219,13 @@ declare global {
     toggleBulletList(): void;
     /** 0 = "Text Body", 1..6 = "Heading n" (applyParagraphStyle). */
     setHeading(level: number): void;
+    /** On the selection, or — like toggleBold — on what is typed next with nothing selected. */
+    setFontFamily(name: string): void;
+    /** pt, canonical (zoom-1) units. Same mechanics as setFontFamily. */
+    setFontSize(pt: number): void;
+    /** Drops direct CHARACTER formatting (bold, font, size, …) in the selection; keeps character
+     *  styles and leaves paragraph properties untouched (unlike clearDirectFormatting()). */
+    clearFormatting(): void;
     setAlignment(align: "left" | "center" | "right" | "justify"): void;
     insertTable(rows: number, cols: number): void;
     addTableRow(): void;
