@@ -42,6 +42,22 @@ signals:
     void menuClosed();
 
 protected:
+    // QQuickMenu::contentData() (the default-property getter the QML engine calls to append EVERY
+    // declared child — a static MenuItem, a <For>'s Repeater, …) forces its own default content
+    // item into existence via `executeContentItem()` the FIRST time it's called, if `d->contentItem`
+    // is still null (see qquickmenu.cpp — this is how a vanilla style's Menu "just works" with a
+    // Repeater child with no C++ involved at all). That first call happens while the QML engine is
+    // still building this object's children — i.e. BEFORE componentComplete(). Setting OUR content
+    // item there (as this class used to) is too late: the engine's own default already won the
+    // getter's `if (!d->contentItem)` race. A STATIC MenuItem is unaffected (contentData_append adds
+    // it straight to contentModel, independent of contentItem) — but a Repeater/Instantiator child
+    // (a <For>'s dynamic rows) IS: contentData_append reparents it under `p->contentItem` — the
+    // ENGINE'S discarded default, not ours — so it (and every item it creates) is silently lost the
+    // moment componentComplete() swaps in our real content item. classBegin() runs right after this
+    // object's own QML context
+    // is attached (the engine's QQmlParserStatus protocol: setContextForObject, THEN classBegin,
+    // before any child's property gets appended) — early enough to win that race.
+    void classBegin() override;
     void componentComplete() override;
 
 private:

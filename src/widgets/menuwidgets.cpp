@@ -113,11 +113,21 @@ void Menu::setAuthorClass(const QVariant &v)
     emit authorClassChanged();
 }
 
+void Menu::classBegin()
+{
+    QQuickMenu::classBegin();
+    // MUST happen here, not in componentComplete() — see the declaration's comment in
+    // menuwidgets.h: QQuickMenu::contentData()'s getter (called for every declared child,
+    // including a <For>'s Repeater) forces a DEFAULT content item into existence on first access
+    // if none is set yet; classBegin() runs before the engine processes this object's own children,
+    // winning that race so a Repeater reparents into OUR content item, never a discarded default.
+    setBackground(createBoundItem(this, QStringLiteral("solidwidgets-menu-bg"), kMenuBackground));
+    setContentItem(createBoundItem(this, QStringLiteral("solidwidgets-menu-content"), kMenuContent));
+}
+
 void Menu::componentComplete()
 {
     QQuickMenu::componentComplete();
-    setBackground(createBoundItem(this, QStringLiteral("solidwidgets-menu-bg"), kMenuBackground));
-    setContentItem(createBoundItem(this, QStringLiteral("solidwidgets-menu-content"), kMenuContent));
     syncImplicit();
 }
 
