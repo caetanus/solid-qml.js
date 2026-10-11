@@ -59,6 +59,12 @@ A complete example (own toolbar, open/save by path, modified dot, word count) is
 | `zoom` | number, clamped `0.5`–`3.0` | A **real relayout**: font/point sizes, margins and inline images are rebuilt at the new size (not a scale transform — text stays sharp). Does not change what `saveOdf` writes. The app owns the value; see `onZoomRequested`. |
 | `onZoomRequested` | `(delta: number) => …` | Ctrl+wheel (±0.1 per notch), Ctrl+= / Ctrl+- (±0.1), Ctrl+0 (`0`, meaning "reset"). The editor only asks; set `zoom` in response (e.g. `setZoom(z => delta === 0 ? 1 : clamp(z + delta))`). |
 | `onHeadingsChanged` | `() => …` | The outline changed, **debounced** (300 ms) and only when `doc.headings()` actually differs from before. Refresh a table of contents from `doc.headings()` here. |
+| `onBlocksLoaded` | `() => …` | Every block was replaced: after `loadOdf`, `newDocument` (and when the editor first gets its document). The app's first full pass — walk `doc.blockIds()`. No `onBlockRemoved`/`onBlockChanged` is sent for the blocks a load replaced. See "Blocks and marks". |
+| `onBlockChanged` | `(blockId: string) => …` | A block's **text** changed, or a block appeared (Enter, a paste, an undo that brings one back). Coalesced per block and delivered on the next event-loop turn (three keystrokes in one paragraph → one call); never for a formatting-only change or for marks. |
+| `onBlockRemoved` | `(blockId: string) => …` | The block left the document (merged into its neighbour, deleted, an undone split): drop the app's state for it. Same delivery as `onBlockChanged`, before it. |
+| `onMarkClicked` | `(mark, x, y, windowX, windowY) => …` | A click on a mark. `mark` is `{kind, id, blockId, start, end}`; `x, y` in the editor's coordinates, `windowX, windowY` the same point in the window's (what a `<Menu ref>`'s `open(x, y)` takes). The caret moves as usual. |
+| `onMarkContextMenu` | `(mark, x, y, windowX, windowY) => …` | A right-click on a mark — show suggestions here, synchronously (a Wayland popup needs the click's input serial). A right-click elsewhere is left alone. |
+| `onMarkHovered` | `(mark \| null) => …` | The pointer entered a mark, or left it (`null`). |
 
 The editor starts **empty and unmodified** (no demo text). Anything else is a transpile error.
 
@@ -109,6 +115,14 @@ Methods:
 | `undo()`, `redo()`, `focusEditor()` | | |
 | `cut()`, `copy()`, `paste()` | | HTML (formatting kept, rescaled to canonical zoom-1 sizes — see "Clipboard" below) and plain text on the SYSTEM clipboard; `cut()`/`copy()` are no-ops without a selection, `paste()` when `!canPaste`. Ctrl+C/X/V are routed to these (not the editor's own built-in handling) — these are also there for an app's own toolbar/menu. |
 | `insertHtml(html)` | | At the caret (replacing a selection), rescaled to the zoom in effect — the same choke point `paste()` uses for its HTML branch. |
+| `blockIds()` | `string[]` | Every block's id, in document order (see "Blocks and marks"). |
+| `blockIdAt(pos)` | string | The id of the block holding document position `pos`; `""` outside the document. |
+| `blockText(blockId)` | string | The block's plain text, UTF-16 — the space mark offsets count in (a soft line break reads as `"\n"`, same length). `""` for an unknown id. |
+| `addMark(kind, blockId, start, end, id?)` | string | Marks `[start, end)` of the block's text; returns the mark's id (`id`, or a generated one), `""` for an unknown block or a range outside its text. Ids are the app's: not checked for uniqueness. |
+| `clearMarks(kind, blockId?)` | | Every mark of `kind`, or only those in `blockId`. Other kinds and blocks are untouched. |
+| `markStyle(kind, style)` | `{ ok, error }` | How `kind` is drawn: `{ underline: "wave" \| "single" \| "none", color, background }` — left out: kept; `null`: removed. An error (`underline: expected …`, `color: not a color …`, an unknown property) changes nothing. |
+| `markAt(pos)` | `{kind, id, blockId, start, end}` or `null` | The mark over the character at `pos`. |
+| `replaceRange(blockId, start, end, text)` | boolean | Replaces `[start, end)` of the block's text (apply a suggestion): one undo step, the block keeps its id, the replaced text's character format carries over; `"\n"` starts a paragraph (as `insertText`). `false` for an unknown id or a range outside the text. |
 
 Formatting calls give the keyboard back to the editor, so an app toolbar button does not leave
 the caret stranded. Ctrl+B / Ctrl+I / Ctrl+U work with or without the built-in toolbar.
@@ -281,6 +295,86 @@ counts as one character, its `U+FFFC` placeholder). `selectionWordCount`/`select
 `selectedText` are computed live, not kept incrementally — they are bounded by the selection's
 own size, not the document's, so there is nothing to precompute.
 
+## Blocks and marks
+
+What a live spell or grammar checker, or review highlights, need: a stable handle on each
+paragraph, a way to hear which paragraphs changed, and squiggles/highlights drawn over the text
+without becoming part of it.
+
+```tsx
+const check = (id: string) => {
+  doc.clearMarks("spelling", id);
+  misspelled(doc.blockText(id))                             // the app's checker
+    .forEach((w) => doc.addMark("spelling", id, w.start, w.end));
+};
+<DocumentEditor ref={doc}
+  onBlocksLoaded={() => doc.blockIds().forEach(check)}       // the first full pass
+  onBlockChanged={(id) => check(id)}                         // then only what changed
+  onBlockRemoved={(id) => forget(id)}
+  onMarkContextMenu={(m, x, y, wx, wy) => { setPending(m); menu.open(wx, wy); }} />
+// in the menu: doc.replaceRange(pending().blockId, pending().start, pending().end, "the")
+```
+
+`examples/document-editor.tsx` does exactly this with a toy rule (every "teh" is misspelled;
+right-click offers "the").
+
+**Block ids.** Every block — paragraph, heading, list item, table-cell paragraph — has a string
+id, unique in the document. It stays the same while the block is typed in and while other blocks
+are inserted or removed. Enter gives the part **after** the caret a new id (the part before keeps
+its own, even when it is empty); a merge (Backspace at the start of a block, Delete at the end of
+one) keeps the upper block's id — except when the upper block is empty, then it is the one that
+goes and the lower keeps its id. Every block of a paste is new (the clipboard carries no ids, not
+even from this editor). Undo and redo give recreated blocks the ids they had: undoing a merge
+brings the merged-away paragraph back with its old id; redoing a split re-creates the same new
+id. Ids are saved in the file as `xml:id` on `text:p`/`text:h` (ODF 1.2+, read back by our
+reader); a file without them (or repeating one) gets generated ids on load. A new document or
+a load replaces every id (`onBlocksLoaded`).
+
+How: the id lives in the block's `QTextBlockUserData`, which Qt keeps with the block node itself
+(verified against Qt 6.11 `qtextdocument_p.cpp`: a split inserts a NEW node for the text after
+the split point; a merge erases the lower node — or the upper one when it is empty — and its user
+data is deleted with it, which is how removals are detected exactly). Undo/redo do not restore
+user data, so the engine records, per structural edit, the ids it removed and created under the
+undo-stack state it ends at, and hands them back when that step is undone/redone
+(`QTextDocument::undoCommandAdded` tells a new edit from a replay). An undo through anything
+other than the document's own stack (a host calling `QTextDocument::undo` is fine — that IS the
+stack) cannot be told apart; at worst a recreated block gets a fresh id.
+
+`onBlockChanged` compares a hash of each edited block's text, so bold, a style, alignment or zoom
+never fire it. Detection is incremental: only the blocks an edit touched are looked at.
+
+**Marks** are an overlay, not document content: they are never saved, copied to the clipboard,
+put in the undo history, and adding or clearing them does not set `modified`. They are kept as
+document positions and follow the text: an edit before a mark shifts it; after it, nothing;
+typing exactly at its start shifts it, exactly at its end leaves it as it was (the new character
+is not part of it). An edit **inside** a mark — typing into it, deleting part or all of it,
+`replaceRange` over it — **removes** it: a spell/grammar result for text that changed is stale,
+and the app re-checks the block on `onBlockChanged` anyway. Marks move with their text across
+blocks too: Enter before a mark carries it into the new block (`markAt` then reports the new
+`blockId` and offsets relative to it); a merge carries the lower block's marks into the upper
+one. Formatting never touches them. Undo is an edit like any other (it does not bring marks back).
+`loadOdf`/`newDocument` start without marks. Cost: an edit shifts the mark list once — O(marks),
+a tight loop — nothing else.
+
+Default looks: `"spelling"` a red wave, `"grammar"` a blue wave, `"highlight"` a yellow
+background; any other kind a grey single underline until the app calls `markStyle`. A mark kind
+can have both an underline and a background.
+
+Drawing: the marks overlay is a child item of the text area stacked **under** the text (so a
+highlight sits behind the glyphs and the selection shows over it) — rectangles for backgrounds and
+single underlines, a repeated sine texture for the wave. It is not a `QSyntaxHighlighter`: Qt
+Quick's text node engine (Qt 6.11 `qquicktextnodeengine.cpp`, `mergeFormats`) only honours
+additional layout formats that carry a foreground, a background or an anchor, and draws underlines
+from `QFont::underline()` as straight lines — a `WaveUnderline`/`SpellCheckUnderline` format is not
+drawn by `TextEdit` at all, and changing layout formats re-lays-out the block. The overlay follows
+the viewport (`ItemObservesViewport`): it only lays out the marks of the visible part plus a
+quarter viewport around it, found by a binary search over the (sorted) marks, and is redone when
+the view scrolls out of that band, the text changes, or the marks change.
+
+Interaction: clicks and hover come from passive pointer handlers on the text area, so the caret
+and selection behave exactly as without marks; the hit test takes the character under the pointer
+(not the nearest caret position).
+
 ## Notes
 
 - Name your component's signals so they don't collide with the handle's properties (`modified`,
@@ -304,6 +398,5 @@ own size, not the document's, so there is nothing to precompute.
   spacing gets a quarter pixel under it (invisible; it keeps Qt's viewport culling from
   over-drawing). Files saved by the earlier Qt-based writer still open (their headings come back
   as direct formatting on Default Paragraph Style).
-- Marks (spell-check squiggles, review highlights) are the next item on the office roadmap.
 - Large documents (> 10 000 characters, however they got there: a load, typing, a paste) render
   only the part near the viewport, as Qt's `TextEdit` does for a large `text`.

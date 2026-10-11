@@ -2,6 +2,7 @@
 // toolbar is hidden; this component draws its own, reading the format state at the caret through
 // the ref (doc.bold, doc.heading, …) and calling the editor's operations. File IO returns
 // {ok, error}; `modified` drives the title dot; the debounced onContentChanged keeps a word count.
+// Marks (office item 3): a toy spell check marks every "teh"; right-click one to replace it.
 // Native-only (QML surface): run it with examples/document-editor.qml.tsx. See docs/document-editor.md.
 import { createSignal } from "solid-js";
 import { div, text } from "../src/solid-qml/runtime";
@@ -33,6 +34,32 @@ export function DocumentEditorDemo() {
   const fresh = () => {
     const r = doc.newDocument();
     setStatus(r.ok ? "New document" : "New document failed: " + r.error);
+  };
+
+  // A toy spell check: every "teh" is a spelling mark — the whole document on a load (onBlocksLoaded),
+  // then only the paragraph that changed (onBlockChanged, coalesced by the editor). Marks are an
+  // overlay: they never reach the file, the clipboard or the undo history.
+  let fixMenu: any;
+  const [fixing, setFixing] = createSignal<DocumentMark | null>(null);
+  const checkBlock = (id: string) => {
+    doc.clearMarks("spelling", id);
+    // Offsets are UTF-16 positions in the paragraph's text: each "teh" ends where its part does.
+    doc.blockText(id).split("teh").slice(0, -1).reduce((at, part) => {
+      doc.addMark("spelling", id, at + part.length, at + part.length + 3);
+      return at + part.length + 3;
+    }, 0);
+  };
+  const checkAll = () => doc.blockIds().forEach((id) => checkBlock(id));
+  // Opened synchronously inside the right-click (a Wayland popup needs the fresh input serial), at
+  // the click's window coordinates (what a menu's open(x, y) takes).
+  const offerFix = (mark: DocumentMark, x: number, y: number) => {
+    setFixing(mark);
+    fixMenu.open(x, y);
+  };
+  const applyFix = () => {
+    const m = fixing();
+    if (m) doc.replaceRange(m.blockId, m.start, m.end, "the");
+    setFixing(null);
   };
 
   return (
@@ -72,7 +99,13 @@ export function DocumentEditorDemo() {
           onZoomRequested={(delta) => applyZoomDelta(delta)}
           onModifiedChanged={(m) => setDirty(m)}
           onContentChanged={() => {}}
-          onHeadingsChanged={() => refreshOutline()} />
+          onHeadingsChanged={() => refreshOutline()}
+          onBlocksLoaded={() => checkAll()}
+          onBlockChanged={(id) => checkBlock(id)}
+          onMarkContextMenu={(m, x, y, wx, wy) => offerFix(m, wx, wy)} />
+        <Menu ref={fixMenu}>
+          <MenuItem onClick={() => applyFix()}>the</MenuItem>
+        </Menu>
       </div>
       <div class="de-status">
         <text class="de-status-t">{(dirty() ? "● " : "") + status()}</text>
