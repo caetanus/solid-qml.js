@@ -80,6 +80,7 @@ export const ELEMENT_ATTRS: Record<string, Attrs> = {
   summary: CSS,
   // ── native widgets (emit/native/*) ────────────────────────────────────────────────────────────
   ToolBar: CSS,
+  Swipe: { ...CSS, right: "expr", farRight: "expr", left: "expr", farLeft: "expr", onSwipe: "fn" },
   TabBar: { ...CSS, current: "expr", onChange: "fn" },
   TabButton: {},
   SplitView: { ...CSS, orientation: { kind: "lit", values: ["horizontal", "vertical"] } },

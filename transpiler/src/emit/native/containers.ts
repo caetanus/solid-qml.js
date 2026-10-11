@@ -124,6 +124,32 @@ const emitToolBar: NativeEmit = (propsArg, children, scope, level, guard) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
+// <Swipe right="…" farRight="…" left="…" farLeft="…" onSwipe={(action) => …}>row</Swipe>
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** <Swipe …>children</Swipe> → W.Swipe: a row pushed sideways to act on it (Mailbox's list). The
+ *  C++ Swipe (src/widgets/swipe.cpp) slides the children, states the action the row is past
+ *  (`:right` `:far-right` `:left` `:far-left`) and shows the label of that direction under it;
+ *  `onSwipe` gets the action ("right" | "far-right" | "left" | "far-left") once the row has slid
+ *  out. A direction with no label does not swipe. */
+const emitSwipe: NativeEmit = (propsArg, children, scope, level, guard) => {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  const props = propMap(propsArg);
+  const classLine = buildCssClassLine(cssProps(props), scope, i(1));
+  markWidgetLib(scope);
+  const lines = [`${pad}W.Swipe {`, ...classLine, ...guardLine(guard, level)];
+  for (const k of ["right", "farRight", "left", "farLeft"]) {
+    const v = bindExpr(props.get(k), scope);
+    if (v !== null) lines.push(`${i(1)}${k}Label: ${v}`);   // QQuickItem has left/right already
+  }
+  const fn = asFn(props.get("onSwipe"));
+  if (fn) lines.push(`${i(1)}onSwiped: (action) => { ${handlerBody(fn, scope, "action")} }`);
+  lines.push(...emitChildren(children, scope, level + 1), `${pad}}`);
+  return lines;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
 // <TabBar current={i()} onChange={(i)=>…}> with <TabButton>label</TabButton> children
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -402,6 +428,7 @@ const emitPageIndicator: NativeEmit = (propsArg, _children, scope, level, guard)
 
 registerNativeTags({
   ToolBar: emitToolBar,
+  Swipe: emitSwipe,
   TabBar: emitTabBar,
   TabButton: emitTabButtonError,
   SplitView: emitSplitView,

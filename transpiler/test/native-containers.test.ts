@@ -49,6 +49,23 @@ async function qmlType(src: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// <Swipe>
+// ---------------------------------------------------------------------------
+
+test("containers: <Swipe> instantiates W.Swipe with its labels, handler and children", async () => {
+  const out = await qml(`export function F(){ const [n, setN] = createSignal(""); return <Swipe class="sw" right="Arquivar" left={n()} onSwipe={(a) => setN(a)}><div class="row"><text>r</text></div></Swipe>; }`);
+  assert.match(out, /W\.Swipe \{/);
+  assert.match(out, /cssClass: \["sw"\]/);
+  assert.match(out, /rightLabel: "Arquivar"/);
+  assert.match(out, /leftLabel: n/);
+  assert.doesNotMatch(out, /farRightLabel:/);
+  assert.match(out, /onSwiped: \(action\) => \{ n = action;? \}/);
+  const sw = out.indexOf("W.Swipe {");
+  const row = out.indexOf("\"row\"");
+  assert.ok(sw >= 0 && row > sw, "the row must be a child of W.Swipe");
+});
+
+// ---------------------------------------------------------------------------
 // <ToolBar>
 // ---------------------------------------------------------------------------
 

@@ -89,6 +89,7 @@ solidqml_moc_headers = files(
     'src/widgets/datefield.h',
     'src/widgets/delaybutton.h',
     'src/widgets/details.h',
+    'src/widgets/swipe.h',
     'src/widgets/dialog.h',
     'src/widgets/drawer.h',
     'src/widgets/tooltip.h',
@@ -147,6 +148,7 @@ solidqml_sources = files(
     'src/widgets/datefield.cpp',
     'src/widgets/delaybutton.cpp',
     'src/widgets/details.cpp',
+    'src/widgets/swipe.cpp',
     'src/widgets/dialog.cpp',
     'src/widgets/drawer.cpp',
     'src/widgets/tooltip.cpp',
@@ -424,3 +426,11 @@ if build_richtext
       dependencies: richtext_test_deps),
     env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)
 endif
+
+# <Swipe>: a click reaches the child; a sideways drag or touchpad swipe slides the row and acts.
+test('widgets-swipe',
+  executable('test-widgets-swipe', files('tests/swipe_test.cpp'),
+    qt6.preprocess(moc_sources: files('tests/swipe_test.cpp'), dependencies: a11y_test_deps),
+    include_directories: include_directories('src'),
+    dependencies: a11y_test_deps),
+  env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)

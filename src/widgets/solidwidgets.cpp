@@ -12,6 +12,7 @@
 #include "sliders.h"
 #include "delaybutton.h"
 #include "details.h"
+#include "swipe.h"
 #include "dialog.h"
 #include "drawer.h"
 #include "spindial.h"
@@ -63,6 +64,7 @@ void registerTypes()
     qmlRegisterType<Drawer>("solidqml.Widgets", 1, 0, "Drawer");
     qmlRegisterType<ToolTip>("solidqml.Widgets", 1, 0, "ToolTip");
     qmlRegisterType<Details>("solidqml.Widgets", 1, 0, "Details");
+    qmlRegisterType<Swipe>("solidqml.Widgets", 1, 0, "Swipe");
     qmlRegisterType<Dialog>("solidqml.Widgets", 1, 0, "Dialog");
     qmlRegisterType<Select>("solidqml.Widgets", 1, 0, "Select");
     qmlRegisterType<MonthGrid>("solidqml.Widgets", 1, 0, "MonthGrid");
