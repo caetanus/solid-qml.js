@@ -9,6 +9,17 @@ formatting. It shares its engine with `<RichText>` (module `solidqml.Widgets.Ric
 
 It is native-only (no browser equivalent); the module is imported only when the tag is used.
 
+The caret follows keyboard movement, typing, paste, undo/redo, and programmatic selection with
+one line of context where space permits. PageUp/PageDown move by a viewport; Shift extends the
+selection, and Ctrl+Home/End reach the document boundaries. `setCursorPosition(pos)` moves the
+caret and reveals it. `scrollToPosition(pos)` only moves the viewport. Wheel and scrollbar
+movement do not snap back to the caret. This works in page and continuous views at every zoom.
+
+The vertical scrollbar shares the CSS engine's Controls-free desktop implementation, including
+its hover/pressed appearance, track paging, and thumb dragging. Its range follows the full document
+extent even when pages and text rendering are culled. Both editor tags accept dynamic `class`
+strings and `classList`, for example `class="sheet" classList={{ paged: pageView() }}`.
+
 ## Usage
 
 ```tsx

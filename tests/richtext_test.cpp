@@ -3019,9 +3019,13 @@ private slots:
                 QVERIFY(sheet->y() + sheet->height() >= w.body()->property("contentY").toReal() - 600);
                 QVERIFY(sheet->y() <= w.body()->property("contentY").toReal() + 1200);
             }
-            const auto oldSheets = sheets;
-            w.edit()->setProperty("cursorPosition", 100);
-            w.fmt()->setCursorPosition(100);
+            // Cursor movement now follows the caret. Edit in the viewport and capture the
+            // pool AFTER positioning, so this checks edit-driven recycling, not navigation.
+            const int position = qobject_cast<QQuickTextEdit *>(w.edit())->positionAt(
+                120, w.body()->property("contentY").toReal() + w.body()->height() / 2);
+            w.edit()->setProperty("cursorPosition", position);
+            QCoreApplication::processEvents();
+            const auto oldSheets = PageEditor::sheets(w.root.data());
             QSignalSpy changed(w.root.data(), SIGNAL(pagesChanged()));
             w.fmt()->insertText(QStringLiteral("x"));
             QCoreApplication::processEvents();
