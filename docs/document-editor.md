@@ -93,7 +93,7 @@ Methods:
 | `loadOdf(path)` | `{ ok, error }` | Opens an `.odt`, with its named styles. On failure (`file not found: …`, `not an OpenDocument file: …`) the current document is kept. The load is not an undo step. |
 | `saveOdf(path)` | `{ ok, error }` | Writes an `.odt` (our writer: named styles, heading levels, images embedded; atomic — a failed write leaves the old file). Clears `modified` on success. |
 | `saveOdfCopy(path)` | `{ ok, error }` | The same `.odt`, for autosave / crash recovery: the document is left as it was — `modified` stays, the undo history is untouched. |
-| `newDocument()` | | Empty, unmodified document in Default Paragraph Style; drops undo history, images and style definitions (back to the built-in styles). |
+| `newDocument(options?)` | `{ ok, error }` | Empty, unmodified document in Default Paragraph Style; drops undo history, images and style definitions (back to the built-in styles). With `options`, styles are defined first (see "Starting a document with styles" below) and `{ ok, error }` reports it, like `loadOdf`. |
 | `toHtml()` / `plainText()` | string | The content; `plainText()` separates paragraphs with `\n`. |
 | `insertText(text)` | | At the caret (replacing a selection); `\n` starts a paragraph, as Enter does (next style included). |
 | `toggleBold()`, `toggleItalic()`, `toggleUnderline()`, `toggleStrike()` | | On the selection; with nothing selected, on what is typed next (as the toolbar does). |
@@ -164,6 +164,30 @@ Default Paragraph Style's `fontFamily` and `fontSize` are the document's base fo
 saved (a LibreOffice file's 12pt Times stays 12pt Times there), but on screen the editor's own
 font stands in for them, so a file's base font never overrides the app's typography. Every other
 style's font shows as defined.
+
+### Starting a document with styles
+
+`newDocument({ styles, paragraphStyle })` sets up a document's style table in one call, instead
+of `newDocument()` followed by a `defineStyle()` per style:
+
+```tsx
+const r = doc.newDocument({
+  styles: {
+    "Text Body": { fontSize: 11, lineHeight: 1.4 },
+    "Note": { parent: "Text Body", italic: true, nextStyle: "Text Body" },
+  },
+  paragraphStyle: "Text Body",
+});
+if (!r.ok) setStatus("Could not start the document: " + r.error);
+```
+
+Each entry of `styles` is validated exactly like `defineStyle(name, props)` (same property rules,
+the same parent/family/cycle checks); `paragraphStyle` must name a paragraph style (one of the
+built-ins, or one just defined) and is what the document's empty first paragraph starts in. Any
+error — anywhere in `styles`, or an unknown `paragraphStyle` — changes nothing: the document kept
+is whichever one existed before the call, exactly as `loadOdf` leaves it on a failed load. On
+success it behaves like the plain `newDocument()` otherwise: no undo step, `modified` stays
+`false`, and the styles are written to `styles.xml` on `saveOdf` like any other definition.
 
 ## Page look & zoom
 

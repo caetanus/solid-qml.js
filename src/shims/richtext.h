@@ -224,8 +224,13 @@ public:
     // was — `modified` stays, the undo stack is untouched. errorString reports the result.
     Q_INVOKABLE bool saveOdfCopy(const QUrl &file);
     Q_INVOKABLE bool loadOdf(const QUrl &file);
-    // An empty, unmodified document (no undo history, no image resources).
-    Q_INVOKABLE void newDocument();
+    // An empty, unmodified document (no undo history, no image resources). `options.styles`
+    // (office item 2b addendum): { name: {props as in defineStyle()}, … } defined/updated with
+    // the SAME validation as defineStyle() — an error leaves the PREVIOUS document untouched and
+    // returns {ok:false, error}; `options.paragraphStyle` is what the empty first paragraph
+    // starts in (default: Default Paragraph Style). Still not an undo step; `modified` is still
+    // cleared. The definitions are written to styles.xml on save like any other.
+    Q_INVOKABLE QVariantMap newDocument(const QVariantMap &options = QVariantMap());
 
     // Content, for the app: the HTML Qt's editor holds, and plain text with "\n" between paragraphs.
     Q_INVOKABLE QString toHtml() const;

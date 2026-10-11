@@ -1640,6 +1640,91 @@ private slots:
         qInfo("countsOnThe300PageBook: %lld words, %lld chars, 50 mid-document edits in %lld ms (%.2f ms/edit)",
               qint64(m_fmt->wordCount()), qint64(m_fmt->charCount()), editMs, editMs / 50.0);
     }
+
+    // ── office item 2b addendum: newDocument(options) ──────────────────────────────────────────────
+
+    void newDocumentWithoutOptionsIsUnchanged()
+    {
+        m_fmt->insertText(QStringLiteral("x"));
+        const QVariantMap r = m_fmt->newDocument();
+        QCOMPARE(r.value(QStringLiteral("ok")).toBool(), true);
+        QCOMPARE(m_fmt->plainText(), QString());
+        QCOMPARE(m_fmt->isModified(), false);
+    }
+
+    void newDocumentWithOptionsDefinesStylesAndSetsTheFirstParagraph()
+    {
+        QVariantMap styles;
+        styles.insert(QStringLiteral("Text Body"), QVariantMap { { QStringLiteral("fontSize"), 11.0 } });
+        QVariantMap note;
+        note.insert(QStringLiteral("parent"), QStringLiteral("Text Body"));
+        note.insert(QStringLiteral("italic"), true);
+        styles.insert(QStringLiteral("Note"), note);
+        QVariantMap options;
+        options.insert(QStringLiteral("styles"), styles);
+        options.insert(QStringLiteral("paragraphStyle"), QStringLiteral("Note"));
+
+        const QVariantMap r = m_fmt->newDocument(options);
+        QCOMPARE(r.value(QStringLiteral("ok")).toBool(), true);
+        QCOMPARE(r.value(QStringLiteral("error")).toString(), QString());
+        QCOMPARE(m_fmt->currentParagraphStyle(), QStringLiteral("Note"));
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("Text Body")).value("fontSize").toDouble(), 11.0);
+        QVERIFY(m_fmt->styleProperties(QStringLiteral("Note")).value("italic").toBool());
+        QCOMPARE(m_fmt->styleProperties(QStringLiteral("Note")).value("parent").toString(), QStringLiteral("Text Body"));
+    }
+
+    void newDocumentWithOptionsIsNotAnUndoStepAndIsUnmodified()
+    {
+        QVariantMap options;
+        QVariantMap styles;
+        styles.insert(QStringLiteral("Note"), QVariantMap { { QStringLiteral("italic"), true } });
+        options.insert(QStringLiteral("styles"), styles);
+        m_fmt->insertText(QStringLiteral("x")); // give it SOMETHING to (not) undo
+        const QVariantMap r = m_fmt->newDocument(options);
+        QVERIFY(r.value(QStringLiteral("ok")).toBool());
+        QCOMPARE(m_fmt->isModified(), false);
+        QVERIFY(!doc()->isUndoAvailable());
+    }
+
+    void newDocumentWithOptionsWritesStylesToOdf()
+    {
+        QVariantMap options;
+        QVariantMap styles;
+        styles.insert(QStringLiteral("Note"), QVariantMap { { QStringLiteral("italic"), true } });
+        options.insert(QStringLiteral("styles"), styles);
+        QVERIFY(m_fmt->newDocument(options).value(QStringLiteral("ok")).toBool());
+        const QString odt = m_dir.filePath(QStringLiteral("new-with-styles.odt"));
+        QVERIFY(m_fmt->saveOdf(QUrl(odt)));
+        const QByteArray stylesXml = zipEntry(odt, QStringLiteral("styles.xml"));
+        QVERIFY2(stylesXml.contains("Note"), stylesXml.constData());
+
+        m_fmt->newDocument();
+        QVERIFY(m_fmt->loadOdf(QUrl(odt)));
+        QVERIFY(m_fmt->styleNames(QStringLiteral("paragraph")).contains(QStringLiteral("Note")));
+    }
+
+    void newDocumentWithOptionsErrorLeavesThePreviousDocumentUntouched()
+    {
+        m_fmt->insertText(QStringLiteral("keep me"));
+        m_fmt->setHeading(1);
+        QVariantMap options;
+        QVariantMap styles;
+        styles.insert(QStringLiteral("Broken"), QVariantMap { { QStringLiteral("notAProperty"), 1 } });
+        options.insert(QStringLiteral("styles"), styles);
+
+        QVariantMap r = m_fmt->newDocument(options);
+        QCOMPARE(r.value(QStringLiteral("ok")).toBool(), false);
+        QVERIFY(!r.value(QStringLiteral("error")).toString().isEmpty());
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("keep me"));
+        QCOMPARE(m_fmt->heading(), 1);
+
+        // An unknown paragraphStyle is also rejected, same way.
+        QVariantMap options2;
+        options2.insert(QStringLiteral("paragraphStyle"), QStringLiteral("No Such Style"));
+        r = m_fmt->newDocument(options2);
+        QCOMPARE(r.value(QStringLiteral("ok")).toBool(), false);
+        QCOMPARE(m_fmt->plainText(), QStringLiteral("keep me"));
+    }
 };
 
 QTEST_MAIN(RichTextTest)

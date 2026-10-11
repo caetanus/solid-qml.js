@@ -231,7 +231,14 @@ declare global {
     saveOdf(path: string): DocumentIoResult;
     /** Same .odt as saveOdf, for autosave / crash recovery: `modified` and undo stay untouched. */
     saveOdfCopy(path: string): DocumentIoResult;
-    newDocument(): void;
+    /** Empty, unmodified document in Default Paragraph Style; drops undo history, images and
+     *  style definitions (back to the built-in styles) — same as `newDocument()`. With `options`,
+     *  the styles are defined/updated first (same validation as `defineStyle`; any error leaves
+     *  the PREVIOUS document untouched and returns `{ok: false, error}`) and the empty first
+     *  paragraph starts in `paragraphStyle` (default: Default Paragraph Style). Still not an undo
+     *  step; `modified` is still cleared; the definitions are written to styles.xml on save like
+     *  any other. */
+    newDocument(options?: { styles?: Record<string, DocumentStyleProps>; paragraphStyle?: string }): DocumentIoResult;
     toHtml(): string;
     plainText(): string;
     insertText(text: string): void;

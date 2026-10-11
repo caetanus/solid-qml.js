@@ -139,11 +139,14 @@ RichText {
     function saveOdf(path) { return fmt ? _result(fmt.saveOdf(path)) : _noEngine }
     // Autosave / crash recovery: the same file, but `modified` and the undo stack stay as they are.
     function saveOdfCopy(path) { return fmt ? _result(fmt.saveOdfCopy(path)) : _noEngine }
-    function newDocument() {
-        if (!fmt) return
-        fmt.newDocument()
-        _editor.cursorPosition = 0
-        _editor.forceActiveFocus()
+    // options (office item 2b addendum): { styles: { name: {props as in defineStyle} }, paragraphStyle }
+    // applied as the document's INITIAL state; {ok, error} like loadOdf — an error leaves the
+    // previous document untouched.
+    function newDocument(options) {
+        if (!fmt) return _noEngine
+        var r = fmt.newDocument(options || {})
+        if (r.ok) { _editor.cursorPosition = 0; _editor.forceActiveFocus() }
+        return r
     }
     function toHtml() { return fmt ? fmt.toHtml() : _editor.text }
     function plainText() { return fmt ? fmt.plainText() : "" }

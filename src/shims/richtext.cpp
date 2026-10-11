@@ -61,6 +61,10 @@ QString localPath(const QUrl &file)
     return file.isLocalFile() ? file.toLocalFile() : file.toString(QUrl::PreferLocalFile);
 }
 
+// Forward declaration: defined (and documented) next to defineStyle() further down, which shares
+// it; newDocument(options) (office item 2b addendum) needs it earlier in the file.
+QString buildStyle(const rt::StyleSheet &sheet, const QString &name, const QVariantMap &props, rt::NamedStyle *out);
+
 } // namespace
 
 void RichTextHandler::updateViewportCulling()
@@ -329,11 +333,33 @@ void RichTextHandler::setAlignment(const QString &align)
     emit formatChanged();
 }
 
-void RichTextHandler::newDocument()
+QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
 {
+    const auto result = [](bool ok, const QString &error) {
+        return QVariantMap { { QStringLiteral("ok"), ok }, { QStringLiteral("error"), error } };
+    };
     QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
     if (!doc)
-        return;
+        return result(false, QStringLiteral("DocumentEditor: no document"));
+
+    // Validate EVERYTHING first — on any error the document must be left exactly as it was.
+    const QVariantMap stylesOpt = options.value(QStringLiteral("styles")).toMap();
+    const QString paragraphStyleOpt = options.value(QStringLiteral("paragraphStyle")).toString();
+    rt::StyleSheet sheet = rt::StyleSheet::builtIns();
+    for (auto it = stylesOpt.cbegin(); it != stylesOpt.cend(); ++it) {
+        rt::NamedStyle s;
+        if (const QString err = buildStyle(sheet, it.key(), it.value().toMap(), &s); !err.isEmpty())
+            return result(false, err);
+        sheet.put(s);
+    }
+    QString firstStyle = rt::defaultParagraphStyle();
+    if (!paragraphStyleOpt.isEmpty()) {
+        const rt::NamedStyle *s = sheet.find(paragraphStyleOpt);
+        if (!s || s->family != rt::Family::Paragraph)
+            return result(false, QStringLiteral("unknown paragraph style \"%1\"").arg(paragraphStyleOpt));
+        firstStyle = paragraphStyleOpt;
+    }
+
     // doc->clear() invalidates every existing QTextBlock handle at once, as part of its OWN
     // contentsChange it fires while reinitializing — unlike a normal cursor edit, querying an
     // OLD handle still sitting in m_headings/m_blockCounts from inside that signal is a
@@ -344,10 +370,10 @@ void RichTextHandler::newDocument()
     // Undo off: the reset (and styling the first paragraph) leaves no history.
     doc->setUndoRedoEnabled(false);
     doc->clear(); // also drops the image resources
-    m_sheet = rt::StyleSheet::builtIns();
+    m_sheet = sheet;
     QTextCursor c(doc);
-    c.setBlockFormat(m_sheet.blockFormat(rt::defaultParagraphStyle()));
-    c.setBlockCharFormat(m_sheet.charFormat(rt::defaultParagraphStyle(), QString()));
+    c.setBlockFormat(m_sheet.blockFormat(firstStyle));
+    c.setBlockCharFormat(m_sheet.charFormat(firstStyle, QString()));
     // m_sheet.blockFormat/charFormat() always materialize at zoom 1 (canonical units): bring the
     // fresh document up to the zoom already in effect (office item 2b, ★2), still with undo off.
     if (!qFuzzyCompare(m_zoom, 1.0))
@@ -362,6 +388,7 @@ void RichTextHandler::newDocument()
     setError(QString());
     emit stylesChanged();
     emit formatChanged();
+    return result(true, QString());
 }
 
 QString RichTextHandler::toHtml() const
@@ -844,9 +871,14 @@ void RichTextHandler::restoreStyle(const QString &name, const std::optional<rt::
     QMetaObject::invokeMethod(this, &RichTextHandler::formatChanged, Qt::QueuedConnection);
 }
 
-QString RichTextHandler::defineStyle(const QString &name, const QVariantMap &props)
+namespace {
+// Builds and validates ONE style definition against `sheet` (read-only here): "" and *out set to
+// the resulting NamedStyle, or the error (sheet/*out untouched) — shared by defineStyle() (against
+// m_sheet, with the live-document/undo side effects below) and newDocument(options) (office item
+// 2b addendum: against a scratch sheet, before any document exists to restyle).
+QString buildStyle(const rt::StyleSheet &sheet, const QString &name, const QVariantMap &props, rt::NamedStyle *out)
 {
-    const rt::NamedStyle *old = m_sheet.find(name);
+    const rt::NamedStyle *old = sheet.find(name);
     rt::NamedStyle s;
     if (old) {
         s = *old;
@@ -889,8 +921,19 @@ QString RichTextHandler::defineStyle(const QString &name, const QVariantMap &pro
             }
         }
     }
-    if (const QString why = m_sheet.validate(s); !why.isEmpty())
+    if (const QString why = sheet.validate(s); !why.isEmpty())
         return why;
+    *out = s;
+    return QString();
+}
+} // namespace
+
+QString RichTextHandler::defineStyle(const QString &name, const QVariantMap &props)
+{
+    rt::NamedStyle s;
+    if (const QString err = buildStyle(m_sheet, name, props, &s); !err.isEmpty())
+        return err;
+    const rt::NamedStyle *old = m_sheet.find(name);
     if (old && old->parent == s.parent && old->next == s.next && old->props == s.props)
         return QString(); // nothing changes
 
