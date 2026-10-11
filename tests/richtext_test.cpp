@@ -6,6 +6,7 @@
 // and their styles.xml round-trip.
 #include "shims/richtext.h"
 #include "shims/richtext_odf.h"
+#include "shims/richtext_qt_p.h"
 #include "qmlcss/QMLCss.h"
 #include <QQmlContext>
 
@@ -2822,6 +2823,13 @@ private slots:
         QTRY_COMPARE(w.fmt()->document()->textDocument()->pageSize(), QSizeF(1500, 1720.5));
     }
 
+    void missingTextEditSizeSlotFailsSoft()
+    {
+        QObject futureEditor;
+        QTest::ignoreMessage(QtWarningMsg, "RichText: Qt TextEdit updateSize() is unavailable; view size may be stale");
+        QVERIFY(!rt::refreshTextEditSize(&futureEditor));
+    }
+
     void pageGeometryIsNotAnEdit()
     {
         PageEditor w;
@@ -2847,6 +2855,12 @@ private slots:
         QCOMPARE(zipEntry(before.toLocalFile(), "content.xml"), zipEntry(after.toLocalFile(), "content.xml"));
         d->undo();
         QVERIFY(d->toPlainText().isEmpty());
+        QVERIFY(d->isRedoAvailable());
+        w.root->setProperty("pageView", true);
+        QCoreApplication::processEvents();
+        QVERIFY(d->isRedoAvailable());
+        d->redo();
+        QCOMPARE(d->toPlainText(), QStringLiteral("Keep my undo"));
     }
 
     void bookPagesKeepLinesOutOfGapsAndRecycleSheets()

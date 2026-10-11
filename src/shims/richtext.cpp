@@ -1,5 +1,6 @@
 #include "richtext.h"
 #include "richtext_odf.h"
+#include "richtext_qt_p.h"
 
 #include <QClipboard>
 #include <QFile>
@@ -144,6 +145,31 @@ QString buildStyle(const rt::StyleSheet &sheet, const QString &name, const QVari
 
 } // namespace
 
+namespace rt {
+
+void setRootMarginsNoUndo(QTextDocument *document, const QTextFrameFormat &format)
+{
+    // QTextFrame::setFrameFormat records undo and toggling setUndoRedoEnabled CLEARS
+    // the stack. View margins must preserve both undo/redo and the modified flag.
+    auto *priv = static_cast<QTextDocumentPrivate *>(QObjectPrivate::get(document));
+    priv->formatCollection()->setObjectFormat(document->rootFrame()->objectIndex(), format);
+    document->markContentsDirty(0, document->characterCount());
+}
+
+bool refreshTextEditSize(QObject *editor)
+{
+    // Public contentHeight is read-only. After a load with layout suspended, Qt's
+    // cached item size needs refreshing even when the page count did not change.
+    // Invoke the private slot by name: no private TextEdit header dependency here.
+    if (editor && editor->metaObject()->indexOfMethod("updateSize()") >= 0
+        && QMetaObject::invokeMethod(editor, "updateSize", Qt::DirectConnection))
+        return true;
+    qWarning("RichText: Qt TextEdit updateSize() is unavailable; view size may be stale");
+    return false;
+}
+
+} // namespace rt
+
 // Page geometry is view state. Qt owns pagination and incremental text layout.
 void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const QVariantList &margins)
 {
@@ -157,18 +183,13 @@ void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const
     const bool marginsChanged = f != m_doc->rootFrame()->frameFormat();
     const bool layoutEnabled = m_doc->isLayoutEnabled();
     if (marginsChanged) {
-        // QTextFrame::setFrameFormat is an undoable content edit. These margins belong to
-        // the viewport: change only the root object's format and invalidate its layout.
-        // The existing Qt private dependency lets us preserve undo, redo and modified state.
         m_doc->setLayoutEnabled(false);
-        auto *priv = static_cast<QTextDocumentPrivate *>(QObjectPrivate::get(m_doc));
-        priv->formatCollection()->setObjectFormat(m_doc->rootFrame()->objectIndex(), f);
-        m_doc->markContentsDirty(0, m_doc->characterCount());
+        rt::setRootMarginsNoUndo(m_doc, f);
     }
     m_doc->setPageSize(QSizeF(width, m_pageStride > 0 ? m_pageStride : -1));
     if (marginsChanged) m_doc->setLayoutEnabled(layoutEnabled);
     if (layoutEnabled)
-        QMetaObject::invokeMethod(m_document->parent(), "updateSize", Qt::DirectConnection);
+        rt::refreshTextEditSize(m_document->parent());
     if (layoutEnabled) syncPageCount();
     if (m_pageBreakOverlay) {
         m_pageBreakOverlay->setVisible(height <= 0);
@@ -1369,7 +1390,7 @@ bool RichTextHandler::loadOdf(const QUrl &file)
     // While layout was suspended TextEdit observed the contents change with the old size.
     // Reconcile its contentHeight once, now that the replacement's final geometry is known.
     if (layoutEnabled) {
-        QMetaObject::invokeMethod(m_document->parent(), "updateSize", Qt::DirectConnection);
+        rt::refreshTextEditSize(m_document->parent());
         // Qt need not emit pageCountChanged when a replacement has the same page count.
         syncPageCount();
     }

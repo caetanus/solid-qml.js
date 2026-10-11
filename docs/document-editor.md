@@ -442,3 +442,31 @@ and selection behave exactly as without marks; the hit test takes the character 
   as direct formatting on Default Paragraph Style).
 - Large documents (> 10 000 characters, however they got there: a load, typing, a paste) render
   only the part near the viewport, as Qt's `TextEdit` does for a large `text`.
+
+## Qt private API used
+
+The following compatibility boundaries rely on Qt internals and must be checked when
+upgrading Qt:
+
+- `rt::setRootMarginsNoUndo` in `src/shims/richtext.cpp` uses
+  `QTextDocumentPrivate::formatCollection()` to change the root frame's view margins.
+  The public `QTextFrame::setFrameFormat` records an undo step, and toggling
+  `setUndoRedoEnabled` clears the undo/redo stack. The caller suspends layout while
+  applying margins and page size together. This helper preserves document history.
+- `rt::refreshTextEditSize` invokes QQuickTextEdit's private `updateSize()` slot by
+  name through `QMetaObject::invokeMethod`. Public `contentHeight` is read-only;
+  after suspended loading it can retain the previous document's size, including
+  when page count is unchanged. A missing slot produces a warning and returns
+  false rather than requiring its private header or crashing.
+- `RichTextHandler::mergeInsertionFont` accesses the live cursor through
+  `QQuickTextEditPrivate` and `QQuickTextControlPrivate`. The public TextEdit API
+  does not expose insertion-only character formatting, and TextControl methods
+  are not exported by release Qt. This keeps typing and IME insertion consistent
+  without formatting the word under the caret.
+- `RichTextHandler::refreshViewport` uses `QQuickTextEditPrivate` to request a
+  complete text-node update after backward viewport movement. A public item
+  update alone does not reset TextEdit's cached traversal state, which can leave
+  newly visible lines unpainted. This is the existing viewport-culling repair.
+
+Tests also inspect QQuickTextEdit's private rendered region to check viewport
+culling; that inspection is not a production dependency.
