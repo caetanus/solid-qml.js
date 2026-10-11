@@ -44,8 +44,15 @@ cleanup
 podman run -d --name "$CONTAINER_NAME" --memory "$MEM_LIMIT" "$IMAGE" sleep infinity >/dev/null
 pexec() { podman exec "$CONTAINER_NAME" bash -lc "$1"; }
 
-echo "== clean-room-check: pacman -Syu =="
-pexec "pacman -Syu --noconfirm"
+# Pin the toolchain to the same Arch Linux Archive snapshot as .github/workflows/ci.yml, instead
+# of archlinux:latest's rolling mirror — see that workflow's comment for why (and release-plan M7
+# notes: this ALSO turned out to be the actual cause of the "qml-css-engine:text font-metric
+# drift" this script used to wave through as a known limitation. It wasn't fonts: it was an
+# unpinned Arch pulling Qt 6.12.0 — a minor version ahead of the pinned 6.11.2 that this project's
+# text-layout port is verified against — not a missing/wrong font at all).
+ARCHIVE_DATE="${ARCHIVE_DATE:-2026/09/15}"
+echo "== clean-room-check: pinning pacman to the Arch Linux Archive ($ARCHIVE_DATE, Qt 6.11.2) =="
+pexec "echo 'Server = https://archive.archlinux.org/repos/$ARCHIVE_DATE/\$repo/os/\$arch' > /etc/pacman.d/mirrorlist && pacman -Sy --noconfirm"
 
 # ---- Dependency inventory (release-plan M6 §1) -----------------------------------------------
 # Toolchain:        base-devel (gcc/make/pkgconf/...), git, cmake, meson, ninja, nodejs, npm
