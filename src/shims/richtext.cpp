@@ -303,6 +303,7 @@ QVariantList RichTextHandler::headings() const
             { QStringLiteral("position"), it->position() },
             { QStringLiteral("level"), it->blockFormat().headingLevel() },
             { QStringLiteral("text"), it->text() },
+            { QStringLiteral("blockId"), e.blockId }, // stable across edits: a <For key="blockId">
         };
     }
     return out;

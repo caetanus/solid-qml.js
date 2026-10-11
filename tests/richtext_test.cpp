@@ -204,6 +204,9 @@ class RichTextTest : public QObject {
             QVERIFY(b.blockFormat().headingLevel() > 0);
             QCOMPARE(b.blockFormat().headingLevel(), m.value(QStringLiteral("level")).toInt());
             QCOMPARE(b.text(), m.value(QStringLiteral("text")).toString());
+            // The stable id an outline keys its rows on (<For key="blockId">).
+            QVERIFY(!m.value(QStringLiteral("blockId")).toString().isEmpty());
+            QCOMPARE(m.value(QStringLiteral("blockId")).toString(), m_fmt->blockIdAt(pos));
         }
         int idx = -1;
         for (int i = 0; i < h.size(); ++i) {

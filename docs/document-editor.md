@@ -94,7 +94,7 @@ Methods:
 
 | Method | Returns | |
 |---|---|---|
-| `headings()` | `{position, level, text}[]` | The outline, in document order. Kept incrementally by the engine (see "Outline" below) — cheap to call even on a very large document. |
+| `headings()` | `{position, level, text, blockId}[]` | The outline, in document order; `blockId` is the heading block's stable id (key an outline `<For key="blockId">` on it). Kept incrementally by the engine (see "Outline" below) — cheap to call even on a very large document. |
 | `scrollToPosition(pos)` | | Scrolls so `pos` sits near the top of the viewport (e.g. `doc.scrollToPosition(doc.headings()[i].position)`). |
 | `loadOdf(path)` | `{ ok, error }` | Opens an `.odt`, with its named styles. On failure (`file not found: …`, `not an OpenDocument file: …`) the current document is kept. The load is not an undo step. |
 | `saveOdf(path)` | `{ ok, error }` | Writes an `.odt` (our writer: named styles, heading levels, images embedded; atomic — a failed write leaves the old file). Clears `modified` on success. |

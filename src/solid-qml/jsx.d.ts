@@ -148,7 +148,7 @@ type DocumentMarkStyle = {
 };
 
 /** One entry of doc.headings() (docs/document-editor.md "Outline"). */
-type DocumentHeading = { position: number; level: number; text: string };
+type DocumentHeading = { position: number; level: number; text: string; blockId: string };
 
 /** A named style's properties (docs/document-editor.md "Named styles"). Lengths are px (or a
  *  string with a unit: "1cm", "12pt"); fontSize is in points. */
@@ -263,7 +263,7 @@ declare global {
     readonly selectedText: string;
     /** Index into headings() of the heading at/before the caret, -1 if none. */
     readonly currentHeadingIndex: number;
-    /** [{position, level, text}] in document order (level: the outline/heading level). Kept
+    /** [{position, level, text, blockId}] in document order (level: the outline/heading level). Kept
      *  incrementally by the engine — cheap even on a very large document. */
     headings(): DocumentHeading[];
     /** Scrolls so `pos` sits near the top of the viewport. */
