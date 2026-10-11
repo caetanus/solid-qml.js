@@ -90,16 +90,26 @@ RichText {
     signal contentChanged()
     // The style table changed (a definition, a load, a new document, an undo of a definition).
     signal stylesChanged()
+    // Office item 2b (★3): the outline changed — debounced the same way, and only forwarded when
+    // the engine says the list actually differs (RichTextHandler::headingsChanged dedupes it).
+    signal headingsChanged()
+    readonly property int currentHeadingIndex: fmt ? fmt.currentHeadingIndex : -1
 
     Timer {
         id: debounce
         interval: root.contentDelay
         onTriggered: root.contentChanged()
     }
+    Timer {
+        id: headingsDebounce
+        interval: root.contentDelay
+        onTriggered: root.headingsChanged()
+    }
     Connections {
         target: root.fmt
         function onContentsChanged() { debounce.restart() }
         function onStylesChanged() { root.stylesChanged() }
+        function onHeadingsChanged() { headingsDebounce.restart() }
     }
     // The handler arrives in RichText's Component.onCompleted: start from an empty, unmodified
     // document, without reporting that as an edit.
@@ -208,5 +218,15 @@ RichText {
     // What overrides the styles at `pos` (default: the caret).
     function directFormattingAt(pos) {
         return fmt ? fmt.directFormattingAt(pos === undefined ? _editor.cursorPosition : pos) : ({})
+    }
+
+    // ── outline (office item 2b, ★3) ────────────────────────────────────────────────────────────
+    // [{position, level, text}] in document order; kept incrementally by the engine (cheap even
+    // on a very large document — see RichTextHandler::handleContentsChange).
+    function headings() { return fmt ? fmt.headings() : [] }
+    // Scrolls so `pos` sits near the top of the viewport.
+    function scrollToPosition(pos) {
+        var r = _editor.positionToRectangle(pos)
+        _body.contentY = Math.max(0, Math.min(r.y, Math.max(0, _body.contentHeight - _body.height)))
     }
 }

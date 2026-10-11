@@ -1224,6 +1224,120 @@ private slots:
                   "direct fontSize must be dropped"); // the direct override is gone
         QCOMPARE(m_fmt->alignment(), QStringLiteral("center")); // paragraph property untouched
     }
+
+    // ── office item 2b, ★3: outline ──────────────────────────────────────────────────────────────
+
+    void headingsEmptyOnAFreshDocument()
+    {
+        QCOMPARE(m_fmt->headings(), QVariantList());
+        QCOMPARE(m_fmt->currentHeadingIndex(), -1);
+    }
+
+    static QVariantMap headingAt(const QVariantList &list, int i)
+    {
+        return list.at(i).toMap();
+    }
+
+    void headingsCollectsLevelsInDocumentOrder()
+    {
+        m_fmt->insertText(QStringLiteral("Intro"));
+        m_fmt->setCursorPosition(0);
+        m_fmt->setHeading(1);
+        m_fmt->setCursorPosition(5);
+        m_fmt->insertText(QStringLiteral("\nBody text"));
+        m_fmt->setCursorPosition(15);
+        m_fmt->insertText(QStringLiteral("\nChapter"));
+        m_fmt->setCursorPosition(16);
+        m_fmt->setHeading(2);
+
+        const QVariantList h = m_fmt->headings();
+        QCOMPARE(h.size(), 2);
+        QCOMPARE(headingAt(h, 0).value("level").toInt(), 1);
+        QCOMPARE(headingAt(h, 0).value("text").toString(), QStringLiteral("Intro"));
+        QCOMPARE(headingAt(h, 1).value("level").toInt(), 2);
+        QCOMPARE(headingAt(h, 1).value("text").toString(), QStringLiteral("Chapter"));
+        QVERIFY(headingAt(h, 0).value("position").toInt() < headingAt(h, 1).value("position").toInt());
+    }
+
+    void headingsChangedFiresOnlyWhenTheOutlineActuallyDiffers()
+    {
+        QSignalSpy spy(m_fmt, &RichTextHandler::headingsChanged);
+        m_fmt->insertText(QStringLiteral("Intro"));
+        m_fmt->setCursorPosition(0);
+        m_fmt->setHeading(1); // Default Paragraph Style → Heading 1: the outline gains an entry
+        QVERIFY(spy.count() >= 1);
+
+        spy.clear();
+        m_fmt->setCursorPosition(5);
+        m_fmt->insertText(QStringLiteral(", more")); // still inside the SAME heading block
+        QCOMPARE(m_fmt->headings().size(), 1);
+        QVERIFY2(spy.count() >= 1, "the heading's own text changed — still a real outline change");
+
+        spy.clear();
+        m_fmt->setCursorPosition(m_fmt->document()->textDocument()->characterCount() - 1);
+        m_fmt->insertText(QStringLiteral("\nplain body text, no heading"));
+        QCOMPARE(m_fmt->headings().size(), 1); // unchanged outline
+        QCOMPARE(spy.count(), 0); // must NOT fire for an edit that doesn't touch any heading
+    }
+
+    void headingRemovedWhenItsBlockIsDeleted()
+    {
+        m_fmt->insertText(QStringLiteral("Intro"));
+        m_fmt->setCursorPosition(0);
+        m_fmt->setHeading(1);
+        m_fmt->setCursorPosition(5); // setHeading() does not move the cursor itself
+        m_fmt->insertText(QStringLiteral("\nBody"));
+        QCOMPARE(m_fmt->headings().size(), 1);
+
+        // Select-and-delete the heading paragraph entirely.
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(6); // "Intro\n"
+        m_fmt->insertText(QString()); // typing nothing over a selection removes it
+        QCOMPARE(m_fmt->headings().size(), 0);
+    }
+
+    void currentHeadingIndexTracksTheCaret()
+    {
+        m_fmt->insertText(QStringLiteral("Intro"));
+        m_fmt->setCursorPosition(0);
+        m_fmt->setHeading(1);
+        m_fmt->setCursorPosition(5);
+        m_fmt->insertText(QStringLiteral("\nBody\nChapter"));
+        m_fmt->setCursorPosition(11);
+        m_fmt->setHeading(2);
+
+        m_fmt->setCursorPosition(0);
+        QCOMPARE(m_fmt->currentHeadingIndex(), 0); // at the first heading itself
+        m_fmt->setCursorPosition(8); // inside "Body" — after H1, before H2
+        QCOMPARE(m_fmt->currentHeadingIndex(), 0);
+        m_fmt->setCursorPosition(m_fmt->document()->textDocument()->characterCount() - 1);
+        QCOMPARE(m_fmt->currentHeadingIndex(), 1); // inside/after the chapter heading
+    }
+
+    void outlineOnThe300PageBook()
+    {
+        // Cheap, incremental: a load does one full scan (infrequent, not a keystroke — see
+        // docs/document-editor.md "Outline"); logged here alongside a handful of edits to show
+        // the per-edit cost stays small on a large document, not proportional to its size.
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        if (!QFile::exists(book))
+            QSKIP("livro-300p.odt sample not on this machine");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(book)));
+        const QVariantList h = m_fmt->headings();
+        QVERIFY(h.size() > 10);
+
+        QElapsedTimer t;
+        t.start();
+        const int last = m_fmt->document()->textDocument()->characterCount() - 1;
+        for (int i = 0; i < 50; ++i) {
+            m_fmt->setCursorPosition(qBound(0, last / 2 + i, last));
+            m_fmt->insertText(QStringLiteral("x"));
+        }
+        const qint64 editMs = t.elapsed();
+        QCOMPARE(m_fmt->headings().size(), h.size()); // the edits touched no heading
+        qInfo("outlineOnThe300PageBook: %d headings, 50 mid-document edits in %lld ms (%.2f ms/edit)",
+              h.size(), editMs, editMs / 50.0);
+    }
 };
 
 QTEST_MAIN(RichTextTest)

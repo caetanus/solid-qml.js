@@ -58,6 +58,7 @@ A complete example (own toolbar, open/save by path, modified dot, word count) is
 | `pageMargins` | `[top, right, bottom, left]` (px), or `null`/unset | Applied as the editing surface's padding, so the caret and selection respect them. `null`/unset keeps the plain editor's default (12px uniform). |
 | `zoom` | number, clamped `0.5`–`3.0` | A **real relayout**: font/point sizes, margins and inline images are rebuilt at the new size (not a scale transform — text stays sharp). Does not change what `saveOdf` writes. The app owns the value; see `onZoomRequested`. |
 | `onZoomRequested` | `(delta: number) => …` | Ctrl+wheel (±0.1 per notch), Ctrl+= / Ctrl+- (±0.1), Ctrl+0 (`0`, meaning "reset"). The editor only asks; set `zoom` in response (e.g. `setZoom(z => delta === 0 ? 1 : clamp(z + delta))`). |
+| `onHeadingsChanged` | `() => …` | The outline changed, **debounced** (300 ms) and only when `doc.headings()` actually differs from before. Refresh a table of contents from `doc.headings()` here. |
 
 The editor starts **empty and unmodified** (no demo text). Anything else is a transpile error.
 
@@ -77,11 +78,14 @@ State — reactive: reading `doc.bold` in a binding (a `classList`, a text) foll
 | `alignment` | `"left" \| "center" \| "right" \| "justify"` | Paragraph alignment. |
 | `bulletList`, `inTable` | boolean | The caret is in a bullet list / a table. |
 | `canUndo`, `canRedo` | boolean | |
+| `currentHeadingIndex` | number | Index into `headings()` of the heading at/before the caret, `-1` if none. |
 
 Methods:
 
 | Method | Returns | |
 |---|---|---|
+| `headings()` | `{position, level, text}[]` | The outline, in document order. Kept incrementally by the engine (see "Outline" below) — cheap to call even on a very large document. |
+| `scrollToPosition(pos)` | | Scrolls so `pos` sits near the top of the viewport (e.g. `doc.scrollToPosition(doc.headings()[i].position)`). |
 | `loadOdf(path)` | `{ ok, error }` | Opens an `.odt`, with its named styles. On failure (`file not found: …`, `not an OpenDocument file: …`) the current document is kept. The load is not an undo step. |
 | `saveOdf(path)` | `{ ok, error }` | Writes an `.odt` (our writer: named styles, heading levels, images embedded; atomic — a failed write leaves the old file). Clears `modified` on success. |
 | `saveOdfCopy(path)` | `{ ok, error }` | The same `.odt`, for autosave / crash recovery: the document is left as it was — `modified` stays, the undo history is untouched. |
@@ -168,6 +172,21 @@ zoom in effect before writing it out — the file is byte-for-byte the same at a
 file or starting a new document always (re)builds at zoom 1 first, then is brought up to the
 zoom already in effect, without becoming an undo step; a zoom change through `zoom` itself is one
 ordinary undo step, like any other formatting change.
+
+## Outline
+
+`headings()` is kept **incrementally**, not rescanned per keystroke: the engine listens to
+`QTextDocument::contentsChange(position, charsRemoved, charsAdded)` — the same hook a syntax
+highlighter uses, fired after an edit's content change but before layout — and re-scans only the
+blocks in `[position, position + charsAdded]` for their current heading level, splicing the
+result back into the kept outline at the same spot (the blocks a single edit touches are tracked
+by their own stable `QTextBlock` handle, not by position, so edits elsewhere never invalidate
+them). A single keystroke costs O(1 block); a large paste costs O(blocks pasted); nothing costs
+O(whole document) except the first scan when a document is attached, loaded or replaced by
+`newDocument()` — all infrequent, not per-keystroke. `currentHeadingIndex` is O(heading count) (a
+scan of the kept outline, not the document) on every caret move. `headingsChanged` diffs the
+outline (size, then each entry's position/level/text) before firing, so a plain content edit that
+touches no heading does not retrigger it.
 
 ## Notes
 

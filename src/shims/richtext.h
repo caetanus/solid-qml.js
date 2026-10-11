@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QQuickTextDocument>
+#include <QTextBlock>
 #include <QTextCursor>
 #include <QUrl>
 #include <functional>
@@ -61,6 +62,8 @@ class RichTextHandler : public QObject {
     // heights, inline images) is rescaled in place; NOT a visual transform. m_sheet (the
     // canonical, unscaled styles saveOdf/styleProperties use) is never touched by zoom.
     Q_PROPERTY(qreal zoom READ zoom WRITE setZoom NOTIFY zoomChanged)
+    // Office item 2b (★3): index into headings() of the heading at/before the caret, -1 if none.
+    Q_PROPERTY(int currentHeadingIndex READ currentHeadingIndex NOTIFY formatChanged)
 
 public:
     using QObject::QObject;
@@ -139,6 +142,15 @@ public:
     Q_INVOKABLE void insertParagraph();
     const rt::StyleSheet &styleSheet() const { return m_sheet; }
 
+    // ── outline (office item 2b, ★3) ──────────────────────────────────────────────────────────
+    // [{position, level, text}] in document order (level: the paragraph's heading/outline level).
+    // m_headings is kept incrementally (see handleContentsChange) — this just reads it out; cheap
+    // even on a very large document.
+    Q_INVOKABLE QVariantList headings() const;
+    int currentHeadingIndex() const;
+    // scrollToPosition(pos) is QML-level (the Flickable lives in RichText.qml) — see
+    // DocumentEditor.qml, not here.
+
     // Inline image at the cursor: loaded into a document resource (so QTextDocumentWriter embeds
     // it into Pictures/ on save) and capped to a word-like page width. `file`: URL or plain path;
     // false + errorString when the image can't be read.
@@ -196,6 +208,10 @@ signals:
     void stylesChanged();
     // The zoom factor changed (the live document was just rescaled to it).
     void zoomChanged();
+    // The outline (headings()) actually changed — undebounced, only when it really differs from
+    // before (size/position/level/text); the QML widget debounces it the same way it does
+    // contentsChanged() → contentChanged().
+    void headingsChanged();
 
 private:
     friend class StyleUndo;
@@ -224,6 +240,21 @@ private:
     QTextCursor insertionCursor() const;     // plain caret position (no word expansion) — inserts
     void mergeCharFormat(const QTextCharFormat &fmt);
 
+    // ── outline (★3) ──────────────────────────────────────────────────────────────────────────
+    // A stable QTextBlock handle (survives edits elsewhere in the document; .isValid() goes false
+    // only once the block itself is removed) + its heading level, kept in document order. `text`
+    // is a SNAPSHOT (QTextBlock::text() is live — comparing it against itself after the same
+    // block was just edited in place would always read as "unchanged").
+    struct HeadingEntry { QTextBlock block; int level; QString text; };
+    QList<HeadingEntry> m_headings;
+    // Full O(blockCount) scan: only at document attach/new/load — never per keystroke.
+    void rebuildHeadings();
+    // QTextDocument::contentsChange(position, charsRemoved, charsAdded): re-scans ONLY the blocks
+    // in [position, position+charsAdded] (post-edit) for their current heading-ness, splicing the
+    // result into m_headings at the same spot — O(affected blocks + heading count), not
+    // O(document). Emits headingsChanged() when the result actually differs.
+    void handleContentsChange(int position, int charsRemoved, int charsAdded);
+
     QQuickTextDocument *m_document = nullptr;
     int m_selectionStart = 0;
     int m_selectionEnd = 0;
@@ -233,5 +264,6 @@ private:
     QMetaObject::Connection m_modifiedConn;
     QMetaObject::Connection m_contentsConn;
     QMetaObject::Connection m_cullingConn;
+    QMetaObject::Connection m_headingsConn;
     qreal m_zoom = 1.0; // the live document's CURRENT zoom; m_sheet itself is never scaled
 };

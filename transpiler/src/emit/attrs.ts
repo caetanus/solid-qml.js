@@ -116,7 +116,7 @@ export const ELEMENT_ATTRS: Record<string, Attrs> = {
   RichText: { class: "lit", html: "expr", variant: "expr", onChange: "fn" },
   DocumentEditor: {
     class: "lit", ref: "ident", toolbar: "bool", onModifiedChanged: "fn", onContentChanged: "fn", onStylesChanged: "fn",
-    pageWidth: "expr", pageMargins: "expr", zoom: "expr", onZoomRequested: "fn",
+    pageWidth: "expr", pageMargins: "expr", zoom: "expr", onZoomRequested: "fn", onHeadingsChanged: "fn",
   },
   CodeEditor: { class: "lit", language: "expr", text: "expr" },
   Shortcut: { keys: "expr", enabled: "expr", onActivated: "fn" },

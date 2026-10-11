@@ -22,6 +22,7 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     QObject::disconnect(m_modifiedConn);
     QObject::disconnect(m_contentsConn);
     QObject::disconnect(m_cullingConn);
+    QObject::disconnect(m_headingsConn);
     m_document = doc;
     if (QTextDocument *td = doc ? doc->textDocument() : nullptr) {
         m_modifiedConn = connect(td, &QTextDocument::modificationChanged, this, &RichTextHandler::modifiedChanged);
@@ -29,8 +30,12 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
         // Every edit can cross the threshold (a load, a paste, a select-all + delete). A load is
         // one edit block, so this runs once per load, not once per paragraph.
         m_cullingConn = connect(td, &QTextDocument::contentsChanged, this, &RichTextHandler::updateViewportCulling);
+        // ★3: incremental outline tracking (position/charsRemoved/charsAdded — the SAME hook a
+        // QSyntaxHighlighter uses; it fires after the content change, before layout).
+        m_headingsConn = connect(td, &QTextDocument::contentsChange, this, &RichTextHandler::handleContentsChange);
     }
     updateViewportCulling();
+    rebuildHeadings(); // a full, but infrequent (document-attach-time) scan establishes the baseline
     emit documentChanged();
     emit formatChanged();
     emit modifiedChanged();
@@ -59,6 +64,109 @@ void RichTextHandler::updateViewportCulling()
     const bool large = doc->characterCount() > kLargeTextThreshold;
     if (editor->flags().testFlag(QQuickItem::ItemObservesViewport) != large)
         editor->setFlag(QQuickItem::ItemObservesViewport, large);
+}
+
+// ─── outline (office item 2b, ★3) ─────────────────────────────────────────────────────────────
+
+void RichTextHandler::rebuildHeadings()
+{
+    QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
+    const QList<HeadingEntry> before = m_headings;
+    m_headings.clear();
+    if (doc) {
+        for (QTextBlock b = doc->begin(); b.isValid(); b = b.next()) {
+            const int level = b.blockFormat().headingLevel();
+            if (level > 0)
+                m_headings << HeadingEntry { b, level, b.text() };
+        }
+    }
+    bool same = before.size() == m_headings.size();
+    for (int i = 0; same && i < before.size(); ++i)
+        same = before[i].block == m_headings[i].block && before[i].level == m_headings[i].level
+            && before[i].text == m_headings[i].text;
+    if (!same)
+        emit headingsChanged();
+}
+
+void RichTextHandler::handleContentsChange(int position, int charsRemoved, int charsAdded)
+{
+    QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
+    if (!doc)
+        return;
+    const int last = doc->characterCount() - 1;
+    const QTextBlock from = doc->findBlock(qBound(0, position, last));
+    const QTextBlock to = doc->findBlock(qBound(0, position + charsAdded, last));
+    const int fromNum = from.blockNumber(), toNum = to.blockNumber();
+    Q_UNUSED(charsRemoved);
+
+    // The headings the re-scanned span gives NOW (document order, since we walk from→to forward).
+    QList<HeadingEntry> rescanned;
+    for (QTextBlock b = from; b.isValid(); b = b.next()) {
+        const int level = b.blockFormat().headingLevel();
+        if (level > 0)
+            rescanned << HeadingEntry { b, level, b.text() };
+        if (b == to)
+            break;
+    }
+
+    // Splice: keep every OLD heading outside [from, to] and not deleted; everything inside that
+    // span — deleted or not — is replaced by `rescanned`, inserted where the span's old entries
+    // were (they are contiguous, since m_headings is kept in document order).
+    QList<HeadingEntry> spliced;
+    spliced.reserve(m_headings.size() + rescanned.size());
+    int insertAt = -1;
+    for (const HeadingEntry &e : std::as_const(m_headings)) {
+        const bool invalid = !e.block.isValid();
+        const bool inSpan = !invalid && e.block.blockNumber() >= fromNum && e.block.blockNumber() <= toNum;
+        if (invalid || inSpan) {
+            if (insertAt < 0)
+                insertAt = spliced.size();
+            continue;
+        }
+        spliced << e;
+    }
+    if (insertAt < 0)
+        insertAt = spliced.size();
+    for (int i = 0; i < rescanned.size(); ++i)
+        spliced.insert(insertAt + i, rescanned[i]);
+
+    bool same = spliced.size() == m_headings.size();
+    for (int i = 0; same && i < spliced.size(); ++i)
+        same = spliced[i].block == m_headings[i].block && spliced[i].level == m_headings[i].level
+            && spliced[i].text == m_headings[i].text;
+    m_headings = spliced;
+    if (!same)
+        emit headingsChanged();
+}
+
+QVariantList RichTextHandler::headings() const
+{
+    QVariantList out;
+    out.reserve(m_headings.size());
+    for (const HeadingEntry &e : m_headings) {
+        if (!e.block.isValid())
+            continue; // defensive: handleContentsChange keeps this pruned
+        out << QVariantMap {
+            { QStringLiteral("position"), e.block.position() },
+            { QStringLiteral("level"), e.block.blockFormat().headingLevel() },
+            { QStringLiteral("text"), e.block.text() },
+        };
+    }
+    return out;
+}
+
+int RichTextHandler::currentHeadingIndex() const
+{
+    const int pos = insertionCursor().position();
+    int idx = -1;
+    for (int i = 0; i < m_headings.size(); ++i) {
+        if (!m_headings[i].block.isValid())
+            continue;
+        if (m_headings[i].block.position() > pos)
+            break;
+        idx = i;
+    }
+    return idx;
 }
 
 void RichTextHandler::setError(const QString &message)
@@ -127,6 +235,7 @@ void RichTextHandler::newDocument()
         rescaleRange(-1, -1, m_zoom, false);
     doc->setUndoRedoEnabled(true);
     doc->setModified(false);
+    rebuildHeadings(); // cheap full scan: infrequent (a new document), not a keystroke (★3)
     // clear() signals modificationChanged(true) and then resets the flag WITHOUT a signal, so
     // setModified(false) is a no-op: tell the bindings the flag is false again.
     emit modifiedChanged();
@@ -478,6 +587,7 @@ bool RichTextHandler::loadOdf(const QUrl &file)
         doc->setUndoRedoEnabled(true);
         doc->setModified(false);
     }
+    rebuildHeadings(); // cheap full scan: infrequent (a load), not a keystroke (★3)
     emit modifiedChanged(); // see newDocument: clear() can leave the last signal saying "true"
     emit stylesChanged();
     setError(why);

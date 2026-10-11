@@ -207,6 +207,10 @@ function emitDocumentEditor(propsArg: t.Node | undefined, _children: t.Node[], s
   const onZoomRequested = props.get("onZoomRequested");
   if (onZoomRequested && (t.isArrowFunctionExpression(onZoomRequested) || t.isFunctionExpression(onZoomRequested)))
     lines.push(`${i(1)}onZoomRequested: (__delta) => { ${translateArgsHandler(onZoomRequested, ["__delta"], scope)} }`);
+  // Office item 2b (★3 outline): debounced, only when the list actually changed.
+  const onHeadings = props.get("onHeadingsChanged");
+  if (onHeadings && (t.isArrowFunctionExpression(onHeadings) || t.isFunctionExpression(onHeadings)))
+    lines.push(`${i(1)}onHeadingsChanged: { ${translateArgsHandler(onHeadings, [], scope)} }`);
   lines.push(`${pad}}`);
   return lines;
 }
