@@ -157,6 +157,11 @@ export function emitExpr(node: t.Node, scope: Scope): string {
 
   if (t.isIdentifier(node)) {
     if (scope.locals && node.name in scope.locals) return scope.locals[node.name];
+    // An accessor name referenced WITHOUT a call (e.g. <For>'s index accessor passed bare:
+    // `onClick={() => select(i)}`) — Solid semantics: this passes the ACCESSOR FUNCTION itself, so
+    // the emitted value must still be callable later and read the CURRENT value then, not now.
+    // Wrap the same fixed QML expression the `name()` call site resolves to (above) in a closure.
+    if (scope.accessors && node.name in scope.accessors) return `(function() { return ${scope.accessors[node.name]} })`;
     const sym = scope.table.get(node.name);
     if (sym?.kind === "signal" || sym?.kind === "store") return cellRef(sym.name, scope); // reactive property read
     if (scope.mutableLocals?.has(node.name)) return cellRef(node.name, scope); // mutable local → property read

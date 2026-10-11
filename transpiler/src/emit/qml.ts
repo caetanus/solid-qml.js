@@ -1978,18 +1978,30 @@ function emitFor(propsArg: t.Node | undefined, children: t.Node[], scope: Scope,
  *  is unchanged. `extra`: lines for the root (after the publish lines), at rootLevel + 1. */
 function rowDelegate(delegate: t.ArrowFunctionExpression | t.FunctionExpression, scope: Scope, rootLevel: number,
                      owner: string, extra: string[] = []): string[] {
-  const param = delegate.params[0];
+  const [param, indexParam] = delegate.params;
   const itemName = param && t.isIdentifier(param) ? param.name : null;
+  // <For>'s SECOND delegate param is an INDEX ACCESSOR (Solid: `i()` reads the row's current
+  // index — unlike <Index>, where the second param is a plain number). Routed through
+  // scope.accessors, same mechanism <Index> uses for its row-value accessor: a CALL `i()`
+  // resolves to the fixed expression (expr.ts), and a BARE (uncalled) reference — `i` passed as a
+  // value — resolves to a closure returning it (expr.ts), matching "accessor function" semantics.
+  const indexName = indexParam && t.isIdentifier(indexParam) ? indexParam.name : null;
   const body = delegate.body;
   if (!isHCall(body)) throw new Error(`${owner} delegate must return a single element in this plan`);
   let rowRef = "modelData";
+  let indexRef = "index";
   let publish: string | null = null;
-  if (itemName && usedInNestedLoop(body, itemName)) {
+  if ((itemName && usedInNestedLoop(body, itemName)) || (indexName && usedInNestedLoop(body, indexName))) {
     const counter = scope.hoverCounter ?? { n: 0 };
     publish = `__for${counter.n++}`;
     rowRef = `${publish}.__forItem`;
+    indexRef = `${publish}.__forIndex`;
   }
-  const inner: Scope = { ...scope, locals: { ...(scope.locals ?? {}), ...(itemName ? { [itemName]: rowRef } : {}) } };
+  const inner: Scope = {
+    ...scope,
+    locals: { ...(scope.locals ?? {}), ...(itemName ? { [itemName]: rowRef } : {}) },
+    accessors: { ...(scope.accessors ?? {}), ...(indexName ? { [indexName]: indexRef } : {}) },
+  };
   const rows = emitQml(body, inner, rootLevel);
   requireSingleRoot(rows, rootLevel, owner);
   // The delegate is ONE h() call, so rows[0] is its root's `Type {` line; the publish lines go
@@ -2003,12 +2015,15 @@ function rowDelegate(delegate: t.ArrowFunctionExpression | t.FunctionExpression,
     const own = rows.find((l) => l.startsWith(`${rootPad}id: `));
     if (own) {
       const id = own.slice(`${rootPad}id: `.length).trim();
-      const fixed = rows.map((l) => l.split(`${publish}.__forItem`).join(`${id}.__forItem`));
+      // `${publish}.__for` is the common prefix of BOTH `__forItem` and `__forIndex` — one
+      // replace covers whichever (or both) of the published properties the body references.
+      const fixed = rows.map((l) => l.split(`${publish}.__for`).join(`${id}.__for`));
       rows.splice(0, rows.length, ...fixed);
     } else {
       head.push(`${rootPad}id: ${publish}`);
     }
     head.push(`${rootPad}property var __forItem: modelData`);
+    if (indexName) head.push(`${rootPad}property int __forIndex: index`);
   }
   rows.splice(1, 0, ...head, ...extra.map((l) => rootPad + l));
   return rows;
