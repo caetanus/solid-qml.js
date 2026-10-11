@@ -66,6 +66,10 @@ scrolling lists, eager lists and per-row memory documented as limits); (2) licen
 transpiler and D bindings, **LGPL-3.0 for the C++ CSS engine** (it contains code derived from Qt, e.g. the literal
 QQuickText port in csstextlayout).
 
+**Decided 2026-10-11:** version **0.3.0-preview.1** (app); public name **solid-qml** (the engine and the D
+bindings keep their own repo names); the engine keeps its **own semver** (the app pins the submodule SHA);
+C23 = reference identity by default with `key` opt-in; copyright holder "Marcelo A Caetano".
+
 **Still open:**
 
 1. Preview (narrower gate, QML runtime only) or full release (original gate + AOT first)?
