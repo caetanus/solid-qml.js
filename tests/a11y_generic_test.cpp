@@ -73,6 +73,28 @@ private slots:
         m_tabstop.setEnabled(true);
     }
 
+    // A <For> row's root is a delegate Component's ROOT object: QQuickItem's revisioned properties
+    // (activeFocusOnTab is REVISION(2, 1)) must be available there too — W.* types are registered
+    // with the Qt metaobject revision, not 0 (solid-player's sidebar failed to load otherwise).
+    void revisionedItemPropertiesOnADelegateRoot()
+    {
+        QQmlEngine engine;
+        wire(engine);
+        QScopedPointer<QObject> o(create(engine,
+            "import QtQuick\nimport solidqml.Widgets as W\n"
+            "W.Div { width: 300; height: 200\n"
+            "  Repeater { id: rep; model: 2; delegate: W.Div { activeFocusOnTab: true } }\n"
+            "  readonly property int rows: rep.count\n"
+            "  readonly property bool rowTabs: rep.count > 0 && rep.itemAt(0).activeFocusOnTab\n"
+            "  Component { id: c; W.Text { activeFocusOnTab: true } }\n"
+            "  property var made: c.createObject(this)\n"
+            "}"));
+        QVERIFY(o);
+        QCOMPARE(o->property("rows").toInt(), 2);
+        QVERIFY(o->property("rowTabs").toBool());
+        QVERIFY(o->property("made").value<QQuickItem *>());
+    }
+
     // Three focusable stops (two plain Divs with tabIndex=0's activeFocusOnTab line + one native
     // W.Button, which already carries the same line) interleaved with a plain Div that has NONE —
     // Tab must visit the three stops in document order and skip the one with no tab-stop line.

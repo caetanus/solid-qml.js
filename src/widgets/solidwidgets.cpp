@@ -35,6 +35,14 @@ void registerTypes()
 {
     // Same module URI as the remaining qmldir composite types — the registrations merge into
     // one namespace, so the port can proceed widget by widget.
+    //
+    // QQuickItem's own revisioned members (activeFocusOnTab is REVISION(2, 1), containmentMask,
+    // focusPolicy…) are only allowed on a type whose metaobject chain is registered IN THIS module
+    // (QQmlMetaTypeData::propertyCache walks the chain and asks this module for each class's
+    // revision). Without this, `activeFocusOnTab:` on a W.* object that is a component's root (a
+    // <For> row) fails: "is not available in solidqml.Widgets". Registering QQuickItem's revision
+    // here leaves the major version unknown, which the revision check treats as "any".
+    qmlRegisterRevision<QQuickItem, 0>("solidqml.Widgets", 1, 0);
     qmlRegisterType<Div>("solidqml.Widgets", 1, 0, "Div");
     qmlRegisterType<Text>("solidqml.Widgets", 1, 0, "Text");
     qmlRegisterType<Image>("solidqml.Widgets", 1, 0, "Image");
