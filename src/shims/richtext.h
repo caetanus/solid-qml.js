@@ -1,6 +1,9 @@
 #pragma once
 
+#include <QColor>
 #include <QObject>
+#include <QPointer>
+#include <QQuickItem>
 #include <QQuickTextDocument>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -9,6 +12,7 @@
 #include <optional>
 #include <qqml.h>
 
+#include "richtext_blocks.h"
 #include "richtext_styles.h"
 
 // Formatting/IO engine behind the <RichText> word-like widget (module solidqml.Widgets.RichText).
@@ -84,6 +88,7 @@ class RichTextHandler : public QObject {
 
 public:
     explicit RichTextHandler(QObject *parent = nullptr);
+    ~RichTextHandler() override;
 
     // QQuickTextEdit only renders the blocks near the viewport (ItemObservesViewport) when its
     // `text` is set to more than this many characters (QQuickTextEditPrivate::largeTextSizeThreshold,
@@ -257,6 +262,17 @@ public:
     // entry path (a host embedding this handler, a future drag-and-drop) gets it for free.
     Q_INVOKABLE void insertHtml(const QString &html);
 
+    // ── blocks (office item 3) ────────────────────────────────────────────────────────────────
+    // Every block (paragraph, heading, table-cell paragraph) has a string id (rt::BlockInfo in
+    // its QTextBlockUserData): stable while it is typed in and while other blocks come and go;
+    // a split gives the part AFTER the caret a new id; a merge keeps the surviving block's;
+    // undo/redo put back the ids the step removed/created (m_idSteps). Saved as xml:id.
+    Q_INVOKABLE QStringList blockIds() const;          // document order
+    Q_INVOKABLE QString blockIdAt(int position) const; // "" outside the document
+    // Plain text of the block, UTF-16 — the coordinate space of mark offsets (a soft line break
+    // U+2028 reads as "\n", same length). "" for an unknown id.
+    Q_INVOKABLE QString blockText(const QString &blockId) const;
+
 signals:
     void documentChanged();
     void selectionChanged();
@@ -277,9 +293,18 @@ signals:
     void headingsChanged();
     // The system clipboard's content changed (any app — see QClipboard::dataChanged()).
     void canPasteChanged();
+    // Office item 3. blocksLoaded: the whole block set was replaced (attach, loadOdf,
+    // newDocument) — no blockRemoved/blockChanged for that. blockChanged: a block's TEXT changed
+    // or a block appeared (split, paste, undo), coalesced per block, delivered on the next
+    // event-loop turn; never for a format-only change or a mark. blockRemoved: the id left the
+    // document (merge, deleted range, undo of a split); same delivery, before blockChanged.
+    void blocksLoaded();
+    void blockChanged(const QString &blockId);
+    void blockRemoved(const QString &blockId);
 
 private:
     friend class StyleUndo;
+    friend class rt::BlockInfo;
     // A definition change as an undo item: restores `style` (or removes it when absent).
     void restoreStyle(const QString &name, const std::optional<rt::NamedStyle> &style);
     // Re-styles blocks/runs of [from, to] (whole document when from < 0): paragraph style through
@@ -357,6 +382,37 @@ private:
     // m_totalChars/m_totalWords by the delta — O(affected blocks + heading count), not
     // O(document). Emits headingsChanged() when the outline actually differs.
     void handleContentsChange(int position, int charsRemoved, int charsAdded);
+
+    // ── blocks & marks (office item 3) ────────────────────────────────────────────────────────
+    void blockInfoDestroyed(rt::BlockInfo *info); // ~BlockInfo: the block left the document
+    // Full O(blockCount) adoption of every block's id (two passes: a file's unique ids win, the
+    // rest are generated) — attach/load/new only. Drops marks and the id undo history.
+    void rebuildBlockIds();
+    void detachBlockInfos();                      // owner = nullptr on every block (teardown)
+    QString newBlockId();
+    // contentsChange: ids for new blocks of the edited span (restored on undo/redo), text-change
+    // detection (hash) — O(span).
+    void trackBlocks(int position, int charsRemoved, int charsAdded);
+    void queueBlockChange(rt::BlockInfo *info);
+    void scheduleBlockSignals();
+    void flushBlockSignals();
+
+    QHash<QString, QTextBlock> m_blocksById;
+    QList<QString> m_removedNow;    // ids whose block was deleted during the current edit
+    QList<QString> m_removedQueue;  // → blockRemoved on the next turn
+    QList<QString> m_changedQueue;  // → blockChanged on the next turn (BlockInfo::changePending dedupes)
+    bool m_signalsQueued = false;
+    bool m_bulkReset = false;       // a load/new is replacing every block: ~BlockInfo stays silent
+    quint64 m_nextBlockId = 1;
+    // Undo-stable ids: per structural step (keyed by the undo stack state right after it), the
+    // ids it removed and created, so undo/redo give recreated blocks their old ids back.
+    struct IdStep { int state; QStringList removed; QStringList added; };
+    QList<IdStep> m_idSteps;
+    int m_lastUndoState = 0;
+    bool m_newUndoCommand = false;
+    QMetaObject::Connection m_undoAddedConn;
+
+    QPointer<QTextDocument> m_doc;
 
     QQuickTextDocument *m_document = nullptr;
     int m_selectionStart = 0;

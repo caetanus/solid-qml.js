@@ -15,6 +15,7 @@
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickItem>
+#include <QRegularExpression>
 #include <QScopedPointer>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -134,6 +135,12 @@ QByteArray zipEntry(const QString &path, const QString &entry)
 {
     QZipReader zip(path);
     return zip.fileData(entry);
+}
+
+// content.xml without the blocks' xml:id (office item 3): for byte comparisons of the rest.
+QByteArray withoutBlockIds(const QByteArray &xml)
+{
+    return QString::fromUtf8(xml).remove(QRegularExpression(QStringLiteral(" xml:id=\"[^\"]*\""))).toUtf8();
 }
 
 } // namespace
@@ -810,7 +817,8 @@ private slots:
         QCOMPARE(head.mid(38, 39), QByteArray("application/vnd.oasis.opendocument.text"));
         QZipReader zip(odt);
         const QByteArray styles = zip.fileData(QStringLiteral("styles.xml"));
-        const QByteArray content = zip.fileData(QStringLiteral("content.xml"));
+        const QByteArray rawContent = zip.fileData(QStringLiteral("content.xml"));
+        const QByteArray content = withoutBlockIds(rawContent);
         QVERIFY(styles.contains("style:name=\"Heading_20_1\" style:display-name=\"Heading 1\" style:family=\"paragraph\""
                                 " style:parent-style-name=\"Heading\" style:next-style-name=\"Text_20_body\" style:default-outline-level=\"1\""));
         QVERIFY(styles.contains("style:name=\"Note\""));
@@ -854,7 +862,7 @@ private slots:
         // Saving again writes the same document.
         const QString again = m_dir.filePath(QStringLiteral("styled-again.odt"));
         QVERIFY(m_fmt->saveOdf(QUrl(again)));
-        QCOMPARE(QZipReader(again).fileData(QStringLiteral("content.xml")), content);
+        QCOMPARE(QZipReader(again).fileData(QStringLiteral("content.xml")), rawContent); // block ids included
     }
 
     void libreOfficeStylesMapIntoTheStyleTable()
@@ -1723,7 +1731,9 @@ private slots:
         const QString at2 = m_dir.filePath(QStringLiteral("paste-zoom2.odt"));
         pasteAndSave(1.0, at1);
         pasteAndSave(2.0, at2);
-        QCOMPARE(zipEntry(at2, QStringLiteral("content.xml")), zipEntry(at1, QStringLiteral("content.xml")));
+        // (the blocks' ids differ: two documents)
+        QCOMPARE(withoutBlockIds(zipEntry(at2, QStringLiteral("content.xml"))),
+                 withoutBlockIds(zipEntry(at1, QStringLiteral("content.xml"))));
     }
 
     void pasteAtZoomRoundTripsToTheSourceSizeAtZoomOne()
@@ -2057,6 +2067,223 @@ private slots:
         r = m_fmt->newDocument(options2);
         QCOMPARE(r.value(QStringLiteral("ok")).toBool(), false);
         QCOMPARE(m_fmt->plainText(), QStringLiteral("keep me"));
+    }
+    // ── office item 3: stable block ids ─────────────────────────────────────────────────────────
+
+    void blockIdsAreUniqueAndStableWhileTyping()
+    {
+        m_fmt->insertText(QStringLiteral("one\ntwo\nthree"));
+        const QStringList ids = m_fmt->blockIds();
+        QCOMPARE(ids.size(), 3);
+        QCOMPARE(QSet<QString>(ids.cbegin(), ids.cend()).size(), 3);
+        for (const QString &id : ids)
+            QVERIFY(!id.isEmpty());
+        QTextCursor c(doc());
+        c.setPosition(5); // inside "two"
+        c.insertText(QStringLiteral("XY"));
+        c.setPosition(0);
+        c.insertText(QStringLiteral("Z"));
+        c.setPosition(c.document()->characterCount() - 1);
+        c.deletePreviousChar();
+        QCOMPARE(m_fmt->blockIds(), ids);
+        QCOMPARE(m_fmt->blockIdAt(0), ids[0]);
+        QCOMPARE(m_fmt->blockIdAt(doc()->findBlockByNumber(1).position() + 1), ids[1]);
+        QCOMPARE(m_fmt->blockText(ids[1]), QStringLiteral("tXYwo"));
+        QCOMPARE(m_fmt->blockText(QStringLiteral("nope")), QString());
+        QCOMPARE(m_fmt->blockIdAt(-5), QString());
+    }
+
+    void splitKeepsTheIdBeforeTheCaret()
+    {
+        m_fmt->insertText(QStringLiteral("Hello world"));
+        const QString a = m_fmt->blockIds().value(0);
+        m_fmt->setCursorPosition(5);
+        m_fmt->insertParagraph();
+        const QStringList ids = m_fmt->blockIds();
+        QCOMPARE(ids.size(), 2);
+        QCOMPARE(ids[0], a);
+        QVERIFY(!ids[1].isEmpty() && ids[1] != a);
+        QCOMPARE(m_fmt->blockText(a), QStringLiteral("Hello"));
+        QCOMPARE(m_fmt->blockText(ids[1]), QStringLiteral(" world"));
+    }
+
+    void mergeKeepsTheSurvivingId()
+    {
+        m_fmt->insertText(QStringLiteral("one\ntwo"));
+        const QStringList ids = m_fmt->blockIds();
+        QCoreApplication::processEvents();
+        QSignalSpy removed(m_fmt, &RichTextHandler::blockRemoved);
+        QTextCursor c(doc());
+        c.setPosition(doc()->findBlockByNumber(1).position());
+        c.deletePreviousChar(); // Backspace at the start of "two"
+        QCOMPARE(m_fmt->blockIds(), QStringList { ids[0] });
+        QCOMPARE(m_fmt->blockText(ids[0]), QStringLiteral("onetwo"));
+        QCOMPARE(removed.count(), 0); // delivered on the next turn
+        QCoreApplication::processEvents();
+        QCOMPARE(removed.count(), 1);
+        QCOMPARE(removed.at(0).at(0).toString(), ids[1]);
+
+        // An EMPTY paragraph merged away is the one Qt removes: the text's block survives.
+        m_fmt->newDocument();
+        m_fmt->insertText(QStringLiteral("\ntwo"));
+        const QStringList ids2 = m_fmt->blockIds();
+        c = QTextCursor(doc());
+        c.setPosition(doc()->findBlockByNumber(1).position());
+        c.deletePreviousChar();
+        QCOMPARE(m_fmt->blockIds(), QStringList { ids2[1] });
+    }
+
+    void undoRedoPutTheIdsBack()
+    {
+        m_fmt->insertText(QStringLiteral("Hello world"));
+        const QString a = m_fmt->blockIds().value(0);
+        m_fmt->setCursorPosition(5);
+        m_fmt->insertParagraph();
+        const QString n = m_fmt->blockIds().value(1);
+        doc()->undo();
+        QCOMPARE(m_fmt->blockIds(), QStringList { a });
+        doc()->redo();
+        QCOMPARE(m_fmt->blockIds(), (QStringList { a, n }));
+
+        // merge, undo (the merged-away block comes back with ITS id), redo
+        QTextCursor c(doc());
+        c.setPosition(doc()->findBlockByNumber(1).position());
+        c.deletePreviousChar();
+        QCOMPARE(m_fmt->blockIds(), QStringList { a });
+        doc()->undo();
+        QCOMPARE(m_fmt->blockIds(), (QStringList { a, n }));
+        QCOMPARE(m_fmt->blockText(n), QStringLiteral(" world"));
+        doc()->redo();
+        QCOMPARE(m_fmt->blockIds(), QStringList { a });
+
+        // a deleted range of whole paragraphs, undone
+        m_fmt->newDocument();
+        m_fmt->insertText(QStringLiteral("p1\np2\np3\np4"));
+        const QStringList four = m_fmt->blockIds();
+        c = QTextCursor(doc());
+        c.setPosition(1);
+        c.setPosition(doc()->findBlockByNumber(3).position() + 1, QTextCursor::KeepAnchor);
+        c.removeSelectedText();
+        QCOMPARE(m_fmt->blockIds(), QStringList { four[0] });
+        doc()->undo();
+        QCOMPARE(m_fmt->blockIds(), four);
+        doc()->redo();
+        QCOMPARE(m_fmt->blockIds(), QStringList { four[0] });
+
+        // a new edit after an undo drops the redo history: the next split gets a fresh id
+        doc()->undo();
+        m_fmt->setCursorPosition(1);
+        m_fmt->insertParagraph();
+        const QStringList now = m_fmt->blockIds();
+        QCOMPARE(now.size(), 5);
+        QCOMPARE(QSet<QString>(now.cbegin(), now.cend()).size(), 5);
+    }
+
+    void pastedBlocksGetNewIds()
+    {
+        m_fmt->insertText(QStringLiteral("Hello"));
+        const QString a = m_fmt->blockIds().value(0);
+        m_fmt->setCursorPosition(5);
+        m_fmt->insertHtml(QStringLiteral("<p>x</p><p>y</p><p>z</p>"));
+        const QStringList ids = m_fmt->blockIds();
+        QVERIFY(ids.size() >= 3);
+        QCOMPARE(ids[0], a);
+        QCOMPARE(QSet<QString>(ids.cbegin(), ids.cend()).size(), ids.size());
+
+        // our own copy → paste: the clipboard carries no ids, the pasted blocks are new
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(doc()->characterCount() - 1);
+        m_fmt->copy();
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(0);
+        m_fmt->setCursorPosition(doc()->characterCount() - 1);
+        m_fmt->paste();
+        const QStringList after = m_fmt->blockIds();
+        QVERIFY(after.size() > ids.size());
+        QCOMPARE(QSet<QString>(after.cbegin(), after.cend()).size(), after.size());
+    }
+
+    void blockIdsRoundTripThroughOdf()
+    {
+        m_fmt->insertText(QStringLiteral("one\ntwo"));
+        m_fmt->setHeading(1);
+        m_fmt->insertTable(1, 2);
+        const QStringList ids = m_fmt->blockIds();
+        const QString odt = m_dir.filePath(QStringLiteral("ids.odt"));
+        QVERIFY(m_fmt->saveOdf(QUrl::fromLocalFile(odt)));
+        const QByteArray content = zipEntry(odt, QStringLiteral("content.xml"));
+        for (const QString &id : ids)
+            QVERIFY2(content.contains("xml:id=\"" + id.toUtf8() + '"'), content.constData());
+        m_fmt->newDocument();
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(odt)));
+        QCOMPARE(m_fmt->blockIds(), ids);
+    }
+
+    void odfWithoutIdsGetsGeneratedOnes()
+    {
+        const QString odt = m_dir.filePath(QStringLiteral("noids.odt"));
+        writeOdt(odt, "<text:p xml:id=\"dup\">a</text:p><text:p xml:id=\"dup\">b</text:p><text:p>c</text:p>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(odt)));
+        const QStringList ids = m_fmt->blockIds();
+        QCOMPARE(ids.size(), 3);
+        QCOMPARE(ids[0], QStringLiteral("dup"));
+        QCOMPARE(QSet<QString>(ids.cbegin(), ids.cend()).size(), 3);
+        for (const QString &id : ids)
+            QVERIFY(!id.isEmpty());
+    }
+
+    void blocksLoadedChangedAndRemovedFiringRules()
+    {
+        QSignalSpy loaded(m_fmt, &RichTextHandler::blocksLoaded);
+        QSignalSpy changed(m_fmt, &RichTextHandler::blockChanged);
+        QSignalSpy removed(m_fmt, &RichTextHandler::blockRemoved);
+        m_fmt->newDocument();
+        QCOMPARE(loaded.count(), 1);
+        m_fmt->insertText(QStringLiteral("one\ntwo"));
+        const QString odt = m_dir.filePath(QStringLiteral("loaded.odt"));
+        QVERIFY(m_fmt->saveOdf(QUrl::fromLocalFile(odt)));
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(odt)));
+        QCOMPARE(loaded.count(), 2);
+        QCoreApplication::processEvents();
+        changed.clear();
+        removed.clear(); // a load replaces everything: blocksLoaded, not one removal per block
+        const QStringList ids = m_fmt->blockIds();
+
+        // three keystrokes in one block → ONE blockChanged, on the next turn
+        QTextCursor c(doc());
+        c.setPosition(1);
+        c.insertText(QStringLiteral("a"));
+        c.insertText(QStringLiteral("b"));
+        c.insertText(QStringLiteral("c"));
+        QCOMPARE(changed.count(), 0);
+        QCoreApplication::processEvents();
+        QCOMPARE(changed.count(), 1);
+        QCOMPARE(changed.at(0).at(0).toString(), ids[0]);
+
+        // format only: nothing
+        changed.clear();
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(3);
+        m_fmt->toggleBold();
+        m_fmt->setAlignment(QStringLiteral("center"));
+        m_fmt->setSelectionEnd(0);
+        m_fmt->setZoom(1.5);
+        QCoreApplication::processEvents();
+        QCOMPARE(changed.count(), 0);
+        QCOMPARE(removed.count(), 0);
+
+        // a split reports the shortened block AND the new one
+        m_fmt->setCursorPosition(2);
+        m_fmt->insertParagraph();
+        QCoreApplication::processEvents();
+        QStringList seen;
+        for (const auto &args : std::as_const(changed))
+            seen << args.at(0).toString();
+        const QStringList now = m_fmt->blockIds();
+        QCOMPARE(now.size(), 3);
+        QVERIFY(seen.contains(now[0]) && seen.contains(now[1]));
+        QCOMPARE(seen.size(), 2);
+        m_fmt->setZoom(1.0);
     }
 };
 

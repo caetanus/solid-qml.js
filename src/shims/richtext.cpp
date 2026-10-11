@@ -11,6 +11,7 @@
 #include <QTextBlock>
 #include <QTextDocument>
 #include <QTextBoundaryFinder>
+#include <QVarLengthArray>
 #include <QTextDocumentFragment>
 #include <QTextFragment>
 #include <QTextFrame>
@@ -27,6 +28,18 @@ RichTextHandler::RichTextHandler(QObject *parent) : QObject(parent)
     connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, &RichTextHandler::canPasteChanged);
 }
 
+RichTextHandler::~RichTextHandler()
+{
+    // The document may outlive us (its blocks' BlockInfo must not report to a dead handler).
+    detachBlockInfos();
+}
+
+rt::BlockInfo::~BlockInfo()
+{
+    if (owner)
+        owner->blockInfoDestroyed(this);
+}
+
 void RichTextHandler::setDocument(QQuickTextDocument *doc)
 {
     if (m_document == doc)
@@ -35,8 +48,14 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     QObject::disconnect(m_contentsConn);
     QObject::disconnect(m_cullingConn);
     QObject::disconnect(m_headingsConn);
+    QObject::disconnect(m_undoAddedConn);
+    detachBlockInfos();
     m_document = doc;
+    m_doc = doc ? doc->textDocument() : nullptr;
     if (QTextDocument *td = doc ? doc->textDocument() : nullptr) {
+        // Office item 3: emitted (before contentsChange) for NEW edits only — how trackBlocks()
+        // tells an edit from an undo/redo replaying the stack.
+        m_undoAddedConn = connect(td, &QTextDocument::undoCommandAdded, this, [this] { m_newUndoCommand = true; });
         m_modifiedConn = connect(td, &QTextDocument::modificationChanged, this, &RichTextHandler::modifiedChanged);
         m_contentsConn = connect(td, &QTextDocument::contentsChanged, this, &RichTextHandler::contentsChanged);
         // Every edit can cross the threshold (a load, a paste, a select-all + delete). A load is
@@ -48,12 +67,14 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     }
     updateViewportCulling();
     rebuildIndex(); // a full, but infrequent (document-attach-time) scan establishes the baseline
+    rebuildBlockIds();
     emit documentChanged();
     emit formatChanged();
     emit modifiedChanged();
     // Same reasoning as loadOdf()/newDocument(): rebuildIndex() just computed wordCount/charCount
     // for the newly-attached document — tell any binding on them (office item 2b, item 7).
     emit contentsChanged();
+    emit blocksLoaded();
 }
 
 namespace {
@@ -145,7 +166,7 @@ void RichTextHandler::handleContentsChange(int position, int charsRemoved, int c
     const QTextBlock from = doc->findBlock(qBound(0, position, last));
     const QTextBlock to = doc->findBlock(qBound(0, position + charsAdded, last));
     const int fromNum = from.blockNumber(), toNum = to.blockNumber();
-    Q_UNUSED(charsRemoved);
+    trackBlocks(position, charsRemoved, charsAdded); // office item 3: ids, text changes
 
     // What the re-scanned span gives NOW (document order, since we walk from→to forward) — both
     // the headings in it and every block's counts (item 7), in the SAME walk.
@@ -370,6 +391,7 @@ QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
     // document). Disconnect handleContentsChange around it; rebuildIndex() below is a full,
     // safe rescan of the (now stable) fresh document anyway.
     QObject::disconnect(m_headingsConn);
+    m_bulkReset = true; // every block goes: blocksLoaded below, not one blockRemoved each
     // Undo off: the reset (and styling the first paragraph) leaves no history.
     doc->setUndoRedoEnabled(false);
     doc->clear(); // also drops the image resources
@@ -385,6 +407,7 @@ QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
     doc->setModified(false);
     m_headingsConn = connect(doc, &QTextDocument::contentsChange, this, &RichTextHandler::handleContentsChange);
     rebuildIndex(); // cheap full scan: infrequent (a new document), not a keystroke (★3)
+    rebuildBlockIds();
     // clear() signals modificationChanged(true) and then resets the flag WITHOUT a signal, so
     // setModified(false) is a no-op: tell the bindings the flag is false again.
     emit modifiedChanged();
@@ -396,6 +419,7 @@ QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
     // so any listener (a QML binding) last saw the counts mid-reset, not the correct final ones
     // rebuildIndex() just computed — emit it again now that they're right.
     emit contentsChanged();
+    emit blocksLoaded();
     return result(true, QString());
 }
 
@@ -1008,9 +1032,11 @@ bool RichTextHandler::loadOdf(const QUrl &file)
     // for why handleContentsChange must not run across that (a use-after-free on old QTextBlock
     // handles still in m_headings/m_blockCounts).
     QObject::disconnect(m_headingsConn);
+    m_bulkReset = true; // see newDocument(): a load replaces every block at once
     const bool ok = rt::readOdt(localPath(file), doc, &sheet, &why);
     m_headingsConn = connect(doc, &QTextDocument::contentsChange, this, &RichTextHandler::handleContentsChange);
     if (!ok && sheet.isEmpty()) { // not found / not an .odt: the document was not touched
+        m_bulkReset = false;
         setError(why);
         return false;
     }
@@ -1025,6 +1051,7 @@ bool RichTextHandler::loadOdf(const QUrl &file)
         doc->setModified(false);
     }
     rebuildIndex(); // cheap full scan: infrequent (a load), not a keystroke (★3)
+    rebuildBlockIds(); // the file's xml:id, generated where absent
     emit modifiedChanged(); // see newDocument: clear() can leave the last signal saying "true"
     emit stylesChanged();
     setError(why);
@@ -1035,6 +1062,7 @@ bool RichTextHandler::loadOdf(const QUrl &file)
     // the counts were mid-build (0, or the PREVIOUS document's counts), never the correct final
     // ones. Emit it again now that they're right.
     emit contentsChanged();
+    emit blocksLoaded();
     return ok;
 }
 
@@ -1553,4 +1581,250 @@ void RichTextHandler::insertPageBreak()
     c.setBlockFormat(bf);
     c.endEditBlock();
     emit formatChanged();
+}
+
+// ─── blocks (office item 3) ────────────────────────────────────────────────────────────────────
+//
+// Identity lives in each block's QTextBlockUserData (rt::BlockInfo). Verified against Qt 6.11
+// (qtextdocument_p.cpp): insert_block() keeps the ORIGINAL node for the text before the split
+// point and gives the text after it a NEW node (no user data); remove_block() keeps the upper
+// block and erases the lower one — except an empty upper block, which is the one erased; an
+// erased node's QTextBlockData::free() deletes its user data, so ~BlockInfo is the exact removal
+// notice. QTextBlock::isValid() is only `p && n` (a removed block's handle stays "valid"), which
+// is why nothing here dereferences a handle that may be gone: m_blocksById drops an id in
+// ~BlockInfo, before contentsChange is even emitted.
+
+namespace {
+constexpr qsizetype kMaxIdSteps = 1000; // undo-id history kept (Qt's own stack is unbounded)
+}
+
+void RichTextHandler::blockInfoDestroyed(rt::BlockInfo *info)
+{
+    if (m_bulkReset)
+        return;
+    m_blocksById.remove(info->id);
+    m_removedNow.append(info->id);
+}
+
+void RichTextHandler::detachBlockInfos()
+{
+    if (!m_doc)
+        return;
+    for (QTextBlock b = m_doc->begin(); b.isValid(); b = b.next())
+        if (rt::BlockInfo *info = rt::blockInfo(b))
+            info->owner = nullptr;
+}
+
+QString RichTextHandler::newBlockId()
+{
+    // An XML NCName (written as xml:id), short, unique in this document.
+    QString id;
+    do
+        id = QLatin1Char('p') + QString::number(m_nextBlockId++, 36);
+    while (m_blocksById.contains(id));
+    return id;
+}
+
+void RichTextHandler::rebuildBlockIds()
+{
+    m_bulkReset = false;
+    m_blocksById.clear();
+    m_removedNow.clear();
+    m_removedQueue.clear();
+    m_changedQueue.clear();
+    m_idSteps.clear();
+    m_newUndoCommand = false;
+    QTextDocument *doc = m_doc;
+    m_lastUndoState = doc && doc->isUndoRedoEnabled() ? doc->availableUndoSteps() : 0;
+    if (!doc)
+        return;
+    m_blocksById.reserve(doc->blockCount());
+    // Pass 1: the ids the blocks already carry (a file's xml:id) win, first occurrence only.
+    for (QTextBlock b = doc->begin(); b.isValid(); b = b.next()) {
+        rt::BlockInfo *info = rt::blockInfo(b);
+        if (!info)
+            continue;
+        info->owner = this;
+        info->changePending = false;
+        info->textHash = qHash(b.text());
+        if (!info->id.isEmpty() && !m_blocksById.contains(info->id))
+            m_blocksById.insert(info->id, b);
+        else
+            info->id.clear();
+    }
+    // Pass 2: every other block gets a generated one.
+    for (QTextBlock b = doc->begin(); b.isValid(); b = b.next()) {
+        rt::BlockInfo *info = rt::blockInfo(b);
+        if (!info) {
+            info = new rt::BlockInfo(QString());
+            info->owner = this;
+            info->textHash = qHash(b.text());
+            b.setUserData(info);
+        }
+        if (info->id.isEmpty()) {
+            info->id = newBlockId();
+            m_blocksById.insert(info->id, b);
+        }
+    }
+}
+
+void RichTextHandler::trackBlocks(int position, int charsRemoved, int charsAdded)
+{
+    Q_UNUSED(charsRemoved);
+    QTextDocument *doc = m_doc;
+    if (!doc || m_bulkReset)
+        return;
+    // 1. What replayed: undoCommandAdded fires (before contentsChange) only for a NEW edit; an
+    //    undo/redo moves the stack state without it.
+    const bool undoOn = doc->isUndoRedoEnabled();
+    const int state = undoOn ? doc->availableUndoSteps() : 0;
+    enum class Kind : quint8 { Edit, Undo, Redo };
+    Kind kind = Kind::Edit;
+    if (undoOn && state < m_lastUndoState)
+        kind = Kind::Undo;
+    else if (undoOn && state > m_lastUndoState && !m_newUndoCommand)
+        kind = Kind::Redo;
+    const IdStep *replay = nullptr;
+    if (kind != Kind::Edit) {
+        const int key = kind == Kind::Undo ? m_lastUndoState : state;
+        for (const IdStep &s : std::as_const(m_idSteps))
+            if (s.state == key) {
+                replay = &s;
+                break;
+            }
+    }
+
+    // 2. The edited span (post-edit): new blocks have no BlockInfo; a kept block whose text hash
+    //    moved changed its TEXT (a format-only edit leaves the hash alone).
+    const int last = doc->characterCount() - 1;
+    QTextBlock b = doc->findBlock(qBound(0, position, last));
+    const QTextBlock end = doc->findBlock(qBound(0, position + charsAdded, last));
+    QVarLengthArray<QTextBlock, 8> fresh;
+    for (; b.isValid(); b = b.next()) {
+        if (rt::BlockInfo *info = rt::blockInfo(b)) {
+            const size_t h = qHash(b.text());
+            if (info->textHash != h) {
+                info->textHash = h;
+                queueBlockChange(info);
+            }
+        } else {
+            fresh.append(b);
+        }
+        if (b == end)
+            break;
+    }
+    QStringList added;
+    if (!fresh.isEmpty()) {
+        // Undo recreates exactly the blocks the step removed (and redo the ones it created), in
+        // document order — give them their ids back when the counts agree.
+        const QStringList *reuse = nullptr;
+        if (replay) {
+            const QStringList &ids = kind == Kind::Undo ? replay->removed : replay->added;
+            if (ids.size() == fresh.size())
+                reuse = &ids;
+        }
+        for (qsizetype i = 0; i < fresh.size(); ++i) {
+            QString id = reuse ? reuse->at(i) : QString();
+            if (id.isEmpty() || m_blocksById.contains(id))
+                id = newBlockId();
+            auto *info = new rt::BlockInfo(id);
+            info->owner = this;
+            info->textHash = qHash(fresh[i].text());
+            fresh[i].setUserData(info);
+            m_blocksById.insert(id, fresh[i]);
+            queueBlockChange(info);
+            if (kind == Kind::Edit)
+                added.append(id);
+        }
+    }
+    QStringList removed = std::exchange(m_removedNow, {});
+
+    // 3. A new edit: the redo history Qt just dropped goes from ours too; a structural edit
+    //    (blocks created/removed) is recorded under the stack state it ends at.
+    if (kind == Kind::Edit && undoOn) {
+        m_idSteps.removeIf([this](const IdStep &s) { return s.state > m_lastUndoState; });
+        if (!added.isEmpty() || !removed.isEmpty()) {
+            if (!m_idSteps.isEmpty() && m_idSteps.last().state == state) {
+                m_idSteps.last().removed += removed;
+                m_idSteps.last().added += added;
+            } else {
+                m_idSteps.append(IdStep { state, removed, added });
+                if (m_idSteps.size() > kMaxIdSteps)
+                    m_idSteps.removeFirst();
+            }
+        }
+    }
+    m_newUndoCommand = false;
+    m_lastUndoState = state;
+    if (!removed.isEmpty()) {
+        m_removedQueue += removed;
+        scheduleBlockSignals();
+    }
+}
+
+void RichTextHandler::queueBlockChange(rt::BlockInfo *info)
+{
+    if (info->changePending)
+        return;
+    info->changePending = true;
+    m_changedQueue.append(info->id);
+    scheduleBlockSignals();
+}
+
+void RichTextHandler::scheduleBlockSignals()
+{
+    if (m_signalsQueued)
+        return;
+    m_signalsQueued = true;
+    QMetaObject::invokeMethod(this, &RichTextHandler::flushBlockSignals, Qt::QueuedConnection);
+}
+
+void RichTextHandler::flushBlockSignals()
+{
+    m_signalsQueued = false;
+    const QStringList removed = std::exchange(m_removedQueue, {});
+    const QStringList changed = std::exchange(m_changedQueue, {});
+    if (!m_doc)
+        return;
+    for (const QString &id : removed)
+        if (!m_blocksById.contains(id)) // not brought back (undo) in the meantime
+            emit blockRemoved(id);
+    for (const QString &id : changed) {
+        const auto it = m_blocksById.constFind(id);
+        if (it == m_blocksById.cend())
+            continue; // removed after the change: blockRemoved said it
+        rt::BlockInfo *info = rt::blockInfo(*it);
+        if (!info || !info->changePending)
+            continue;
+        info->changePending = false;
+        emit blockChanged(id);
+    }
+}
+
+QStringList RichTextHandler::blockIds() const
+{
+    QStringList out;
+    if (!m_doc)
+        return out;
+    out.reserve(m_doc->blockCount());
+    for (QTextBlock b = m_doc->begin(); b.isValid(); b = b.next())
+        if (const rt::BlockInfo *info = rt::blockInfo(b))
+            out.append(info->id);
+    return out;
+}
+
+QString RichTextHandler::blockIdAt(int position) const
+{
+    if (!m_doc || position < 0 || position >= m_doc->characterCount())
+        return QString();
+    const rt::BlockInfo *info = rt::blockInfo(m_doc->findBlock(position));
+    return info ? info->id : QString();
+}
+
+QString RichTextHandler::blockText(const QString &blockId) const
+{
+    const auto it = m_blocksById.constFind(blockId);
+    if (it == m_blocksById.cend())
+        return QString();
+    return it->text().replace(QChar::LineSeparator, QLatin1Char('\n')); // same length: offsets hold
 }

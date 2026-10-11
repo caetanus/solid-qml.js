@@ -1,4 +1,5 @@
 #include "richtext_odf.h"
+#include "richtext_blocks.h"
 
 #include <QBuffer>
 #include <QDateTime>
@@ -546,6 +547,10 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                         bf.setHeadingLevel(qBound(1, level, 10));
                 }
                 beginBlock(bf, p.chars);
+                // Office item 3: the block's stable id (adopted by the handler after the load;
+                // blocks without one — or repeating one — get a generated id there).
+                if (const auto xmlId = attrs.value(QLatin1String("xml:id")); !xmlId.isEmpty())
+                    act().block().setUserData(new BlockInfo(xmlId.toString()));
                 act().setCharFormat(p.chars);
                 runs << Run { p.style, QString(), p.charDirect, p.chars, true };
             } else if (name == QLatin1String("span")) {
@@ -949,6 +954,9 @@ private:
             ? odfName(style) : autoStyle(m_autoPara, "P", QStringLiteral("paragraph"), odfName(style), direct));
         if (level > 0)
             m_x.writeAttribute(QStringLiteral("text:outline-level"), QString::number(level));
+        // Office item 3: the block's stable id round-trips as xml:id (ODF 1.2+ on text:p/text:h).
+        if (const BlockInfo *info = blockInfo(b); info && !info->id.isEmpty())
+            m_x.writeAttribute(QStringLiteral("xml:id"), info->id);
 
         m_atStart = true;
         m_prevSpace = false;
