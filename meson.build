@@ -411,3 +411,16 @@ test('widgets-a11y',
     include_directories: include_directories('src'),
     dependencies: a11y_test_deps),
   env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)
+
+# <RichText>/<DocumentEditor> engine (RichTextHandler): modified tracking, the ODF load/save error
+# contract, content/format state and an .odt round-trip — what an app driving the document uses.
+if build_richtext
+  richtext_test_deps = [solidqml_dep, dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'Test'])] + core_private_deps
+  test('richtext-handler',
+    executable('test-richtext-handler', files('tests/richtext_test.cpp'),
+      qt6.preprocess(moc_sources: files('tests/richtext_test.cpp'), dependencies: richtext_test_deps),
+      cpp_args: richtext_args,
+      include_directories: include_directories('src'),
+      dependencies: richtext_test_deps),
+    env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)
+endif

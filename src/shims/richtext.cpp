@@ -1,10 +1,12 @@
 #include "richtext.h"
 
 #include <QFile>
+#include <QFileInfo>
 #include <QImage>
 #include <QTextBlock>
 #include <QTextDocument>
 #include <QTextDocumentWriter>
+#include <QTextFragment>
 #include <QTextImageFormat>
 #include <QTextList>
 #include <QTextTable>
@@ -16,8 +18,114 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
 {
     if (m_document == doc)
         return;
+    QObject::disconnect(m_modifiedConn);
+    QObject::disconnect(m_contentsConn);
     m_document = doc;
+    if (QTextDocument *td = doc ? doc->textDocument() : nullptr) {
+        m_modifiedConn = connect(td, &QTextDocument::modificationChanged, this, &RichTextHandler::modifiedChanged);
+        m_contentsConn = connect(td, &QTextDocument::contentsChanged, this, &RichTextHandler::contentsChanged);
+    }
     emit documentChanged();
+    emit formatChanged();
+    emit modifiedChanged();
+}
+
+namespace {
+
+// A file:// URL or a plain path (what an app passes) → a filesystem path.
+QString localPath(const QUrl &file)
+{
+    return file.isLocalFile() ? file.toLocalFile() : file.toString(QUrl::PreferLocalFile);
+}
+
+} // namespace
+
+void RichTextHandler::setError(const QString &message)
+{
+    if (!message.isEmpty())
+        emit ioError(message);
+    if (m_error == message)
+        return;
+    m_error = message;
+    emit errorStringChanged();
+}
+
+bool RichTextHandler::isModified() const
+{
+    const QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
+    return doc && doc->isModified();
+}
+
+void RichTextHandler::setModified(bool m)
+{
+    if (QTextDocument *doc = m_document ? m_document->textDocument() : nullptr)
+        doc->setModified(m); // modificationChanged → modifiedChanged
+}
+
+QString RichTextHandler::alignment() const
+{
+    const QTextCursor c = insertionCursor();
+    if (c.isNull())
+        return QStringLiteral("left");
+    const Qt::Alignment a = c.blockFormat().alignment();
+    if (a & Qt::AlignHCenter) return QStringLiteral("center");
+    if (a & Qt::AlignJustify) return QStringLiteral("justify");
+    if (a & Qt::AlignRight) return QStringLiteral("right");
+    return QStringLiteral("left");
+}
+
+void RichTextHandler::setAlignment(const QString &align)
+{
+    QTextCursor c = cursor();
+    if (c.isNull())
+        return;
+    QTextBlockFormat bf;
+    if (align == QLatin1String("center")) bf.setAlignment(Qt::AlignHCenter);
+    else if (align == QLatin1String("right")) bf.setAlignment(Qt::AlignRight);
+    else if (align == QLatin1String("justify")) bf.setAlignment(Qt::AlignJustify);
+    else bf.setAlignment(Qt::AlignLeft);
+    c.mergeBlockFormat(bf); // every block the selection touches
+    emit formatChanged();
+}
+
+void RichTextHandler::newDocument()
+{
+    QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
+    if (!doc)
+        return;
+    doc->clear(); // also drops the undo stack and the image resources
+    doc->setModified(false);
+    // clear() signals modificationChanged(true) and then resets the flag WITHOUT a signal, so
+    // setModified(false) is a no-op: tell the bindings the flag is false again.
+    emit modifiedChanged();
+    setError(QString());
+    emit formatChanged();
+}
+
+QString RichTextHandler::toHtml() const
+{
+    const QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
+    return doc ? doc->toHtml() : QString();
+}
+
+QString RichTextHandler::plainText() const
+{
+    const QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
+    // toPlainText turns paragraph separators into "\n"; line breaks (U+2028) stay — normalize them.
+    return doc ? doc->toPlainText().replace(QChar::LineSeparator, QLatin1Char('\n')) : QString();
+}
+
+void RichTextHandler::insertText(const QString &text)
+{
+    QTextCursor c = insertionCursor();
+    if (c.isNull())
+        return;
+    if (m_selectionStart != m_selectionEnd) {
+        const int last = c.document()->characterCount() - 1;
+        c.setPosition(qBound(0, m_selectionStart, last));
+        c.setPosition(qBound(0, m_selectionEnd, last), QTextCursor::KeepAnchor); // typing over a selection replaces it
+    }
+    c.insertText(text);
     emit formatChanged();
 }
 
@@ -54,11 +162,14 @@ QTextCursor RichTextHandler::cursor() const
     if (!doc)
         return QTextCursor();
     QTextCursor c(doc);
+    // The editor's positions reach us through bindings, a beat after the document changed under
+    // them (a load, a new document): clamp so a stale value can't point past the end.
+    const int last = doc->characterCount() - 1;
     if (m_selectionStart != m_selectionEnd) {
-        c.setPosition(m_selectionStart);
-        c.setPosition(m_selectionEnd, QTextCursor::KeepAnchor);
+        c.setPosition(qBound(0, m_selectionStart, last));
+        c.setPosition(qBound(0, m_selectionEnd, last), QTextCursor::KeepAnchor);
     } else {
-        c.setPosition(m_cursorPosition);
+        c.setPosition(qBound(0, m_cursorPosition, last));
         // Word-processor convention: with no selection, a format toggle applies to the word.
         c.select(QTextCursor::WordUnderCursor);
     }
@@ -71,7 +182,7 @@ QTextCursor RichTextHandler::insertionCursor() const
     if (!doc)
         return QTextCursor();
     QTextCursor c(doc);
-    c.setPosition(m_cursorPosition);
+    c.setPosition(qBound(0, m_cursorPosition, doc->characterCount() - 1));
     return c;
 }
 
@@ -155,34 +266,59 @@ void RichTextHandler::setHeading(int level)
     bf.setHeadingLevel(level);
     c.setBlockFormat(bf);
     // Headings carry their size on the char format of the whole block (like Qt's own editors).
-    c.select(QTextCursor::BlockUnderCursor);
-    QTextCharFormat cf;
-    cf.setFontWeight(level > 0 ? QFont::Bold : QFont::Normal);
-    static const qreal sizes[] = { 0.0, 20.0, 17.0, 15.0 };
-    if (level >= 1 && level <= 3)
-        cf.setFontPointSize(sizes[level]);
-    else
-        cf.clearProperty(QTextFormat::FontPointSize);
-    c.mergeCharFormat(cf);
+    const QTextBlock block = c.block();
+    if (level > 0) {
+        QTextCursor b(block);
+        b.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+        QTextCharFormat cf;
+        cf.setFontWeight(QFont::Bold);
+        static const qreal sizes[] = { 0.0, 20.0, 17.0, 15.0 };
+        if (level <= 3)
+            cf.setFontPointSize(sizes[level]);
+        b.mergeCharFormat(cf);
+        b.mergeBlockCharFormat(cf); // what is typed into an empty heading
+    } else {
+        // Back to body text: a merge can't REMOVE a property, so rewrite each run without the
+        // heading's size and weight (italic/underline/… stay).
+        for (auto it = block.begin(); !it.atEnd(); ++it) {
+            const QTextFragment frag = it.fragment();
+            if (!frag.isValid())
+                continue;
+            QTextCharFormat f = frag.charFormat();
+            f.clearProperty(QTextFormat::FontPointSize);
+            f.clearProperty(QTextFormat::FontWeight);
+            QTextCursor r(c.document());
+            r.setPosition(frag.position());
+            r.setPosition(frag.position() + frag.length(), QTextCursor::KeepAnchor);
+            r.setCharFormat(f);
+        }
+        QTextCharFormat bcf = QTextCursor(block).blockCharFormat();
+        bcf.clearProperty(QTextFormat::FontPointSize);
+        bcf.clearProperty(QTextFormat::FontWeight);
+        QTextCursor(block).setBlockCharFormat(bcf);
+    }
     emit formatChanged();
 }
 
-void RichTextHandler::insertImage(const QUrl &file)
+bool RichTextHandler::insertImage(const QUrl &file)
 {
     QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
     if (!doc)
-        return;
-    const QString path = file.isLocalFile() ? file.toLocalFile() : file.toString();
+        return false;
+    const QString path = localPath(file);
     QImage img(path);
     if (img.isNull()) {
-        emit ioError(QStringLiteral("could not load image ") + path);
-        return;
+        setError(QStringLiteral("could not load image ") + path);
+        return false;
     }
     // The resource name keys BOTH the render lookup and the ODF embed (the writer walks image
     // formats and pulls the resource into Pictures/).
-    doc->addResource(QTextDocument::ImageResource, file, img);
+    // A plain path becomes an absolute file:// URL: the lookup resolves names against the editor's
+    // baseUrl, so a scheme-less key would never match again.
+    const QUrl key = file.scheme().isEmpty() ? QUrl::fromLocalFile(QFileInfo(path).absoluteFilePath()) : file;
+    doc->addResource(QTextDocument::ImageResource, key, img);
     QTextImageFormat fmt;
-    fmt.setName(file.toString());
+    fmt.setName(key.toString());
     // Word-like cap: images wider than the page column scale down, keeping aspect.
     constexpr qreal kMaxWidth = 480.0;
     if (img.width() > kMaxWidth) {
@@ -190,7 +326,9 @@ void RichTextHandler::insertImage(const QUrl &file)
         fmt.setHeight(img.height() * kMaxWidth / img.width());
     }
     insertionCursor().insertImage(fmt);
+    setError(QString());
     emit formatChanged();
+    return true;
 }
 
 namespace {
@@ -208,6 +346,18 @@ QTextTableFormat wordLikeTableFormat()
     return f;
 }
 
+// A table at `c`, never right after a list item. Qt's ODF writer keeps a list open until a block
+// outside it, so a table that directly follows an item is written INSIDE <text:list>, with cells
+// outside their rows — a file no reader recovers (a 300-page book's reload crashed on it). A plain
+// (empty) paragraph between the list and the table closes the list. Our own ODF writer (office
+// item 2, named styles) removes the need for it.
+QTextTable *insertTableAt(QTextCursor &c, int rows, int cols)
+{
+    if (c.currentList())
+        c.insertBlock(QTextBlockFormat(), c.charFormat());
+    return c.insertTable(rows, cols, wordLikeTableFormat());
+}
+
 } // namespace
 
 void RichTextHandler::insertTable(int rows, int cols)
@@ -215,7 +365,7 @@ void RichTextHandler::insertTable(int rows, int cols)
     QTextCursor c = insertionCursor();
     if (c.isNull() || rows < 1 || cols < 1)
         return;
-    c.insertTable(rows, cols, wordLikeTableFormat());
+    insertTableAt(c, rows, cols);
     emit formatChanged();
 }
 
@@ -275,12 +425,17 @@ bool RichTextHandler::saveOdf(const QUrl &file)
     if (!doc)
         return false;
     // Qt's NATIVE OpenDocument writer.
-    QTextDocumentWriter writer(file.isLocalFile() ? file.toLocalFile() : file.toString());
+    const QString path = localPath(file);
+    QTextDocumentWriter writer(path);
     writer.setFormat("odf");
-    const bool ok = writer.write(doc);
-    if (!ok)
-        emit ioError(QStringLiteral("could not write ") + file.toString());
-    return ok;
+    if (!writer.write(doc)) {
+        const QString why = writer.device() ? writer.device()->errorString() : QString();
+        setError(QStringLiteral("could not write ") + path + (why.isEmpty() ? QString() : QStringLiteral(": ") + why));
+        return false;
+    }
+    doc->setModified(false);
+    setError(QString());
+    return true;
 }
 
 // ─── minimal ODF reader (Qt ships none): content.xml → QTextDocument ───────────────────────────
@@ -292,9 +447,11 @@ struct OdfStyle {
     bool italic = false;
     bool underline = false;
     bool strike = false;
+    qreal pointSize = -1;         // fo:font-size in pt (Qt's writer keeps a heading's size there)
+    Qt::Alignment align = {};     // paragraph styles: fo:text-align
 };
 
-// Automatic styles from content.xml: style:style/style:text-properties attributes.
+// Automatic styles from content.xml: style:style with its text-properties / paragraph-properties.
 QHash<QString, OdfStyle> readAutomaticStyles(QXmlStreamReader &xml)
 {
     QHash<QString, OdfStyle> styles;
@@ -305,16 +462,25 @@ QHash<QString, OdfStyle> readAutomaticStyles(QXmlStreamReader &xml)
             break;
         if (tok != QXmlStreamReader::StartElement)
             continue;
-        if (xml.name() == QLatin1String("style"))
-            current = xml.attributes().value(QLatin1String("style:name")).toString();
-        else if (xml.name() == QLatin1String("text-properties") && !current.isEmpty()) {
-            OdfStyle s;
-            const auto a = xml.attributes();
+        const auto a = xml.attributes();
+        if (xml.name() == QLatin1String("style")) {
+            current = a.value(QLatin1String("style:name")).toString();
+        } else if (xml.name() == QLatin1String("text-properties") && !current.isEmpty()) {
+            OdfStyle &s = styles[current];
             s.bold = a.value(QLatin1String("fo:font-weight")) == QLatin1String("bold");
             s.italic = a.value(QLatin1String("fo:font-style")) == QLatin1String("italic");
             s.underline = a.value(QLatin1String("style:text-underline-style")) == QLatin1String("solid");
             s.strike = a.value(QLatin1String("style:text-line-through-style")) == QLatin1String("solid");
-            styles.insert(current, s);
+            const QStringView size = a.value(QLatin1String("fo:font-size"));
+            if (size.endsWith(QLatin1String("pt")))
+                s.pointSize = size.chopped(2).toDouble();
+        } else if (xml.name() == QLatin1String("paragraph-properties") && !current.isEmpty()) {
+            const QStringView al = a.value(QLatin1String("fo:text-align"));
+            OdfStyle &s = styles[current];
+            if (al == QLatin1String("center")) s.align = Qt::AlignHCenter;
+            else if (al == QLatin1String("end") || al == QLatin1String("right")) s.align = Qt::AlignRight;
+            else if (al == QLatin1String("justify")) s.align = Qt::AlignJustify;
+            else if (!al.isEmpty()) s.align = Qt::AlignLeft;
         }
     }
     return styles;
@@ -327,6 +493,14 @@ QTextCharFormat formatFor(const OdfStyle &s)
     f.setFontItalic(s.italic);
     f.setFontUnderline(s.underline);
     f.setFontStrikeOut(s.strike);
+    if (s.pointSize > 0) f.setFontPointSize(s.pointSize);
+    return f;
+}
+
+QTextBlockFormat blockFormatFor(const OdfStyle &s)
+{
+    QTextBlockFormat f;
+    if (s.align) f.setAlignment(s.align);
     return f;
 }
 
@@ -357,17 +531,24 @@ bool RichTextHandler::loadOdf(const QUrl &file)
     QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
     if (!doc)
         return false;
-    const QString path = file.isLocalFile() ? file.toLocalFile() : file.toString();
+    const QString path = localPath(file);
+    if (!QFile::exists(path)) {
+        setError(QStringLiteral("file not found: ") + path);
+        return false;
+    }
     QZipReader zip(path);
     const QByteArray content = zip.fileData(QStringLiteral("content.xml"));
     if (content.isEmpty()) {
-        emit ioError(QStringLiteral("not an OpenDocument file: ") + path);
+        setError(QStringLiteral("not an OpenDocument file: ") + path);
         return false;
     }
 
     QXmlStreamReader xml(content);
     QHash<QString, OdfStyle> styles;
 
+    // Opening a file is not an undoable edit: with undo off, clear() + the build leave no history
+    // (re-enabling it starts an empty stack), so Ctrl+Z can't empty the freshly opened document.
+    doc->setUndoRedoEnabled(false);
     doc->clear();
     QTextCursor c(doc);
     c.beginEditBlock();
@@ -384,6 +565,7 @@ bool RichTextHandler::loadOdf(const QUrl &file)
     int tCol = -1;
     QTextCursor cellCursor;
     bool inCell = false;
+    int nestedTables = 0;
     bool cellFirstBlock = false;
 
     // Pending inline image (draw:frame carries the size, the nested draw:image the href; the
@@ -426,7 +608,7 @@ bool RichTextHandler::loadOdf(const QUrl &file)
             } else if (name == QLatin1String("h")) {
                 inParagraph = true;
                 const int level = xml.attributes().value(QLatin1String("text:outline-level")).toString().toInt();
-                QTextBlockFormat bf;
+                QTextBlockFormat bf = blockFormatFor(styles.value(xml.attributes().value(QLatin1String("text:style-name")).toString()));
                 bf.setHeadingLevel(qBound(1, level ? level : 1, 6));
                 beginBlock(bf);
                 QTextCharFormat cf;
@@ -437,9 +619,9 @@ bool RichTextHandler::loadOdf(const QUrl &file)
                 act().setCharFormat(cf);
             } else if (name == QLatin1String("p")) {
                 inParagraph = true;
-                beginBlock(QTextBlockFormat());
-                const QString styleName = xml.attributes().value(QLatin1String("text:style-name")).toString();
-                act().setCharFormat(formatFor(styles.value(styleName)));
+                const OdfStyle st = styles.value(xml.attributes().value(QLatin1String("text:style-name")).toString());
+                beginBlock(blockFormatFor(st));
+                act().setCharFormat(formatFor(st));
             } else if (name == QLatin1String("span")) {
                 const QString styleName = xml.attributes().value(QLatin1String("text:style-name")).toString();
                 act().setCharFormat(formatFor(styles.value(styleName)));
@@ -451,23 +633,34 @@ bool RichTextHandler::loadOdf(const QUrl &file)
                 int n = xml.attributes().value(QLatin1String("text:c")).toString().toInt();
                 act().insertText(QString(qMax(1, n), QLatin1Char(' ')));
             } else if (name == QLatin1String("table")) {
-                curTable = nullptr;
-                declaredCols = 0;
-                tRow = -1;
+                // A table inside a cell is not supported: its cells' text flows into the outer cell.
+                if (inCell || nestedTables > 0) {
+                    ++nestedTables;
+                } else {
+                    curTable = nullptr;
+                    declaredCols = 0;
+                    tRow = -1;
+                }
+            } else if (nestedTables > 0 && name.startsWith(QLatin1String("table-"))) {
+                // a nested table's columns/rows/cells: its paragraphs land in the outer cell
             } else if (name == QLatin1String("table-column")) {
                 const int rep = xml.attributes().value(QLatin1String("table:number-columns-repeated")).toString().toInt();
                 declaredCols += qMax(1, rep);
             } else if (name == QLatin1String("table-row")) {
-                if (!curTable)
-                    curTable = c.insertTable(1, qMax(1, declaredCols), wordLikeTableFormat());
-                else
+                if (!curTable) {
+                    curTable = insertTableAt(c, 1, qMax(1, declaredCols));
+                    tRow = 0;
+                } else {
                     curTable->appendRows(1);
-                ++tRow;
+                    ++tRow;
+                }
                 tCol = -1;
             } else if (name == QLatin1String("table-cell")) {
-                if (curTable && tRow >= 0) {
-                    ++tCol;
-                    const QTextTableCell cell = curTable->cellAt(tRow, qMin(tCol, curTable->columns() - 1));
+                // Only a cell of the current row: a mis-nested file (a cell outside any row) is
+                // read as plain paragraphs rather than trusted.
+                const QTextTableCell cell = curTable && tRow >= 0 && tRow < curTable->rows()
+                    ? curTable->cellAt(tRow, qMin(++tCol, curTable->columns() - 1)) : QTextTableCell();
+                if (cell.isValid()) {
                     cellCursor = cell.firstCursorPosition();
                     inCell = true;
                     cellFirstBlock = true;
@@ -488,6 +681,10 @@ bool RichTextHandler::loadOdf(const QUrl &file)
                 inParagraph = false;
             } else if (name == QLatin1String("span")) {
                 act().setCharFormat(QTextCharFormat());
+            } else if (name == QLatin1String("table") && nestedTables > 0) {
+                --nestedTables;
+            } else if (nestedTables > 0 && name.startsWith(QLatin1String("table-"))) {
+                // a nested table's row/cell end: the outer cell stays open
             } else if (name == QLatin1String("table-cell")) {
                 inCell = false;
             } else if (name == QLatin1String("table")) {
@@ -525,11 +722,15 @@ bool RichTextHandler::loadOdf(const QUrl &file)
         }
     }
     c.endEditBlock();
+    doc->setUndoRedoEnabled(true);
+    doc->setModified(false);
+    emit modifiedChanged(); // see newDocument: clear() can leave the last signal saying "true"
 
     if (xml.hasError()) {
-        emit ioError(QStringLiteral("ODF parse error: ") + xml.errorString());
+        setError(QStringLiteral("ODF parse error: ") + xml.errorString());
         return false;
     }
+    setError(QString());
     emit formatChanged();
     return true;
 }

@@ -32,6 +32,13 @@ class RichTextHandler : public QObject {
     Q_PROPERTY(int heading READ heading NOTIFY formatChanged)
     // Cursor sits inside a table — gates the row/column toolbar actions.
     Q_PROPERTY(bool inTable READ inTable NOTIFY formatChanged)
+    // Paragraph alignment at the cursor: "left" | "center" | "right" | "justify".
+    Q_PROPERTY(QString alignment READ alignment NOTIFY formatChanged)
+    // The document has unsaved edits (QTextDocument::isModified). Cleared by saveOdf/loadOdf/
+    // newDocument; writable so a host can mark its own save points.
+    Q_PROPERTY(bool modified READ isModified WRITE setModified NOTIFY modifiedChanged)
+    // Why the last loadOdf/saveOdf failed ("" after a success).
+    Q_PROPERTY(QString errorString READ errorString NOTIFY errorStringChanged)
 
 public:
     using QObject::QObject;
@@ -61,8 +68,9 @@ public:
     Q_INVOKABLE void setHeading(int level); // 0 = body text, 1..3 = H1..H3
 
     // Inline image at the cursor: loaded into a document resource (so QTextDocumentWriter embeds
-    // it into Pictures/ on save) and capped to a word-like page width.
-    Q_INVOKABLE void insertImage(const QUrl &file);
+    // it into Pictures/ on save) and capped to a word-like page width. `file`: URL or plain path;
+    // false + errorString when the image can't be read.
+    Q_INVOKABLE bool insertImage(const QUrl &file);
 
     // Tables (owner: "no richtext temos tabela também"): a bordered QTextTable at the cursor,
     // plus row/column edits relative to the current cell.
@@ -73,16 +81,41 @@ public:
     Q_INVOKABLE void removeTableColumn();
     bool inTable() const;
 
+    QString alignment() const;
+    Q_INVOKABLE void setAlignment(const QString &align); // on every paragraph of the selection
+
+    bool isModified() const;
+    void setModified(bool m);
+    QString errorString() const { return m_error; }
+
+    // File IO. `file` is a file:// URL or a plain path. Both return false and set errorString on
+    // failure; on success errorString is "" and `modified` is cleared. A failed load leaves the
+    // current document untouched; a load is not an undo step.
     Q_INVOKABLE bool saveOdf(const QUrl &file);
     Q_INVOKABLE bool loadOdf(const QUrl &file);
+    // An empty, unmodified document (no undo history, no image resources).
+    Q_INVOKABLE void newDocument();
+
+    // Content, for the app: the HTML Qt's editor holds, and plain text with "\n" between paragraphs.
+    Q_INVOKABLE QString toHtml() const;
+    Q_INVOKABLE QString plainText() const;
+    // Plain text at the caret ("\n" starts a new paragraph), in the formatting around it.
+    Q_INVOKABLE void insertText(const QString &text);
 
 signals:
     void documentChanged();
     void selectionChanged();
     void formatChanged();
     void ioError(const QString &message);
+    void modifiedChanged();
+    void errorStringChanged();
+    // Every content change, formatting included (QTextDocument::contentsChanged) — undebounced;
+    // the QML widget debounces it into its contentChanged().
+    void contentsChanged();
 
 private:
+    void setError(const QString &message); // "" = success; non-empty also emits ioError
+
     QTextCursor cursor() const;              // covers the selection, or the word at the cursor
     QTextCursor insertionCursor() const;     // plain caret position (no word expansion) — inserts
     void mergeCharFormat(const QTextCharFormat &fmt);
@@ -91,4 +124,7 @@ private:
     int m_selectionStart = 0;
     int m_selectionEnd = 0;
     int m_cursorPosition = 0;
+    QString m_error;
+    QMetaObject::Connection m_modifiedConn;
+    QMetaObject::Connection m_contentsConn;
 };
