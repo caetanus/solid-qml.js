@@ -130,9 +130,13 @@ step_smoke() {
   mkdir -p "$SMOKE_DIR"
   cp "$APP_DIR/tests/clean-room/hello-app/counter.tsx" "$SMOKE_DIR/counter.tsx"
   cp "$APP_DIR/tests/clean-room/hello-app/counter.css" "$SMOKE_DIR/counter.css"
-  # BSD sed (macOS) requires an explicit (here empty) backup-suffix argument to -i; GNU sed's
-  # -i takes none. '' as its own argv element is the portable spelling for both.
-  sed -i '' "s#__RUNTIME__#$APP_DIR/src/solid-qml/runtime#" "$SMOKE_DIR/counter.tsx"
+  # Portable -i spelling: BSD sed (macOS's own /usr/bin/sed) requires the backup-suffix argument
+  # ATTACHED to -i (space-separated means "no suffix, and the next arg is the script" on BSD,
+  # which would misparse); GNU sed (this job also puts GNU sed's gnubin on PATH, for
+  # tests/c23/run-virtual.sh) accepts the attached form the same way. Attached + always clean up
+  # the backup file works identically on both.
+  sed -i.bak "s#__RUNTIME__#$APP_DIR/src/solid-qml/runtime#" "$SMOKE_DIR/counter.tsx"
+  rm -f "$SMOKE_DIR/counter.tsx.bak"
   (cd "$SMOKE_DIR" && node --import "$APP_DIR/node_modules/tsx/dist/loader.mjs" \
     "$APP_DIR/scripts/gen.mjs" "$SMOKE_DIR/counter.tsx" "$SMOKE_DIR/qmlout/App.generated.qml")
   (cd "$SMOKE_DIR" && QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 \

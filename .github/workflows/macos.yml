@@ -102,6 +102,14 @@ jobs:
           brew install libvterm
           echo "PKG_CONFIG_PATH=$(brew --prefix libvterm)/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
 
+      - name: Install GNU coreutils/sed (tests/c23's run.sh / run-virtual.sh use GNU `timeout` + `sed -i`)
+        run: |
+          brew install coreutils gnu-sed
+          {
+            echo "$(brew --prefix coreutils)/libexec/gnubin"
+            echo "$(brew --prefix gnu-sed)/libexec/gnubin"
+          } >> "$GITHUB_PATH"
+
       - name: Cache npm dependencies
         uses: actions/cache@v4
         with:
@@ -124,12 +132,19 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      # upload-artifact@v4's `path:` rejects "../" (relative pathing outside the workspace isn't
+      # allowed) -- the smoke test deliberately runs OUTSIDE the checkout (see ci-macos.sh), so
+      # copy its screenshot back in first.
+      - name: Copy smoke-test screenshot into the workspace
+        if: always()
+        run: cp ../solidqml-ci-smoke-macos/shot.png "./smoke-${{ matrix.qt_arch }}.png" 2>/dev/null || true
+
       - name: Upload smoke-test screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: smoke-test-screenshot-macos-${{ matrix.qt_arch }}
-          path: ../solidqml-ci-smoke-macos/shot.png
+          path: smoke-${{ matrix.qt_arch }}.png
           if-no-files-found: ignore
           retention-days: 7
 
@@ -138,7 +153,6 @@ jobs:
         run: |
           tar -czf "solidqml-macos-${{ matrix.qt_arch }}.tar.gz" \
             -C .scratch/install .
-          cp ../solidqml-ci-smoke-macos/shot.png "./smoke-${{ matrix.qt_arch }}.png" 2>/dev/null || true
 
       - name: Upload installed-prefix artifact
         if: success()

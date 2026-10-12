@@ -36,17 +36,25 @@ if host_machine.system() == 'darwin'
     warning('QT_MAC_FRAMEWORKS_DIR is unset on macOS: Qt private-header dependencies (RichText, ' +
             'the Templates2 widgets) will likely fail to find their headers.')
   else
-    mac_private_dirs = run_command('sh', '-c',
+    # For each module's .framework, find wherever its "private" headers subdirectory actually
+    # landed (no assumption about the version-number nesting above it — that's exactly the part
+    # that's Qt-packaging-dependent) and use ITS PARENT as the -I root, so `#include
+    # <private/foo_p.h>` resolves. Never fails the configure: a module simply missing from the
+    # output (rather than `check: true` aborting meson.build) is handled by the empty-result
+    # warning below.
+    mac_private_find = run_command('sh', '-c',
       'for m in QtCore QtGui QtQml QtQmlModels QtQuick QtQuickTemplates2; do ' +
-      'd=$(find "$1" -type d -path "*/$m.framework/PrivateHeaders/*/$m" 2>/dev/null | head -1); ' +
-      '[ -n "$d" ] && printf "%s\n" "$d"; done',
-      '--', mac_fw_dir, check: true).stdout().strip().split('\n')
+      'p=$(find "$1/$m.framework" -type d -name private 2>/dev/null | head -1); ' +
+      'if [ -n "$p" ]; then dirname "$p"; fi; done; exit 0',
+      '--', mac_fw_dir, check: true)
+    mac_private_dirs = mac_private_find.stdout().strip().split('\n')
     mac_private_args = []
     foreach d : mac_private_dirs
       if d != ''
         mac_private_args += ['-I' + d]
       endif
     endforeach
+    message('mac_qt_private_dep: found private-header dirs under ' + mac_fw_dir + ': ' + ' '.join(mac_private_dirs))
     if mac_private_args.length() == 0
       warning('No Qt PrivateHeaders found under ' + mac_fw_dir + ' — private-header dependencies ' +
               'will likely fail to compile.')
