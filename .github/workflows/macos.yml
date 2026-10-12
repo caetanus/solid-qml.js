@@ -1,0 +1,152 @@
+name: macos
+
+# Owner directive (2026-10-11): CI must ALSO build for macOS — build + tests + an unsigned
+# artifact — alongside the Linux pin (.github/workflows/ci.yml) that release-plan M7 names as the
+# ONE *supported* preview environment. macOS here is "also build + test", not a second supported
+# platform promise.
+#
+# Qt comes from aqtinstall (official binary packages, matching the Linux job's Qt 6.11.2 pin) and
+# is cached. Node, meson and ninja are pinned the same way the Linux job pins its toolchain, for
+# the same reproducibility reason. Steps that run INSIDE the job are factored into
+# scripts/ci-macos.sh (mirrors scripts/ci-steps.sh's step names/order so the two never drift
+# apart in structure, even though the underlying commands differ per platform).
+
+on:
+  push:
+    branches: [master, widgets, ci-macos]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: "6.11.2"
+  # Pinned the same way ci.yml pins its Arch snapshot date and nodejs build — see that workflow's
+  # header comment. aqtinstall/meson/ninja versions below are pinned for the same reason.
+  AQTINSTALL_VERSION: "3.3.0"
+  MESON_VERSION: "1.12.0"
+  NINJA_VERSION: "1.13.2"
+  NODE_VERSION: "26.8.2"
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.qt_arch }} (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # arm64 is the priority target (owner directive) — Apple Silicon, the default macOS
+          # runner generation going forward.
+          - os: macos-14
+            qt_arch: arm64
+          # x86_64 considered "if cheap": both repos are public, so macOS runner minutes are
+          # unmetered (GitHub Actions: unlimited minutes on any OS for public repos) — cheap.
+          - os: macos-13
+            qt_arch: x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      # This project's RAM-ceiling/"never /tmp" rule (see docs/memory-ceiling, CLAUDE memory)
+      # applies to CI scratch too: keep it inside the workspace, not the runner's /tmp.
+      TMPDIR: ${{ github.workspace }}/.scratch/tmp
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python (for pinned meson/ninja/aqtinstall)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned meson/ninja/aqtinstall into a venv
+        run: |
+          mkdir -p "$TMPDIR"
+          python3 -m venv "$RUNNER_TEMP/ci-venv"
+          echo "$RUNNER_TEMP/ci-venv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/ci-venv/bin/pip" install -U pip
+          "$RUNNER_TEMP/ci-venv/bin/pip" install \
+            "meson==$MESON_VERSION" "ninja==$NINJA_VERSION" "aqtinstall==$AQTINSTALL_VERSION"
+
+      - name: Set up Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache Qt ${{ env.QT_VERSION }}
+        id: cache-qt
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/qt
+          key: qt-${{ env.QT_VERSION }}-mac-${{ matrix.qt_arch }}
+
+      - name: Install Qt ${{ env.QT_VERSION }} (aqtinstall)
+        if: steps.cache-qt.outputs.cache-hit != 'true'
+        run: |
+          aqt install-qt mac desktop "$QT_VERSION" clang_64 -O "$RUNNER_TEMP/qt"
+
+      - name: Export Qt environment
+        run: |
+          QT_PREFIX="$RUNNER_TEMP/qt/$QT_VERSION/macos"
+          echo "$QT_PREFIX/bin" >> "$GITHUB_PATH"
+          {
+            echo "QT_MAC_FRAMEWORKS_DIR=$QT_PREFIX/lib"
+            echo "PKG_CONFIG_PATH=$QT_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+            echo "CMAKE_PREFIX_PATH=$QT_PREFIX:${CMAKE_PREFIX_PATH:-}"
+          } >> "$GITHUB_ENV"
+
+      - name: Install libvterm (Homebrew, for SolidTerm)
+        run: |
+          brew install libvterm
+          echo "PKG_CONFIG_PATH=$(brew --prefix libvterm)/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ matrix.qt_arch }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Print versions, build, test, install, smoke-test
+        run: scripts/ci-macos.sh
+        env:
+          JOBS: 3
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meson-test-logs-macos-${{ matrix.qt_arch }}
+          path: |
+            build/meson-logs/testlog.txt
+            build/meson-logs/meson-log.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload smoke-test screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-screenshot-macos-${{ matrix.qt_arch }}
+          path: ../solidqml-ci-smoke-macos/shot.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Package the unsigned installed-prefix artifact
+        if: success()
+        run: |
+          tar -czf "solidqml-macos-${{ matrix.qt_arch }}.tar.gz" \
+            -C .scratch/install .
+          cp ../solidqml-ci-smoke-macos/shot.png "./smoke-${{ matrix.qt_arch }}.png" 2>/dev/null || true
+
+      - name: Upload installed-prefix artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: solidqml-macos-${{ matrix.qt_arch }}
+          path: |
+            solidqml-macos-${{ matrix.qt_arch }}.tar.gz
+            smoke-${{ matrix.qt_arch }}.png
+          if-no-files-found: error
+          retention-days: 14
