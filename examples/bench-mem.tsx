@@ -1,10 +1,12 @@
-// Memory probe for the rows benchmark: logs MEM base, mounts 2000 rows, logs MEM rows, then idles.
+// Memory probe for the rows benchmark: logs MEM mounted (startup marker), MEM base, mounts 2000 rows,
+// logs MEM rows, then idles. The runner (scripts/bench/run.mjs) reads PSS at the markers.
 import { createSignal, For, onMount } from "solid-js";
 import { div, text } from "../src/solid-qml/runtime";
 
 export function BenchMem() {
   const [rows, setRows] = createSignal([]);
   onMount(() => {
+    console.log("MEM mounted");
     setTimeout(() => {
       console.log("MEM base");
       setTimeout(() => {

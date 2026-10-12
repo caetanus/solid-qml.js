@@ -3,6 +3,8 @@
 # with the list's scroll ON (overflow-y: auto) and OFF (visible), the first round of each operation as
 # "<op>=<sync ms>/<to next tick ms>". swap/remove1 are clamped and valid for every N; for N >= 1000 they
 # are the standard js-framework-benchmark 1<->998 swap and row-500 removal.
+# Quick first-round probe only; the published methodology (warm-up, repetitions, presented frames,
+# web side, load gating) is scripts/bench/run.mjs — see docs/performance.md.
 # Usage: scripts/bench-native.sh [outdir]
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -17,7 +19,7 @@ if ! ninja -C build-local -n | grep -q "no work to do"; then
     echo "build-local is stale — run: meson compile -C build-local" >&2
     exit 1
 fi
-echo "libsolidqml sha256: $(sha256sum build-local/libsolidqml.so.0.2.0 | cut -c1-16)"
+echo "libsolidqml sha256: $(sha256sum build-local/libsolidqml.so.*.*.* | cut -c1-16)"
 rm -rf "$OUT"
 mkdir -p "$OUT/gen"
 node --import tsx scripts/gen.mjs examples/bench-rows.qml.tsx "$OUT/gen/App.generated.qml" >/dev/null
@@ -28,8 +30,7 @@ for scroll in auto visible; do
         d="$OUT/$scroll-$n"
         cp -r "$OUT/gen" "$d"
         sed -i "s/overflow-y: auto/overflow-y: $scroll/" "$d/App.generated.css"
-        sed -i "s/build(1000)/build($n)/g" "$d/BenchRows.qml"
-        QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 timeout 600 "$LOADER" \
+        BENCH_N=$n QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 timeout 600 "$LOADER" \
             --qml "$d/App.generated.qml" --css "$d/App.generated.css" --width 800 --height 900 \
             > "$d/run.log" 2>&1 &
         pid=$!
