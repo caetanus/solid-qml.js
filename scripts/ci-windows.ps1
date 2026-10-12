@@ -170,6 +170,8 @@ function Step-Smoke {
         foreach ($k in $saved.Keys) { Set-Item "env:$k" $saved[$k] -ErrorAction SilentlyContinue }
     }
     if (-not (Test-Path $shot) -or (Get-Item $shot).Length -eq 0) { throw 'ci-windows: smoke test produced no screenshot' }
+    New-Item -ItemType Directory -Force $DistDir | Out-Null
+    Copy-Item $shot (Join-Path $DistDir 'smoke-shot.png')
     Write-Host "ci-windows: smoke test PASSED. Screenshot: $shot"
 }
 
@@ -179,8 +181,6 @@ function Step-Package {
     $zip = Join-Path $DistDir 'solid-qml-windows-x64.zip'
     if (Test-Path $zip) { Remove-Item -Force $zip }
     Compress-Archive -Path (Join-Path $PrefixDir '*') -DestinationPath $zip
-    $shot = Join-Path $SmokeDir 'shot.png'
-    if (Test-Path $shot) { Copy-Item $shot (Join-Path $DistDir 'smoke-shot.png') }
     Get-ChildItem $DistDir | Format-Table Name, Length
 }
 

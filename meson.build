@@ -275,7 +275,9 @@ if get_option('examples').allowed()
 
   # Demo: "legacy" C++ shipped as a canonical QML extension plugin, consumed from TSX via
   # `import { AcmeGauge } from "qml:Acme"` + loader --import-path (Direção B of the embed plan).
-  acme_qt_dep = dependency('qt6', modules: ['Quick'])
+  # Every module explicitly: with the qmake-based lookup (Windows) a module's include path does not
+  # pull its dependencies', and moc must see QtQml's QQmlExtensionInterface_iid.
+  acme_qt_dep = dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick'])
   acme_moc = qt6.preprocess(moc_sources: files('examples/legacy-plugin/acmeplugin.cpp'), dependencies: [acme_qt_dep])
   acme_plugin = shared_module(
     'acmeplugin',

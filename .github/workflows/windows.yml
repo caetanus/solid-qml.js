@@ -89,7 +89,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-smoke-test-screenshot
-          path: ../solidqml-ci-smoke/shot.png
+          # The smoke app runs NEXT TO the checkout; upload-artifact refuses '..' paths, so
+          # ci-windows.ps1 copies the screenshot into .scratch/dist.
+          path: .scratch/dist/smoke-shot.png
           if-no-files-found: ignore
           retention-days: 14
 
