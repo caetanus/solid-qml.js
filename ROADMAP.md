@@ -90,8 +90,9 @@ Web parity is the floor, not the ceiling. Native-only capabilities, in intended 
   (typed bindings, zero-overhead calls), the same way npm modules import today.
 - **Component generation for legacy projects** — emit consumable QML/C++ components from
   app sources so existing Qt codebases can adopt pieces incrementally.
-- **Native app examples** — real applications proving the model end to end: a terminal,
-  a media player, a photo album, a simple browser.
-- **Threading** — worker threads with a web-worker-like API surface over Qt's threading.
+- **Native app examples** — real applications proving the model end to end: a terminal
+  (landed: `apps/solidterm`), a media player, a photo album, a simple browser.
+- **Threading** — landed: `Worker`, `worker_threads` and `SharedArrayBuffer`/`Atomics`
+  (`src/shims/webworker.cpp`, `sharedbuffers.cpp`), each worker on its own QML engine and thread.
 - **Background services (mobile)** — long-running work on Android/iOS lifecycles.
 - **Push notifications** — native push wiring on desktop and mobile.

@@ -7,6 +7,10 @@ primitives counts for little.
 
 Status legend: ✅ done · 🟡 partial · ❌ missing
 
+The exact verdict of the transpiler on each construct (accepted, or the compile error it prints) is
+generated from the code in [`docs/support-matrix.md`](docs/support-matrix.md). Where this file and that
+one disagree, the support matrix is the one checked by a test.
+
 Validated end-to-end (web reference == native render): **TodoMVC** and **GitHub-user fetch**
 (`examples/todomvc.tsx`, `examples/fetch.tsx`).
 
@@ -33,13 +37,13 @@ out-of-band) — "runs without a QML error" alone is NOT proof, since broken cod
 | `createSignal` | ✅ | → root `property`; getter `s()`→`window.s`, setter→assignment |
 | `createMemo` | ✅ | → `readonly property` (inline) or sidecar fn bound reactively |
 | `createEffect` | ✅ | sidecar fn: initial run + `Connections` per read dep |
-| `createResource` | ✅ | value + `_loading`/`_error`; async loader (Promise) + reload on source change |
-| `untrack` | ❌ | needed by some patterns; lower to a plain (non-tracked) read |
-| `batch` | ❌ | QML coalesces bindings already; lower to sequential assignments |
-| `on(deps, fn)` | ❌ | explicit-deps effect; map to a targeted `Connections` |
-| `createComputed` / `createRenderEffect` | ❌ | like effect with different timing |
-| `createSelector` | ❌ | keyed equality selector |
-| `createRoot` / `getOwner` / `runWithOwner` | ❌ | render entry is implicit; ownership not modeled |
+| `createResource` | ✅ | value + `_loading`/`_error`; async loader (Promise) + reload on source change. Form: `createResource(sourceSignal, namedFetcher)` — an inline fetcher is rejected |
+| `untrack` | ❌ | needed by some patterns; lower to a plain (non-tracked) read. **Today the transpiler accepts it and emits a call to an undefined function (wrong at runtime) — do not use; see docs/support-matrix.md.** |
+| `batch` | ❌ | QML coalesces bindings already; lower to sequential assignments. **Today the transpiler accepts it and emits a call to an undefined function (wrong at runtime) — do not use; see docs/support-matrix.md.** |
+| `on(deps, fn)` | ❌ | explicit-deps effect; map to a targeted `Connections`. **Today `createEffect(on(…))` is accepted and the effect is silently dropped — do not use.** |
+| `createComputed` / `createRenderEffect` | ❌ | like effect with different timing. **Today the transpiler accepts it and emits a call to an undefined function (wrong at runtime) — do not use; see docs/support-matrix.md.** |
+| `createSelector` | ❌ | keyed equality selector. **Today the transpiler accepts it and emits a call to an undefined function (wrong at runtime) — do not use; see docs/support-matrix.md.** |
+| `createRoot` / `getOwner` / `runWithOwner` | ❌ | render entry is implicit; ownership not modeled. **Today the transpiler accepts it and emits a call to an undefined function (wrong at runtime) — do not use; see docs/support-matrix.md.** |
 
 ## Stores
 | API | Status | Notes |
@@ -47,16 +51,16 @@ out-of-band) — "runs without a QML error" alone is NOT proof, since broken cod
 | `createStore` | 🟡 | array/object `property var`; reads OK; setter forms below |
 | store setters: value / `prev=>next` / `produce` / `(pred,"key",upd)` | ✅ | reassign-to-rebind |
 | deep path setters `set(a, b, c, val)` | 🟡 | only the forms TodoMVC uses; arbitrary depth untested |
-| `reconcile` | ❌ | diff-merge; lower to reassign for now |
+| `reconcile` | ❌ | diff-merge; lower to reassign for now (rejected at compile time today) |
 | `unwrap` | ❌ | identity on our plain `var` stores (likely a no-op) |
-| `createMutable` | ❌ | mutable proxy store |
+| `createMutable` | ❌ | mutable proxy store. **Today the transpiler accepts it and emits a call to an undefined function (wrong at runtime) — do not use; see docs/support-matrix.md.** |
 
 ## Lifecycle
 | API | Status | Notes |
 |---|---|---|
 | `onMount` | ✅ | merged into `Component.onCompleted` |
 | component body setup (timers, subscriptions) | ✅ | imperative statements in the body now run on mount via a `_setup(window)` sidecar (were silently dropped) |
-| `onCleanup` | 🟡 | body-level: registered on a `__cleanups` list, run in `Component.onDestruction`. Inside effects: not yet |
+| `onCleanup` | 🟡 | body-level: registered on a `__cleanups` list, run in `Component.onDestruction`. Inside effects: **accepted but wrong** — the cleanup is queued and only runs on component destruction, not before the effect re-runs; an effect's returned cleanup function is ignored |
 | effect cleanup (returned fn) | ❌ | run previous cleanup before re-running an effect |
 
 ## Control flow (components)
@@ -67,7 +71,7 @@ out-of-band) — "runs without a QML error" alone is NOT proof, since broken cod
 | `<Switch>`/`<Match>` | ✅ | cascading visibility (first match wins) |
 | `<Suspense>` | ✅ | fallback while any read resource is loading |
 | `<Index>` | ✅ | → `Repeater` (shared with `<For>`); the row item is an accessor (`item()`→`modelData`), index a plain number |
-| `<Dynamic component=…>` | 🟡 | reactive intrinsic TAG → a generic element with a reactive `cssPrimitive` (type selectors track it). Component-valued (`component={options[sel()]}`) needs a QML `Loader` over the candidate types — deferred |
+| `<Dynamic component=…>` | 🟡 | reactive intrinsic TAG → a generic element with a reactive `cssPrimitive` (type selectors track it). Component-valued (`component={options[sel()]}`) needs a QML `Loader` over the candidate types — deferred; **today it compiles to a wrong element (no error) — do not use** |
 | `<Portal>` | ❌ | render elsewhere (overlay layer) |
 | `<ErrorBoundary>` | ❌ | catch render/async errors + fallback |
 | `<SuspenseList>` | ❌ | rare |
@@ -113,11 +117,11 @@ Owner decision 2026-10-11: **web semantics by default, reuse by key is opt-in.**
 | intrinsics `div/text/span/button/input/hr` | ✅ | mapped to Css* primitives / TextInput |
 | generic lowercase intrinsic | ✅ | → `CssRect` with a type-selectable `cssPrimitive` |
 | `class` / `classList` | ✅ | classList → reactive `cssState` |
-| inline `style=` | ✅ | synthesised `#id{}` fed to the engine |
+| inline `style=` | ❌ | rejected at compile time on every element (attribute contract) — use a class and CSS |
 | events (`onClick`/`onInput`/`onKeyDown`) | 🟡 | click/input/keydown + event-arg mapping; not every DOM event |
 | `ref` | ✅ | `ref={el}` → element QML id + a window property bound to it (code reads it via window.el). `ref={setEl}` callback form: not yet. Refs inside a component-type: not yet |
 | `use:` directives | ❌ | custom directives |
-| spread props `{...obj}` | ❌ | attribute spread |
+| spread props `{...obj}` | ❌ | on an element: rejected at compile time; **on a component: accepted and the spread is silently dropped — do not use** |
 | Fragments `<>…</>` | 🟡 | top level handled implicitly; nested untested |
 | text whitespace | ✅ | `{x} word` keeps the space |
 
@@ -129,11 +133,16 @@ Owner decision 2026-10-11: **web semantics by default, reuse by key is opt-in.**
 | array / object literals (computed keys, shorthand, spread-in-literal) | ✅ |
 | arrow / function expressions (param-scoped) | ✅ |
 | template literals | ✅ |
-| `for…of` / `for` / `while` | ✅ |
+| `for…of` | ✅ |
+| classic `for (;;)` / `while` / `do…while` | ❌ (rejected at compile time) |
 | `async`/`await` | ✅ (Babel → Promise chains; V4 has no native async) |
-| optional chaining `?.` / nullish `??` | 🟡 (passes through; V4 support to confirm) |
+| nullish `??` | ✅ |
+| optional chaining `?.` | ❌ (rejected at compile time) |
+| `new` expressions (`new Date()`, `new Map()`) in component code | ❌ (rejected at compile time; a module-level `const x = new …` is accepted but not emitted — undefined at runtime) |
+| RegExp literals | ❌ (rejected in component code; a module-level `const RE = /…/` is accepted but not emitted — undefined at runtime) |
 | destructuring in statements | 🟡 |
-| labelled/try/throw/switch statements | ❌ |
+| labelled/try/throw/switch statements | ❌ (rejected at compile time) |
+| block-bodied `onClick={() => { … }}` | ❌ (rejected; pass a named component function `onClick={go}` instead — block bodies are accepted in `onInput`/`onChange`/`onKeyDown`) |
 
 ## Runtime (browser shims, already C++)
 localStorage ✅ · fetch (+Headers/Request/Response/Abort) ✅ · timers/microtask ✅ ·
@@ -153,7 +162,7 @@ each maps to a known QML construct.
 2. **Control-flow completion**: `<Index>` ✅, `<Dynamic>` 🟡 (tag form) — remaining: `<ErrorBoundary>`, `<Portal>`, Dynamic component-form.
 3. **Lifecycle/reactivity edges**: `onCleanup` (+ effect cleanup), `untrack`, `batch`, `on`.
 4. **Stores depth**: arbitrary deep path setters, `reconcile`, `unwrap`.
-5. **JSX edges**: spread props `{...}`, nested fragments, confirm `?.`/`??` on V4, broader event set.
+5. **JSX edges**: spread props `{...}`, `?.`, `new`/RegExp in component code, broader event set.
 6. **Polish**: ~~keyed `<For>`~~ (✅ `key="field"`, C23), more DOM events, `createComputed`/`createRenderEffect`/`createSelector`.
 
 Out of scope (won't chase for 99%): `lazy`/code-split, `getOwner`/`runWithOwner`, `BigInt`,

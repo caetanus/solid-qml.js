@@ -1,15 +1,15 @@
 # solid-qml
 
-**Solid.js, rendered natively via QML/QtQuick — no browser.**
+**Solid.js components rendered natively by Qt Quick, without a browser.**
 
 ```{note}
-**Experimental / alpha** project. APIs, generated QML format and commands still change without
-notice.
+**0.3.0-preview.1 — developer preview.** APIs, the generated QML format and commands may still
+change. Supported environment: Linux x86_64 with Qt 6.11, built from source.
 ```
 
-**solid-qml** transpiles Solid.js components (JSX + CSS) into native QtQuick — a real scene
-graph GPU-rendered through Qt, not a webview. Write UI with Solid's reactive model, style it
-with plain CSS, and run it as a native app.
+solid-qml compiles Solid.js components (TSX + CSS) into Qt Quick: a real scene graph rendered by
+Qt, not a webview. Write UI with Solid's reactive model, style it with plain CSS, and run it as a
+native app or embed it in an existing Qt Quick application.
 
 ```{toctree}
 :maxdepth: 2
@@ -17,6 +17,8 @@ with plain CSS, and run it as a native app.
 
 getting-started
 architecture
+support-matrix
+known-issues
 keyboard-accessibility
 document-editor
 release-policy

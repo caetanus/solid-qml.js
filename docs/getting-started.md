@@ -194,3 +194,10 @@ See `package.json` for the current list of scripts.
 - **`libsolidqml.so: cannot open shared object file`** when running an installed `solid-qml-loader`
   — set `LD_LIBRARY_PATH` to the install prefix's `lib/` dir (or install to a prefix already on
   your loader search path, or run `ldconfig` against it).
+
+## Next steps
+
+- [Support matrix](support-matrix.md): which Solid APIs, JSX forms, elements, CSS and shims work,
+  and which constructs the transpiler rejects. Check it before porting an existing app.
+- [Known issues](known-issues.md): open defects and limits, with workarounds.
+- [Architecture](architecture.md): how the pieces fit together.

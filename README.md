@@ -5,167 +5,79 @@
 <h1 align="center">solid-qml</h1>
 
 <p align="center">
-  <strong>Solid.js, rendered natively via QML/QtQuick — no browser.</strong>
+  <strong>Solid.js components rendered natively by Qt Quick, without a browser.</strong>
 </p>
 
 <p align="center">
-  <em>⚠️ Experimental / alpha — APIs, generated formats and commands still change without notice.</em>
+  <em>0.3.0-preview.1: a developer preview. APIs, generated output and commands may still change.</em>
 </p>
 
 ---
 
 ## What it is
 
-**solid-qml** transpiles [Solid.js](https://www.solidjs.com/) components (JSX + CSS) into
-**native QtQuick**: a real scene graph, GPU-rendered through Qt — **not** a webview,
-**not** an emulated DOM.
+solid-qml compiles [Solid.js](https://www.solidjs.com/) components (TSX + CSS) into Qt Quick. The
+result is a real Qt Quick scene graph, not a webview and not an emulated DOM.
 
-You write UI in TypeScript/JSX with Solid's reactive model (signals, effects, memos, control
-flow) and style it with plain CSS. The transpiler follows your imports and emits **one `.qml`
-file per component**, plus a stylesheet, running on top of a custom C++ CSS engine.
+- **Transpiler** (`transpiler/`, TypeScript): follows your imports and emits one `.qml` file per
+  component. Signals become QML properties, effects become change handlers, `<For>`/`<Show>`/
+  `<Switch>` become repeaters and lazily created items. Most constructs it cannot translate are a
+  compile error; the few that are not are listed in the [support matrix](docs/support-matrix.md).
+- **C++ CSS engine** (`vendor/qml-css-engine`): resolves the cascade and does both **layout**
+  (block, flex, grid, absolute positioning) and **paint**.
+- **Widgets** (`src/widgets`, C++): `<button>`, `<input>`, `<select>`, `<dialog>`, menus, tabs,
+  tree/list/table views and more, mostly built on `QtQuick.Templates` controls and styled by your
+  CSS. Heavier widgets (`<RichText>`, `<CodeEditor>`, `<MediaPlayer>`, `<WebView>`, charts, 3D) are
+  opt-in modules that an app only loads when it uses the tag.
+- **Runtime shims** (`src/shims`): `fetch`, `localStorage`, timers, Workers and more, on top of
+  Qt's V4 JavaScript engine. Pure-JS npm packages are mirrored and run as they are.
+- **Loader and embed library**: run a generated app on its own (`solid-qml-loader`), or put
+  solid-qml UI inside an existing Qt Quick application (`libsolidqml`).
 
-- **vs Electron** — no Chromium + Node bundled into every app. The runtime is Qt, the UI is a
-  native scene graph, the footprint is a fraction.
-- **vs React Native** — real native components, no asynchronous JS bridge between worlds. And
-  the release target is compiling everything to **C++ (AOT)**, eliminating the interpreter.
+## Status
 
-> **On the claims below:** visual parity with the web is *measured* — the milestone harness
-> reports 16/16 reference views at ≥96% pixel match (see below). The footprint/startup/frame-time
-> advantages over Electron are **design goals of the architecture, not yet published benchmarks**;
-> treat them as the target this project is built toward, not measured results.
+This is a **developer preview**. See the [release notes](docs/release-notes/0.3.0-preview.1.md).
 
-## Highlights (real, working today)
+- Supported environment: **Linux x86_64 with Qt 6.11**, built from source. Arch/Manjaro is
+  verified. Other distros are untested. There is no npm package, binary SDK, Windows, macOS or
+  mobile build yet.
+- Only part of Solid is covered. Check the [support matrix](docs/support-matrix.md) before you
+  port an app: a few APIs (`untrack`, `batch`, `on`…) compile today but are **wrong at runtime**.
+- Performance: the methodology and numbers have not been published yet (release-plan M10). Until
+  they are, this project makes no performance claims.
 
-- ⭐ **npm/node module imports running on Qt's V4 engine.** QML's biggest historical defect has
-  always been that you can't import npm packages — we solved that. The **package's real code**
-  is mirrored and genuinely executed on the V4 engine (not a reimplementation, not a stub);
-  every package that breaks reveals a V4 hole that we then plug.
-- **Custom C++ CSS engine** doing **layout AND paint**: box model, **flexbox**, **grid**,
-  `calc()`, `@media`, `vw`/`vh` units. No `QtQuick.Controls` — only lightweight primitives
-  (Item / Text / TextInput / MouseArea / Repeater). The hot path (relayout) is C++ with zero
-  abstraction overhead.
-- **Web fonts via remote `@font-face`** — downloads the font, caches it and registers it with
-  `QFontDatabase` at runtime. Installs nothing on the system.
-- **Solid reactivity → QML**: `createSignal`, `createEffect`, `createMemo`, `createResource` +
-  `<Suspense>`, `<Show>`, `<Switch>`/`<Match>` (lazy), `<For>`, `<Index>`.
-- **Browser shims over V4**: `fetch` (real HTTPS via `QNetworkAccessManager`, with
-  `Headers`/`Request`/`Response`/`AbortController`), `localStorage` (persistent),
-  `XMLHttpRequest`, timers.
-- **Responsive** — layout reflows on window resize; `@media`, `vw`, `vh` re-evaluate live.
+## Documentation
 
-## Quickstart
+| Document | Contents |
+|---|---|
+| [Getting started](docs/getting-started.md) | Dependencies, build, tests, install, your first app outside the checkout |
+| [Architecture](docs/architecture.md) | How the transpiler, CSS engine, widgets, shims, loader and embed library fit together |
+| [Support matrix](docs/support-matrix.md) | What is supported, partial or unsupported: Solid APIs, JSX, elements, CSS, shims, platforms |
+| [Known issues](docs/known-issues.md) | Open defects and limits, each with a workaround where there is one |
+| [Keyboard & accessibility](docs/keyboard-accessibility.md) | How `tabIndex`/`role`/`aria-*` map to Qt Quick |
+| [Document editor](docs/document-editor.md) | The `<DocumentEditor>` / `<RichText>` API |
+| [Solid parity](SOLID-PARITY.md) | Solid API coverage and the `<For>` row-identity contract |
+| [Release policy](docs/release-policy.md) | Versioning and the SONAME/ABI policy |
+| [Roadmap](ROADMAP.md), [release plan](docs/RELEASE-PLAN.md) | What comes next |
 
-Requirements: Node.js + npm, **Qt 6** (Core, Gui, Qml, Quick, Test, + private headers for Qml/Quick/
-QuickTemplates2), **CMake**, **Meson** (≥1.1) and **Ninja**, plus a system font (e.g. `noto-fonts`
-on Arch) — see [docs/getting-started.md](docs/getting-started.md) for the full, verified dependency
-list (clean-room tested on 2026-10-11).
+## Quickstart (inside the checkout)
+
+The verified steps, including the package list and an app built outside the checkout, are in
+[docs/getting-started.md](docs/getting-started.md).
 
 ```sh
-# 1. JS dependencies
-npm install
-
-# 2. build the native loader (the C++ CSS engine is vendored under vendor/qml-css-engine)
+git clone --recurse-submodules https://github.com/caetanus/solid-qml.js.git
+cd solid-qml.js
+npm ci
 meson setup build
 ninja -C build
-
-# 3. native dev: transpiles src/mainqml.tsx → QML and opens the native window with hot reload
-node --import tsx scripts/dev-native.mjs
+node --import tsx scripts/dev-native.mjs   # transpile src/mainqml.tsx, open it, reload on save
 ```
-
-The dev loop watches `src/` and `examples/`, regenerates the QML on every change, and the loader
-reloads the scene live (edit the CSS and watch the restyle happen instantly).
-
-Other useful commands (see `package.json`):
-
-```sh
-npm run test:transpiler   # transpiler suite (node --test)
-npm run dev               # web preview via Vite (Solid running in the browser)
-```
-
-## Roadmap
-
-- **A single codebase for every platform** — apps for **Android, iOS, Windows, macOS and
-  Linux** (mobile **and** desktop) from the same Solid code.
-- **AOT → C++ for release** — our generator emits 1:1 QtQuick C++, eliminating interpreted V4;
-  Qt's V4-AOT covers only the residual dynamic JS (async/fetch/closures).
-- **Real native C++ interop** alongside Solid components.
-- **Importing real QML components** (interop / legacy code).
-- **Decent packaging** for deployment, and a path to **exporting into legacy projects**.
-
-## Milestone — application-grade widgets & desktop integration (2026-07)
-
-The gap between "a widget toolkit" and "what real apps are made of" is closing. On top of the
-widget set below, apps written in Solid/JSX now get:
-
-- **Desktop integration that talks back** — a real guarded `<Tray>` whose menu items call into
-  component code, **desktop notifications** over org.freedesktop.Notifications on a D-Bus worker
-  thread (action buttons, close events and **inline reply** flowing back into the app),
-  `<ContextMenu>` opening at the cursor, app-wide `<Shortcut>` accelerators, and menus with
-  underlined `&`-mnemonics and one-press arrow navigation.
-- **Opt-in application widgets**, each its own lazily-imported module (an app that never uses the
-  tag pays nothing): `<MediaPlayer>` (QtMultimedia — paused until the user clicks, seek/clock,
-  **external .srt subtitles** parsed natively and synced), `<WebView>` (a real Chromium page via
-  QtWebEngine), `<RichText>` (a word-like editor that **saves and loads OpenDocument** — writing
-  through Qt's native ODF writer, reading through our own content.xml parser; `<DocumentEditor>` is the app-driven variant for a word
-  processor — own toolbar, `loadOdf`/`saveOdf`, `modified`, format state, see
-  [docs/document-editor.md](docs/document-editor.md)) and `<CodeEditor>`
-  (line gutter + our own dependency-free syntax highlighting for JS/TS, QML, CSS and JSON).
-- **fetch() reads local assets** (`file://`) like a browser, and the whole box model stays
-  pixel-honest with the web reference.
-
-## Milestone — the native widget set behaves like a desktop toolkit (2026-07)
-
-Every widget — HTML-derived (`<button>`, `<details>`, `<dialog>`, tables…) **and**
-desktop-native (`<TabBar>`, `<SplitView>`, `<TreeView>`, `<ListView>`, `<TableView>`, `<Menu>`,
-OS-chrome `<MenuBar>`, `<Tray>`…) — is a reusable component in the `solidqml.Widgets` module
-(now C++-backed types registered into that module, having been ported from their original `.qml`
-for AOT-friendliness); the transpiler **instantiates** them instead of hand-emitting their
-internals. And the set finally *feels* native:
-
-- **Desktop keyboard model throughout** — one tab stop per group with arrows inside (lists,
-  tables, trees with expand/collapse on Right/Left/Space, tab bars with wrap), Enter fires the
-  dialog's default button, and the classic **thin dotted focus ring** (`::tab-stop`, backed by
-  engine-level `border-style: dotted`).
-- **Honest web box model** — the shared runtime reset (`* { box-sizing: border-box }`) now
-  reaches the native stylesheet, and borders take layout space in the engine (the content area
-  is the padding box) — so scroll extents, tab bars and split panes are pixel-honest against
-  the web reference.
-- **Data views** — virtualized `<ListView>`/`<TableView>` (real delegate recycling) with
-  column sorting on header click, and a `<TreeView>` over plain `{ label, children }` objects.
-
-## Gaps / Current limitations
-
-We are in alpha and insist on being honest about what **does not exist yet** or is only partial:
-
-- **Charts & 3D need optional Qt modules.** `<Chart>`/`<Surface>` (QtGraphs) and `<Scene3D>`
-  (Qt Quick 3D) are **opt-in per-widget modules** — the core engine never depends on them. You must
-  install `qt6-graphs` and `qt6-quick3d` yourself; an app that doesn't use those tags pulls nothing.
-  QtCharts is **not** used (it crashes offscreen — we use QtGraphs). Complex charts only: bar charts
-  are drawn by the CSS engine, not QtGraphs.
-- **3D renders only on a real GPU surface.** Qt Quick 3D can't render under the headless/`offscreen`
-  platform, so 3D views can't be verified in CI screenshots — only that they load.
-- **Missing desktop integration**: Avahi/zeroconf and deeper tray protocols, not yet. Desktop
-  notifications landed (see below); inline reply depends on the user's notification server
-  advertising it (KDE, dunst… do).
-- **Threads** and **background services (mobile)**, not yet. **Gestures** (touch), not yet.
-- `<For>` is still fragile with **nested sub-JSX** and complex cases.
-- **Advanced CSS** mappings depend on open design decisions.
-- **Menu keyboard activation** (Alt-mnemonics / F10) relies on Qt's built-ins and needs live checking
-  on the target desktop.
-- **AOT → C++ not implemented yet** — today dev runs on interpreted V4.
-- **Packaging with Qt is painful** — the deployment story is still open.
-
-Recently landed (no longer gaps): desktop **overflow scrolling** (mouse wheel, draggable scrollbar,
-focus-follows-scroll) on both `div`/`CssRect` and `CssFill` boxes; the **escape hatch** (importing a
-hand-written `.qml` as a component); the **keyboard tab-focus** model (ring, dialogs, default button);
-**desktop notifications** (`import { notifications } from "qml-solid"`) over org.freedesktop.Notifications
-on a D-Bus worker thread — action buttons, close events and **inline reply** flowing back into the app —
-plus a real guarded `<Tray>` whose menu items call back into component code.
 
 ## License
 
-- The framework (transpiler, widgets, loader, embed library, shims) is **MIT** — see [LICENSE](LICENSE).
-- The C++ CSS engine in `vendor/qml-css-engine` is **LGPL-3.0-only**: part of its text layout is derived
-  from Qt's `QQuickText` (see its `NOTICE`).
-- Everything links against Qt, which is available under the LGPL-3.0; an application built with
+- The framework (transpiler, widgets, loader, embed library, shims) is **MIT**. See [LICENSE](LICENSE).
+- The C++ CSS engine in `vendor/qml-css-engine` is **LGPL-3.0-only**: part of its text layout is
+  derived from Qt's `QQuickText` (see its `NOTICE`).
+- Everything links against Qt, which is available under the LGPL-3.0. An application built with
   solid-qml must meet Qt's license terms (and the engine's LGPL-3.0 terms) when it is distributed.
