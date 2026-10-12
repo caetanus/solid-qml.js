@@ -3040,7 +3040,10 @@ private slots:
         QVERIFY(w.root);
         auto *d = w.fmt()->document()->textDocument();
         QTextCursor c(d);
-        auto *table = c.insertTable(100, 2);
+        // Structural ingress must select Qt before editing a paragraph-engine document.
+        w.fmt()->insertTable(100, 2);
+        auto *table = qobject_cast<QTextTable *>(d->rootFrame()->childFrames().first());
+        QVERIFY(table);
         for (int row = 0; row < 100; ++row)
             table->cellAt(row, 0).firstCursorPosition().insertText(QStringLiteral("A table row"));
         table->cellAt(50, 0).firstCursorPosition().insertText(QStringLiteral("A long cell that crosses page boundaries. ").repeated(400));

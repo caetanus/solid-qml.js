@@ -454,6 +454,23 @@ and selection behave exactly as without marks; the hit test takes the character 
 - Large documents (> 10 000 characters, however they got there: a load, typing, a paste) render
   only the part near the viewport, as Qt's `TextEdit` does for a large `text`.
 
+## Page layout engine
+
+`layoutEngine` is a runtime QML/ref property: `"auto"` (default), `"qt"`, or
+`"custom"`. In page view, auto/custom select the paragraph layout for supported
+live documents. Continuous view and documents with tables, child frames, root
+borders/padding/backgrounds, hidden blocks or horizontal rules use Qt. Forcing custom does not bypass that
+eligibility check. Changing engines preserves the document, resources and undo
+history; it does not round-trip through HTML.
+
+HTML insertion is inspected before the selection or document is edited. Unsupported
+content switches the whole document to Qt, retaining that engine through undo/redo
+so replay cannot restore an unsupported structure into the paragraph engine. A new
+or newly loaded supported document can use the custom engine again. Table layout
+and decoration remain phase-2 work. Native code that edits the exposed
+`QTextDocument` with structural `QTextCursor` calls must select `"qt"` before
+those calls; `insertTable`, paste and load through the handler do this automatically.
+
 ## Qt private API used
 
 The following compatibility boundaries rely on Qt internals and must be checked when

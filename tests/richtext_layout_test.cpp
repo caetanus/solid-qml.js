@@ -110,6 +110,58 @@ class RichTextLayoutTests : public QObject {
     Q_OBJECT
 private slots:
     void initTestCase() { QQuickWindow::setGraphicsApi(QSGRendererInterface::Software); }
+    void pasteUnsupportedHtmlIntoCustomDocumentFallsBackBeforeEdit() {
+        QuickView view; RichTextHandler handler; handler.setDocument(view.edit->textDocument());
+        auto *doc=view.doc(); doc->setPlainText("original text");
+        handler.configurePages(300,140,0,{10,10,10,10});
+        handler.setLayoutEngine("custom");
+        QVERIFY(dynamic_cast<rt::RichTextLayout *>(doc->documentLayout()));
+        QImage resource(20,20,QImage::Format_ARGB32); resource.fill(Qt::red);
+        doc->addResource(QTextDocument::ImageResource,QUrl("image:retained"),resource);
+        QTextCursor c(doc); c.movePosition(QTextCursor::End); c.insertText(" edited");
+        const auto before=doc->toHtml();
+        bool editedOnQt=false;
+        connect(doc,&QTextDocument::contentsChange,&handler,[&] {
+            editedOnQt=!dynamic_cast<rt::RichTextLayout *>(doc->documentLayout());
+        });
+        handler.insertHtml("<table><tr><td>preserved table</td></tr></table><p><img src='image:retained'></p>");
+        QVERIFY(editedOnQt); QVERIFY(!dynamic_cast<rt::RichTextLayout *>(doc->documentLayout()));
+        QVERIFY(!doc->rootFrame()->childFrames().isEmpty());
+        QCOMPARE(qvariant_cast<QImage>(doc->resource(QTextDocument::ImageResource,QUrl("image:retained"))),resource);
+        const auto after=doc->toHtml(); doc->undo(); QCOMPARE(doc->toHtml(),before);
+        doc->redo(); QCOMPARE(doc->toHtml(),after);
+        handler.setLayoutEngine("qt"); QCOMPARE(handler.layoutEngine(),QString("qt"));
+        QVERIFY(!view.frame().isNull());
+    }
+    void engineSwitchRetainsObjectHandler() {
+        QuickView view; RichTextHandler handler; handler.setDocument(view.edit->textDocument());
+        handler.configurePages(300,140,0,{10,10,10,10});
+        auto *layout=view.doc()->documentLayout();
+        QPointer<InlineBox> box=new InlineBox; box->setParent(layout);
+        layout->registerHandler(QTextFormat::UserObject+1,box);
+        QTextCharFormat format; format.setObjectType(QTextFormat::UserObject+1);
+        QTextCursor(view.doc()).insertText(QString(QChar::ObjectReplacementCharacter),format);
+        handler.setLayoutEngine("qt"); QVERIFY(box);
+        QCOMPARE(view.doc()->documentLayout()->handlerForObject(QTextFormat::UserObject+1),static_cast<QTextObjectInterface *>(box.data()));
+        handler.setLayoutEngine("custom"); QVERIFY(box);
+        QVERIFY(view.doc()->begin().layout()->lineAt(0).height()>=27);
+    }
+    void engineSwitchPreservesIdsAndMarks() {
+        QuickView view; RichTextHandler handler; handler.setDocument(view.edit->textDocument());
+        handler.insertText("first paragraph\nsecond paragraph");
+        const auto ids=handler.blockIds(); QVERIFY(!ids.isEmpty());
+        QVERIFY(!handler.addMark("keep",ids.first(),0,3).isEmpty());
+        const auto undo=view.doc()->availableUndoSteps();
+        QSignalSpy removed(&handler,&RichTextHandler::blockRemoved);
+        handler.configurePages(300,140,0,{10,10,10,10});
+        QCOMPARE(handler.blockIds(),ids); QVERIFY(!handler.markSegments().isEmpty());
+        auto *installed=dynamic_cast<rt::RichTextLayout *>(view.doc()->documentLayout()); QVERIFY(installed);
+        QCOMPARE(installed->counters.shapedBlocks,quint64(view.doc()->blockCount()));
+        handler.setLayoutEngine("qt"); QCOMPARE(handler.blockIds(),ids);
+        handler.setLayoutEngine("custom"); QCOMPARE(handler.blockIds(),ids);
+        QCoreApplication::processEvents(); QCOMPARE(removed.count(),0);
+        QCOMPARE(view.doc()->availableUndoSteps(),undo); QVERIFY(!handler.markSegments().isEmpty());
+    }
     void quickRewire_data() {
         QTest::addColumn<bool>("preinstalled");
         QTest::newRow("preinstalled") << true; QTest::newRow("in-place") << false;
@@ -418,6 +470,64 @@ private slots:
         QScopedPointer<QTextDocument> custom(qt.clone()); custom->setDocumentLayout(new rt::RichTextLayout(custom.data()));
         compare(qt,*custom);
         qInfo() << "BOOK projection blocks/chars/pages" << qt.blockCount() << qt.characterCount() << qt.pageCount();
+    }
+    void bookBenchmark() {
+        if (qEnvironmentVariableIsEmpty("LAYOUT_BENCHMARK")) QSKIP("Opt-in release benchmark");
+        QuickView view; view.edit->setWidth(794); view.window.resize(900,600);
+        RichTextHandler handler; handler.setDocument(view.edit->textDocument());
+        QTextDocument &d=*view.doc(); QString error;
+        d.setLayoutEnabled(false);
+        QVERIFY2(bookProjection(d,&error),qPrintable(error));
+        QElapsedTimer opening; opening.start();
+        handler.setLayoutEngine(qEnvironmentVariable("LAYOUT_BENCHMARK")=="qt" ? "qt" : "custom");
+        handler.configurePages(794,1118,32,{94,113,94,113});
+        d.setLayoutEnabled(true); d.documentLayout()->documentSize();
+        view.edit->setHeight(d.documentLayout()->documentSize().height());
+        view.edit->setCursorVisible(false); view.frame();
+        qInfo()<<"OPEN layout and first frame ms"<<opening.nsecsElapsed()/1e6;
+        auto *layout=dynamic_cast<rt::RichTextLayout *>(d.documentLayout());
+        auto read=[](const char *name) { QFile f(QString::fromLatin1(name)); if (!f.open(QIODevice::ReadOnly)) return QByteArray(); return f.readAll(); };
+        qInfo().noquote() << "LOAD" << read("/proc/loadavg").trimmed();
+        QVERIFY2(read("/proc/loadavg").split(' ').first().toDouble()<6,"Invalid benchmark load");
+        qInfo().noquote() << "PSS" << read("/proc/self/smaps_rollup");
+        for (int scenario=0;scenario<6;++scenario) {
+            QList<double> times;
+            for (int i=0;i<7;++i) {
+                QTextCursor c(&d);
+                c.setPosition(scenario==0 ? 10 : scenario==2 ? d.characterCount()-2 : d.characterCount()/2);
+                if (scenario==5) c.movePosition(QTextCursor::StartOfBlock);
+                view.edit->setCursorPosition(c.position());
+                if (layout) layout->counters={};
+                QElapsedTimer timer; timer.start();
+                if (scenario==3) c.insertBlock();
+                else if (scenario==4) c.insertText("A pasted paragraph with several words.\nAnother paragraph.");
+                else if (scenario==5) c.deletePreviousChar();
+                else c.insertText("x");
+                d.documentLayout()->documentSize();
+                times.append(timer.nsecsElapsed()/1e6);
+                if (layout) qInfo() << "COUNTERS" << scenario << layout->counters.shapedBlocks << layout->counters.shapedCharacters << layout->counters.placements << layout->counters.translations << layout->counters.convergences;
+                d.undo(); d.documentLayout()->documentSize();
+            }
+            std::sort(times.begin(),times.end()); qInfo() << "BENCH" << scenario << "median" << times[3] << "p95" << times.last();
+        }
+        view.edit->setCursorVisible(false);
+        const auto render=[&] { QCoreApplication::processEvents(); return view.window.grabWindow(); };
+        view.edit->setCursorPosition(d.characterCount()/2);
+        view.edit->setY(-view.edit->cursorRectangle().y()+250); handler.refreshViewport();
+        const auto before=render();
+        QTextCursor c(&d); c.setPosition(d.characterCount()/2);
+        QElapsedTimer timer; timer.start(); c.insertText("x"); const auto after=render();
+        qInfo()<<"EDIT through rendered frame ms"<<timer.nsecsElapsed()/1e6;
+        QVERIFY(before!=after); d.undo();
+        timer.restart();
+        const qreal start=view.edit->y();
+        for(int i=0;i<100;++i) { view.edit->setY(start-i*5); handler.refreshViewport(); render(); }
+        qInfo()<<"SCROLL 100 small frames ms"<<timer.nsecsElapsed()/1e6;
+        timer.restart();
+        for(int i=0;i<10;++i) { view.edit->setY(start-i*600); handler.refreshViewport(); render(); }
+        qInfo()<<"SCROLL 10 page-down frames ms"<<timer.nsecsElapsed()/1e6;
+        qInfo().noquote() << "LOAD END" << read("/proc/loadavg").trimmed();
+        QVERIFY2(read("/proc/loadavg").split(' ').first().toDouble()<6,"Benchmark load rose above gate");
     }
     void unsupportedStructures() {
         QTextDocument d; QVERIFY(rt::RichTextLayout::supports(&d));

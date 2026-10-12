@@ -53,6 +53,8 @@ RichText {
     // `pageWidth` (px): the editor's implicit width when set (0 = the plain editor's 560 default).
     property real pageHeight: 1123
     property real pageGap: 24
+    property string layoutEngine: "auto"
+    onLayoutEngineChanged: Qt.callLater(_configurePages)
     property bool pageView: pageHeight > 0
     property color deskColor: "#e9e8e6"
     readonly property bool _pages: pageView && pageHeight > 0
@@ -71,6 +73,7 @@ RichText {
     _sheetContentHeight: _pages ? pageCount * _pageStride - Math.max(0, pageGap) * _pageZoom : 0
     function _configurePages() {
         if (!fmt || !fmt.document) return
+        fmt.layoutEngine = layoutEngine
         var m = pageMargins || [12, 12, 12, 12]
         fmt.configurePages(_editor.width, _pages ? pageHeight * _pageZoom : 0,
                            Math.max(0, pageGap) * _pageZoom, m.map(v => v * _pageZoom))

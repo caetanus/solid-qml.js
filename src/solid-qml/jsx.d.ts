@@ -246,6 +246,8 @@ declare global {
     pageHeight: number;
     pageGap: number;
     pageView: boolean;
+    /** Paragraph engine in page view; unsupported documents retain Qt. */
+    layoutEngine: "auto" | "qt" | "custom";
     deskColor: string;
     readonly pageCount: number;
     /** One-based page containing the caret. */

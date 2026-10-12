@@ -93,6 +93,7 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     m_pendingFont = {};
     m_document = doc;
     m_doc = doc ? doc->textDocument() : nullptr;
+    m_unsupportedHistory = false;
     // The marks overlay: a child of the editor (QQuickTextEdit parents its QQuickTextDocument).
     if (auto *editor = doc ? qobject_cast<QQuickItem *>(doc->parent()) : nullptr) {
         m_overlay = createMarksOverlay(this, editor);
@@ -174,7 +175,92 @@ bool refreshTextEditSize(QObject *editor)
 
 } // namespace rt
 
-// Page geometry is view state. Qt owns pagination and incremental text layout.
+// Engine selection and page geometry are view state, independent of undo history.
+void RichTextHandler::setLayoutEngine(const QString &engine)
+{
+    if (engine != QLatin1String("auto") && engine != QLatin1String("qt") && engine != QLatin1String("custom")) {
+        qWarning("RichText: layoutEngine must be auto, qt or custom");
+        return;
+    }
+    if (engine == m_layoutEngine) return;
+    m_layoutEngine = engine;
+    selectLayoutEngine();
+    emit layoutEngineChanged();
+}
+
+void RichTextHandler::selectLayoutEngine(bool forceQt)
+{
+    if (!m_doc || !m_document) return;
+    auto *current = m_doc->documentLayout();
+    const bool isCustom = dynamic_cast<rt::RichTextLayout *>(current);
+    const bool supported = rt::RichTextLayout::supports(m_doc);
+    if (!supported) m_unsupportedHistory = true;
+    const bool custom = !forceQt && m_pageStride > 0 && m_layoutEngine != QLatin1String("qt")
+        && supported && !m_unsupportedHistory;
+    if (custom == isCustom) return;
+    auto *editor = m_document->parent();
+    // Check the meta-object boundary while the working Qt engine is still installed.
+    // No edits or layout replacement happen if this check fails.
+    if (custom && !rt::attachCustomLayoutToTextEdit(editor, m_doc, false)) return;
+    QHash<int, QPointer<QObject>> handlers;
+    if (auto *image = dynamic_cast<QObject *>(current->handlerForObject(QTextFormat::ImageObject)))
+        handlers.insert(QTextFormat::ImageObject, image);
+    for (auto b = m_doc->begin(); b.isValid(); b = b.next())
+        for (auto it = b.begin(); !it.atEnd(); ++it) {
+            const int type = it.fragment().charFormat().objectType();
+            if (type != QTextFormat::NoObject && !handlers.contains(type))
+                if (auto *object = dynamic_cast<QObject *>(current->handlerForObject(type))) handlers.insert(type, object);
+        }
+    for (auto it = handlers.cbegin(); it != handlers.cend(); ++it)
+        if (it.value() && it.value()->parent() == current) it.value()->setParent(m_doc);
+    // Qt clears block user data when replacing a layout. Preserve semantic IDs
+    // while allocating fresh lifetimes; engine switches are not block removals.
+    struct SavedBlock { QString id; size_t hash; bool pending; };
+    QList<SavedBlock> saved;
+    saved.reserve(m_doc->blockCount());
+    for (auto b = m_doc->begin(); b.isValid(); b = b.next()) {
+        const auto *info = rt::blockInfo(b);
+        saved.append({info ? info->id : QString(), info ? info->textHash : qHash(b.text()), info && info->changePending});
+    }
+    const bool wasBulkReset = m_bulkReset;
+    const bool layoutWasEnabled = m_doc->isLayoutEnabled();
+    m_doc->setLayoutEnabled(false);
+    m_bulkReset = true;
+    // setDocumentLayout(nullptr) restores the document's default Qt engine lazily;
+    // it keeps this document, resources, cursors and undo stack intact.
+    m_doc->setDocumentLayout(custom ? new rt::RichTextLayout(m_doc) : nullptr);
+    auto *layout = m_doc->documentLayout();
+    for (auto it = handlers.cbegin(); it != handlers.cend(); ++it)
+        if (it.value()) layout->registerHandler(it.key(), it.value());
+    if (!rt::attachCustomLayoutToTextEdit(editor, m_doc, false)) {
+        m_doc->setDocumentLayout(nullptr);
+        layout = m_doc->documentLayout();
+        for (auto it = handlers.cbegin(); it != handlers.cend(); ++it)
+            if (it.value()) layout->registerHandler(it.key(), it.value());
+    }
+    m_blocksById.clear();
+    int index = 0;
+    for (auto b = m_doc->begin(); b.isValid(); b = b.next(), ++index) {
+        auto *info = rt::blockInfo(b);
+        if (!info) { info = new rt::BlockInfo(saved[index].id); b.setUserData(info); }
+        info->id = saved[index].id.isEmpty() ? newBlockId() : saved[index].id;
+        info->owner = this; info->textHash = saved[index].hash; info->changePending = saved[index].pending;
+        m_blocksById.insert(info->id, b);
+    }
+    m_bulkReset = wasBulkReset;
+    rebuildIndex();
+    QObject::disconnect(m_pagesConn);
+    m_pagesConn = connect(layout, &QAbstractTextDocumentLayout::documentSizeChanged, this, [this](const QSizeF &size) {
+        queuePageCount(m_pageStride > 0 ? qMax(1, qCeil(size.height()/m_pageStride)) : 1);
+    });
+    m_doc->markContentsDirty(0, m_doc->characterCount());
+    m_doc->setLayoutEnabled(layoutWasEnabled);
+    if (layoutWasEnabled) {
+        rt::refreshTextEditSize(editor);
+        syncPageCount();
+    }
+}
+
 void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const QVariantList &margins)
 {
     if (!m_doc || margins.size() != 4) return;
@@ -192,6 +278,7 @@ void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const
     }
     m_doc->setPageSize(QSizeF(width, m_pageStride > 0 ? m_pageStride : -1));
     if (marginsChanged) m_doc->setLayoutEnabled(layoutEnabled);
+    selectLayoutEngine();
     if (layoutEnabled)
         rt::refreshTextEditSize(m_document->parent());
     if (layoutEnabled) syncPageCount();
@@ -615,6 +702,7 @@ QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
     // Undo off: the reset (and styling the first paragraph) leaves no history.
     doc->setUndoRedoEnabled(false);
     doc->clear(); // also drops the image resources
+    m_unsupportedHistory = false;
     m_sheet = sheet;
     QTextCursor c(doc);
     c.setBlockFormat(m_sheet.blockFormat(firstStyle));
@@ -729,6 +817,15 @@ bool RichTextHandler::canPaste() const
 
 void RichTextHandler::insertHtml(const QString &html)
 {
+    if (m_doc && dynamic_cast<rt::RichTextLayout *>(m_doc->documentLayout())) {
+        QTextDocument probe;
+        probe.setBaseUrl(m_doc->baseUrl());
+        probe.setHtml(html);
+        if (!rt::RichTextLayout::supports(&probe)) {
+            m_unsupportedHistory = true;
+            selectLayoutEngine(true); // Before selection removal or any undoable edit.
+        }
+    }
     QTextCursor c = insertionCursor();
     if (c.isNull())
         return;
@@ -1186,6 +1283,8 @@ void RichTextHandler::insertTable(int rows, int cols)
     QTextCursor c = insertionCursor();
     if (c.isNull() || rows < 1 || cols < 1)
         return;
+    m_unsupportedHistory = true;
+    selectLayoutEngine(true);
     // Our ODF writer closes a list before a table, so a table may follow a list item directly.
     c.insertTable(rows, cols, rt::wordLikeTableFormat());
     emit formatChanged();
@@ -1357,6 +1456,7 @@ bool RichTextHandler::loadOdf(const QUrl &file)
     QTextDocument *doc = m_document ? m_document->textDocument() : nullptr;
     if (!doc)
         return false;
+    selectLayoutEngine(true);
     QString why;
     rt::StyleSheet sheet;
     // readOdt() calls doc->clear() internally when it does touch the document — see newDocument()
@@ -1371,6 +1471,7 @@ bool RichTextHandler::loadOdf(const QUrl &file)
         setError(why);
         return false;
     }
+    m_unsupportedHistory = !rt::RichTextLayout::supports(doc);
     m_sheet = sheet;
     // readOdt materialized at zoom 1 (canonical units): bring the document up to the zoom already
     // in effect (office item 2b, ★2). Undo is briefly disabled around it, as readOdt's own build
