@@ -5,6 +5,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateCpp } from "../src/emit/cpp/index.ts";
+// The in-memory files use POSIX paths; on Windows the transpiler resolves them to "D:\\app\\…".
+const vpath = (p: string) => p.replace(/^[A-Za-z]:/, "").replace(/\\/g, "/");
 
 const COUNTER = `
 import { createSignal } from "solid-js";
@@ -245,7 +247,7 @@ import { div, Window } from "./solid-qml/runtime";
 import { Badge } from "./badge";
 export function App() { return <Window width={100} height={100}><div class="a"><Badge label="x" /></div></Window>; }`;
   const { source, header } = await generateCpp(entry, "/app/main.tsx", {
-    readFile: async (p) => { if (files[p]) return files[p]; throw new Error("nope"); },
+    readFile: async (p) => { if (files[vpath(p)]) return files[vpath(p)]; throw new Error("nope"); },
   });
   assert.match(header, /class BadgeState : public QObject/);            // the imported component's state
   assert.match(source, /QQuickItem \*buildBadge\(QQmlContext \*ctx, BadgeState \*state\)/); // its build fn

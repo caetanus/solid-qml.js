@@ -47,14 +47,24 @@ jobs:
       # Not jurplel/install-qt-action: aqtinstall 3.3.0 (latest) predates the per-arch repository
       # layout Qt 6.11 uses. scripts/ci-windows.ps1 install-qt fetches the official archives itself
       # (SHA1-checked) into ../Qt, cached here.
-      - name: Cache Qt 6.11.2 (msvc2022_64)
-        uses: actions/cache@v4
+      # restore + save (not actions/cache): the Qt download is saved as soon as it succeeds, even
+      # when a later step fails.
+      - name: Restore cached Qt 6.11.2 (msvc2022_64)
+        id: qt-cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ github.workspace }}\..\Qt
           key: qt-6.11.2-msvc2022_64-base-declarative-svg-v1
 
       - name: Install Qt 6.11.2 (msvc2022_64)
         run: scripts/ci-windows.ps1 install-qt
+
+      - name: Save Qt to the cache
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}\..\Qt
+          key: qt-6.11.2-msvc2022_64-base-declarative-svg-v1
 
       - name: MSVC 2022 x64 developer environment
         uses: ilammy/msvc-dev-cmd@v1.13.0

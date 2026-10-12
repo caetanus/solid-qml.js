@@ -4,6 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generate } from "../src/index.ts";
+// The in-memory files use POSIX paths; on Windows the transpiler resolves them to "D:\\app\\…".
+const vpath = (p: string) => p.replace(/^[A-Za-z]:/, "").replace(/\\/g, "/");
 
 const BADGE = `import QtQuick
 Rectangle { property string label: "b"; property int count: 0; signal bumped() }`;
@@ -11,7 +13,7 @@ Rectangle { property string label: "b"; property int count: 0; signal bumped() }
 async function gen(app: string, extra: Record<string, string> = {}) {
   const files: Record<string, string> = { "/app/main.tsx": app, "/app/Badge.qml": BADGE, ...extra };
   return generate(files["/app/main.tsx"], "/app/main.tsx", {
-    readFile: async (p) => { if (files[p]) return files[p]; throw new Error(`ENOENT ${p}`); },
+    readFile: async (p) => { p = vpath(p); if (files[p]) return files[p]; throw new Error(`ENOENT ${p}`); },
   });
 }
 

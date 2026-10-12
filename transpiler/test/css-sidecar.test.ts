@@ -4,6 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generate } from "../src/index.ts";
+// The in-memory files use POSIX paths; on Windows the transpiler resolves them to "D:\\app\\…".
+const vpath = (p: string) => p.replace(/^[A-Za-z]:/, "").replace(/\\/g, "/");
 
 const FILES: Record<string, string> = {
   "/app/main.tsx": [
@@ -16,7 +18,7 @@ const FILES: Record<string, string> = {
 };
 
 const readFile = async (p: string) => {
-  const v = FILES[p];
+  const v = FILES[vpath(p)];
   if (v === undefined) throw new Error(`unexpected read: ${p}`);
   return v;
 };
@@ -45,7 +47,7 @@ test("css sidecar: the reset is collected once across the module graph", async (
   };
   const app = await generate(files["/app/main.tsx"], "/app/main.tsx", {
     readFile: async (p: string) => {
-      const v = files[p as keyof typeof files];
+      const v = files[vpath(p) as keyof typeof files];
       if (v === undefined) throw new Error(`unexpected read: ${p}`);
       return v;
     },
@@ -65,7 +67,7 @@ test("runtime import: `notifications` rewrites to the solidNotifications context
   };
   const app = await generate(files["/app/main.tsx"], "/app/main.tsx", {
     readFile: async (p: string) => {
-      const v = files[p];
+      const v = files[vpath(p)];
       if (v === undefined) throw new Error(`unexpected read: ${p}`);
       return v;
     },

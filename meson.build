@@ -216,6 +216,7 @@ endif
 
 solidqml_dep = declare_dependency(
   link_with: solidqml_lib,
+  compile_args: host_machine.system() == 'windows' ? ['-DSOLIDQML_STATIC'] : [],
   include_directories: include_directories('src'),
   dependencies: [qml_css_engine_dep],
 )

@@ -267,6 +267,11 @@ private slots:
     {
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
         QmlCss::registerTypes();
+#ifdef SOLIDQML_STATIC
+        // Static libsolidqml (Windows): the solidqml.Widgets.RichText qrc module is only linked in
+        // when initialized explicitly (SolidWidgets::registerTypes() does it; this test skips that).
+        Q_INIT_RESOURCE(widgets);
+#endif
         qmlRegisterType<RichTextHandler>("solidqml.native", 1, 0, "RichTextHandler");
     }
 

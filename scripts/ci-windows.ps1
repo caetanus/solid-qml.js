@@ -18,7 +18,8 @@
 #   QT_DIR      where install-qt unpacks Qt (default: a Qt directory NEXT TO the checkout)
 #
 # What differs from Linux (and why) is listed in docs/windows.md.
-param([string[]]$Steps)
+# Steps come as separate arguments (`ci-windows.ps1 a b c`), hence ValueFromRemainingArguments.
+param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Steps)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue' # Invoke-WebRequest's progress bar slows downloads a lot
@@ -85,14 +86,15 @@ function Step-Versions {
     Write-Host "-- MSVC --"; (Get-Command cl.exe).Source; $env:VSCMD_VER
     Write-Host "-- Qt --"; qmake -query QT_VERSION; qmake -query QT_INSTALL_PREFIX
     Write-Host "-- Node --"; node --version
-    Write-Host "-- npm --"; npm --version
+    Write-Host "-- npm --"; npm.cmd --version
     Write-Host "-- meson --"; meson --version
     Write-Host "-- ninja --"; ninja --version
 }
 
-function Step-NpmCi { Write-Host '== ci-windows: npm ci =='; npm ci }
-function Step-Typecheck { Write-Host '== ci-windows: npm run typecheck =='; npm run typecheck }
-function Step-TestTranspiler { Write-Host '== ci-windows: npm run test:transpiler =='; npm run test:transpiler }
+# npm.cmd, not the npm.ps1 shim.
+function Step-NpmCi { Write-Host '== ci-windows: npm ci =='; npm.cmd ci }
+function Step-Typecheck { Write-Host '== ci-windows: npm run typecheck =='; npm.cmd run typecheck }
+function Step-TestTranspiler { Write-Host '== ci-windows: npm run test:transpiler =='; npm.cmd run test:transpiler }
 
 function Step-NativeBuild {
     Write-Host "== ci-windows: meson setup + ninja -j $Jobs =="

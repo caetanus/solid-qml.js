@@ -6,6 +6,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generate } from "../src/index.ts";
+// The in-memory files use POSIX paths; on Windows the transpiler resolves them to "D:\\app\\…".
+const vpath = (p: string) => p.replace(/^[A-Za-z]:/, "").replace(/\\/g, "/");
 
 const APP = `
 import { createSignal } from "solid-js";
@@ -55,7 +57,7 @@ test("tabstop: module-level opt-out in a non-entry module hoists to the entry, n
     `import { Child } from "./child";
      export function App() { return <div><Child /><Child /></div>; }`,
     "/app/main.tsx",
-    { readFile: async (p) => { if (files[p]) return files[p]; throw new Error(`ENOENT ${p}`); } },
+    { readFile: async (p) => { p = vpath(p); if (files[p]) return files[p]; throw new Error(`ENOENT ${p}`); } },
   );
   assert.doesNotMatch(app.components["Child"] ?? "", /solidTabstop\.enabled = false/);
   assert.match(app.entry, /Component\.onCompleted: \{ solidTabstop\.enabled = false;/);
