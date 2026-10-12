@@ -1,7 +1,10 @@
 # SolidTerm — owner's UX queue (2026-08-13)
 
-Reported in one batch while validating the gallery. Two are done; the rest are open, in the order
-they were raised. Nothing here is a regression from the native-behavior pass unless noted.
+Reported in one batch while validating the gallery, in the order they were raised. Nothing here is
+a regression from the native-behavior pass unless noted. Updated 2026-10-12: the config-panel
+colour and two-column items were fixed by an earlier session but left marked open in this doc;
+closed now with fresh evidence, plus a new scrollbar-visibility option and one newly-found item
+(button contrast on the accent colour).
 
 ## Done
 
@@ -12,8 +15,57 @@ they were raised. Nothing here is a regression from the native-behavior pass unl
 - **[x] Opacity should be a slider that updates live.** The fixed `<select>` of seven percentages is
   now `<input type="range" min=40 max=100>` with the value beside it, emitting `onMoved` so the
   window updates WHILE dragging (`term.tsx` + `.cfg-slide` styles in `term.css`).
+- **[x] Config panel: black font on a dark theme.** Fixed by an earlier session (commits
+  `4804804`, `90ae8b2`, `fdc8d05` — labels got an inheritable `color`; a `TextField`'s value, a
+  `Select`'s `.value`/`.chevron`, and a button's text NODE each needed their own scoped rule in
+  `sysTheme->styleSheet()`, since colour on the container alone doesn't reach a separate text
+  node). This item was left open in this doc even after the fix landed; closing it now with fresh
+  evidence (2026-10-12): offscreen `SOLIDTERM_SHOT` grabs of the Preferences dialog forced to each
+  GNOME `color-scheme`, pixel-sampled with WCAG relative-luminance contrast —
+  `docs/evidence/solidterm/{dark,light}-1.png`. Every row label, input value, select value/chevron,
+  slider value, heading and keyboard-shortcut field passes AA (≥4.5:1) in BOTH schemes:
+
+  | element | dark bg→text | ratio | light bg→text | ratio |
+  |---|---|---|---|---|
+  | heading (`cfg-group`) | #242424→#9a9a9a | 5.52:1 | #fafafb→#5e5c64 | 6.31:1 |
+  | row label (`cfg-l`) | #303030→#fff | 13.20:1 | #fff→#2e3436 | 12.65:1 |
+  | input value | #1e1e1e→#fff | 16.67:1 | #fff→#2e3436 | 12.65:1 |
+  | select value/chevron | #383838→#fff | 11.73:1 | #fff→#2e3436 | 12.65:1 |
+  | button label (`Choose…`) | #383838→#fff | 11.73:1 | #fff→#2e3436 | 12.65:1 |
+  | slider value | #303030→#e9e9e9 | 10.87:1 | #fff→#444b4b | 9.13:1 |
+  | shortcut field value | #1e1e1e→#fff | 16.67:1 | #fff→#2e3436 | 12.65:1 |
+
+  One control does NOT pass in either scheme and is logged below as a new item: the primary
+  "Done" button (`.cfg-close`, white text on the raw GNOME accent colour) measures ~3.77:1 — that
+  is an accent/branding contrast gap, not a dark-vs-light bug (same ratio both schemes), so it is
+  out of scope for this pass and queued separately.
+- **[x] Config panel should be two columns.** Fixed by an earlier session (commit `fdc8d05`):
+  `.cfg-scroll` is `display:flex; flex-direction:row; flex-wrap:wrap`, with two explicit
+  `.cfg-col` divs (980 px dialog → two ~452 px columns) rather than CSS `grid` — explicit columns
+  were chosen over grid auto-placement because auto-placement would drop the short `Keyboard`
+  group under the tall `Appearance` column instead of beside it. Tab order is therefore
+  COLUMN-MAJOR (all of Appearance, then all of Behavior + Keyboard), which reads naturally since
+  each column is a self-contained group of related settings — row-major would jump between
+  unrelated Appearance/Behavior fields on every Tab press. Verified in both schemes, same
+  screenshots as above (`docs/evidence/solidterm/{dark,light}-1.png`): two columns, no unexpected
+  wrapping, less scrolling than the old 620 px single column.
+- **[x] New option: terminal scrollbar visibility.** Preferences → Behavior → "Scrollbar"
+  (Always / Auto / Never), `termConfig` key `scrollbar`, default `"auto"`, live like the other
+  options (`term.tsx`). The terminal view itself reads the key and draws the bar; this only adds
+  the control. Fits the two-column layout (same `.cfg-sel` styling, already proven readable above).
 
 ## Open
+
+- **[ ] The "Done" button's contrast is marginal on the GNOME accent colour.** `.cfg-close`
+  (and `.option-label:hover` / `.ov-active`) use `accentText`, hardcoded to white in
+  `systemtheme.cpp`, against the raw accent colour. Measured for the owner's accent (`blue`,
+  `#3584e4`): white text ≈ 3.77:1 (fails WCAG AA 4.5:1 for 14px/600 text; passes AA-large's 3:1).
+  Swapping to a near-black (`#202020`) helps for most of the 9 GNOME accent names but still falls
+  short for several (blue 4.32, teal 4.34, green 4.28, slate 4.16 — only yellow/orange/pink/purple/
+  red clear 4.5 with one of the two fixed choices). A real fix needs either a per-accent
+  computed text colour (pick whichever of white/near-black wins, still short for blue) or a
+  dedicated button background shade — a branding call, not a CSS-layering bug, so left for the
+  owner to weigh in on rather than guessed at here.
 
 - **[ ] Emboss makes the text look badly kerned.** Confirmed by reading the draw path
   (`terminalview.cpp:428-434`): emboss pushes a dark glyph copy at (x+1, y+1) and a light one at
@@ -24,15 +76,6 @@ they were raised. Nothing here is a regression from the native-behavior pass unl
   lower alpha (halves the bleed). MUST be verified on a real GPU — the custom QSGMaterial does not
   render under the offscreen/software backend.
 
-- **[ ] Config panel: black font on a dark theme.** Unreadable. `term.css` deliberately sets no
-  colors for `.cfg-*` — they come from the system-theme layer
-  (`sysTheme->styleSheet()`, loaded in `apps/solidterm/main.cpp:95`). So either that layer has no
-  rule for the config elements, or a light-theme default wins. Start by dumping the generated
-  stylesheet for a dark scheme and checking which selector sets the label/input colour.
-- **[ ] Config panel should be two columns.** It is one long `.cfg-scroll` column (620 px wide,
-  520 px tall) — a two-column grid would halve the scrolling. `.cfg-body`/`.cfg-scroll` in
-  `term.css`; the groups are already discrete `.cfg-card` blocks, so they can flow into a
-  `display: grid; grid-template-columns: 1fr 1fr`.
 - **[ ] Maximize needs an animation.** Toggling zoom snaps. It should tween the pane geometry
   (the CSS engine supports `transition`, so a class swap may be enough — otherwise animate in
   `paneheader.cpp` / the pane container).
