@@ -121,6 +121,10 @@ public:
     Q_INVOKABLE void searchPrev();
     Q_INVOKABLE void clearSearch();
 
+    // Debug-only (SOLIDTERM_AUTOSCROLLTEST, like TerminalPanes::debugDragLeaf): the current
+    // scrolled-back offset, so a headless probe can confirm autoscroll actually moved the view.
+    Q_INVOKABLE int debugScrollOffset() const { return m_scrollOffset; }
+
     // True when a right-click (or any button, really) right now would be REPORTED to the program
     // instead of doing TerminalView's own local thing (selection / context menu) — i.e. the program
     // asked for mouse tracking (DECSET 1000/1002/1003) and `qtModifiers` doesn't hold Shift. Queried
@@ -261,6 +265,16 @@ private:
     quint64 m_lastDblTime = 0;               // for triple-click (line select) detection
     void selectWordAt(const CellPos &c);
     void selectLineAt(const CellPos &c);
+
+    // ── Selection autoscroll (local selection only; see autoscroll.h) ─────────────────────────────
+    // While m_selecting and the pointer sits past the top/bottom edge, m_autoscrollTimer fires at a
+    // fixed rate and keeps scrolling + extending the selection toward that edge using the LAST known
+    // pointer position (m_autoscrollPos) — no further mouse movement required, like xterm/VTE/Tilix.
+    class QTimer *m_autoscrollTimer = nullptr;
+    QPointF m_autoscrollPos;
+    void updateAutoscroll(const QPointF &rawPos); // start/retarget/stop from a fresh mouse position
+    void stopAutoscroll();
+    void autoscrollTick();
 
     // ── Mouse reporting (xterm/VTE protocol) ────────────────────────────────────────────────────
     // Mode the running program last asked for via VTERM_PROP_MOUSE (NONE/CLICK/DRAG/MOVE) and

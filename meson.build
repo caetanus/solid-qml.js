@@ -424,6 +424,13 @@ if build_solidterm
     },
     is_parallel: false,
     timeout: 40)
+  # Selection autoscroll (drag past the top/bottom edge): the pure edge-distance → lines/tick mapping
+  # and the offset clamp, plus a simulated multi-tick walk proving the selection's moving end keeps
+  # tracking the right absolute row as the view scrolls under a stationary pointer. No Qt, no vterm —
+  # see autoscroll_test.cpp / autoscroll.h.
+  test('solidterm-autoscroll',
+    executable('test-solidterm-autoscroll', files('apps/solidterm/tests/autoscroll_test.cpp')),
+    timeout: 10)
 endif
 
 # ── Tests ────────────────────────────────────────────────────────────────────────────────────

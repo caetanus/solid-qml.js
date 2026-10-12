@@ -34,6 +34,7 @@
 #include <QGuiApplication>
 #include <QClipboard>
 #include <QSurfaceFormat>
+#include <QtGui/qpa/qwindowsysteminterface.h>
 
 // App-level key filter: F11 toggles fullscreen on the FOCUSED window (one process serves every
 // window). Installed on the QApplication so it's caught before the focused TerminalView consumes it
@@ -504,6 +505,66 @@ int main(int argc, char **argv)
                                Qt::NoScrollPhase, false);
             QCoreApplication::sendEvent(window, &wheel);
             qInfo().noquote() << "solidterm: mousetest sent click+wheel at" << p;
+        });
+    }
+
+    // Debug: SOLIDTERM_AUTOSCROLLTEST=1 fills the scrollback, presses near the middle of the first
+    // TerminalView, moves the pointer ABOVE the view once, then does NOT move it again — the
+    // autoscroll QTimer (autoscroll.h / TerminalView::autoscrollTick) must keep scrolling INTO the
+    // scrollback and growing the selection on its own. Real input, injected via
+    // QWindowSystemInterface::handleMouseEvent (the same platform-input entry point QTest::mouseMove
+    // uses) — NOT a raw QMouseEvent via QCoreApplication::sendEvent: that bypasses Qt's own
+    // QPointingDevice/EventPoint bookkeeping, so Qt Quick's window-level mouse GRAB silently never
+    // sees the followup move (verified live: a window-targeted synthetic move while "pressed" never
+    // reached mouseMoveEvent at all — SOLIDTERM_MOUSETEST's press+release still worked because both
+    // land at the SAME point, so no grab hand-off was ever exercised there).
+    if (qEnvironmentVariableIsSet("SOLIDTERM_AUTOSCROLLTEST") && window) {
+        QTimer::singleShot(1600, window, [&engine, window] {
+            TerminalView *view = nullptr;
+            for (QObject *o : engine.rootObjects()) {
+                if (auto *w = qobject_cast<QQuickWindow *>(o)) {
+                    QList<QQuickItem *> stack { w->contentItem() };
+                    while (!stack.isEmpty() && !view) {
+                        QQuickItem *it = stack.takeLast();
+                        view = qobject_cast<TerminalView *>(it);
+                        for (QQuickItem *k : it->childItems()) stack.append(k);
+                    }
+                }
+            }
+            if (!view) {
+                qWarning("solidterm: autoscrolltest found no TerminalView");
+                return;
+            }
+            // Enough lines that a handful of autoscroll ticks can't possibly reach the top on their own.
+            view->sendText(QStringLiteral("for i in $(seq 1 400); do echo scrollback-line-$i; done\n"));
+
+            QTimer::singleShot(1800, window, [view, window] {
+                const int offsetBefore = view->debugScrollOffset();
+                const QPointF centre = view->mapToScene(QPointF(view->width() / 2, view->height() / 2));
+                const QPointF above = view->mapToScene(QPointF(view->width() / 2, -40)); // 40px past the top edge
+                const QPointF gCentre = window->mapToGlobal(centre.toPoint());
+                const QPointF gAbove = window->mapToGlobal(above.toPoint());
+
+                QWindowSystemInterface::handleMouseEvent(window, centre, gCentre, Qt::LeftButton, Qt::LeftButton,
+                    QEvent::MouseButtonPress, Qt::NoModifier);
+                QWindowSystemInterface::handleMouseEvent(window, above, gAbove, Qt::LeftButton, Qt::NoButton,
+                    QEvent::MouseMove, Qt::NoModifier);
+
+                // No further movement from here — the timer alone must keep scrolling for ~500ms
+                // (several ticks at kAutoscrollTimerMs=40ms).
+                QTimer::singleShot(800, window, [view, window, above, gAbove, offsetBefore] {
+                    const int offsetDuring = view->debugScrollOffset();
+                    QWindowSystemInterface::handleMouseEvent(window, above, gAbove, Qt::NoButton, Qt::LeftButton,
+                        QEvent::MouseButtonRelease, Qt::NoModifier);
+                    view->copySelection();
+                    const QString text = QGuiApplication::clipboard()->text(); // copySelection() uses the regular clipboard
+                    const int lines = text.isEmpty() ? 0 : text.count(QLatin1Char('\n')) + 1;
+                    qInfo().noquote() << "solidterm: autoscrolltest offset before=" << offsetBefore
+                                       << "during=" << offsetDuring << "selection lines=" << lines
+                                       << "selection head=" << text.left(40).replace(QLatin1Char('\n'), QStringLiteral("\\n"));
+                    QCoreApplication::quit();
+                });
+            });
         });
     }
 

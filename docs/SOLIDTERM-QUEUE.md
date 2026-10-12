@@ -75,6 +75,31 @@ closed now with fresh evidence, plus a new scrollbar-visibility option and one n
   bake the engrave into the atlas glyph instead of drawing copies, or drop to a single +1 shadow at
   lower alpha (halves the bleed). MUST be verified on a real GPU — the custom QSGMaterial does not
   render under the offscreen/software backend.
+- **[x] ~~Emboss makes the text look badly kerned~~ — MOOT, not fixed, REMOVED (2026-10-12).**
+  This item described the old per-glyph emboss draw (`terminalview.cpp:428-434` as of 2026-08-13: a
+  dark glyph copy at (x+1,y+1) + a light one at (x-1,y-1), FULL-CELL quads bleeding into the
+  neighbouring cell). That code no longer exists: `e1908eb` moved emboss from the glyphs to the
+  BACKGROUND image, and `8523850` (2026-10-03, see "Background blur" below) replaced background
+  emboss with compositor blur entirely — "Emboss was removed" is already documented further down
+  this file. There is nothing left to clip/bake/fix; this bullet was never updated when the feature
+  was removed. Verified by reading the current `terminalview.cpp` (no `emboss` anywhere) and the git
+  history (`3272e09`→`e1908eb`→`58f0f96`→`8523850`) before touching anything.
+- **[x] Selection should autoscroll past the top/bottom edge (owner, 2026-10-12).** While dragging a
+  LOCAL selection (no mouse reporting, or Shift) with the pointer held above/below the view, a
+  `QTimer` (`apps/solidterm/native/autoscroll.h` + `TerminalView::autoscrollTick`) now scrolls into
+  the scrollback/toward live at a speed proportional to how far past the edge the pointer sits —
+  xterm/VTE/Tilix style, keeps going with NO further mouse movement, stops on release or re-entry.
+  Selection anchors are already in absolute buffer coordinates (`CellPos::absRow`), so they track
+  correctly as content scrolls under them. Unit tests: `apps/solidterm/tests/autoscroll_test.cpp`.
+  Verified live via `SOLIDTERM_AUTOSCROLLTEST` on the real GPU (offset moved 0→100 while the pointer
+  sat still above the view; selection grew to span real scrollback content).
+  *Gotcha found during verification*: driving this test with a hand-built `QMouseEvent` via
+  `QCoreApplication::sendEvent(window, …)` silently drops the MOVE — Qt Quick's mouse grab is keyed
+  to the originating `QPointingDevice`/point id, which a from-scratch `QMouseEvent` doesn't carry
+  across calls. Use `QWindowSystemInterface::handleMouseEvent` (same entry point `QTest::mouseMove`
+  uses) for any hook that presses then moves outside the item's bounds.
+## Open
+
 
 - **[ ] Maximize needs an animation.** Toggling zoom snaps. It should tween the pane geometry
   (the CSS engine supports `transition`, so a class swap may be enough — otherwise animate in

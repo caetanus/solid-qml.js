@@ -1,5 +1,6 @@
 #include "terminalview.h"
 
+#include "autoscroll.h"
 #include "mousereport.h"
 #include "scrollanchor.h"
 #include "scrollbackcells.h"
@@ -1310,6 +1311,7 @@ void TerminalView::mousePressEvent(QMouseEvent *event)
         event->accept();
         return;
     }
+    stopAutoscroll(); // a fresh press always starts clean, even if a previous drag leaked one somehow
 
     // Middle-click pastes the PRIMARY selection (X11/Wayland convention).
     if (event->button() == Qt::MiddleButton) {
@@ -1354,12 +1356,16 @@ void TerminalView::mousePressEvent(QMouseEvent *event)
 void TerminalView::mouseMoveEvent(QMouseEvent *event)
 {
     if (decideMouseAction(m_mouseMode, m_altScreen, event->modifiers() & Qt::ShiftModifier) == MouseAction::Report) {
+        stopAutoscroll(); // defence in depth: a mode/shift flip mid-drag must not leave it running
         reportMouseMotion(event->position(), event->modifiers(), event->buttons());
         event->accept();
         return;
     }
     if (!m_selecting)
         return;
+    // cellAt() clamps the row to [0, m_rows-1], so a pointer already past the edge extends the
+    // selection to the currently-visible edge row immediately; updateAutoscroll (below) is what then
+    // keeps revealing MORE of the scrollback/live screen without further movement.
     const CellPos p = cellAt(event->position());
     if (p.absRow != m_selEnd.absRow || p.col != m_selEnd.col) {
         m_selEnd = p;
@@ -1370,6 +1376,7 @@ void TerminalView::mouseMoveEvent(QMouseEvent *event)
         }
         update();
     }
+    updateAutoscroll(event->position());
     event->accept();
 }
 
@@ -1381,6 +1388,7 @@ void TerminalView::mouseReleaseEvent(QMouseEvent *event)
         return;
     }
     m_selecting = false;
+    stopAutoscroll();
     // Copy-on-select to the PRIMARY selection (middle-click paste; doesn't clobber the clipboard).
     if (m_selValid) {
         const QString text = selectedText();
@@ -1388,6 +1396,61 @@ void TerminalView::mouseReleaseEvent(QMouseEvent *event)
             QGuiApplication::clipboard()->setText(text, QClipboard::Selection);
     }
     event->accept();
+}
+
+// Called from mouseMoveEvent with every fresh LOCAL-selection position: starts the timer the first
+// time the pointer sits past an edge, keeps it aimed at the latest position otherwise, and stops it
+// the moment the pointer is back inside the view (re-entry — see the file header in autoscroll.h).
+void TerminalView::updateAutoscroll(const QPointF &rawPos)
+{
+    m_autoscrollPos = rawPos;
+    if (edgeOvershoot(rawPos.y(), height()) == 0) {
+        stopAutoscroll();
+        return;
+    }
+    if (!m_autoscrollTimer) {
+        m_autoscrollTimer = new QTimer(this);
+        m_autoscrollTimer->setInterval(kAutoscrollTimerMs);
+        connect(m_autoscrollTimer, &QTimer::timeout, this, &TerminalView::autoscrollTick);
+    }
+    if (!m_autoscrollTimer->isActive())
+        m_autoscrollTimer->start();
+}
+
+void TerminalView::stopAutoscroll()
+{
+    if (m_autoscrollTimer)
+        m_autoscrollTimer->stop();
+}
+
+// One tick: scroll toward whichever edge the LAST known pointer position (m_autoscrollPos) sits past,
+// then re-pin the selection's moving end to that edge row at the NEW scroll offset — exactly what a
+// real mouseMoveEvent would have done had the content scrolled under a stationary pointer. No fresh
+// QMouseEvent is needed for this to keep going, by design (see autoscroll.h).
+void TerminalView::autoscrollTick()
+{
+    const qreal overshoot = edgeOvershoot(m_autoscrollPos.y(), height());
+    if (!m_selecting || overshoot == 0) { // pointer re-entered or selection ended between ticks
+        stopAutoscroll();
+        return;
+    }
+    const int lines = autoscrollLinesPerTick(qAbs(overshoot), m_cellH);
+    if (lines <= 0)
+        return;
+    const bool above = overshoot < 0;
+    m_scrollOffset = autoscrollOffsetAfterTick(m_scrollOffset, int(m_scrollback.size()), lines, above);
+
+    const int edgeRow = above ? 0 : m_rows - 1;
+    const CellPos edge = cellAt(QPointF(m_autoscrollPos.x(), edgeRow * m_cellH));
+    if (edge.absRow != m_selEnd.absRow || edge.col != m_selEnd.col) {
+        m_selEnd = edge;
+        const bool valid = m_selEnd.absRow != m_selAnchor.absRow || m_selEnd.col != m_selAnchor.col;
+        if (valid != m_selValid) {
+            m_selValid = valid;
+            emit selectionChanged();
+        }
+    }
+    update();
 }
 
 void TerminalView::wheelEvent(QWheelEvent *event)
