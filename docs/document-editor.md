@@ -469,6 +469,14 @@ upgrading Qt:
   after suspended loading it can retain the previous document's size, including
   when page count is unchanged. A missing slot produces a warning and returns
   false rather than requiring its private header or crashing.
+- `rt::attachCustomLayoutToTextEdit` in `src/shims/richtext_qt_attach.cpp`
+  reconnects `q_contentsChange`, `invalidateBlock`, `moveCursorDelegate` and
+  `updateSize` by meta-object name, and forwards the public undo/redo notify signals.
+  It relies on non-public slot **names**, without private headers. It validates
+  every method and connection, disconnects partial connections on failure, and
+  returns false with a warning so the caller can retain or restore Qt before editing.
+  The in-place route retains the existing document links; replacement documents
+  need those links restored. Layout destruction removes the helper's connections.
 - `RichTextHandler::mergeInsertionFont` accesses the live cursor through
   `QQuickTextEditPrivate` and `QQuickTextControlPrivate`. The public TextEdit API
   does not expose insertion-only character formatting, and TextControl methods

@@ -117,18 +117,56 @@ public:
         QObject::connect(doc,SIGNAL(redoAvailable(bool)),edit,SIGNAL(canRedoChanged()));
     }
 };
+static void installAdapter(QQuickItem *edit, QTextDocument *doc, bool preinstalled) {
+    if (QByteArray(QTest::currentDataTag()).contains("rewire"))
+        QVERIFY(rt::attachCustomLayoutToTextEdit(edit, doc, preinstalled));
+    else
+        new PublicPulseAdapter(edit, doc);
+}
 static void routeData(bool variants=false) {
     QTest::addColumn<bool>("preinstalled"); QTest::addColumn<bool>("adaptive");
     QTest::newRow("preinstalled") << true << false; QTest::newRow("in-place") << false << false;
     if(variants) {
+        QTest::newRow("preinstalled-rewire") << true << true;
+        QTest::newRow("in-place-rewire") << false << true;
         QTest::newRow("preinstalled-public-adapter") << true << true;
         QTest::newRow("in-place-public-adapter") << false << true;
     }
 }
 
+// Deliberately lacks moveCursorDelegate: a changed Qt slot name must fail soft.
+class RenamedSlotEditor : public QObject {
+    Q_OBJECT
+public:
+    int calls = 0;
+signals:
+    void canUndoChanged();
+    void canRedoChanged();
+public slots:
+    void invalidateBlock(QTextBlock) { ++calls; }
+    void renamedCursorDelegate() { ++calls; }
+    void updateSize() { ++calls; }
+    void q_contentsChange(int, int, int) { ++calls; }
+};
+
 class Phase0Tests : public QObject {
     Q_OBJECT
 private slots:
+    void missingSlotRetainsQt() {
+        QTextDocument doc;
+        doc.setPlainText("working document");
+        auto *qt = doc.documentLayout();
+        RenamedSlotEditor editor;
+        QTest::ignoreMessage(QtWarningMsg, "RichText: custom layout attachment missing update(QRectF) -> moveCursorDelegate(); retaining Qt");
+        QVERIFY(!rt::attachCustomLayoutToTextEdit(&editor, &doc));
+        QCOMPARE(doc.documentLayout(), qt);
+        QTextCursor c(&doc); c.insertText("new ");
+        QVERIFY(qt->documentSize().height() > 0);
+        QCOMPARE(doc.toPlainText(), QString("new working document"));
+        doc.undo(); QCOMPARE(doc.toPlainText(), QString("working document"));
+        doc.redo(); QCOMPARE(doc.toPlainText(), QString("new working document"));
+        QCOMPARE(editor.calls, 0);
+    }
     void attachmentFirst() {
         View v; v.inventory("fresh Qt");
         auto *doc = new QTextDocument(&v.engine);
@@ -161,7 +199,7 @@ private slots:
         auto *layout=new ProbeLayout(doc); doc->setDocumentLayout(layout);
         layout->registerHandler(QTextFormat::ImageObject,handler);
         if(preinstalled) v.edit->textDocument()->setTextDocument(doc);
-        if(adaptive) new PublicPulseAdapter(v.edit,doc);
+        if(adaptive) installAdapter(v.edit,doc,preinstalled);
         v.edit->setCursorVisible(false);
         auto first=v.frame(); QVERIFY(!first.isNull());
         layout->counts={};
@@ -227,7 +265,7 @@ private slots:
         layout->registerHandler(QTextFormat::ImageObject,handler);
         doc->markContentsDirty(0,doc->characterCount());
         if(preinstalled) v.edit->textDocument()->setTextDocument(doc);
-        if(adaptive) new PublicPulseAdapter(v.edit,doc);
+        if(adaptive) installAdapter(v.edit,doc,preinstalled);
         v.edit->setCursorVisible(false);
         auto before=v.frame();
         c.movePosition(QTextCursor::End); c.insertImage("spike:red");
@@ -273,7 +311,7 @@ private slots:
         View v; auto *doc=preinstalled ? new QTextDocument(&v.engine) : v.doc(); doc->setPlainText("heading words\nbody words");
         auto *layout=new ProbeLayout(doc); doc->setDocumentLayout(layout);
         if(preinstalled) v.edit->textDocument()->setTextDocument(doc);
-        if(adaptive) new PublicPulseAdapter(v.edit,doc);
+        if(adaptive) installAdapter(v.edit,doc,preinstalled);
         RichTextHandler handler; handler.setDocument(v.edit->textDocument());
         QCOMPARE(handler.wordCount(),4);
         QTextCursor c(doc); QTextBlockFormat bf; bf.setHeadingLevel(2); c.mergeBlockFormat(bf);
@@ -336,9 +374,13 @@ private slots:
         doc->setPlainText(QString("paragraph words with enough text to wrap into several lines 0123456789\n").repeated(300));
         auto *layout=new ProbeLayout(doc); doc->setDocumentLayout(layout);
         if(preinstalled) v.edit->textDocument()->setTextDocument(doc);
-        if(adaptive) new PublicPulseAdapter(v.edit,doc);
+        if(adaptive) installAdapter(v.edit,doc,preinstalled);
         v.edit->setCursorVisible(false); v.edit->setHeight(layout->documentSize().height()); v.window.contentItem()->setClip(true);
         RichTextHandler handler; handler.setDocument(v.edit->textDocument());
+        const auto refresh = [&] {
+            if (QByteArray(QTest::currentDataTag()).contains("rewire")) handler.refreshViewport();
+            else v.publicRepaint();
+        };
         v.frame();
         for(qreal zoom : {1.0,1.5}) {
             QFont font=doc->defaultFont(); font.setPointSizeF(12*zoom); doc->setDefaultFont(font);
@@ -352,7 +394,7 @@ private slots:
             for(int offset : {0,170,850,1600,850,170}) {
                 v.edit->setY(-offset);
                 oracle.edit->setY(-offset); auto full=oracle.frame();
-                v.edit->setFlag(QQuickItem::ItemObservesViewport,true); v.publicRepaint(); auto culled=v.frame();
+                v.edit->setFlag(QQuickItem::ItemObservesViewport,true); refresh(); auto culled=v.frame();
                 int changed=changedPixels(full,culled);
                 qInfo() << "CULL zoom/offset/diff" << zoom << offset << changed;
                 if(adaptive) QCOMPARE(changed,0);
@@ -362,7 +404,7 @@ private slots:
                 QCOMPARE(changedPixels(full,refreshed),0);
                 // Change the middle block without moving the cursor: exercise clean scene nodes.
                 QTextCursor c(doc); c.setPosition(doc->characterCount()/2); c.insertText("x");
-                v.publicRepaint(); v.frame(); doc->undo(); v.publicRepaint();
+                refresh(); v.frame(); doc->undo(); refresh();
             }
         }
         layout->counts={}; v.frame();
@@ -373,7 +415,7 @@ private slots:
         // suffix returns to its old coordinates. Compare the repaired public frame to a
         // fresh custom layout with identical content/configuration, not merely rectangles.
         c=QTextCursor(doc); c.setPosition(20); c.insertText(QString("wide ").repeated(10));
-        v.publicRepaint(); v.edit->setY(0); if(!adaptive) handler.refreshViewport(); auto incremental=v.frame();
+        refresh(); v.edit->setY(0); if(!adaptive) handler.refreshViewport(); auto incremental=v.frame();
         View fresh; auto *copy=doc->clone(&fresh.engine); auto *freshLayout=new ProbeLayout(copy);
         freshLayout->width=layout->width; freshLayout->sheet=layout->sheet; freshLayout->gap=layout->gap;
         copy->setDocumentLayout(freshLayout); fresh.edit->textDocument()->setTextDocument(copy); fresh.edit->setCursorVisible(false);
@@ -441,7 +483,7 @@ private slots:
         for(int px : {100,42,86,86}) { if(c.position()) c.insertBlock(); QTextCharFormat f; QFont font("DejaVu Sans"); font.setPixelSize(px); f.setFont(font); c.insertText("X",f); }
         auto *layout=new ProbeLayout(doc); doc->setDocumentLayout(layout);
         if(preinstalled) v.edit->textDocument()->setTextDocument(doc);
-        if(adaptive) new PublicPulseAdapter(v.edit,doc);
+        if(adaptive) installAdapter(v.edit,doc,preinstalled);
         v.edit->setCursorVisible(false); v.frame();
         const qreal secondBefore=layout->blockBoundingRect(doc->findBlockByNumber(1)).y();
         const qreal tailBefore=layout->blockBoundingRect(doc->lastBlock()).y();
@@ -451,7 +493,8 @@ private slots:
         const qreal tailAfter=layout->blockBoundingRect(doc->lastBlock()).y();
         qInfo() << "NONUNIFORM second before/after tail before/after" << secondBefore << secondAfter << tailBefore << tailAfter;
         QVERIFY(secondBefore<200 && secondAfter>=220); QCOMPARE(tailAfter,tailBefore);
-        v.publicRepaint(); auto incremental=v.frame();
+        if (!QByteArray(QTest::currentDataTag()).contains("rewire")) v.publicRepaint();
+        auto incremental=v.frame();
         View fresh; auto *copy=doc->clone(&fresh.engine); copy->setDocumentLayout(new ProbeLayout(copy));
         fresh.edit->textDocument()->setTextDocument(copy); fresh.edit->setCursorVisible(false); auto reference=fresh.frame();
         QCOMPARE(changedPixels(incremental,reference),0);
