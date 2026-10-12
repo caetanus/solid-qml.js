@@ -101,7 +101,8 @@ function Step-NativeBuild {
     $setup = @('setup', $BuildDir, '--backend', 'ninja', '--buildtype', 'release', "--prefix=$(Fwd $PrefixDir)")
     if (Test-Path (Join-Path $BuildDir 'build.ninja')) { $setup += '--reconfigure' }
     meson @setup
-    ninja -C $BuildDir -j $Jobs
+    # -k 0: report every failing translation unit in one run, not just the first.
+    ninja -C $BuildDir -j $Jobs -k 0
 }
 
 function Step-NativeTest {
