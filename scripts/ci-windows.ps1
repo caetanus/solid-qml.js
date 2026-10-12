@@ -68,7 +68,7 @@ function Step-InstallQt {
             $sha = (Get-Text "$url.sha1").Trim().Split(' ')[0]
             $got = (Get-FileHash -Algorithm SHA1 $file).Hash
             if ($got -ne $sha) { throw "ci-windows: SHA1 mismatch for $a ($got, expected $sha)" }
-            7z x -y -bso0 "-o$QtDir" $file
+            7z x -y -bso0 "-o$QtPrefix" $file # the archives hold the prefix contents (bin\, lib\...) directly
         }
         Remove-Item -Recurse -Force $dl
         if (-not (Test-Path (Join-Path $QtPrefix 'bin\qmake.exe'))) { Get-ChildItem $QtDir; throw "ci-windows: no qmake.exe under $QtPrefix after unpacking" }
