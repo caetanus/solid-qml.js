@@ -1,6 +1,7 @@
 #include "richtext.h"
 #include "richtext_odf.h"
 #include "richtext_qt_p.h"
+#include "richtext_layout.h"
 #include "qmlcss/cssscroll.h"
 
 #include <QClipboard>
@@ -68,6 +69,8 @@ RichTextHandler::~RichTextHandler()
 
 rt::BlockInfo::~BlockInfo()
 {
+    if (layoutOwner)
+        layoutOwner->forgetBlock(lifetime);
     if (owner)
         owner->blockInfoDestroyed(this);
 }

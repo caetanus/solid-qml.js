@@ -12,6 +12,7 @@
 // every block's info after a load (RichTextHandler::rebuildBlockIds).
 
 #include <QString>
+#include <atomic>
 #include <QTextBlock>
 #include <QTextObject>
 
@@ -19,12 +20,17 @@ class RichTextHandler;
 
 namespace rt {
 
+class RichTextLayout;
+
 class BlockInfo final : public QTextBlockUserData {
 public:
-    explicit BlockInfo(const QString &blockId) : id(blockId) {}
+    explicit BlockInfo(const QString &blockId) : id(blockId), lifetime(++s_nextLifetime) {}
     ~BlockInfo() override; // richtext.cpp: reports the removal to `owner`
 
     QString id;
+    const quint64 lifetime;
+    RichTextLayout *layoutOwner = nullptr;
+    inline static std::atomic<quint64> s_nextLifetime{0};
     RichTextHandler *owner = nullptr;
     size_t textHash = 0;        // qHash of the block's text at the last scan — tells a text edit from a format-only one
     bool changePending = false; // queued for blockChanged (coalesced per block)

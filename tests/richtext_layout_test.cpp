@@ -1,0 +1,434 @@
+#include "shims/richtext_layout.h"
+#include "shims/richtext_odf.h"
+#include "shims/richtext.h"
+#include "shims/richtext_qt_p.h"
+#include <QQmlEngine>
+#include <QQmlComponent>
+#include <QQuickWindow>
+#include <QQuickTextDocument>
+#include <private/qquicktextedit_p.h>
+#include <QSGRendererInterface>
+#include <QSignalSpy>
+#include <QInputMethodEvent>
+
+#include <QElapsedTimer>
+#include <QFile>
+#include <QTextFragment>
+#include <QTest>
+#include <QTextDocument>
+#include <QTextCursor>
+#include <QTextList>
+#include <QTextTable>
+#include <QTextLayout>
+#include <QTextImageFormat>
+#include <cmath>
+#include <QRandomGenerator>
+#include <QPainter>
+#include <QImage>
+
+static void prepare(QTextDocument &d) {
+    QFont f("DejaVu Sans"); f.setPixelSize(16); d.setDefaultFont(f);
+    d.setDocumentMargin(10); d.setPageSize({300, 140});
+}
+static void compare(QTextDocument &reference, QTextDocument &custom, bool exact=false) {
+    const qreal tolerance=exact ? 0 : .5;
+    const qreal stride=reference.pageSize().height();
+    auto *a = reference.documentLayout(), *b = custom.documentLayout();
+    a->documentSize(); b->documentSize();
+    QCOMPARE(b->pageCount(), a->pageCount());
+    QVERIFY(qAbs(b->documentSize().width()-a->documentSize().width())<=tolerance);
+    auto x = reference.begin(), y = custom.begin();
+    for (; x.isValid() && y.isValid(); x = x.next(), y = y.next()) {
+        const auto ar = a->blockBoundingRect(x), br = b->blockBoundingRect(y);
+        QCOMPARE(y.layout()->lineCount(), x.layout()->lineCount());
+        QVERIFY2(qAbs(ar.x()-br.x())<=tolerance && qAbs(ar.y()-br.y())<=tolerance, qPrintable(QString("block %1 origin Qt %2,%3 custom %4,%5").arg(x.blockNumber()).arg(ar.x()).arg(ar.y()).arg(br.x()).arg(br.y())));
+        QVERIFY2(qAbs(ar.width()-br.width())<=tolerance, qPrintable(QString("block %1 width Qt %2 custom %3").arg(x.blockNumber()).arg(ar.width()).arg(br.width())));
+        QVERIFY2(qAbs(ar.height()-br.height())<=tolerance, qPrintable(QString("block %1 height Qt %2 custom %3").arg(x.blockNumber()).arg(ar.height()).arg(br.height())));
+        for (int i = 0; i < x.layout()->lineCount(); ++i) {
+            const auto al = x.layout()->lineAt(i), bl = y.layout()->lineAt(i);
+            const auto ap = ar.topLeft() + al.position(), bp = br.topLeft() + bl.position();
+            QCOMPARE(bl.textStart(), al.textStart()); QCOMPARE(bl.textLength(), al.textLength());
+            QCOMPARE(int(std::floor(bp.y()/stride)), int(std::floor(ap.y()/stride)));
+            QVERIFY2(qAbs(bp.x()-ap.x()) <= tolerance && qAbs(bp.y()-ap.y()) <= tolerance,
+                qPrintable(QString("block %1 line %2: Qt %3,%4 custom %5,%6").arg(x.blockNumber()).arg(i).arg(ap.x()).arg(ap.y()).arg(bp.x()).arg(bp.y())));
+            QVERIFY2(qAbs(bl.width()-al.width()) <= tolerance, qPrintable(QString("width Qt %1 custom %2").arg(al.width()).arg(bl.width())));
+            QVERIFY(qAbs(bl.ascent()-al.ascent()) <= tolerance);
+            QVERIFY2(qAbs(bl.naturalTextRect().x()-al.naturalTextRect().x()) <= tolerance,
+                qPrintable(QString("block %1 line %2 ink x Qt %3 custom %4").arg(x.blockNumber()).arg(i).arg(al.naturalTextRect().x()).arg(bl.naturalTextRect().x())));
+        }
+    }
+    QCOMPARE(x.isValid(), y.isValid());
+}
+
+static bool bookProjection(QTextDocument &d, QString *error) {
+    QTextDocument book; rt::StyleSheet styles;
+    if (!rt::readOdt(qEnvironmentVariable("RICHTEXT_BOOK"), &book, &styles, error)) return false;
+    d.setDefaultFont(book.defaultFont()); d.setDefaultTextOption(book.defaultTextOption());
+    d.setIndentWidth(book.indentWidth()); d.setPageSize({794,1150});
+    QTextCursor c(&d); c.beginEditBlock();
+    QHash<QTextList *, QTextList *> lists;
+    for (auto b=book.begin(); b.isValid(); b=b.next()) {
+        if (b!=book.begin()) c.insertBlock(b.blockFormat(), b.charFormat());
+        else { c.setBlockFormat(b.blockFormat()); c.setBlockCharFormat(b.charFormat()); }
+        for (auto it=b.begin(); !it.atEnd(); ++it) { const auto f=it.fragment(); c.insertText(f.text(),f.charFormat()); }
+        if (auto *source=b.textList()) {
+            if (lists.contains(source)) lists.value(source)->add(c.block());
+            else lists.insert(source,c.createList(source->format()));
+        }
+    }
+    auto root=d.rootFrame()->frameFormat(); root.setTopMargin(94); root.setRightMargin(113);
+    root.setBottomMargin(126); root.setLeftMargin(113); d.rootFrame()->setFrameFormat(root);
+    c.endEditBlock(); d.clearUndoRedoStacks();
+    return true;
+}
+
+class InlineBox : public QObject, public QTextObjectInterface {
+    Q_OBJECT
+    Q_INTERFACES(QTextObjectInterface)
+public:
+    QSizeF intrinsicSize(QTextDocument *,int,const QTextFormat &) override { return {35,27}; }
+    void drawObject(QPainter *p,const QRectF &r,QTextDocument *,int,const QTextFormat &) override { p->fillRect(r,Qt::magenta); }
+};
+
+struct QuickView {
+    QQmlEngine engine;
+    QQuickWindow window;
+    QQuickTextEdit *edit=nullptr;
+    QuickView() {
+        QQmlComponent component(&engine);
+        component.setData("import QtQuick\nTextEdit { width: 300; height: 1200; textFormat: TextEdit.RichText; wrapMode: TextEdit.Wrap; color: 'black'; focus: true }",QUrl());
+        edit=qobject_cast<QQuickTextEdit *>(component.create()); Q_ASSERT(edit);
+        edit->setParentItem(window.contentItem()); window.resize(320,240); window.setColor(Qt::white); window.show();
+        edit->forceActiveFocus(); edit->setCursorVisible(false); QTest::qWait(30);
+    }
+    ~QuickView() { delete edit; }
+    QTextDocument *doc() const { return edit->textDocument()->textDocument(); }
+    QImage frame() { QTest::qWait(30); return window.grabWindow(); }
+};
+
+class RichTextLayoutTests : public QObject {
+    Q_OBJECT
+private slots:
+    void initTestCase() { QQuickWindow::setGraphicsApi(QSGRendererInterface::Software); }
+    void quickRewire_data() {
+        QTest::addColumn<bool>("preinstalled");
+        QTest::newRow("preinstalled") << true; QTest::newRow("in-place") << false;
+    }
+    void quickRewire() {
+        QFETCH(bool,preinstalled); QuickView v;
+        auto *doc=preinstalled ? new QTextDocument(&v.engine) : v.doc();
+        auto *imageHandler=dynamic_cast<QObject *>(v.doc()->documentLayout()->handlerForObject(QTextFormat::ImageObject));
+        QVERIFY(imageHandler); imageHandler->setParent(doc);
+        prepare(*doc); doc->setPlainText(QString("paragraph words for wrapping across a page boundary 0123456789\n").repeated(300));
+        auto *layout=new rt::RichTextLayout(doc); doc->setDocumentLayout(layout);
+        layout->registerHandler(QTextFormat::ImageObject,imageHandler);
+        if (preinstalled) v.edit->textDocument()->setTextDocument(doc);
+        QVERIFY(rt::attachCustomLayoutToTextEdit(v.edit,doc,preinstalled));
+        RichTextHandler handler; handler.setDocument(v.edit->textDocument());
+        v.edit->setCursorVisible(false); auto before=v.frame(); QVERIFY(!before.isNull());
+        v.edit->setCursorPosition(4); QTest::keyClick(&v.window,'X'); QVERIFY(doc->toPlainText().startsWith("paraXgraph"));
+        QVERIFY(before!=v.frame());
+        const QString typed=doc->toPlainText(); v.edit->undo(); QVERIFY(doc->toPlainText()!=typed); v.edit->redo(); QCOMPARE(doc->toPlainText(),typed);
+        QTextCursor c(doc); c.select(QTextCursor::Document); QTextCharFormat color; color.setForeground(Qt::red); c.mergeCharFormat(color);
+        auto colored=v.frame(); QVERIFY(colored!=before);
+        v.edit->setCursorPosition(doc->begin().length()-1); QSignalSpy caret(v.edit,SIGNAL(cursorRectangleChanged()));
+        v.edit->setWidth(200); doc->setPageSize({200,160});
+        auto geometry=v.frame(); QVERIFY(geometry!=colored); QVERIFY(caret.count()>0);
+        QCOMPARE(v.edit->contentHeight(),layout->documentSize().height());
+        v.edit->select(0,12); QVERIFY(v.frame()!=geometry); v.edit->deselect();
+        v.edit->setCursorPosition(3); const auto rect=v.edit->cursorRectangle(); QCOMPARE(layout->hitTest(rect.center(),Qt::FuzzyHit),3);
+        QInputMethodEvent preedit(QString::fromUtf8("é漢"),{}); QGuiApplication::sendEvent(v.edit,&preedit);
+        QCOMPARE(doc->begin().layout()->preeditAreaText(),QString::fromUtf8("é漢"));
+        QInputMethodEvent commit; commit.setCommitString("ok"); QGuiApplication::sendEvent(v.edit,&commit);
+        QVERIFY(doc->toPlainText().contains("ok"));
+        const auto id=handler.blockIdAt(0); QVERIFY(!handler.addMark("test",id,0,5).isEmpty());
+        QVERIFY(handler.markStyle("test",{{"background","#ffff00"}}).isEmpty()); QVERIFY(!handler.markSegments().isEmpty());
+        c=QTextCursor(doc); QTextBlockFormat heading; heading.setHeadingLevel(2); c.mergeBlockFormat(heading);
+        QCOMPARE(handler.headings().size(),1); QVERIFY(handler.wordCount()>0);
+        c.movePosition(QTextCursor::Start); QImage image(24,18,QImage::Format_ARGB32); image.fill(Qt::blue);
+        doc->addResource(QTextDocument::ImageResource,QUrl("test:image"),image); c.insertImage("test:image");
+        auto withImage=v.frame(); image=QImage(48,36,QImage::Format_ARGB32); image.fill(Qt::green);
+        doc->addResource(QTextDocument::ImageResource,QUrl("test:image"),image); doc->markContentsDirty(0,1);
+        QVERIFY(v.frame()!=withImage); QVERIFY(doc->begin().layout()->lineAt(0).height()>=36);
+        InlineBox box; layout->registerHandler(QTextFormat::UserObject+1,&box);
+        QTextCharFormat object; object.setObjectType(QTextFormat::UserObject+1);
+        c=QTextCursor(doc); c.insertText(QString(QChar::ObjectReplacementCharacter),object);
+        const auto objectFrame=v.frame();
+        bool paintedObject=false;
+        for(int y=0;y<objectFrame.height();++y) for(int x=0;x<objectFrame.width();++x)
+            paintedObject |= objectFrame.pixelColor(x,y)==QColor(Qt::magenta);
+        QVERIFY(paintedObject);
+        // Geometry-only changes and normal editing must not require property pulses.
+        handler.clearMarks("test");
+        v.edit->setCursorVisible(false);
+        for (qreal zoom : {1.,1.5}) {
+            QFont font("DejaVu Sans"); font.setPixelSize(qRound(16*zoom)); doc->setDefaultFont(font);
+            v.edit->setWidth(300*zoom); doc->setPageSize({300*zoom,220*zoom});
+            v.edit->setHeight(layout->documentSize().height());
+            QuickView oracle;
+            auto *copy=doc->clone(&oracle.engine);
+            auto *oracleImageHandler=dynamic_cast<QObject *>(oracle.doc()->documentLayout()->handlerForObject(QTextFormat::ImageObject));
+            oracleImageHandler->setParent(copy);
+            auto *oracleLayout=new rt::RichTextLayout(copy); copy->setDocumentLayout(oracleLayout);
+            oracleLayout->registerHandler(QTextFormat::ImageObject,oracleImageHandler);
+            oracleLayout->registerHandler(QTextFormat::UserObject+1,&box);
+            copy->markContentsDirty(0,copy->characterCount());
+            oracle.edit->setWidth(300*zoom); oracle.edit->textDocument()->setTextDocument(copy);
+            QVERIFY(rt::attachCustomLayoutToTextEdit(oracle.edit,copy));
+            oracle.edit->setHeight(oracleLayout->documentSize().height());
+            oracle.edit->setFlag(QQuickItem::ItemObservesViewport,false); oracle.edit->setCursorVisible(false); oracle.frame();
+            for (int offset : {0,170,850,1600,850,170}) {
+                v.edit->setY(-offset); oracle.edit->setY(-offset);
+                const auto full=oracle.frame();
+                v.edit->setFlag(QQuickItem::ItemObservesViewport,true); handler.refreshViewport();
+                v.edit->setCursorVisible(false);
+                const auto culled=v.frame();
+                if(culled!=full) { full.save(".scratch/6-quick-full.png"); culled.save(".scratch/6-quick-culled.png"); qInfo()<<"CULL mismatch"<<zoom<<offset; }
+                QCOMPARE(culled,full);
+            }
+        }
+        layout->counters={};
+        for (int i=0;i<100;++i) { layout->documentSize(); layout->pageCount(); layout->blockBoundingRect(doc->lastBlock()); }
+        v.frame(); QCOMPARE(layout->counters.callbacks,quint64(0));
+        c=QTextCursor(doc); c.setPosition(doc->characterCount()/2); c.insertText("i"); v.frame();
+        QVERIFY(layout->counters.shapedBlocks<=2); QVERIFY(layout->counters.convergences>0);
+    }
+    void paragraphs_data() {
+        QTest::addColumn<int>("kind");
+        for (int i=0; i<25; ++i) QTest::newRow(qPrintable(QString::number(i))) << i;
+    }
+    void paragraphs() {
+        QFETCH(int, kind);
+        QTextDocument qt; prepare(qt); QTextCursor c(&qt);
+        if (kind < 9) {
+            QTextBlockFormat f; f.setBottomMargin((kind/3-1)*10); c.setBlockFormat(f); c.insertText("one");
+            f = {}; f.setTopMargin((kind%3-1)*12); c.insertBlock(f); c.insertText("two");
+        } else {
+            for (int n=0; n<12; ++n) {
+                QTextBlockFormat f;
+                f.setTopMargin(18); f.setBottomMargin(12);
+                if (kind==10) f.setLineHeight(150, QTextBlockFormat::ProportionalHeight);
+                if (kind==11) f.setLineHeight(25, QTextBlockFormat::FixedHeight);
+                if (kind==12) f.setLineHeight(25, QTextBlockFormat::MinimumHeight);
+                if (kind==13) f.setLineHeight(6, QTextBlockFormat::LineDistanceHeight);
+                if (kind==14 && n%3==0) f.setPageBreakPolicy(QTextFormat::PageBreak_AlwaysBefore);
+                if (kind==15 && n%3==0) f.setPageBreakPolicy(QTextFormat::PageBreak_AlwaysAfter);
+                if (kind==18 || kind==23) f.setLayoutDirection(Qt::RightToLeft);
+                if (kind==19) { QTextOption::Tab tab; tab.position=110; tab.type=QTextOption::RightTab; f.setTabPositions({tab}); }
+                if (kind==23) f.setTextIndent(12);
+                if (kind==24) f.setNonBreakableLines(true);
+                if (kind==20) f.setAlignment(Qt::AlignJustify);
+                if (kind==21) { f.setIndent(1); f.setTextIndent(12); }
+                if (kind==22) f.setPageBreakPolicy(QTextFormat::PageBreak_AlwaysBefore | QTextFormat::PageBreak_AlwaysAfter);
+                if (kind==16) { f.setIndent(1); f.setTextIndent(-12); f.setRightMargin(8); }
+                if (n) c.insertBlock(f); else c.setBlockFormat(f);
+                if (kind==21 || kind==23) { QTextListFormat list; list.setStyle(QTextListFormat::ListDecimal); list.setIndent(2); c.createList(list); }
+                if (kind==18 || kind==23) c.insertText(QString::fromUtf8("العربية 123 שלום abc "));
+                if (kind==19) c.insertText("left\tright ");
+                if (kind!=17) c.insertText(QString("words for wrapping across the page boundary ").repeated(n%4+1));
+            }
+        }
+        QScopedPointer<QTextDocument> custom(qt.clone());
+        custom->setDocumentLayout(new rt::RichTextLayout(custom.data()));
+        compare(qt, *custom);
+    }
+    void numberedListEditsRepaintSuffix() {
+        QuickView view; auto *doc=view.doc(); prepare(*doc);
+        QTextCursor c(doc); c.beginEditBlock(); c.createList(QTextListFormat::ListDecimal);
+        for(int i=0;i<105;++i) { if(i) c.insertBlock(); c.insertText("numbered item"); }
+        c.endEditBlock();
+        auto *layout=new rt::RichTextLayout(doc); doc->setDocumentLayout(layout);
+        QVERIFY(rt::attachCustomLayoutToTextEdit(view.edit,doc,false));
+        RichTextHandler handler; handler.setDocument(view.edit->textDocument());
+        view.edit->setHeight(layout->documentSize().height()); view.edit->setCursorVisible(false); view.frame();
+        const auto ninth=doc->findBlockByNumber(8);
+        ninth.textList()->remove(ninth); // Same paragraph count/height, different suffix ordinals.
+        QuickView oracle; auto *copy=doc->clone(&oracle.engine); auto *fresh=new rt::RichTextLayout(copy); copy->setDocumentLayout(fresh);
+        oracle.edit->textDocument()->setTextDocument(copy); oracle.edit->setHeight(fresh->documentSize().height());
+        oracle.edit->setCursorVisible(false); oracle.edit->setFlag(QQuickItem::ItemObservesViewport,false); oracle.frame();
+        for(int block : {0,8,98}) {
+            const qreal y=layout->blockBoundingRect(doc->findBlockByNumber(block)).y();
+            view.edit->setY(-y); oracle.edit->setY(-y);
+            handler.refreshViewport();
+            QCOMPARE(view.frame(),oracle.frame());
+        }
+    }
+    void listMarkers() {
+        QList<QImage> images;
+        for (auto style : {QTextListFormat::ListDisc,QTextListFormat::ListCircle,QTextListFormat::ListSquare,QTextListFormat::ListDecimal}) {
+            QTextDocument d; prepare(d); QTextCursor c(&d); c.insertText("item"); c.createList(style);
+            d.setDocumentLayout(new rt::RichTextLayout(&d));
+            QImage image(300,140,QImage::Format_ARGB32); image.fill(Qt::white); QPainter painter(&image); d.documentLayout()->draw(&painter,{}); painter.end();
+            for(const auto &previous:images) QVERIFY(image!=previous);
+            images.append(image);
+        }
+    }
+    void inlineObjects_data() {
+        QTest::addColumn<int>("mode");
+        for(int mode=0;mode<11;++mode) QTest::newRow(qPrintable(QString::number(mode))) << mode;
+    }
+    void inlineObjects() {
+        QFETCH(int,mode); QTextDocument qt; prepare(qt);
+        InlineBox box;
+        qt.documentLayout()->registerHandler(QTextFormat::UserObject+1,&box);
+        QImage image(31,43,QImage::Format_ARGB32); image.fill(Qt::green);
+        qt.addResource(QTextDocument::ImageResource,QUrl("test:standalone"),image);
+        QTextCursor c(&qt); QTextBlockFormat block;
+        if(mode && mode<=4) block.setLineHeight(mode==1?150:25,mode);
+        c.setBlockFormat(block);
+        QTextImageFormat imageFormat; imageFormat.setName("test:standalone");
+        if(mode>4) imageFormat.setVerticalAlignment(static_cast<QTextCharFormat::VerticalAlignment>(mode-4));
+        c.insertText("before "); c.insertImage(imageFormat); c.insertText(" middle ");
+        QTextCharFormat object; object.setObjectType(QTextFormat::UserObject+1);
+        if(mode>4) object.setVerticalAlignment(static_cast<QTextCharFormat::VerticalAlignment>(mode-4));
+        c.insertText(QString(QChar::ObjectReplacementCharacter),object);
+        c.insertText(" after");
+        QScopedPointer<QTextDocument> custom(qt.clone()); auto *layout=new rt::RichTextLayout(custom.data()); custom->setDocumentLayout(layout);
+        layout->registerHandler(QTextFormat::UserObject+1,&box); custom->markContentsDirty(0,custom->characterCount());
+        qt.documentLayout()->documentSize();
+        compare(qt,*custom);
+        QImage output(300,140,QImage::Format_ARGB32); output.fill(Qt::white); QPainter painter(&output);
+        layout->draw(&painter,{}); painter.end();
+        int green=0,magenta=0;
+        for(int y=0;y<output.height();++y) for(int x=0;x<output.width();++x) {
+            green+=output.pixelColor(x,y)==QColor(Qt::green); magenta+=output.pixelColor(x,y)==QColor(Qt::magenta);
+        }
+        QImage reference(300,140,QImage::Format_ARGB32); reference.fill(Qt::white); QPainter qp(&reference); qt.documentLayout()->draw(&qp,{}); qp.end();
+        int qtGreen=0, qtMagenta=0;
+        for(int y=0;y<reference.height();++y) for(int x=0;x<reference.width();++x) {
+            qtGreen+=reference.pixelColor(x,y)==QColor(Qt::green); qtMagenta+=reference.pixelColor(x,y)==QColor(Qt::magenta);
+        }
+        QCOMPARE(green,qtGreen); QCOMPARE(magenta,qtMagenta); QVERIFY(green>0); QVERIFY(magenta>0);
+        const auto bounds=[](const QImage &image, QColor color) {
+            QRect rect;
+            for(int y=0;y<image.height();++y) for(int x=0;x<image.width();++x)
+                if(image.pixelColor(x,y)==color) rect=rect.united(QRect(x,y,1,1));
+            return rect;
+        };
+        QCOMPARE(bounds(output,Qt::green),bounds(reference,Qt::green));
+        QCOMPARE(bounds(output,Qt::magenta),bounds(reference,Qt::magenta));
+    }
+    void incrementalEdits() {
+        QuickView view; RichTextHandler handler; handler.setDocument(view.edit->textDocument());
+        QTextDocument &d=*view.doc(); prepare(d);
+        d.setPlainText(QString("A paragraph with enough text for wrapping to several lines.\n").repeated(80));
+        auto *layout = new rt::RichTextLayout(&d); d.setDocumentLayout(layout);
+        handler.setDocument(nullptr); handler.setDocument(view.edit->textDocument());
+        d.markContentsDirty(0,d.characterCount());
+        QVERIFY(rt::attachCustomLayoutToTextEdit(view.edit,&d,false));
+        QRandomGenerator random(601);
+        for (int step=0; step<100; ++step) {
+            QTextCursor c(&d); c.setPosition(random.bounded(d.characterCount()-1));
+            switch (step%8) {
+            case 0: c.insertText("x"); break;
+            case 1: c.insertBlock(); break;
+            case 2: c.deletePreviousChar(); break;
+            case 3: c.setPosition(qMin(d.characterCount()-1,c.position()+300),QTextCursor::KeepAnchor); c.removeSelectedText(); break;
+            case 4: { c.setPosition(qMin(d.characterCount()-1,c.position()+40),QTextCursor::KeepAnchor); QTextCharFormat f; f.setFontPointSize(13); c.mergeCharFormat(f); break; }
+            case 5: { QTextListFormat f; f.setIndent(1); f.setStyle(QTextListFormat::ListDecimal); c.createList(f); break; }
+            case 6: d.undo(); break;
+            case 7: d.redo(); break;
+            }
+            const auto ids=handler.blockIds();
+            QVERIFY(!ids.contains(QString())); QCOMPARE(QSet<QString>(ids.begin(),ids.end()).size(),d.blockCount());
+            QScopedPointer<QTextDocument> cold(d.clone());
+            cold->setDocumentLayout(new rt::RichTextLayout(cold.data()));
+            compare(*cold,d,true);
+            if (QTest::currentTestFailed()) { qInfo() << "random step" << step; return; }
+        }
+        layout->counters={}; QTextCursor c(&d); c.setPosition(d.characterCount()/2); c.insertText("i");
+        QVERIFY(layout->counters.shapedBlocks <= 2);
+        QVERIFY(layout->counters.convergences > 0);
+        QVERIFY(layout->counters.placements < 10);
+    }
+    void translatedConvergence() {
+        QTextDocument d; prepare(d); d.setPlainText(QString("one line\n").repeated(100));
+        auto *layout=new rt::RichTextLayout(&d); d.setDocumentLayout(layout);
+        QTextBlockFormat f; f.setPageBreakPolicy(QTextFormat::PageBreak_AlwaysBefore);
+        QTextCursor barrier(d.findBlockByNumber(45)); barrier.setBlockFormat(f);
+        QTextCursor c(d.findBlockByNumber(40)); f.setPageBreakPolicy(QTextFormat::PageBreak_AlwaysBefore | QTextFormat::PageBreak_AlwaysAfter);
+        layout->counters={}; c.setBlockFormat(f);
+        QScopedPointer<QTextDocument> cold(d.clone()); cold->setDocumentLayout(new rt::RichTextLayout(cold.data())); compare(*cold,d,true);
+        QVERIFY(layout->counters.shapedBlocks<=2); QVERIFY(layout->counters.convergences>0);
+        QVERIFY(layout->counters.translations>0); QVERIFY(layout->counters.placements<10);
+        qInfo()<<"TRANSLATED counters"<<layout->counters.shapedBlocks<<layout->counters.placements<<layout->counters.translations;
+        d.undo(); cold.reset(d.clone()); cold->setDocumentLayout(new rt::RichTextLayout(cold.data())); compare(*cold,d,true);
+    }
+    void painterAndHitTest() {
+        QTextDocument qt; prepare(qt); qt.setPlainText("alpha beta    \nsecond paragraph");
+        QScopedPointer<QTextDocument> custom(qt.clone()); custom->setDocumentLayout(new rt::RichTextLayout(custom.data()));
+        auto render=[](QTextDocument &d) {
+            QImage image(300,140,QImage::Format_ARGB32_Premultiplied); image.fill(Qt::white);
+            QPainter p(&image); QAbstractTextDocumentLayout::PaintContext ctx;
+            QTextCursor selection(&d); selection.setPosition(2); selection.setPosition(17,QTextCursor::KeepAnchor);
+            QTextCharFormat format; format.setBackground(Qt::blue); format.setForeground(Qt::white);
+            ctx.selections.append({selection,format}); d.documentLayout()->draw(&p,ctx); return image;
+        };
+        const auto customImage=render(*custom), qtImage=render(qt);
+        customImage.save(".scratch/6-painter-custom.png"); qtImage.save(".scratch/6-painter-qt.png");
+        QCOMPARE(customImage,qtImage);
+        for (auto b=custom->begin(); b.isValid(); b=b.next()) {
+            auto *l=b.layout();
+            for (int i=0;i<l->lineCount();++i) {
+                auto line=l->lineAt(i);
+                for (int offset=line.textStart();offset<=line.textStart()+line.textLength();++offset) {
+                    const QPointF p=l->position()+QPointF(line.cursorToX(offset),line.y()+line.height()/2);
+                    QCOMPARE(custom->documentLayout()->hitTest(p,Qt::FuzzyHit),b.position()+offset);
+                }
+            }
+        }
+        QCOMPARE(custom->documentLayout()->hitTest({5,135},Qt::ExactHit),-1);
+    }
+    void painterClippingAcrossPageGaps() {
+        QTextDocument d; prepare(d); d.setPlainText(QString("Selected words spanning several pages. ").repeated(60));
+        d.setDocumentLayout(new rt::RichTextLayout(&d));
+        const QSize size=d.documentLayout()->documentSize().toSize();
+        QImage full(size,QImage::Format_ARGB32), tiled(size,QImage::Format_ARGB32); full.fill(Qt::white); tiled.fill(Qt::white);
+        QAbstractTextDocumentLayout::PaintContext context;
+        QTextCursor c(&d); c.select(QTextCursor::Document); QTextCharFormat format; format.setBackground(Qt::blue); format.setForeground(Qt::white);
+        context.selections.append({c,format});
+        { QPainter p(&full); d.documentLayout()->draw(&p,context); }
+        { QPainter p(&tiled); for(int y=0;y<size.height();y+=137) { context.clip=QRectF(0,y,size.width(),137); d.documentLayout()->draw(&p,context); } }
+        QCOMPARE(tiled,full);
+        for(int page=0;page<d.pageCount();++page) for(int y=page*140+130;y<qMin(size.height(),(page+1)*140+10);++y)
+            for(int x=0;x<size.width();++x) QCOMPARE(full.pixelColor(x,y),QColor(Qt::white));
+    }
+    void bidiGraphemeHits() {
+        QTextDocument d; prepare(d); d.setPlainText(QString::fromUtf8("العربية 123 שלום abc é 😀 ffi\nsecond line"));
+        QScopedPointer<QTextDocument> reference(d.clone()); reference->documentLayout()->documentSize();
+        d.setDocumentLayout(new rt::RichTextLayout(&d));
+        for(auto b=d.begin();b.isValid();b=b.next()) {
+            auto *layout=b.layout();
+            for(int offset=0;offset<b.length();++offset) {
+                if(!layout->isValidCursorPosition(offset)) continue;
+                auto line=layout->lineForTextPosition(offset); QVERIFY(line.isValid());
+                const qreal x=line.cursorToX(offset);
+                const QPointF p=layout->position()+QPointF(x,line.y()+line.height()/2);
+                const int hit=d.documentLayout()->hitTest(p,Qt::FuzzyHit)-b.position();
+                QVERIFY(layout->isValidCursorPosition(hit));
+                const int qtHit=reference->documentLayout()->hitTest(p,Qt::FuzzyHit)-b.position();
+                QVERIFY2(qAbs(line.cursorToX(hit)-x)<=.5 || qAbs(line.cursorToX(hit,QTextLine::Trailing)-x)<=.5 || hit==qtHit,
+                    qPrintable(QString("offset %1 hit %2 Qt hit %3 x %4 hit-leading %5 trailing %6").arg(offset).arg(hit).arg(qtHit).arg(x).arg(line.cursorToX(hit)).arg(line.cursorToX(hit,QTextLine::Trailing))));
+            }
+        }
+    }
+    void bookParagraphParity() {
+        if (qEnvironmentVariableIsEmpty("RICHTEXT_BOOK")) QSKIP("Set RICHTEXT_BOOK");
+        QTextDocument qt; QString error; QVERIFY2(bookProjection(qt,&error),qPrintable(error));
+        QScopedPointer<QTextDocument> custom(qt.clone()); custom->setDocumentLayout(new rt::RichTextLayout(custom.data()));
+        compare(qt,*custom);
+        qInfo() << "BOOK projection blocks/chars/pages" << qt.blockCount() << qt.characterCount() << qt.pageCount();
+    }
+    void unsupportedStructures() {
+        QTextDocument d; QVERIFY(rt::RichTextLayout::supports(&d));
+        QTextCursor c(&d); c.insertTable(2,2);
+        QVERIFY(!rt::RichTextLayout::supports(&d));
+        QTextDocument hidden; hidden.begin().setVisible(false);
+        QVERIFY(!rt::RichTextLayout::supports(&hidden));
+        QTextDocument background; auto root=background.rootFrame()->frameFormat(); root.setBackground(Qt::yellow);
+        background.rootFrame()->setFrameFormat(root);
+        QVERIFY(!rt::RichTextLayout::supports(&background));
+    }
+};
+QTEST_MAIN(RichTextLayoutTests)
+#include "richtext_layout_test.moc"

@@ -171,7 +171,7 @@ solidqml_sources = files(
     'src/embed/solidqmlembed.cpp',
 )
 if build_richtext
-  solidqml_sources += files('src/shims/richtext.cpp', 'src/shims/richtext_styles.cpp', 'src/shims/richtext_odf.cpp', 'src/shims/richtext_qt_attach.cpp')
+  solidqml_sources += files('src/shims/richtext.cpp', 'src/shims/richtext_styles.cpp', 'src/shims/richtext_odf.cpp', 'src/shims/richtext_qt_attach.cpp', 'src/shims/richtext_layout.cpp')
 endif
 
 # `embed` gates INSTALLATION as a consumable product; the library is always built because the
@@ -483,6 +483,11 @@ test('select-widget',
 # contract, content/format state and an .odt round-trip — what an app driving the document uses.
 if build_richtext
   richtext_test_deps = [solidqml_dep, qt6_templates_private_dep, dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'Test'])] + core_private_deps
+  test('richtext-layout',
+    executable('test-richtext-layout', files('tests/richtext_layout_test.cpp'),
+      qt6.preprocess(moc_sources: files('tests/richtext_layout_test.cpp'), dependencies: richtext_test_deps),
+      include_directories: include_directories('src'), dependencies: richtext_test_deps),
+    env: ['QT_QPA_PLATFORM=offscreen'], timeout: 120)
   test('layout-phase0',
     executable('test-layout-phase0', files('tests/layout_phase0_test.cpp'),
       qt6.preprocess(moc_sources: files('tests/layout_phase0_test.cpp'), dependencies: richtext_test_deps),
