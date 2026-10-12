@@ -8,12 +8,14 @@ W.Div {
     id: __self
     property var a: 1
     property var b: 0
+    function __effect0() { if (!__started.__effect0) return; b = a * 2; }
+    readonly property var __started: ({})
     property var __cleanups: []
-    Component.onCompleted: { var t = setInterval(function() { return a = a + 1 }, 1000); __cleanups.push(function() { return clearInterval(t) }); b = a * 2; }
-    Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
+    Component.onCompleted: { var t = setInterval(function() { return a = a + 1 }, 1000); __cleanups.push(function() { return clearInterval(t) }); __started.__effect0 = true; __effect0(); }
+    Component.onDestruction: { for (var i = __cleanups.length - 1; i >= 0; i--) __cleanups[i](); }
     Connections {
         target: __self
-        function onAChanged() { b = a * 2; }
+        function onAChanged() { __effect0(); }
     }
     cssClass: ["app"]
     W.Text {

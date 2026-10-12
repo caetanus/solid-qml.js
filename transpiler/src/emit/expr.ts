@@ -72,6 +72,11 @@ export interface Scope {
   /** Where `onCleanup(fn)` registers: the enclosing effect's cleanup list property (inside an
    *  effect body), else the component's `__cleanups`. */
   cleanupList?: string;
+  /** Solid API names imported by the module (local → exported). A call to one the emitter does not
+   *  model fails loud instead of becoming a call to an undefined function. */
+  solidApi?: Map<string, string>;
+  /** Collector: runtime helpers the emitted code uses (untrack → `__untrack`, batch → SolidBatch). */
+  runtime?: { untrack: boolean; batch: boolean };
   /** Imported JS bindings mirrored as QML ES modules: local name → QML expression. */
   jsImports?: Record<string, string>;
   /** Mutable flag set by widget emitters when a T.* control is emitted.
@@ -234,6 +239,8 @@ export function emitExpr(node: t.Node, scope: Scope): string {
     if (scope.accessors && node.name in scope.accessors) return `(function() { return ${scope.accessors[node.name]} })`;
     const sym = scope.table.get(node.name);
     if (sym?.kind === "signal" || sym?.kind === "store") return cellRef(sym.name, scope); // reactive property read
+    if (sym?.kind === "selector") // passed by value: still a function of the key
+      return `(function(__k) { return ${emitExpr(t.callExpression(node, [t.identifier("__k")]), { ...scope, locals: { ...(scope.locals ?? {}), __k: "__k" } })} })`;
     if (scope.mutableLocals?.has(node.name)) return cellRef(node.name, scope); // mutable local → property read
     if (scope.jsImports && node.name in scope.jsImports) return scope.jsImports[node.name];
     return safeName(node.name);
@@ -270,18 +277,38 @@ export function emitExpr(node: t.Node, scope: Scope): string {
   }
 
   if (t.isCallExpression(node) && t.isIdentifier(node.callee)) {
+    const api = solidApiOf(node.callee.name, scope);
     // onCleanup(fn) → register a teardown on the current owner: the enclosing effect's own list
     // (run before its next run and on unmount), else the component's `__cleanups` (run on unmount).
-    if (node.callee.name === "onCleanup" && !scope.table.has("onCleanup") && !(scope.locals && "onCleanup" in scope.locals)) {
+    if (api === "onCleanup") {
       if (node.arguments.length !== 1) throw new Error("onCleanup takes exactly one function");
       return `${scope.cleanupList ?? "__cleanups"}.push(${emitExpr(node.arguments[0], scope)})`;
     }
+    // untrack(fn) → its reads register no dependency (see component.ts `__untrack`).
+    if (api === "untrack") {
+      if (node.arguments.length !== 1) throw new Error("untrack takes exactly one function");
+      if (scope.runtime) scope.runtime.untrack = true;
+      return `__untrack(${accessorFn(node.arguments[0], scope)})`;
+    }
+    // batch(fn) → computations re-run once, after fn (runtime.ts BATCH_MODULE_SOURCE).
+    if (api === "batch") {
+      if (node.arguments.length !== 1) throw new Error("batch takes exactly one function");
+      if (scope.runtime) scope.runtime.batch = true;
+      return `SolidBatch.batch(${accessorFn(node.arguments[0], scope)})`;
+    }
+    if (api && !SOLID_EMITTED.has(api)) throw new Error(unsupportedSolidCall(node.callee.name, api));
     if (scope.accessors && node.callee.name in scope.accessors && node.arguments.length === 0)
       return scope.accessors[node.callee.name]; // <Index> item() → modelData
     const sym = scope.table.get(node.callee.name);
     if (sym?.kind === "signal" && node.arguments.length === 0) return cellRef(sym.name, scope); // count() -> count / __self.count
     if (sym?.kind === "memo" && node.arguments.length === 0) return cellRef(sym.name, scope);   // memo() -> memo property
     if (sym?.kind === "resource" && node.arguments.length === 0) return cellRef(sym.name, scope); // user() -> user (the resource value property)
+    if (sym?.kind === "selector") {
+      if (node.arguments.length !== 1) throw new Error(`${node.callee.name}(key): a selector takes one key`);
+      const src = emitExpr(t.callExpression(sym.source, []), scope);
+      const key = emitExpr(node.arguments[0], scope);
+      return sym.fn ? `(${emitExpr(sym.fn, scope)})(${key}, ${src})` : `(${key} === ${src})`;
+    }
     if (sym?.kind === "setter") return emitSetter(sym.signal, node.arguments[0], scope);
     if (sym?.kind === "storeSetter") return emitStoreSetter(sym.store, node.arguments, scope);
     if (sym?.kind === "derived") {                                                        // derived() -> inline body
@@ -394,6 +421,46 @@ export function emitExpr(node: t.Node, scope: Scope): string {
 
   // Fallback for the few node kinds not yet handled — keep it visible, don't silently drop.
   throw new Error(`unsupported expression in component code: ${node.type}${EXPR_HINT[node.type] ? ` — ${EXPR_HINT[node.type]}` : ""}`);
+}
+
+/** The Solid API a call's callee names, unless a local binding shadows the import. Without import
+ *  information (a hand-built scope) only the three helpers the emitter lowers are recognised. */
+function solidApiOf(name: string, scope: Scope): string | undefined {
+  if (scope.table.has(name) || (scope.locals && name in scope.locals) || scope.helpers?.has(name)) return undefined;
+  if (scope.solidApi) return scope.solidApi.get(name);
+  return name === "onCleanup" || name === "untrack" || name === "batch" ? name : undefined;
+}
+
+/** Solid APIs that legitimately reach emitExpr as plain calls (handled by their own emitter). */
+const SOLID_EMITTED = new Set(["onCleanup", "untrack", "batch"]);
+
+function unsupportedSolidCall(local: string, api: string): string {
+  const where = `\`${local}(…)\``;
+  switch (api) {
+    case "createRoot":
+      return `${where}: createRoot is not supported natively — a component's computations live exactly as long as its QML object (there is no detached owner). Create the signals/effects in a component body.`;
+    case "createMutable": case "modifyMutable":
+      return `${where}: ${api} is not supported natively — QML bindings cannot observe in-place mutation of a plain object. Use createStore and its setter.`;
+    case "getOwner": case "runWithOwner":
+      return `${where}: ownership is not modelled natively (a component's computations are owned by its QML object).`;
+    case "createSignal": case "createMemo": case "createEffect": case "createRenderEffect": case "createComputed":
+    case "createSelector": case "createStore": case "createResource": case "onMount": case "mergeProps":
+    case "splitProps": case "useContext": case "on":
+      return `${where}: ${api} is only supported at the top level of a component body (\`const x = ${api}(…)\` / \`${api}(…);\`${api === "on" ? ", or as createEffect(on(…)) / createMemo(on(…))" : ""}) — here it would be a call to an undefined function.`;
+    default:
+      return `${where}: ${api} (from solid-js) is not supported natively.`;
+  }
+}
+
+/** The function argument of untrack/batch: a function as written; a signal/memo/accessor name
+ *  (`untrack(count)`) becomes a function that reads it. */
+function accessorFn(arg: t.Node, scope: Scope): string {
+  if (t.isIdentifier(arg)) {
+    const k = scope.table.get(arg.name)?.kind;
+    if (k === "signal" || k === "memo" || k === "resource" || k === "derived" || (scope.accessors && arg.name in scope.accessors))
+      return `function() { return ${emitExpr(t.callExpression(arg, []), scope)} }`;
+  }
+  return emitExpr(arg, scope);
 }
 
 const EXPR_HINT: Record<string, string> = {

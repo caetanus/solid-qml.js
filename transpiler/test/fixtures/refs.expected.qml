@@ -6,8 +6,8 @@ import qmlcss 1.0 as Css
 import solidqml.Widgets 1.0 as W
 W.Div {
     property var __cleanups: []
-    Component.onCompleted: { console.log("ref resolved:", _ref_myDiv); }
-    Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
+    Component.onCompleted: { { console.log("ref resolved:", _ref_myDiv); } }
+    Component.onDestruction: { for (var i = __cleanups.length - 1; i >= 0; i--) __cleanups[i](); }
     cssClass: ["app"]
     id: _ref_myDiv
     W.Text {

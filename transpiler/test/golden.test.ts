@@ -152,9 +152,10 @@ test("golden: effect-smoke.tsx emits onCompleted body + Connections dep-tracking
   assert.equal(app.entry.trimEnd(), want.trimEnd());
   // Belt-and-suspenders structural assertions
   assert.match(app.entry, /property var b: 0/);                        // signal b initialised to 0
-  assert.match(app.entry, /b = a \* 2/);                               // effect body in onCompleted (bare)
+  assert.match(app.entry, /function __effect0\(\) \{ if \(!__started\.__effect0\) return; b = a \* 2; \}/);  // the effect: one method (bare reads)
+  assert.match(app.entry, /Component\.onCompleted: \{[^\n]*__started\.__effect0 = true; __effect0\(\); \}/); // first run after setup
   assert.match(app.entry, /Connections \{[\s\S]*target: __self/);       // Connections block present
-  assert.match(app.entry, /function onAChanged\(\) \{ b = a \* 2; \}/); // dep handler (bare)
+  assert.match(app.entry, /function onAChanged\(\) \{ __effect0\(\); \}/); // dep handler re-runs it
 });
 
 test("golden: input-demo.tsx emits W.TextField with Binding and placeholder", async () => {

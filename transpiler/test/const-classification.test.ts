@@ -230,7 +230,7 @@ export function App() {
   assert.match(app.entry, /readonly property var label: "n="/);
   assert.doesNotMatch(app.entry, /Component\.onCompleted:[^\n]*label\s*=/);
   // The effect's dependent re-run is its own Connections function — `label` must resolve there too.
-  assert.match(app.entry, /function onCountChanged\(\) \{ console\.log\(label \+ count\); \}/);
+  assert.match(app.entry, /function __effect0\(\) \{ if \(!__started\.__effect0\) return; console\.log\(label \+ count\); \}/);
 });
 
 test("a plain const NOT read by render at all, even if it reads a signal, does not throw (analyzeSetup owns it)", async () => {

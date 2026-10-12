@@ -3,6 +3,8 @@ import _generate from "@babel/generator";
 import { emitQml } from "./qml.ts";
 import { emitExpr, emitPattern, shadowOwnParams, type Scope } from "./expr.ts";
 import { emitStmt, emitValue, emitBindingStmt, emitStatements } from "./stmt.ts";
+import { onDepsCall, type EffectInfo } from "../model/symbols.ts";
+import { BATCH_MODULE_PATH } from "./runtime.ts";
 import { analyzeSignals, analyzeProps, analyzeSetup, analyzeResources, analyzeMutableLocals, analyzeRenderLocals, renderLocalLiveTaint, analyzeHelpers, analyzeModuleFunctions, moduleLevelMutableNames, collectModuleFunctionClosure, collectFetcherDeps, effectDeps, type HelperInfo, type ProviderInfo, type UseContextBinding } from "../model/symbols.ts";
 import { safeName } from "../names/safe.ts";
 import { hParts, isHCall, isFragmentTag } from "../ast/h.ts";
@@ -27,7 +29,17 @@ export interface CtxWiring {
  * and one reactive `property` per signal (initial value via emitExpr). The signal properties are
  * the bare names the render's bindings read.
  */
-export function emitComponentType(fn: t.Function, render: t.CallExpression, components?: Map<string, string>, contexts?: Set<string>, provider?: ProviderInfo | null, ctx?: CtxWiring, moduleFile?: t.File, jsImports?: Record<string, string>, moduleInit?: string[], foreignQml?: Set<string>, foreignImports?: Map<string, string>): string[] {
+export interface ComponentOptions {
+  /** The app calls `batch` somewhere: every computation defers itself while a batch is open. */
+  batching?: boolean;
+}
+
+export function emitComponentType(fn: t.Function, render: t.CallExpression, components?: Map<string, string>, contexts?: Set<string>, provider?: ProviderInfo | null, ctx?: CtxWiring, moduleFile?: t.File, jsImports?: Record<string, string>, moduleInit?: string[], foreignQml?: Set<string>, foreignImports?: Map<string, string>, options: ComponentOptions = {}): string[] {
+  // Solid's API as imported by this module (local name → exported name), so a call to an API the
+  // emitter does not model is a compile error rather than a call to an undefined function.
+  const solidApi = moduleFile ? solidImports(moduleFile) : undefined;
+  // Runtime helpers the emitted code asked for (untrack → __untrack, batch → SolidBatch).
+  const runtime = { untrack: false, batch: false };
   const table = analyzeSignals(fn);
   const props = analyzeProps(fn);
   const propAliases = new Set(props.aliases);
@@ -145,7 +157,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   const lazyRefs = new Set<string>();
   const scope: Scope = {
     table, mode: "binding", propsParam: props.param ?? undefined, propAliases, components, contexts, refs: collectedRefs, lazyRefs, foreignQml, foreignImports,
-    inputCounter, hoverCounter, usedWidgets, buttonGroups, resources: resources.map((r) => r.name), jsImports,
+    inputCounter, hoverCounter, usedWidgets, buttonGroups, resources: resources.map((r) => r.name), jsImports, solidApi, runtime,
     ...(baseLocals ? { locals: baseLocals } : {}),
     ...(mutableLocals ? { mutableLocals } : {}),
     ...(helpers ? { helpers } : {}),
@@ -198,7 +210,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   for (const name of lazyRefs) decls.push(`${INDENT}property var ${name}: null`);
   // Prop reads inside reactive initializers (e.g. createSignal(props.x || 0)) resolve through the
   // props param to the sibling prop property. (init mode is non-self-qualified → bare property ref.)
-  const initScope: Scope = { table, mode: "init", propsParam: props.param ?? undefined, propAliases, jsImports, ...(baseLocals ? { locals: baseLocals } : {}) };
+  const initScope: Scope = { table, mode: "init", propsParam: props.param ?? undefined, propAliases, jsImports, solidApi, runtime, ...(baseLocals ? { locals: baseLocals } : {}) };
   for (const name of props.used) {
     if (name === "children") continue;
     // A signal/memo of the same name already owns this property (the prop binds to it); skip the
@@ -219,17 +231,34 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
       const init = sym.init ? emitExpr(sym.init, initScope) : "undefined";
       decls.push(`${INDENT}property var ${safeName(sym.name)}: ${init}`);
     } else if (sym.kind === "memo") {
-      if (t.isBlockStatement(sym.body)) {
+      // A memo is a QML binding: the engine tracks every read. Same name resolution as the render
+      // (props, helpers, context members, mutable locals…).
+      const memoScope: Scope = { ...scope, mode: "binding" };
+      if (sym.fn) {
+        // prev / initial value / on(deps, fn): the memo keeps its own state in a plain JS object
+        // (never reassigned, so reading it is not a dependency). With on(), only `deps` is read
+        // tracked; the function runs untracked (__untrack) with (input, prevInput, prevValue).
+        const st = `__${safeName(sym.name)}_state`;
+        const init = sym.init ? emitExpr(sym.init, initScope) : "undefined";
+        decls.push(`${INDENT}readonly property var ${st}: ({ prev: ${init}${sym.on ? `, input: undefined, deferred: ${sym.on.defer}` : ""} })`);
+        let body: string;
+        if (sym.on) {
+          runtime.untrack = true;
+          body = `var __s = ${st}; var __in = ${emitExpr(onDepsCall(sym.on.deps), memoScope)}; ` +
+            `if (__s.deferred) { __s.deferred = false; return __s.prev; } ` +
+            `__s.prev = __untrack(function() { return (${emitValue(sym.fn, memoScope)})(__in, __s.input, __s.prev); }); __s.input = __in; return __s.prev;`;
+        } else {
+          body = `var __s = ${st}; __s.prev = (${emitValue(sym.fn, memoScope)})(__s.prev); return __s.prev;`;
+        }
+        decls.push(`${INDENT}readonly property var ${safeName(sym.name)}: (function() { ${body} })()`);
+      } else if (t.isBlockStatement(sym.body)) {
         // Block-bodied memo: emit as an IIFE so the property binding reads reactive cells BARE.
         // `const visible = createMemo(() => { const f = filter(); return items.filter(...) })`
         // →  `readonly property var visible: (function() { var f = filter; return items.filter(...) })()`
-        // emitBindingStmt reads signals bare (no __self.) so QML's binding tracker sees the deps.
-        const bindStmtScope: Scope = { table, mode: "binding", jsImports, ...(baseLocals ? { locals: baseLocals } : {}) };
-        const body = sym.body.body.map((s) => emitBindingStmt(s, bindStmtScope)).join(" ");
+        const body = sym.body.body.map((s) => emitBindingStmt(s, memoScope)).join(" ");
         decls.push(`${INDENT}readonly property var ${safeName(sym.name)}: (function() { ${body} })()`);
       } else {
-        const binding = emitExpr(sym.body, { table, mode: "binding", jsImports, ...(baseLocals ? { locals: baseLocals } : {}) });
-        decls.push(`${INDENT}readonly property var ${safeName(sym.name)}: ${binding}`);
+        decls.push(`${INDENT}readonly property var ${safeName(sym.name)}: ${emitExpr(sym.body, memoScope)}`);
       }
     }
   }
@@ -306,7 +335,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   // init(self) sidecar (inline): non-render setup statements + onMount bodies run in
   // Component.onCompleted on __self; onCleanup(fn) registrations collect into __cleanups and run in
   // Component.onDestruction. Imperative context → handler mode (signal reads bare, setters assign).
-  const { setup, onMount, effects } = analyzeSetup(fn, mutableLocals, renderLocals);
+  const { setup, effectInfos, afterMount } = analyzeSetup(fn, mutableLocals, renderLocals);
   // Map each ref variable (let myDiv) to its QML id so that onMount body references resolve
   // correctly in emitStmt/emitExpr (checked via scope.locals before the symbol table).
   // collectedRefs entries are plain var names; the id is always _ref_<varName> as emitted by emitQml.
@@ -329,7 +358,13 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
       )
     );
   });
-  const setupScope: Scope = { table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, locals: { ...(baseLocals ?? {}), ...refLocals }, jsImports, ...(mutableLocals ? { mutableLocals } : {}) };
+  const setupScope: Scope = {
+    table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components,
+    locals: { ...(baseLocals ?? {}), ...refLocals }, jsImports, solidApi, runtime,
+    ...(mutableLocals ? { mutableLocals } : {}),
+    ...(helpers ? { helpers } : {}),
+    ...(hasCtxBindings ? { ctxBindings, ctxValueShape: ctx?.ctxValueShape } : {}),
+  };
   // A live-tainted render-local (renderLocalsLive) was emitted above as a non-readonly `property
   // var` bound to its initializer — correct at construction, but still LIVE until frozen. Freeze
   // each one here, in DECLARATION order (renderLocalsMap's own iteration order), so a later
@@ -341,22 +376,24 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   const freezeRenderLocals = [...renderLocalsMap.keys()]
     .filter((name) => renderLocalsLive.has(name))
     .map((name) => `${safeName(name)} = ${safeName(name)};`);
+
+  // Computations (createEffect / createRenderEffect / createComputed): each is ONE method on the
+  // root, `__effectN()`, run once at its Solid time and re-run by a `Connections` handler per
+  // reactive dependency — see emitComputation. A render effect / computed runs at its position in
+  // setup; createEffect and onMount run after setup, in source order (Solid queues both as effects).
+  const effectNames = effectInfos.map((_, k) => `__effect${k}`);
+  const firstRun = (name: string) => `__started.${name} = true; ${name}();`;
+  const stmtEffect = new Map<t.Statement, number>(effectInfos.map((e, k) => [e.stmt, k]));
   const onCompletedBody: string[] = [
     // Hoisted module-level statements (already emitted in their own module's import scope):
     // import-time code runs before any component setup.
     ...(moduleInit ?? []),
     ...freezeRenderLocals,
-    ...filteredSetup.map((s) => emitStmt(s, setupScope)),
-    ...onMount.map((b) => t.isBlockStatement(b)
-      ? b.body.map((st) => emitStmt(st, setupScope)).join(" ")
-      : `${emitExpr(b, setupScope)};`),
+    ...filteredSetup.map((s) => stmtEffect.has(s) ? firstRun(effectNames[stmtEffect.get(s)!]) : emitStmt(s, setupScope)),
+    // Each onMount body in its own block: block-scoped declarations of two bodies never collide.
+    ...afterMount.map((m) => "effect" in m ? firstRun(effectNames[m.effect])
+      : t.isBlockStatement(m.mount) ? `{ ${emitStatements(m.mount.body, setupScope)} }` : `${emitExpr(m.mount, setupScope)};`),
   ];
-  // createEffect: run the body once in onCompleted, re-run via Connections on each reactive dep it reads.
-  for (const body of effects) {
-    onCompletedBody.push(t.isBlockStatement(body)
-      ? body.body.map((s) => emitStmt(s, setupScope)).join(" ")
-      : `${emitValue(body, setupScope)};`);
-  }
   // createResource: inline the module-level fetcher (+ its async-helper closure), then build a
   // (re)loader closure stored on __self. It sets _loading true, runs Promise.resolve(fetcher(source))
   // and writes the value/_loading/_error back. The loader runs once in onCompleted and re-runs via a
@@ -415,8 +452,14 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     // before this last-resort bucket, so listing them here too is harmless.
     ...componentTopLevelNames(fn),
   ]);
-  for (const body of effects) {
-    const bodyDeps = effectDeps(body, table, {
+  const rootId = rootHasId ? rootIdOf(lines, openIdx) : "__self";
+  const disposeEffects: string[] = [];
+  const depRuns = new Map<string, { dep: { target: string; prop: string }; runs: string[] }>();
+  effectInfos.forEach((info, k) => {
+    const name = effectNames[k];
+    // The dependencies: what the body reads — or, with on(deps, fn), exactly what `deps` reads.
+    const depSource: t.Node = info.on ? onDepsCall(info.on.deps) : info.fn.body;
+    const deps = effectDeps(depSource, table, {
       propsParam: props.param,
       propAliases,
       ctxBindings: hasCtxBindings ? ctxBindings : undefined,
@@ -425,19 +468,31 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
       knownNonReactive: effectKnownNonReactive,
       helpers: helpersMap,
     });
-    for (const dep of bodyDeps) {
-      const cap = dep.prop.charAt(0).toUpperCase() + dep.prop.slice(1);
-      const run = t.isBlockStatement(body)
-        ? body.body.map((s) => emitStmt(s, setupScope)).join(" ")
-        : `${emitValue(body, setupScope)};`;
-      conns.push(
-        `${INDENT}Connections {`,
-        `${INDENT}${INDENT}target: ${dep.target}`,
-        `${INDENT}${INDENT}function on${cap}Changed() { ${run} }`,
-        `${INDENT}}`,
-      );
+    const c = emitComputation(name, info, setupScope, rootId, !!options.batching);
+    decls.push(...c.decls.map((d) => `${INDENT}${d}`));
+    if (c.cleanups) disposeEffects.unshift(c.cleanups); // Solid disposes the last-created first
+    for (const dep of deps) {
+      const key = `${dep.target}\u0000${dep.prop}`;
+      const g = depRuns.get(key) ?? depRuns.set(key, { dep, runs: [] }).get(key)!;
+      g.runs.push(name);
     }
+  });
+  // One Connections per dependency, re-running its computations in CREATION order (Solid's order;
+  // separate Connections would fire in reverse — QML notifies the newest endpoint first).
+  for (const { dep, runs } of depRuns.values()) {
+    const cap = dep.prop.charAt(0).toUpperCase() + dep.prop.slice(1);
+    conns.push(
+      `${INDENT}Connections {`,
+      `${INDENT}${INDENT}target: ${dep.target}`,
+      `${INDENT}${INDENT}function on${cap}Changed() { ${runs.map((r) => `${r}();`).join(" ")} }`,
+      `${INDENT}}`,
+    );
   }
+  // A computation only re-runs once it has run: a dependency that changes earlier (a prop set while
+  // the component is built, a computed writing a signal during setup) must not run it before its
+  // turn — Solid queues it and runs it once. `__started` records the first run.
+  if (effectInfos.length) decls.push(`${INDENT}readonly property var __started: ({})`);
+  const needsBatchModule = runtime.batch || (!!options.batching && effectInfos.length > 0);
   const lifecycle: string[] = [];
   // One T.ButtonGroup per unique radio `name`; attached property on each T.RadioButton wires exclusivity.
   for (const [gname, ids] of buttonGroups) {
@@ -448,12 +503,97 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   if (onCompletedBody.length) {
     lifecycle.push(`${INDENT}property var __cleanups: []`);
     lifecycle.push(`${INDENT}Component.onCompleted: { ${onCompletedBody.join(" ")} }`);
-    lifecycle.push(`${INDENT}Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }`);
+    // Unmount, in Solid's order: each computation's cleanups (last-created computation first), then
+    // the component's own onCleanup registrations — every list newest-first.
+    lifecycle.push(`${INDENT}Component.onDestruction: { ${disposeEffects.join(" ")}${disposeEffects.length ? " " : ""}for (var i = __cleanups.length - 1; i >= 0; i--) __cleanups[i](); }`);
+  }
+  // untrack(fn) inside a QML binding: the read must not register a dependency. A binding records
+  // every property read made while it evaluates; a SIGNAL HANDLER does not (Qt suspends property
+  // capture for handler expressions — qqmljavascriptexpression.cpp), so the untracked function runs
+  // inside a handler of a private signal, synchronously, and hands its value back through a closure.
+  if (runtime.untrack) {
+    decls.push(`${INDENT}function __untrack(f) { var r = {}; __untracker.run(function() { r.v = f(); }); return r.v; }`);
+    lifecycle.push(`${INDENT}QtObject { id: __untracker; signal run(var f); onRun: (f) => f() }`);
   }
   lifecycle.push(...conns);
 
   if (openIdx >= 0) lines.splice(openIdx + 1, 0, ...decls, ...lifecycle);
+  if (needsBatchModule) lines.unshift(BATCH_IMPORT);
   return lines;
+}
+
+const BATCH_IMPORT = `import "${BATCH_MODULE_PATH}" as SolidBatch`;
+
+/** One computation as a root method `name()`:
+ *   - runs the previous run's onCleanup registrations first (newest first), when the body has any;
+ *   - with `batch` in the app, defers itself while a batch is open (SolidBatch.defer) — the flush
+ *     calls `<name>_run` once per computation, after the batch;
+ *   - calls the user function with its previous value when it takes one (`fn(prev)`, first run
+ *     with createEffect's second argument), keeping the return value for the next run — as in
+ *     Solid, a returned function is that value, not a cleanup;
+ *   - `on(deps, fn, { defer })`: reads `deps` (the ONLY dependencies), skips the first run when
+ *     deferred, and calls `fn(input, prevInput, prevValue)`.
+ *  Returns the declarations (state properties + method(s)) and the unmount statement for its
+ *  cleanups (null when it has none). */
+function emitComputation(name: string, info: EffectInfo, setupScope: Scope, rootId: string, batching: boolean): { decls: string[]; cleanups: string | null } {
+  const decls: string[] = [];
+  const hasCleanup = containsCall(info.fn, "onCleanup");
+  const list = `${name}_cleanups`;
+  const scope: Scope = hasCleanup ? { ...setupScope, cleanupList: list } : setupScope;
+  const nParams = info.fn.params.length;
+  const body: string[] = [];
+  if (hasCleanup) {
+    decls.push(`property var ${list}: []`);
+    body.push(`var __c = ${list}; ${list} = []; for (var __i = __c.length - 1; __i >= 0; __i--) __c[__i]();`);
+  }
+  const wantsPrev = info.on ? nParams >= 3 : nParams >= 1;
+  if (wantsPrev) decls.push(`property var ${name}_prev: ${info.init ? emitExpr(info.init, setupScope) : "undefined"}`);
+  if (info.on) {
+    if (info.on.defer) decls.push(`property bool ${name}_deferred: true`);
+    if (nParams >= 2) decls.push(`property var ${name}_input`);
+    body.push(`var __in = ${emitExpr(onDepsCall(info.on.deps), scope)};`);
+    if (info.on.defer) body.push(`if (${name}_deferred) { ${name}_deferred = false; return; }`);
+    const args = ["__in", ...(nParams >= 2 ? [`${name}_input`] : []), ...(nParams >= 3 ? [`${name}_prev`] : [])];
+    const call = `(${emitValue(info.fn, scope)})(${args.join(", ")})`;
+    body.push(wantsPrev ? `${name}_prev = ${call};` : `${call};`);
+    if (nParams >= 2) body.push(`${name}_input = __in;`);
+  } else if (wantsPrev) {
+    body.push(`${name}_prev = (${emitValue(info.fn, scope)})(${name}_prev);`);
+  } else {
+    body.push(t.isBlockStatement(info.fn.body) ? emitStatements(info.fn.body.body, scope) : `${emitValue(info.fn.body, scope)};`);
+  }
+  const started = `if (!__started.${name}) return;`;
+  if (batching) {
+    decls.push(`function ${name}() { ${started} if (!SolidBatch.defer(${rootId}, "${name}_run")) ${name}_run(); }`);
+    decls.push(`function ${name}_run() { ${body.join(" ")} }`);
+  } else {
+    decls.push(`function ${name}() { ${started} ${body.join(" ")} }`);
+  }
+  return { decls, cleanups: hasCleanup ? `for (var __i = ${list}.length - 1; __i >= 0; __i--) ${list}[__i]();` : null };
+}
+
+/** Does `node` contain a call to `name(...)` (anywhere, including nested callbacks)? */
+function containsCall(node: t.Node, name: string): boolean {
+  let found = false;
+  const walk = (n: unknown): void => {
+    if (found || !n || typeof n !== "object") return;
+    if (Array.isArray(n)) { for (const x of n) walk(x); return; }
+    const nn = n as t.Node;
+    if (!nn.type) return;
+    if (t.isCallExpression(nn) && t.isIdentifier(nn.callee, { name })) { found = true; return; }
+    for (const key of t.VISITOR_KEYS[nn.type] ?? []) walk((nn as unknown as Record<string, unknown>)[key]);
+  };
+  walk(node);
+  return found;
+}
+
+/** The root object's existing id (a `ref` on the render root) — the root carries only one id. */
+function rootIdOf(lines: string[], openIdx: number): string {
+  for (let i = openIdx + 1; i < lines.length; i++) {
+    const m = /^\s*id:\s*([A-Za-z_]\w*)/.exec(lines[i]);
+    if (m) return m[1];
+  }
+  return "__self";
 }
 
 /** A helper (local or module-level function) as a QML object method. Its own params shadow any
@@ -544,6 +684,18 @@ function validateChildrenSlot(render: t.CallExpression, propsParam: string | nul
     }
   };
   walk(render);
+}
+
+/** The names this module imports from Solid (`solid-js`, `solid-js/store`, `solid-js/web`):
+ *  local name → exported name. */
+function solidImports(file: t.File): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const node of file.program.body) {
+    if (!t.isImportDeclaration(node) || !/^solid-js(\/(store|web))?$/.test(node.source.value)) continue;
+    for (const sp of node.specifiers)
+      if (t.isImportSpecifier(sp)) out.set(sp.local.name, t.isIdentifier(sp.imported) ? sp.imported.name : sp.imported.value);
+  }
+  return out;
 }
 
 /** Module-level `const NAME = <pure literal>` declarations — static data tables usable as

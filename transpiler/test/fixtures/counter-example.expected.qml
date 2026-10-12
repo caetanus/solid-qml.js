@@ -9,7 +9,7 @@ W.Div {
     property var count: 0
     property var __cleanups: []
     Component.onCompleted: { var timer = setInterval(function() { return count = count + 1 }, 1000); __cleanups.push(function() { return clearInterval(timer) }); }
-    Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
+    Component.onDestruction: { for (var i = __cleanups.length - 1; i >= 0; i--) __cleanups[i](); }
     cssClass: ["app"]
     W.Text {
         text: "Count value is " + (count)

@@ -58,20 +58,22 @@ The rules that catch people most often:
 | reactivity | `createSignal` | ✅ | accepted | `transpiler/test/symbols.test.ts`, `examples/counter.tsx` |
 | reactivity | `createMemo` | ✅ | accepted | `transpiler/test/derived.test.ts` |
 | reactivity | `createEffect` (deps = signals, props, store fields, context, QObject properties read in the body) | ✅ | accepted | `transpiler/test/effect-reactive-deps.test.ts`; a component's own plain (non-reactive) values are never dependencies |
-| reactivity | `onCleanup` inside an effect | ⚠️ | accepted | cleanups are queued but only run on component destruction, not before the effect re-runs |
-| reactivity | effect returning a cleanup function | ⚠️ | accepted | the returned function is ignored |
-| reactivity | `untrack` | ⚠️ | accepted | emitted as a call to an undefined `untrack` (ReferenceError at runtime) |
-| reactivity | `batch` | ⚠️ | accepted | emitted as a call to an undefined `batch` |
-| reactivity | `on(deps, fn)` | ⚠️ | accepted | the effect is dropped entirely |
-| reactivity | `createComputed` / `createRenderEffect` | ⚠️ | accepted | emitted as a call to an undefined function |
-| reactivity | `createSelector` | ⚠️ | accepted | emitted as a call to an undefined function |
-| reactivity | `createRoot` | ⚠️ | accepted | emitted as a call to an undefined function |
+| reactivity | `onCleanup` inside an effect | ✅ | accepted | the effect's own cleanups run (newest first) before each re-run and on unmount, before the component's — `transpiler/test/reactivity-api.test.ts`; runtime probe in the M2 commit |
+| reactivity | effect returning a cleanup function | ✅ | accepted | as in Solid, the return value is the next run's `prev` (`createEffect((prev) => …, init)`), not a cleanup — use `onCleanup` |
+| reactivity | `untrack` | ✅ | accepted | in bindings the read runs inside a signal handler (Qt records no dependency there); in effects it is left out of the dependencies — `transpiler/test/reactivity-api.test.ts` |
+| reactivity | `batch` | 🟡 | accepted | effects (and `createComputed`/`createRenderEffect`) re-run once, after the batch (shared runtime module `modules/solid-batch.mjs`). Bindings and memos still update on each write, so a memo that reads a signal through `untrack` can keep a value from an intermediate write |
+| reactivity | `on(deps, fn)` | ✅ | accepted | only `deps` are dependencies; `fn(input, prevInput, prev)` runs untracked; `{ defer: true }`; also in `createMemo(on(…))` — `transpiler/test/reactivity-api.test.ts` |
+| reactivity | `createComputed` / `createRenderEffect` | ✅ | accepted | same computation as `createEffect`, first run at its position in the component body (before `onMount`/`createEffect`) |
+| reactivity | `createSelector` | ✅ | accepted | `sel(k)` is `k === s()` (or `fn(k, s())`), reactive on the source |
+| reactivity | `createRoot` | ❌ | rejected: ``createRoot(…)`: createRoot is not supported natively — a component's computations live exactly as long as its QML object (there is no detac` | a component's computations live as long as its QML object; there is no detached owner |
+| reactivity | `createMemo((prev) => …, init)` | ✅ | accepted | `transpiler/test/reactivity-api.test.ts` |
+| reactivity | a primitive (`createEffect`, `createSignal`, `on`…) called outside a component's top level | ❌ | rejected: ``createEffect(…)`: createEffect is only supported at the top level of a component body (`const x = createEffect(…)` / `createEffect(…);`) — ` | declare it at the top level of the component body |
 | resources | `createResource(source, fetcher)` | ✅ | accepted | `examples/fetch.tsx`; value + `loading`/`error`, re-fetch on source change |
 | resources | `createResource` with an inline fetcher | ❌ | rejected: `createResource supports `const [r] = createResource(<signal>, <fetcherIdent>)` only` | name the fetcher (a module-level function) |
 | stores | `createStore` + value / `prev => next` / `produce` / `(pred, "key", updater)` setters | ✅ | accepted | `examples/todomvc.tsx`, `transpiler/test/effect-reactive-deps.test.ts` |
 | stores | path setter `set("a", 0, "b", v)` | ❌ | rejected: `store setter form not supported for st` |  |
 | stores | `reconcile` | ❌ | rejected: `store setter form not supported for st` |  |
-| stores | `createMutable` | ⚠️ | accepted | emitted as a call to an undefined function |
+| stores | `createMutable` | ❌ | rejected: ``createMutable(…)`: createMutable is not supported natively — QML bindings cannot observe in-place mutation of a plain object. Use createSto` | QML bindings cannot observe in-place mutation: use `createStore` |
 | control flow | `<Show when fallback>` | ✅ | accepted | lazy (mounted only while `when` holds) — `transpiler/test/control.test.ts`, `transpiler/test/silent-drops.test.ts` |
 | control flow | `<Switch>`/`<Match>` | ✅ | accepted | lazy; `transpiler/test/control.test.ts` |
 | control flow | `<For>` (reference identity) + index accessor | ✅ | accepted | `transpiler/test/for-index-accessor.test.ts`; `meson test for-identity for-identity-virtual` |
@@ -89,7 +91,7 @@ The rules that catch people most often:
 | components | context: `<Ctx.Provider>` written inline in the consumer's parent | ❌ | rejected: `consumer Child uses context Ctx with no provider in scope` | use the provider-component form above |
 | components | spread props on a component `<C {...o} />` | ⚠️ | accepted | the spread is dropped |
 | components | spread attributes on an element `<div {...o}>` | ❌ | rejected: `<div>: spread attributes ({...props}) are not supported natively — pass each attribute explicitly` |  |
-| components | `children()` helper | ⚠️ | accepted | miscompiled — use `{props.children}` directly |
+| components | `children()` helper | ❌ | rejected: ``children(…)`: children (from solid-js) is not supported natively.` | use `{props.children}` directly |
 | components | `ref={el}` (variable) | ✅ | accepted | `examples/refs.tsx`, `transpiler/test/ref-render.test.ts` |
 | components | `ref={(e) => …}` (callback) | ❌ | rejected: `<div> ref must be a variable: ref={x}` |  |
 | JSX | inline `style=` | ❌ | rejected: `<div> does not support `style` natively (it would be silently dropped); supported: class, classList, ref, onClick, onKeyDown, onContextMenu,` | use a class and CSS |

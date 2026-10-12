@@ -35,15 +35,15 @@ out-of-band) — "runs without a QML error" alone is NOT proof, since broken cod
 | API | Status | Notes |
 |---|---|---|
 | `createSignal` | ✅ | → root `property`; getter `s()`→`window.s`, setter→assignment |
-| `createMemo` | ✅ | → `readonly property` (inline) or sidecar fn bound reactively |
-| `createEffect` | ✅ | sidecar fn: initial run + `Connections` per read dep |
+| `createMemo` | ✅ | → `readonly property` binding; `(prev) => …, init` and `createMemo(on(…))` keep their state in a plain object |
+| `createEffect` | ✅ | one root method `__effectN()`: first run after setup (in source order with `onMount`), re-run by one `Connections` per dependency; `(prev) => …, init` keeps the returned value |
 | `createResource` | ✅ | value + `_loading`/`_error`; async loader (Promise) + reload on source change. Form: `createResource(sourceSignal, namedFetcher)` — an inline fetcher is rejected |
-| `untrack` | ❌ | needed by some patterns; lower to a plain (non-tracked) read. **Today the transpiler accepts it and emits a call to an undefined function (wrong at runtime) — do not use; see docs/support-matrix.md.** |
-| `batch` | ❌ | QML coalesces bindings already; lower to sequential assignments. **Today the transpiler accepts it and emits a call to an undefined function (wrong at runtime) — do not use; see docs/support-matrix.md.** |
-| `on(deps, fn)` | ❌ | explicit-deps effect; map to a targeted `Connections`. **Today `createEffect(on(…))` is accepted and the effect is silently dropped — do not use.** |
-| `createComputed` / `createRenderEffect` | ❌ | like effect with different timing. **Today the transpiler accepts it and emits a call to an undefined function (wrong at runtime) — do not use; see docs/support-matrix.md.** |
-| `createSelector` | ❌ | keyed equality selector. **Today the transpiler accepts it and emits a call to an undefined function (wrong at runtime) — do not use; see docs/support-matrix.md.** |
-| `createRoot` / `getOwner` / `runWithOwner` | ❌ | render entry is implicit; ownership not modeled. **Today the transpiler accepts it and emits a call to an undefined function (wrong at runtime) — do not use; see docs/support-matrix.md.** |
+| `untrack` | ✅ | in a binding the function runs inside a private signal's handler, where Qt records no dependency; in an effect its reads are left out of the dependencies |
+| `batch` | 🟡 | computations queue while a batch is open and run once after it (`modules/solid-batch.mjs`, shared by every component); bindings and memos still update per write — see [known issues](docs/known-issues.md#reactivity-that-differs-from-solid) |
+| `on(deps, fn, { defer })` | ✅ | in createEffect/createMemo/createComputed/createRenderEffect: exactly the deps' `Connections`; `fn(input, prevInput, prev)` untracked |
+| `createComputed` / `createRenderEffect` | ✅ | same computation as an effect; first run at its position in the component body, before `onMount`/`createEffect` |
+| `createSelector` | ✅ | `sel(k)` → `k === source()` (or `fn(k, source())`) inline, reactive on the source (no per-key subscription optimisation) |
+| `createRoot` / `getOwner` / `runWithOwner` | ❌ | rejected at compile time: a component's computations are owned by its QML object, there is no detached owner |
 
 ## Stores
 | API | Status | Notes |
@@ -53,15 +53,15 @@ out-of-band) — "runs without a QML error" alone is NOT proof, since broken cod
 | deep path setters `set(a, b, c, val)` | 🟡 | only the forms TodoMVC uses; arbitrary depth untested |
 | `reconcile` | ❌ | diff-merge; lower to reassign for now (rejected at compile time today) |
 | `unwrap` | ❌ | identity on our plain `var` stores (likely a no-op) |
-| `createMutable` | ❌ | mutable proxy store. **Today the transpiler accepts it and emits a call to an undefined function (wrong at runtime) — do not use; see docs/support-matrix.md.** |
+| `createMutable` | ❌ | rejected at compile time: QML bindings cannot observe in-place mutation — use `createStore` |
 
 ## Lifecycle
 | API | Status | Notes |
 |---|---|---|
-| `onMount` | ✅ | merged into `Component.onCompleted` |
+| `onMount` | ✅ | in `Component.onCompleted`, after setup, in source order with `createEffect` |
 | component body setup (timers, subscriptions) | ✅ | imperative statements in the body now run on mount via a `_setup(window)` sidecar (were silently dropped) |
-| `onCleanup` | 🟡 | body-level: registered on a `__cleanups` list, run in `Component.onDestruction`. Inside effects: **accepted but wrong** — the cleanup is queued and only runs on component destruction, not before the effect re-runs; an effect's returned cleanup function is ignored |
-| effect cleanup (returned fn) | ❌ | run previous cleanup before re-running an effect |
+| `onCleanup` | ✅ | in the body: run on unmount (newest first). Inside an effect: the effect's own list, run before each re-run and on unmount (effects' cleanups first, as Solid disposes owned computations before the owner's) |
+| effect returning a function | ✅ | as in Solid, the value is the next run's `prev`, not a cleanup |
 
 ## Control flow (components)
 | API | Status | Notes |
@@ -160,10 +160,10 @@ each maps to a known QML construct.
 1. **Components glue** ✅ — `props.children`, `createContext`/`useContext`, `ref`, `mergeProps`/
    `splitProps` all done. (`splitProps` rest waits on spread props.)
 2. **Control-flow completion**: `<Index>` ✅, `<Dynamic>` 🟡 (tag form) — remaining: `<ErrorBoundary>`, `<Portal>`, Dynamic component-form.
-3. **Lifecycle/reactivity edges**: `onCleanup` (+ effect cleanup), `untrack`, `batch`, `on`.
+3. **Lifecycle/reactivity edges**: ~~`onCleanup` (+ effect cleanup), `untrack`, `batch`, `on`~~ (✅ M2).
 4. **Stores depth**: arbitrary deep path setters, `reconcile`, `unwrap`.
 5. **JSX edges**: spread props `{...}`, `?.`, `new`/RegExp in component code, broader event set.
-6. **Polish**: ~~keyed `<For>`~~ (✅ `key="field"`, C23), more DOM events, `createComputed`/`createRenderEffect`/`createSelector`.
+6. **Polish**: ~~keyed `<For>`~~ (✅ `key="field"`, C23), more DOM events, ~~`createComputed`/`createRenderEffect`/`createSelector`~~ (✅ M2).
 
 Out of scope (won't chase for 99%): `lazy`/code-split, `getOwner`/`runWithOwner`, `BigInt`,
 `SuspenseList`. These are rare and/or fundamentally tied to a JS runtime we drop at release (AOT→C++).

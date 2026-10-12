@@ -9,6 +9,7 @@ import { hParts, isComponentIdentifier, isHCall } from "./ast/h.ts";
 import { isBareSpecifier, isRuntimeOnlyImport, mirrorNodeImports, resolveNodeImport } from "./resolve/node.ts";
 import { emitStmt } from "./emit/stmt.ts";
 import { resetAttrWarnings } from "./emit/attrs.ts";
+import { BATCH_MODULE_PATH, BATCH_MODULE_SOURCE } from "./emit/runtime.ts";
 
 export interface GeneratedApp {
   /** The entry (app-root) component's QML type. */
@@ -312,6 +313,11 @@ export async function generate(source: string, filename: string, opts: GenerateO
     }
   }
 
+  // `batch` anywhere in the graph: every computation must defer itself while a batch is open (an
+  // effect in one component can depend on a signal another component writes inside its batch).
+  const batching = [...modules.values()].some((m) =>
+    [...m.imports.values()].some((imp) => imp.spec === "solid-js" && imp.imported === "batch"));
+
   // Phase 2 — emit: one QML type per node.
   const components: Record<string, string> = {};
   let entry = "";
@@ -341,7 +347,7 @@ export async function generate(source: string, filename: string, opts: GenerateO
     const foreignQml = new Set([...qmlForeign.values()].map((q) => q.typeName));
     for (const { typeName: tn } of qmlModuleForeign.values()) foreignQml.add(tn);
     const foreignImports = new Map([...qmlModuleForeign.values()].map((q) => [q.typeName, q.importLine]));
-    const qml = [...headerFor(node.mod), ...emitComponentType(info.fn, info.render, typeMap, node.mod.contexts, role.provider, ctxWiring, node.mod.file, node.mod.jsImports, moduleInit, foreignQml, foreignImports), ""].join("\n");
+    const qml = [...headerFor(node.mod), ...emitComponentType(info.fn, info.render, typeMap, node.mod.contexts, role.provider, ctxWiring, node.mod.file, node.mod.jsImports, moduleInit, foreignQml, foreignImports, { batching }), ""].join("\n");
     if (key === entryKey) entry = qml;
     else components[typeName.get(key)!] = qml;
   }
@@ -364,6 +370,9 @@ export async function generate(source: string, filename: string, opts: GenerateO
       }
     }
   }
+  // The batch runtime (one shared ES module per engine) ships only with a component that imports it.
+  if ([entry, ...Object.values(components)].some((q) => q.includes(`import "${BATCH_MODULE_PATH}"`)))
+    mirroredModules.set(BATCH_MODULE_PATH, BATCH_MODULE_SOURCE);
   // CSS sidecar: concatenate every imported .css across the graph, in discovery order.
   let css = "";
   for (const f of cssFiles) {

@@ -13,7 +13,7 @@ W.Div {
     property var __load_user
     property var __cleanups: []
     Component.onCompleted: { function _await(value, then, direct) { if (direct) { return then ? then(value) : value; } if (!value || !value.then) { value = Promise.resolve(value); } return then ? value.then(then) : value; } const fetchUser = _async(function (login) { return _await(fetch(`https://api.github.com/users/${login}`), function (_fetch) { return _fetch.json(); }); }); function _async(f) { return function () { for (var args = [], i = 0; i < arguments.length; i++) { args[i] = arguments[i]; } try { return Promise.resolve(f.apply(this, args)); } catch (e) { return Promise.reject(e); } }; } __load_user = function() { user_loading = true; user_error = undefined; Promise.resolve(fetchUser(login)).then(function(v) { user = v; user_loading = false; }).catch(function(e) { user_error = e; user_loading = false; }); }; __load_user(); }
-    Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
+    Component.onDestruction: { for (var i = __cleanups.length - 1; i >= 0; i--) __cleanups[i](); }
     Connections {
         target: __self
         function onLoginChanged() { __load_user(); }

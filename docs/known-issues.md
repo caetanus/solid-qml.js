@@ -13,9 +13,6 @@ marks them ⚠️ and a test keeps that list up to date. In short:
 
 | Construct | What happens | Workaround |
 |---|---|---|
-| `untrack`, `batch`, `createComputed`, `createRenderEffect`, `createSelector`, `createRoot`, `createMutable` | emitted as calls to functions that do not exist at runtime | restructure without them: for `untrack`, read the value outside the memo; for `batch`, set the signals one after another (QML already coalesces bindings) |
-| `createEffect(on(deps, fn))` | the effect is dropped | write a plain `createEffect` that reads the dependencies |
-| `onCleanup` inside an effect, or an effect that returns a cleanup function | the cleanup does not run before the effect re-runs; queued cleanups only run when the component is destroyed | keep the resource outside the effect and release it explicitly |
 | `<Dynamic component={Comp}>` with a component value | emits a text element, not the component | use `<Switch>`/`<Match>` over the candidate components (the tag form `component="div"` works) |
 | `<C {...props} />` spread on a component | the spread is dropped | pass each prop explicitly |
 | `children(() => props.children)` | miscompiled | use `{props.children}` directly |
@@ -24,6 +21,19 @@ marks them ⚠️ and a test keeps that list up to date. In short:
 
 These belong to release-plan M2 ("no silent miscompiles"). Until they fail loudly, check new code
 against the support matrix.
+
+## Reactivity that differs from Solid
+
+- **`batch` defers computations, not bindings.** Inside `batch(fn)`, effects
+  (`createEffect`/`createComputed`/`createRenderEffect`) are queued and run once after `fn`, as in
+  Solid. QML bindings (the render and `createMemo`) still update on every write. Their final value
+  is the same, except for a memo that reads a signal through `untrack`: it may keep the value it
+  saw at the write that re-evaluated it, where Solid re-evaluates it once after the batch.
+- **Effects triggered by the same write run in creation order.** Solid orders them by when each
+  last subscribed, which can differ after re-runs. No program should depend on either order.
+- **Dependencies are static.** An effect re-runs when anything its body (or the helpers it calls)
+  can read changes, not only what the last run read: a branch not taken still subscribes. The
+  values are right; an effect may run more often than in Solid.
 
 ## Performance and memory
 

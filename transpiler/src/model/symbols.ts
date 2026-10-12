@@ -11,7 +11,11 @@ export type Sym =
   | { kind: "setter"; signal: string }
   | { kind: "store"; name: string; setter: string; init: t.Expression | null }
   | { kind: "storeSetter"; store: string }
-  | { kind: "memo"; name: string; body: t.Expression | t.BlockStatement }
+  | { kind: "memo"; name: string; body: t.Expression | t.BlockStatement;
+      /** Set when the memo needs its own state (a `prev` param, an initial value, or `on(...)`):
+       *  the user's function, called with the previous value. */
+      fn?: t.ArrowFunctionExpression | t.FunctionExpression; init?: t.Expression; on?: OnSpec }
+  | { kind: "selector"; name: string; source: t.Expression; fn?: t.Expression }
   | { kind: "resource"; name: string; source: string; fetcher: string }
   | { kind: "derived"; name: string; params: string[]; body: t.Expression | t.BlockStatement };
 
@@ -78,9 +82,21 @@ export function analyzeSignals(fn: t.Function): SymbolTable {
         if (!t.isIdentifier(id)) return;
 
         if (t.isCallExpression(init) && t.isIdentifier(init.callee, { name: "createMemo" })) {
-          const arg = init.arguments[0];
-          if (arg && (t.isArrowFunctionExpression(arg) || t.isFunctionExpression(arg)))
-            table.set(id.name, { kind: "memo", name: id.name, body: arg.body });
+          const r = parseReactionArgs(init, "createMemo");
+          const initVal = init.arguments[1] && t.isExpression(init.arguments[1]) ? init.arguments[1] : undefined;
+          if (!r.on && !initVal && r.fn.params.length === 0)
+            table.set(id.name, { kind: "memo", name: id.name, body: r.fn.body });
+          else
+            table.set(id.name, { kind: "memo", name: id.name, body: r.fn.body, fn: r.fn, init: initVal, on: r.on });
+          return;
+        }
+
+        // const isSel = createSelector(source, fn?) — `isSel(k)` is `fn(k, source())` (default ===).
+        if (t.isCallExpression(init) && t.isIdentifier(init.callee, { name: "createSelector" })) {
+          const [src, cmp] = init.arguments;
+          if (!src || !t.isExpression(src)) throw new Error("createSelector(source, fn?): the source must be an accessor");
+          if (cmp && !t.isExpression(cmp)) throw new Error("createSelector(source, fn?): the comparator must be a function");
+          table.set(id.name, { kind: "selector", name: id.name, source: src, ...(cmp ? { fn: cmp as t.Expression } : {}) });
           return;
         }
 
@@ -252,19 +268,89 @@ function findLocalObject(fn: t.Function, name: string): t.ObjectExpression | nul
   return null;
 }
 
+/** `on(deps, fn, { defer })` — explicit dependencies: only `deps` is tracked, `fn` runs untracked
+ *  with `(input, prevInput, prevValue)`. */
+export interface OnSpec { deps: t.Expression; defer: boolean }
+
+/** A computation declared at a component's top level: `createEffect` (runs after mount, in source
+ *  order with onMount), `createRenderEffect`/`createComputed` (run at their position in setup). */
+export interface EffectInfo {
+  kind: "effect" | "renderEffect" | "computed";
+  /** The user function, called with the previous value (`fn(prev)`; for `on`, `fn(input, prevInput, prev)`). */
+  fn: t.ArrowFunctionExpression | t.FunctionExpression;
+  /** The second argument (`createEffect(fn, init)`): the first run's `prev`. */
+  init?: t.Expression;
+  on?: OnSpec;
+  /** The source statement (a render effect/computed keeps its position in setup). */
+  stmt: t.Statement;
+}
+
+const REACTION_APIS: Record<string, EffectInfo["kind"]> = { createEffect: "effect", createRenderEffect: "renderEffect", createComputed: "computed" };
+
+/** The function a createEffect/createMemo/… receives: an inline function, `on(deps, fn, opts)`, or a
+ *  named function (`createEffect(sync)` → `(prev) => sync(prev)`). Anything else fails loud. */
+export function parseReactionArgs(call: t.CallExpression, api: string): { fn: t.ArrowFunctionExpression | t.FunctionExpression; on?: OnSpec } {
+  const arg = call.arguments[0];
+  const asFn = (a: t.Node | undefined, what: string): t.ArrowFunctionExpression | t.FunctionExpression => {
+    if (a && (t.isArrowFunctionExpression(a) || t.isFunctionExpression(a))) {
+      if (a.async) throw new Error(`${what}: an async function is not supported — Solid tracks only the synchronous part; read the signals first, then call an async helper`);
+      return a;
+    }
+    if (a && (t.isIdentifier(a) || t.isMemberExpression(a))) {
+      const p = t.identifier("__p");
+      return t.arrowFunctionExpression([p], t.callExpression(a, [p]));
+    }
+    throw new Error(`${what}: expected a function, got ${a ? a.type : "nothing"}`);
+  };
+  if (arg && t.isCallExpression(arg) && t.isIdentifier(arg.callee, { name: "on" })) {
+    const [deps, fn, opts] = arg.arguments;
+    if (!deps || !t.isExpression(deps)) throw new Error(`${api}(on(deps, fn)): deps must be an accessor or an array of accessors`);
+    let defer = false;
+    if (opts) {
+      if (!t.isObjectExpression(opts)) throw new Error(`${api}(on(deps, fn, opts)): opts must be an object literal ({ defer: true })`);
+      for (const p of opts.properties) {
+        if (!t.isObjectProperty(p) || !t.isIdentifier(p.key, { name: "defer" }) || !t.isBooleanLiteral(p.value))
+          throw new Error(`${api}(on(deps, fn, opts)): the only supported option is a literal \`defer: true|false\``);
+        defer = p.value.value;
+      }
+    }
+    return { fn: asFn(fn, `${api}(on(deps, fn))`), on: { deps, defer } };
+  }
+  return { fn: asFn(arg, api) };
+}
+
+/** `on`'s deps read once: `a` → `a()`, `[a, b]` → `[a(), b()]` (each dep is an accessor). The
+ *  expression whose reads are the computation's ONLY dependencies. */
+export function onDepsCall(deps: t.Expression): t.Expression {
+  if (t.isArrayExpression(deps))
+    return t.arrayExpression(deps.elements.map((e) => {
+      if (!e || !t.isExpression(e)) throw new Error("on([deps…]): every dep must be an accessor");
+      return t.callExpression(e, []);
+    }));
+  return t.callExpression(deps, []);
+}
+
 /** A component's non-render lifecycle logic: imperative setup statements (everything at the body's
  *  top level that is NOT a reactive declaration, an onMount call, a createEffect call, or the render
- *  return) plus the onMount callback bodies (run after setup, per Solid order) and createEffect
- *  bodies (run once after mount, re-run via Connections on each reactive dep they read).
+ *  return), the onMount callback bodies and the computations (`effectInfos`). createRenderEffect/
+ *  createComputed statements STAY in `setup` (they run at their position, as in Solid); `afterMount`
+ *  lists onMount bodies and createEffects in source order (Solid queues both as effects, run after
+ *  the render in creation order). `effects` = the plain createEffect bodies (kept for callers that
+ *  only need the bodies).
  *
  *  `mutableLocals` (from analyzeMutableLocals) are excluded from setup: they become `property var`
  *  declarations on the instance, so their initializer is already emitted as a property value and
  *  the statement must not also appear in onCompleted. */
-export function analyzeSetup(fn: t.Function, mutableLocals?: Set<string>, renderLocals?: Set<string>): { setup: t.Statement[]; onMount: t.Node[]; effects: t.Node[] } {
+export function analyzeSetup(fn: t.Function, mutableLocals?: Set<string>, renderLocals?: Set<string>): {
+  setup: t.Statement[]; onMount: t.Node[]; effects: t.Node[]; effectInfos: EffectInfo[];
+  afterMount: Array<{ mount: t.Node } | { effect: number }>;
+} {
   const setup: t.Statement[] = [];
   const onMount: t.Node[] = [];
   const effects: t.Node[] = [];
-  if (!t.isBlockStatement(fn.body)) return { setup, onMount, effects };
+  const effectInfos: EffectInfo[] = [];
+  const afterMount: Array<{ mount: t.Node } | { effect: number }> = [];
+  if (!t.isBlockStatement(fn.body)) return { setup, onMount, effects, effectInfos, afterMount };
   for (const s of fn.body.body) {
     if (t.isReturnStatement(s)) continue; // the render
     // FunctionDeclarations are helpers (emitted as QML object methods, not setup statements)
@@ -283,19 +369,32 @@ export function analyzeSetup(fn: t.Function, mutableLocals?: Set<string>, render
     if (t.isExpressionStatement(s) && t.isCallExpression(s.expression)
         && t.isIdentifier(s.expression.callee, { name: "onMount" })) {
       const cb = s.expression.arguments[0];
-      if (cb && (t.isArrowFunctionExpression(cb) || t.isFunctionExpression(cb))) onMount.push(cb.body);
+      if (!cb || !(t.isArrowFunctionExpression(cb) || t.isFunctionExpression(cb)))
+        throw new Error("onMount(fn): expected an inline function");
+      onMount.push(cb.body);
+      afterMount.push({ mount: cb.body });
       continue;
     }
-    // createEffect(fn) → collect the callback body; do NOT fall through to setup
-    if (t.isExpressionStatement(s) && t.isCallExpression(s.expression)
-        && t.isIdentifier(s.expression.callee, { name: "createEffect" })) {
-      const cb = s.expression.arguments[0];
-      if (cb && (t.isArrowFunctionExpression(cb) || t.isFunctionExpression(cb))) effects.push(cb.body);
+    // createEffect / createRenderEffect / createComputed
+    if (t.isExpressionStatement(s) && t.isCallExpression(s.expression) && t.isIdentifier(s.expression.callee)
+        && s.expression.callee.name in REACTION_APIS) {
+      const call = s.expression;
+      const api = (call.callee as t.Identifier).name;
+      const kind = REACTION_APIS[api];
+      const r = parseReactionArgs(call, api);
+      const init = call.arguments[1] && t.isExpression(call.arguments[1]) ? call.arguments[1] : undefined;
+      effectInfos.push({ kind, fn: r.fn, ...(init ? { init } : {}), ...(r.on ? { on: r.on } : {}), stmt: s });
+      if (kind === "effect") {
+        if (!r.on) effects.push(r.fn.body);
+        afterMount.push({ effect: effectInfos.length - 1 });
+      } else {
+        setup.push(s); // runs at its position (the emitter maps the statement to its computation)
+      }
       continue;
     }
     setup.push(s);
   }
-  return { setup, onMount, effects };
+  return { setup, onMount, effects, effectInfos, afterMount };
 }
 
 /** Identifier reads of any name in `names` inside `expr` — skipping a property KEY position
@@ -348,7 +447,14 @@ function eagerBindingSeeds(table: SymbolTable, helpers: Map<string, HelperInfo>,
   const found = new Set<string>();
   const add = (s: Set<string>) => { for (const n of s) found.add(n); };
   for (const sym of table.values()) {
-    if (sym.kind === "memo") add(readNamesIn(sym.body, names));
+    if (sym.kind === "memo") {
+      add(readNamesIn(sym.body, names));
+      if (sym.on) add(readNamesIn(sym.on.deps, names));
+      if (sym.init) add(readNamesIn(sym.init, names));
+    } else if (sym.kind === "selector") {
+      add(readNamesIn(sym.source, names));
+      if (sym.fn) add(readNamesIn(sym.fn, names));
+    }
     else if ((sym.kind === "signal" || sym.kind === "store") && sym.init) add(readNamesIn(sym.init, names));
     else if (sym.kind === "derived") add(readNamesIn(sym.body, names));
     else if (sym.kind === "resource" && names.has(sym.source)) found.add(sym.source);
@@ -365,9 +471,10 @@ function collectEffectBodies(fn: t.Function): (t.Expression | t.BlockStatement)[
   if (!t.isBlockStatement(fn.body)) return out;
   for (const s of fn.body.body) {
     if (!t.isExpressionStatement(s) || !t.isCallExpression(s.expression)) continue;
-    if (!t.isIdentifier(s.expression.callee, { name: "createEffect" })) continue;
-    const cb = s.expression.arguments[0];
-    if (cb && (t.isArrowFunctionExpression(cb) || t.isFunctionExpression(cb))) out.push(cb.body);
+    if (!t.isIdentifier(s.expression.callee) || !(s.expression.callee.name in REACTION_APIS)) continue;
+    // Every argument (the function, `on(deps, fn)`, the initial value): each computation is its own
+    // method, so a local it reads must be a property, like for a re-run handler.
+    for (const a of s.expression.arguments) if (t.isExpression(a)) out.push(a);
   }
   return out;
 }
@@ -622,6 +729,11 @@ export function effectDeps(body: t.Node, table: SymbolTable, extra: EffectDepsCo
         if (shadowed.has(name)) return; // a helper-local shadows any same-named component state
         const sym = table.get(name);
         if (sym && (sym.kind === "signal" || sym.kind === "memo" || sym.kind === "store")) add("__self", name);
+        // A selector call `isSel(k)` reads its source.
+        if (sym?.kind === "selector" && !visitedHelpers.has(`selector:${name}`)) {
+          visitedHelpers.add(`selector:${name}`);
+          scan(onDepsCall(sym.source));
+        }
       },
       MemberExpression(path) {
         const { object, property, computed } = path.node;
@@ -688,6 +800,8 @@ export function effectDeps(body: t.Node, table: SymbolTable, extra: EffectDepsCo
       },
       CallExpression(path) {
         const { callee } = path.node;
+        // untrack(fn): its reads are NOT dependencies (Solid's untracked read).
+        if (t.isIdentifier(callee, { name: "untrack" }) && !shadowed.has("untrack")) { path.skip(); return; }
         if (!t.isIdentifier(callee) || !helpers?.has(callee.name)) return;
         if (visitedHelpers.has(callee.name)) return; // cycle guard (mutually/self-recursive helpers)
         visitedHelpers.add(callee.name);
@@ -853,7 +967,7 @@ function isSimpleLiteralInit(node: t.Expression): boolean {
 function isReactiveDecl(d: t.VariableDeclarator): boolean {
   const init = d.init;
   if (init && t.isCallExpression(init) && t.isIdentifier(init.callee)
-      && ["createSignal", "createMemo", "createResource", "createStore"].includes(init.callee.name)) return true;
+      && ["createSignal", "createMemo", "createResource", "createStore", "createSelector"].includes(init.callee.name)) return true;
   // a plain arrow assigned to a name = a derived accessor (analyzeSignals records it)
   if (init && t.isArrowFunctionExpression(init) && !t.isJSXElement(init.body) && !t.isJSXFragment(init.body)) return true;
   // prop-helper aliases (mergeProps/splitProps) — modelled by analyzeProps, not setup

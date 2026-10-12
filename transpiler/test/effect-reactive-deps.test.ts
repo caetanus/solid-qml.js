@@ -18,7 +18,8 @@ test("office app bug: createEffect reading a context-property (office.spellReady
     }
   `;
   const app = await generate(src, "office-app.tsx");
-  assert.match(app.entry, /Connections \{\s*target: office\s*function onSpellReadyChanged\(\) \{ if \(office\.spellReady\) \{ recheckAll\(\); \} \}\s*\}/);
+  assert.match(app.entry, /function __effect0\(\) \{ if \(!__started\.__effect0\) return; if \(office\.spellReady\) \{ recheckAll\(\); \} \}/);
+  assert.match(app.entry, /Connections \{\s*target: office\s*function onSpellReadyChanged\(\) \{ __effect0\(\); \}\s*\}/);
 });
 
 test("office app bug, 2nd case: createEffect reading office.picked gets a Connections on office", async () => {
@@ -77,7 +78,8 @@ test("createEffect that reads a signal and writes a DIFFERENT one does not loop 
   const app = await generate(src, "no-loop.tsx");
   const matches = [...app.entry.matchAll(/Connections \{/g)];
   assert.equal(matches.length, 1, "exactly one Connections block");
-  assert.match(app.entry, /function onCountChanged\(\) \{ other = count \* 2; \}/);
+  assert.match(app.entry, /function __effect0\(\) \{ if \(!__started\.__effect0\) return; other = count \* 2; \}/);
+  assert.match(app.entry, /function onCountChanged\(\) \{ __effect0\(\); \}/);
   assert.doesNotMatch(app.entry, /function onOtherChanged/, "writing `other` must not itself be tracked as a read dep");
 });
 
