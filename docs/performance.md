@@ -345,5 +345,9 @@ close to, but not identical with, the 15.9 KB / 46 ms the project used as its re
 2026-10-09: different Chromium build, flags and settle time — the project's gate should be re-based
 on this page's numbers.
 
+**Provenance.** The run used the library from `6aebd9d` with the benchmark harness of commit
+`b646135` not yet committed (the JSON's `gitDirty` flag); later changes to the runner (`--only`,
+timer cleanup) and the report script do not change what is measured.
+
 **History.** Earlier internal numbers (first round only, one process, offscreen software renderer)
 are in the project's internal roadmap; this page supersedes them for any public statement.
