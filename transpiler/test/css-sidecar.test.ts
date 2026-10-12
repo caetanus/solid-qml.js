@@ -73,3 +73,26 @@ test("runtime import: `notifications` rewrites to the solidNotifications context
   assert.ok(app.entry.includes("solidNotifications.send"), "identifier rewritten to the context property");
   assert.ok(!app.entry.includes("notifications.send"), "no dangling runtime identifier");
 });
+
+test("npm package import: `from \"solid-qml\"` compiles away and pulls the package's runtime/reset.css", async () => {
+  const files: Record<string, string> = {
+    "/proj/src/main.tsx": [
+      `import { Window, notifications } from "solid-qml";`,
+      `import "./app.css";`,
+      `export function App(){ return <Window title="t" width={100} height={100} visible><div class="a" onClick={() => notifications.send({ title: "hi" })} /></Window>; }`,
+    ].join("\n"),
+    "/proj/node_modules/solid-qml/runtime/reset.css": "* { box-sizing: border-box; }\n",
+    "/proj/src/app.css": ".a { color: red; }\n",
+  };
+  const app = await generate(files["/proj/src/main.tsx"], "/proj/src/main.tsx", {
+    readFile: async (p: string) => {
+      const v = files[p];
+      if (v === undefined) throw new Error(`unexpected read: ${p}`);
+      return v;
+    },
+  });
+  assert.ok(app.css.includes("box-sizing: border-box"), "package reset is in the sidecar");
+  assert.ok(app.css.indexOf("box-sizing") < app.css.indexOf(".a {"), "reset precedes author css");
+  assert.ok(app.entry.includes("solidNotifications.send"), "package API rewritten to the context property");
+  assert.deepEqual(Object.keys(app.modules), [], "the package is not mirrored as an npm module");
+});

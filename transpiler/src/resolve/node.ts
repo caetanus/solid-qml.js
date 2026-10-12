@@ -39,7 +39,7 @@ export function isRuntimeOnlyImport(spec: string): boolean {
   // qml: imports are registered-module foreign types (Direção B embed) — no JS to mirror.
   if (spec.startsWith("qml:")) return true;
   return spec === "solid-js" || spec === "solid-js/web" || spec === "solid-js/store" ||
-    spec === "qml-solid" ||
+    spec === "qml-solid" || spec === "solid-qml" ||
     spec.endsWith("/solid-qml/runtime") || spec.endsWith("/solid-qml/runtime.ts");
 }
 

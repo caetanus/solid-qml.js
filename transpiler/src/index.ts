@@ -150,6 +150,18 @@ function pathPrefix(absPath: string): string {
   return seg.replace(/[^A-Za-z0-9]/g, "_").replace(/^(\d)/, "_$1");
 }
 
+/** The `solid-qml` npm package's runtime/reset.css, found by walking `node_modules` up from `dir`
+ *  (Node's own lookup order). Fails loudly: an app that imports the package must have it installed,
+ *  and silently dropping the reset would change the native box model vs the web preview. */
+async function findPackageReset(dir: string, readFile: (p: string) => Promise<string>): Promise<string> {
+  for (let d = dir; ; d = path.dirname(d)) {
+    const cand = path.join(d, "node_modules", "solid-qml", "runtime", "reset.css");
+    try { await readFile(cand); return cand; } catch { /* keep walking */ }
+    if (path.dirname(d) === d) break;
+  }
+  throw new Error(`cannot find solid-qml/runtime/reset.css from ${dir} — is the "solid-qml" package installed?`);
+}
+
 /** Transpile a module + every component it (transitively) instantiates, following relative imports. */
 export async function generate(source: string, filename: string, opts: GenerateOptions = {}): Promise<GeneratedApp> {
   const readFile = opts.readFile ?? ((p) => fsReadFile(p, "utf8"));
@@ -185,6 +197,12 @@ export async function generate(source: string, filename: string, opts: GenerateO
     // strings), so the normalized AST cannot be trusted to still carry it.
     for (const m of src.matchAll(/from\s+["']([./][^"']*\/solid-qml\/runtime(?:\.tsx?)?)["']/g)) {
       const abs = path.resolve(path.dirname(absPath), path.dirname(m[1]), "reset.css");
+      if (!seenCss.has(abs)) { seenCss.add(abs); cssFiles.push(abs); }
+    }
+    // The same reset for the npm package entry (`import { Window } from "solid-qml"`): its
+    // runtime/reset.css, found by walking node_modules up from the importing file.
+    if (/from\s+["']solid-qml["']/.test(src)) {
+      const abs = await findPackageReset(path.dirname(absPath), readFile);
       if (!seenCss.has(abs)) { seenCss.add(abs); cssFiles.push(abs); }
     }
     // Side-effect `import "./x.css"` (no specifiers) → collect for the CSS sidecar, in discovery order.
