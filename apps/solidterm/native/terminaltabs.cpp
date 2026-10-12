@@ -3,8 +3,12 @@
 #include "terminalpanes.h"
 #include "terminalview.h"
 
+#include <QClipboard>
 #include <QCoreApplication>
+#include <QDesktopServices>
 #include <QDropEvent>
+#include <QGuiApplication>
+#include <QUrl>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
@@ -247,6 +251,18 @@ void TerminalTabs::searchPrev() { if (auto *p = active()) p->searchPrev(); }
 void TerminalTabs::clearSearch() { if (auto *p = active()) p->clearSearch(); }
 void TerminalTabs::copyHoverLinkFocused() { if (auto *p = active()) p->copyHoverLinkFocused(); }
 void TerminalTabs::openHoverLinkFocused() { if (auto *p = active()) p->openHoverLinkFocused(); }
+void TerminalTabs::copyLink(const QString &url)
+{
+    if (url.isEmpty())
+        return;
+    QGuiApplication::clipboard()->setText(url);
+    QGuiApplication::clipboard()->setText(url, QClipboard::Selection);
+}
+void TerminalTabs::openLink(const QString &url)
+{
+    if (!url.isEmpty())
+        QDesktopServices::openUrl(QUrl::fromUserInput(url));
+}
 bool TerminalTabs::wantsMouseReportFocused(int qtModifiers) const
 {
     auto *p = active();

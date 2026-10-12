@@ -545,6 +545,22 @@ test("contextmenu: suppressWhen declines the press instead of opening (solidterm
   assert.match(out, /onClicked: function\(mouse\) \{ __ctxAnchor0\.x = mouse\.x; __ctxAnchor0\.y = mouse\.y; __menu0\.popup\(0, 0\) \}/);
 });
 
+test("contextmenu: a block-bodied suppressWhen runs its statements and uses its return value", async () => {
+  const out = await qml(`export function F(){ let term; let seen = ""; return (
+    <div class="zone">
+      <ContextMenu suppressWhen={(mods) => { seen = "x"; return term.wantsMouseReportFocused(mods); }}>
+        <MenuItem onClick={() => {}}>&Copy</MenuItem>
+      </ContextMenu>
+    </div>); }`);
+  const line = out.split("\n").find((l) => l.includes("onPressed:")) ?? "";
+  // Statements can't sit inside `if (…)`: the body becomes an immediately-invoked function.
+  assert.match(line, /if \(\(function\(\) \{[^]*return term\.wantsMouseReportFocused\(mouse\.modifiers\);[^]*\}\)\(\)\) mouse\.accepted = false/);
+  assert.doesNotMatch(line, /if \([^(]*=[^=][^;]*;/); // no statement inside the bare condition
+  // The emitted handler parses as JavaScript.
+  const body = line.replace(/^\s*onPressed:\s*/, "");
+  assert.doesNotThrow(() => new Function(`return (${body});`));
+});
+
 test("contextmenu: without suppressWhen emits no onPressed guard (unchanged default behaviour)", async () => {
   const out = await qml(`export function F(){ return (
     <div class="zone">

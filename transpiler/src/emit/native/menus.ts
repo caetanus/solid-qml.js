@@ -515,7 +515,13 @@ function emitContextMenu(propsArg: t.Node | undefined, children: t.Node[], scope
   const props = propsOf(propsArg);
   const onClose = props.get("onClose");
   const suppressWhen = props.get("suppressWhen");
-  const suppressExpr = suppressWhen ? handlerBody(suppressWhen, scope, "mouse.modifiers") : undefined;
+  const suppressBody = suppressWhen ? handlerBody(suppressWhen, scope, "mouse.modifiers") : undefined;
+  // handlerBody yields an EXPRESSION for `(m) => expr` but STATEMENTS for `(m) => { …; return x; }`;
+  // statements can't sit inside `if (…)`, so a block body becomes an immediately-invoked function.
+  const blockBodied = !!suppressWhen
+    && (t.isArrowFunctionExpression(suppressWhen) || t.isFunctionExpression(suppressWhen))
+    && t.isBlockStatement(suppressWhen.body);
+  const suppressExpr = suppressBody !== undefined && blockBodied ? `(function() { ${suppressBody} })()` : suppressBody;
 
   // The menu's parentItem is a 1×1 anchor MOVED to the cursor: on Wayland the compositor positions a
   // Popup.Window by anchoring to parentItem's rect and ignores the popup(x,y) offset, so a right-click

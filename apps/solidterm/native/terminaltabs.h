@@ -107,6 +107,10 @@ public:
     // "Copy link"/"Open link" (right-click menu) acting on the active tab's focused pane's hovered link.
     Q_INVOKABLE void copyHoverLinkFocused();
     Q_INVOKABLE void openHoverLinkFocused();
+    // The link the right-click landed on, captured when the menu opened: the popup takes the hover
+    // away from the terminal (which clears its hovered link), so the menu acts on this snapshot.
+    Q_INVOKABLE void copyLink(const QString &url);
+    Q_INVOKABLE void openLink(const QString &url);
 
     // Pane drag & drop: this item is its WINDOW's drop target. It filters the window's drag events
     // (the compositor delivers them to the window under the cursor — no global coords needed) and

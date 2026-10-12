@@ -27,6 +27,7 @@ W.Div {
     property var cfgOpen: false
     property var title: "solidterm"
     property var hoverLinkUrl: ""
+    property var menuLink: ""
     property var searchOpen: false
     property var searchQuery: ""
     property var searchIdx: 0
@@ -257,7 +258,7 @@ W.Div {
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.RightButton
-                onPressed: function(mouse) { if (_ref_term.wantsMouseReportFocused(mouse.modifiers)) mouse.accepted = false }
+                onPressed: function(mouse) { if ((function() { menuLink = hoverLinkUrl; return _ref_term.wantsMouseReportFocused(mouse.modifiers); })()) mouse.accepted = false }
                 onClicked: function(mouse) { __ctxAnchor1.x = mouse.x; __ctxAnchor1.y = mouse.y; __menu1.popup(0, 0) }
             }
             Item {
@@ -269,13 +270,14 @@ W.Div {
                     id: __menu1
                     cssAncestor: __ctxAnchor1
                     authorClass: ["tmenu"]
+                    onMenuClosed: { menuLink = "" }
                     Instantiator {
                         id: __menuDyn2
-                        model: (hoverLinkUrl !== "") ? 1 : 0
+                        model: (menuLink !== "") ? 1 : 0
                         delegate: Component {
                             W.MenuItem {
                                 text: "Copy &link"
-                                onTriggered: { _ref_term.copyHoverLinkFocused() }
+                                onTriggered: { _ref_term.copyLink(menuLink) }
                             }
                         }
                         onObjectAdded: (index, object) => __menu1.insertItem(0 + index, object)
@@ -283,11 +285,11 @@ W.Div {
                     }
                     Instantiator {
                         id: __menuDyn3
-                        model: (hoverLinkUrl !== "") ? 1 : 0
+                        model: (menuLink !== "") ? 1 : 0
                         delegate: Component {
                             W.MenuItem {
                                 text: "&Open link"
-                                onTriggered: { _ref_term.openHoverLinkFocused() }
+                                onTriggered: { _ref_term.openLink(menuLink) }
                             }
                         }
                         onObjectAdded: (index, object) => __menu1.insertItem(0 + __menuDyn2.count + index, object)
@@ -295,7 +297,7 @@ W.Div {
                     }
                     Instantiator {
                         id: __menuDyn4
-                        model: (hoverLinkUrl !== "") ? 1 : 0
+                        model: (menuLink !== "") ? 1 : 0
                         delegate: Component {
                             W.MenuSeparator { }
                         }

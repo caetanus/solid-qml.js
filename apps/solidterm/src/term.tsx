@@ -89,6 +89,9 @@ export function Term(props: { onTitle: (t: string) => void }) {
   // The auto-detected link under the mouse, right now, in the focused pane ("" = none) — drives the
   // ContextMenu's "Copy link"/"Open link" rows. See TerminalView::hoverLinkChanged.
   const [hoverLinkUrl, setHoverLinkUrl] = createSignal("");
+  // Snapshot of hoverLinkUrl taken by the right-click that opens the menu: the popup steals the
+  // hover from the terminal (which then reports "no link"), so the menu must not track it live.
+  const [menuLink, setMenuLink] = createSignal("");
   // Scrollback search (Ctrl+Shift+F): the bar is Solid; the native pane does the find/highlight.
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [searchQuery, setSearchQuery] = createSignal("");
@@ -271,12 +274,13 @@ export function Term(props: { onTitle: (t: string) => void }) {
             right-click reported instead of this menu opening — Shift still forces the menu (the
             escape hatch), same as Shift forces local selection/scrollback over reporting
             everywhere else. See TerminalView::wantsMouseReport. */}
-        <ContextMenu class="tmenu" suppressWhen={(mods) => term.wantsMouseReportFocused(mods)}>
-          {/* Only when the right-click landed on an auto-detected link (hoverLinkUrl tracks the
-              FOCUSED pane's TerminalView::hoverLinkChanged — see there). */}
-          <Show when={hoverLinkUrl() !== ""}>
-            <MenuItem onClick={() => term.copyHoverLinkFocused()}>Copy &link</MenuItem>
-            <MenuItem onClick={() => term.openHoverLinkFocused()}>&Open link</MenuItem>
+        <ContextMenu class="tmenu" onClose={() => setMenuLink("")}
+          suppressWhen={(mods) => { setMenuLink(hoverLinkUrl()); return term.wantsMouseReportFocused(mods); }}>
+          {/* Only when the right-click landed on an auto-detected link (menuLink: hoverLinkUrl as it
+              was at the right-click — see TerminalView::hoverLinkChanged). */}
+          <Show when={menuLink() !== ""}>
+            <MenuItem onClick={() => term.copyLink(menuLink())}>Copy &link</MenuItem>
+            <MenuItem onClick={() => term.openLink(menuLink())}>&Open link</MenuItem>
             <MenuSeparator />
           </Show>
           <MenuItem onClick={() => term.copyFocused()}>&Copy</MenuItem>
