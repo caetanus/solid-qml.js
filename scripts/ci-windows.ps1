@@ -111,6 +111,10 @@ function Step-NativeTest {
     Write-Host '== ci-windows: meson test (offscreen) =='
     $env:QT_QPA_PLATFORM = 'offscreen'
     $env:QT_FORCE_STDERR_LOGGING = '1'
+    # The offscreen QPA on Windows has no native font database: it reads font files from
+    # QT_QPA_FONTDIR (default <Qt>\lib\fonts, which Qt no longer ships). Without it every text test,
+    # the CssTextLayout-vs-QQuickText oracle included, would measure glyph-less text.
+    $env:QT_QPA_FONTDIR = Join-Path $env:SystemRoot 'Fonts'
     meson test -C $BuildDir --timeout-multiplier 3 --print-errorlogs
 }
 
@@ -142,12 +146,23 @@ function Step-Deploy {
     Write-Host '== ci-windows: windeployqt the installed loader (Qt runtime for a clean machine) =='
     Initialize-SmokeApp
     $bin = Join-Path $PrefixDir 'bin'
+    # The engine and the widgets also compose QML from C++ string literals (CssRect's render shell
+    # imports QtQuick.Shapes/Effects, ...), which qmlimportscanner cannot see: collect those
+    # `import Qt...` lines into a scan-only .qml so windeployqt ships those modules too.
+    $scan = Join-Path $AppDir '.scratch\deploy-scan'
+    New-Item -ItemType Directory -Force $scan | Out-Null
+    $imports = Get-ChildItem -Recurse -Include *.cpp, *.h (Join-Path $AppDir 'src'), (Join-Path $AppDir 'vendor\qml-css-engine\src') |
+        Select-String -Pattern 'import (Qt[A-Za-z0-9_.]*)' -AllMatches |
+        ForEach-Object { $_.Matches } | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+    Write-Host "QML imports composed from C++: $($imports -join ', ')"
+    (($imports | ForEach-Object { "import $_" }) + 'Item {}') | Set-Content (Join-Path $scan 'CppComposedImports.qml')
     # --qmldir: every place QML the loader will load lives, so the QtQuick/Templates/Labs imports
     # they use are collected (the SDK's own base + widget QML, and a generated app).
     windeployqt --release --compiler-runtime --no-translations `
         --qmldir (Join-Path $AppDir 'src\solid-qml') `
         --qmldir (Join-Path $AppDir 'qml\solidqml\Widgets') `
         --qmldir (Join-Path $SmokeDir 'qmlout') `
+        --qmldir $scan `
         (Join-Path $bin 'solid-qml-loader.exe')
     # windeployqt ships only the windows QPA plugin; headless runs (CI, the smoke test) need offscreen.
     New-Item -ItemType Directory -Force (Join-Path $bin 'platforms') | Out-Null
@@ -165,9 +180,15 @@ function Step-Smoke {
     $env:QT_PLUGIN_PATH = $null; $env:QML2_IMPORT_PATH = $null; $env:QML_IMPORT_PATH = $null
     $env:QT_QPA_PLATFORM = 'offscreen'
     $env:QT_FORCE_STDERR_LOGGING = '1'
+    $env:QT_QPA_FONTDIR = Join-Path $env:SystemRoot 'Fonts' # see Step-NativeTest (the windows QPA needs no such thing)
     Push-Location $SmokeDir
     try {
-        & $loader --qml (Join-Path $SmokeDir 'qmlout\App.generated.qml') --click 60,60,300 --grab $shot
+        $log = & $loader --qml (Join-Path $SmokeDir 'qmlout\App.generated.qml') --click 60,60,300 --grab $shot 2>&1 |
+            ForEach-Object { "$_" }
+        $log | Write-Host
+        # A missing deployed QML module or font only logs; the screenshot alone would not show it.
+        $bad = $log | Select-String -Pattern 'is not installed|Component is not ready|Cannot find font directory|ReferenceError|TypeError'
+        if ($bad) { throw "ci-windows: the deployed loader logged errors:`n$($bad -join "`n")" }
     } finally {
         Pop-Location
         foreach ($k in $saved.Keys) { Set-Item "env:$k" $saved[$k] -ErrorAction SilentlyContinue }
