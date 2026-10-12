@@ -9,7 +9,7 @@ import { certifyForRow } from "./forCertify.ts";
 import { checkAttrs, checkElement, forKeyField, rejectForKey, warnOnce } from "./attrs.ts";
 
 export const INDENT = "    ";
-const TEXT_TAGS = new Set(["text", "span", "h1", "h2", "h3", "h4", "h5", "h6", "p", "cite", "bio"]);
+export const TEXT_TAGS = new Set(["text", "span", "h1", "h2", "h3", "h4", "h5", "h6", "p", "cite", "bio"]);
 
 interface Props {
   classes: string[];

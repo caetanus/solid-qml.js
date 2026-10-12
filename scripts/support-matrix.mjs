@@ -1,0 +1,281 @@
+// Regenerates the code-derived tables in docs/support-matrix.md (release-plan M9).
+//
+//   node --import tsx scripts/support-matrix.mjs          rewrite the generated regions in place
+//   node --import tsx scripts/support-matrix.mjs --check  exit 1 if the doc is out of date
+//
+// Every table between `<!-- generated:NAME:begin -->` and `<!-- generated:NAME:end -->` comes from
+// the code, not from memory:
+//   - elements: the transpiler's attribute contract (transpiler/src/emit/attrs.ts ELEMENT_ATTRS) plus
+//     the QML types each tag actually emits (each tag is run through generate() and the emitted
+//     types are read back from the output);
+//   - widgets: the C++ types registered into solidqml.Widgets (src/widgets/solidwidgets.cpp) and the
+//     opt-in .qml modules (qml/solidqml/Widgets/*/qmldir);
+//   - probes: small Solid/JSX programs run through generate(); the "transpiler today" column is the
+//     real verdict (accepted, or the exact compile error). The status/notes columns are written by
+//     hand next to each probe — when the transpiler's verdict changes, --check fails and whoever
+//     changed it has to revisit the status.
+// transpiler/test/support-matrix-doc.test.ts runs --check.
+import { readFile, writeFile, readdir } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { generate } from "../transpiler/src/index.ts";
+import { ELEMENT_ATTRS } from "../transpiler/src/emit/attrs.ts";
+import { TEXT_TAGS } from "../transpiler/src/emit/qml.ts";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const DOC = path.join(ROOT, "docs/support-matrix.md");
+
+const HEAD = `import { createSignal, createMemo, createEffect, createResource, untrack, batch, on, createComputed,
+  createRenderEffect, createSelector, createRoot, onMount, onCleanup, Show, For, Index, Switch, Match, Suspense,
+  ErrorBoundary, lazy, createContext, useContext, mergeProps, splitProps, children } from "solid-js";
+import { createStore, produce, reconcile, createMutable } from "solid-js/store";
+import { Dynamic, Portal } from "solid-js/web";
+`;
+
+/** Run one program through the real transpiler; returns all emitted QML, or the compile error. */
+async function run(body, files = {}) {
+  const ow = console.warn;
+  const warnings = [];
+  console.warn = (...a) => warnings.push(a.join(" "));
+  try {
+    const r = await generate(HEAD + body, "/virtual/app.tsx", { readFile: async (p) => {
+      if (p in files) return files[p];
+      throw new Error(`no file ${p}`);
+    } });
+    return { qml: [r.entry, ...Object.values(r.components)].join("\n"), warnings };
+  } catch (e) {
+    return { err: String(e.message).split("\n")[0], warnings };
+  } finally {
+    console.warn = ow;
+  }
+}
+
+const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\n/g, " ");
+
+// ── elements ────────────────────────────────────────────────────────────────────────────────────
+const el = (tag, kids = "x") => kids ? `<${tag}>${kids}</${tag.split(" ")[0]}>` : `<${tag} />`;
+/** contract key → [tags shown, a valid snippet]. Parent-consumed keys are placed inside their parent. */
+const ELEMENT_FIXTURES = {
+  box: ["`div`, `section`, `nav`, `li`, `ul`, `label`, `table`… (any other lowercase tag)", el("div")],
+  text: [[...TEXT_TAGS].map((t) => `\`${t}\``).join(", "), el("text")],
+  button: ["`button`", el("button")],
+  img: ["`img`", `<img src="a.png" />`],
+  "input:text": ["`input` (type text/password/email/search/tel/url)", el("input", "")],
+  "input:checkbox": ["`input type=checkbox`", el(`input type="checkbox"`, "")],
+  "input:radio": ["`input type=radio`", el(`input type="radio"`, "")],
+  "input:range": ["`input type=range`", el(`input type="range"`, "")],
+  "input:number": ["`input type=number`", el(`input type="number"`, "")],
+  "input:date": ["`input type=date`", el(`input type="date"`, "")],
+  textarea: ["`textarea`", el("textarea", "")],
+  select: ["`select`", el("select", `<option value="a">A</option>`)],
+  option: ["`option`", null],
+  progress: ["`progress`", el("progress", "")],
+  fieldset: ["`fieldset`", el("fieldset")],
+  legend: ["`legend`", null],
+  dialog: ["`dialog`", el("dialog")],
+  details: ["`details`", el("details", "<summary>s</summary><text>b</text>")],
+  summary: ["`summary`", null],
+  StackView: ["`StackView`", el("StackView", "<div>a</div><div>b</div>")],
+  "MenuBar>Menu": ["`Menu` inside `MenuBar`", null],
+  MenuBar: ["`MenuBar`", el("MenuBar", `<Menu title="F"><MenuItem onClick={() => setS(1)}>i</MenuItem></Menu>`)],
+  TabBar: ["`TabBar`", el("TabBar", "<TabButton>t</TabButton>")],
+  TabButton: ["`TabButton`", null],
+  Menu: ["`Menu`", `<Menu trigger={<button>t</button>}><MenuItem onClick={() => setS(1)}>i</MenuItem></Menu>`],
+  MenuItem: ["`MenuItem`", null],
+  MenuSeparator: ["`MenuSeparator`", null],
+  Show: ["`Show`", el("Show when={s() > 0}", "<text>x</text>")],
+  For: ["`For`", el("For each={[1, 2]}", "{(r) => <text>{r}</text>}")],
+  Index: ["`Index`", el("Index each={[1, 2]}", "{(r) => <text>{r()}</text>}")],
+  VirtualList: ["`VirtualList`", el("VirtualList each={[1, 2]}", "{(r) => <text>{r}</text>}")],
+  Switch: ["`Switch`", el("Switch", "<Match when={s() > 0}><text>m</text></Match>")],
+  Match: ["`Match`", null],
+  Dynamic: ["`Dynamic`", `<Dynamic component={s() > 0 ? "section" : "div"}>x</Dynamic>`],
+  Suspense: ["`Suspense`", el("Suspense", "<text>x</text>")],
+  Window: ["`Window`", null],
+};
+for (const tg of ["ToolBar", "Swipe", "SplitView", "Drawer", "SwipeView", "PageIndicator", "RangeSlider", "Dial", "Tumbler",
+  "DelayButton", "BusyIndicator", "RoundButton", "ToolButton", "ToolSeparator", "ContextMenu", "TreeView", "ListView",
+  "TableView", "Tray", "Chart", "Scene3D", "Surface", "MediaPlayer", "WebView", "RichText", "DocumentEditor", "CodeEditor",
+  "Shortcut", "Calendar"])
+  ELEMENT_FIXTURES[tg] ??= [`\`${tg}\``, el(tg, "")];
+
+const CONSUMED_BY = { option: "select", legend: "fieldset", summary: "details", "MenuBar>Menu": "MenuBar",
+  TabButton: "TabBar", MenuItem: "Menu", MenuSeparator: "Menu", Match: "Switch", Window: "(app root)" };
+
+/** The QML types emitted inside the wrapper <div> (the wrapper itself is the first W.Div). */
+function emittedTypes(qml) {
+  const lines = qml.split("\n");
+  const start = lines.findIndex((l) => /^W\.Div \{/.test(l));
+  const types = [];
+  const imports = new Set();
+  for (const l of lines) {
+    const m = /^import (solidqml\.Widgets\.\w+)/.exec(l);
+    if (m) imports.add(m[1]);
+  }
+  for (const l of lines.slice(start + 1)) {
+    const m = /^\s+([A-Z]\w*(?:\.[A-Z]\w*)?)\s*\{/.exec(l);
+    if (!m) continue;
+    if (["Binding", "Connections", "Component", "Timer"].includes(m[1])) continue;
+    if (m[1] === "Css.CssText" && types.length) continue; // anonymous text runs inside the element
+    if (!types.includes(m[1])) types.push(m[1]);
+    if (types.length >= 3) break;
+  }
+  return { types, imports: [...imports] };
+}
+
+function kindOf(spec) {
+  return typeof spec === "string" ? spec : `${spec.kind}: ${spec.values.join("/")}`;
+}
+
+async function elementsTable() {
+  const rows = ["| Tag | Emits (QML type) | Attributes (value form) |", "|---|---|---|"];
+  for (const [key, spec] of Object.entries(ELEMENT_ATTRS)) {
+    const fx = ELEMENT_FIXTURES[key];
+    if (!fx) throw new Error(`support-matrix: no fixture for contract key ${key} — add one to ELEMENT_FIXTURES`);
+    const [shown, snippet] = fx;
+    let emits;
+    if (snippet === null) emits = `consumed by \`${CONSUMED_BY[key]}\``;
+    else {
+      const r = await run(`export function App(){ const [s,setS]=createSignal(0); return <div>${snippet}</div>; }`);
+      if (r.err) throw new Error(`support-matrix: fixture for ${key} does not transpile: ${r.err}`);
+      const { types, imports } = emittedTypes(r.qml);
+      emits = types.map((x) => `\`${x}\``).join(" → ") || "(nothing)";
+      if (imports.length) emits += ` (opt-in module \`${imports.join(", ")}\`)`;
+    }
+    const attrs = Object.entries(spec).map(([n, s]) => `\`${n}\` ${kindOf(s)}`).join(", ") || "none";
+    rows.push(`| ${cell(shown)} | ${cell(emits)} | ${cell(attrs)} |`);
+  }
+  return rows.join("\n");
+}
+
+// ── widgets ─────────────────────────────────────────────────────────────────────────────────────
+async function widgetsTable() {
+  const src = await readFile(path.join(ROOT, "src/widgets/solidwidgets.cpp"), "utf8");
+  const names = [...src.matchAll(/qmlRegisterType<\w+>\("solidqml\.Widgets",\s*1,\s*0,\s*"(\w+)"\)/g)].map((m) => m[1]);
+  const out = [`**C++ types registered in \`solidqml.Widgets\`** (${names.length}, \`src/widgets/solidwidgets.cpp\`): ` +
+    names.map((n) => `\`${n}\``).join(", ") + "."];
+  const base = path.join(ROOT, "qml/solidqml/Widgets");
+  const mods = [];
+  for (const d of (await readdir(base, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name).sort()) {
+    const qmldir = await readFile(path.join(base, d, "qmldir"), "utf8").catch(() => null);
+    if (!qmldir) continue;
+    const mod = /^module\s+(\S+)/m.exec(qmldir)?.[1];
+    const types = [...qmldir.matchAll(/^(\w+)\s+\d+\.\d+\s+\S+\.qml/gm)].map((m) => m[1]);
+    mods.push(`| \`${mod}\` | ${types.map((x) => `\`${x}\``).join(", ")} |`);
+  }
+  out.push("", "**Opt-in modules** (`.qml`, imported only by an app that uses the tag; `qml/solidqml/Widgets/*/qmldir`):", "",
+    "| Module | Types |", "|---|---|", ...mods);
+  return out.join("\n");
+}
+
+// ── probes ──────────────────────────────────────────────────────────────────────────────────────
+const A = (body) => `export function App(){ const [s,setS]=createSignal(0); ${body} }`;
+/** [area, construct, program, status, notes/evidence]. Status: ✅ supported · 🟡 partial ·
+ *  ❌ rejected (fails loud at compile time) · ⚠️ accepted but WRONG at runtime (do not use). */
+const PROBES = [
+  ["reactivity", "`createSignal`", A(`return <button onClick={() => setS(s() + 1)}>{s()}</button>;`), "✅", "`transpiler/test/symbols.test.ts`, `examples/counter.tsx`"],
+  ["reactivity", "`createMemo`", A(`const d = createMemo(() => s() * 2); return <text>{d()}</text>;`), "✅", "`transpiler/test/derived.test.ts`"],
+  ["reactivity", "`createEffect` (deps = signals, props, store fields, context, QObject properties read in the body)", A(`createEffect(() => console.log(s())); return <text>{s()}</text>;`), "✅", "`transpiler/test/effect-reactive-deps.test.ts`; a component's own plain (non-reactive) values are never dependencies"],
+  ["reactivity", "`onCleanup` inside an effect", A(`createEffect(() => { const v = s(); onCleanup(() => console.log(v)); }); return <text>{s()}</text>;`), "⚠️", "cleanups are queued but only run on component destruction, not before the effect re-runs"],
+  ["reactivity", "effect returning a cleanup function", A(`createEffect(() => { s(); return () => 1; }); return <text>{s()}</text>;`), "⚠️", "the returned function is ignored"],
+  ["reactivity", "`untrack`", A(`const d = createMemo(() => untrack(s)); return <text>{d()}</text>;`), "⚠️", "emitted as a call to an undefined `untrack` (ReferenceError at runtime)"],
+  ["reactivity", "`batch`", A(`return <button onClick={() => batch(() => setS(1))}>x</button>;`), "⚠️", "emitted as a call to an undefined `batch`"],
+  ["reactivity", "`on(deps, fn)`", A(`createEffect(on(s, (v) => console.log(v))); return <text>{s()}</text>;`), "⚠️", "the effect is dropped entirely"],
+  ["reactivity", "`createComputed` / `createRenderEffect`", A(`createComputed(() => console.log(s())); return <text>{s()}</text>;`), "⚠️", "emitted as a call to an undefined function"],
+  ["reactivity", "`createSelector`", A(`const sel = createSelector(s); return <text>{sel(1) ? "a" : "b"}</text>;`), "⚠️", "emitted as a call to an undefined function"],
+  ["reactivity", "`createRoot`", A(`createRoot(() => {}); return <text>x</text>;`), "⚠️", "emitted as a call to an undefined function"],
+  ["resources", "`createResource(source, fetcher)`", `async function load(id){ const r = await fetch("https://example.com/" + id); return r.json(); }
+    ${A(`const [r] = createResource(s, load); return <Suspense fallback={<text>…</text>}><text>{r() ? r().name : ""}</text></Suspense>;`)}`, "✅", "`examples/fetch.tsx`; value + `loading`/`error`, re-fetch on source change"],
+  ["resources", "`createResource` with an inline fetcher", A(`const [r] = createResource(s, async (i) => i); return <text>{r()}</text>;`), "❌", "name the fetcher (a module-level function)"],
+  ["stores", "`createStore` + value / `prev => next` / `produce` / `(pred, \"key\", updater)` setters", `export function App(){ const [st, setSt] = createStore([{ id: 1, done: false }]);
+    return <div><For each={st}>{(t) => <text>{t.id}</text>}</For><button onClick={() => setSt((t) => t.id === 1, "done", (d) => !d)}>t</button><button onClick={() => setSt(produce((l) => l.push({ id: 2, done: false })))}>a</button></div>; }`, "✅", "`examples/todomvc.tsx`, `transpiler/test/effect-reactive-deps.test.ts`"],
+  ["stores", "path setter `set(\"a\", 0, \"b\", v)`", `export function App(){ const [st, setSt] = createStore({ a: [{ b: 1 }] }); return <button onClick={() => setSt("a", 0, "b", 2)}>x</button>; }`, "❌", ""],
+  ["stores", "`reconcile`", `export function App(){ const [st, setSt] = createStore({ a: [] }); return <button onClick={() => setSt("a", reconcile([1]))}>x</button>; }`, "❌", ""],
+  ["stores", "`createMutable`", `export function App(){ const m = createMutable({ n: 0 }); return <button onClick={() => m.n++}>{m.n}</button>; }`, "⚠️", "emitted as a call to an undefined function"],
+  ["control flow", "`<Show when fallback>`", A(`return <Show when={s() > 0} fallback={<text>no</text>}><text>yes</text></Show>;`), "✅", "lazy (mounted only while `when` holds) — `transpiler/test/control.test.ts`, `transpiler/test/silent-drops.test.ts`"],
+  ["control flow", "`<Switch>`/`<Match>`", A(`return <Switch fallback={<text>none</text>}><Match when={s() === 1}><text>one</text></Match></Switch>;`), "✅", "lazy; `transpiler/test/control.test.ts`"],
+  ["control flow", "`<For>` (reference identity) + index accessor", A(`return <div><For each={[{ n: "a" }]}>{(x, i) => <text>{i()}: {x.n}</text>}</For></div>;`), "✅", "`transpiler/test/for-index-accessor.test.ts`; `meson test for-identity for-identity-virtual`"],
+  ["control flow", "`<For key=\"id\">` (reuse rows by a field; native-only extension)", A(`return <div><For each={[{ id: 1 }]} key="id">{(x) => <text>{x.id}</text>}</For></div>;`), "✅", "`transpiler/test/for-key.test.ts`; contract in SOLID-PARITY.md"],
+  ["control flow", "`<Index>`", A(`return <div><Index each={["a"]}>{(x) => <text>{x()}</text>}</Index></div>;`), "✅", "`examples/index-list.tsx`"],
+  ["control flow", "`<Suspense>`", A(`return <Suspense fallback={<text>…</text>}><text>x</text></Suspense>;`), "✅", "`examples/fetch.tsx`"],
+  ["control flow", "`<Dynamic component=\"tag\">` (intrinsic tag)", A(`return <Dynamic component={s() ? "section" : "div"}>x</Dynamic>;`), "✅", "`examples/dynamic.tsx`"],
+  ["control flow", "`<Dynamic component={Comp}>` (component value)", `function P(){ return <text>a</text>; } function Q(){ return <text>b</text>; } ${A(`return <Dynamic component={s() ? P : Q} />;`)}`, "⚠️", "emits a text element whose type selector is the component value — not the component"],
+  ["control flow", "`<Portal>`", A(`return <div><Portal><text>x</text></Portal></div>;`), "❌", ""],
+  ["control flow", "`<ErrorBoundary>`", A(`return <ErrorBoundary fallback={<text>e</text>}><text>x</text></ErrorBoundary>;`), "❌", ""],
+  ["control flow", "`lazy()`", `const L = lazy(() => import("./x")); export function App(){ return <L />; }`, "❌", "out of scope"],
+  ["components", "props, `props.children`, callbacks", `function Card(p){ return <div><text>{p.title}</text>{p.children}</div>; } ${A(`return <Card title="t"><text>x</text></Card>;`)}`, "✅", "`examples/children.tsx`, `transpiler/test/props.test.ts`"],
+  ["components", "`mergeProps` / `splitProps` (local part)", `function C(p){ const m = mergeProps({ a: 1 }, p); return <text>{m.a}</text>; } export function App(){ return <C a={2} />; }`, "✅", "`examples/props-helpers.tsx`"],
+  ["components", "context: a provider component wrapping `props.children`, `useContext` in descendants", `const Ctx = createContext(); function Prov(p){ const [n, setN] = createSignal(1); return <Ctx.Provider value={{ n }}>{p.children}</Ctx.Provider>; }
+    function Child(){ const c = useContext(Ctx); return <text>{c.n()}</text>; } export function App(){ return <Prov><Child /></Prov>; }`, "🟡", "`examples/context.tsx`; nested/multi-instance providers untested"],
+  ["components", "context: `<Ctx.Provider>` written inline in the consumer's parent", `const Ctx = createContext(); function Child(){ const c = useContext(Ctx); return <text>{c.n}</text>; } export function App(){ return <Ctx.Provider value={{ n: 1 }}><Child /></Ctx.Provider>; }`, "❌", "use the provider-component form above"],
+  ["components", "spread props on a component `<C {...o} />`", `function C(p){ return <text>{p.a}</text>; } export function App(){ const o = { a: 1 }; return <C {...o} />; }`, "⚠️", "the spread is dropped"],
+  ["components", "spread attributes on an element `<div {...o}>`", A(`const o = { class: "a" }; return <div {...o}>x</div>;`), "❌", ""],
+  ["components", "`children()` helper", `function C(p){ const c = children(() => p.children); return <div>{c()}</div>; } export function App(){ return <C><text>x</text></C>; }`, "⚠️", "miscompiled — use `{props.children}` directly"],
+  ["components", "`ref={el}` (variable)", A(`let el; onMount(() => console.log(el.width)); return <div ref={el}>x</div>;`), "✅", "`examples/refs.tsx`, `transpiler/test/ref-render.test.ts`"],
+  ["components", "`ref={(e) => …}` (callback)", A(`let el; return <div ref={(e) => el = e}>x</div>;`), "❌", ""],
+  ["JSX", "inline `style=`", A(`return <div style={{ opacity: 0.5 }}>x</div>;`), "❌", "use a class and CSS"],
+  ["JSX", "`classList={{…}}`", A(`return <div classList={{ on: s() > 0 }}>x</div>;`), "✅", "`transpiler/test/qml.test.ts`"],
+  ["JSX", "`use:` directives", `function d(el){} export function App(){ return <div use:d>x</div>; }`, "❌", ""],
+  ["JSX", "nested fragments", A(`return <div><><text>a</text><text>b</text></></div>;`), "✅", ""],
+  ["JSX", "events beyond the contract (`onMouseMove`, `onDblClick`, `onFocus`, `onSubmit`…)", A(`return <div onDblClick={() => setS(1)}>x</div>;`), "❌", "see the element table for each tag's events"],
+  ["handlers", "`onClick` with an expression body", A(`return <button onClick={() => setS(s() + 1)}>x</button>;`), "✅", ""],
+  ["handlers", "`onClick` with a block body `() => { … }`", A(`return <button onClick={() => { setS(1); }}>x</button>;`), "❌", "move the statements into a named function in the component and pass it: `onClick={go}`"],
+  ["handlers", "`onClick={go}` (named function in the component, `if`/`for…of` inside)", A(`function go(){ if (s() > 2) setS(0); else for (const i of [1, 2]) setS(s() + i); } return <button onClick={go}>x</button>;`), "✅", "`transpiler/test/module-fn-positions.test.ts`"],
+  ["handlers", "block body in `fn`-kind events (`onInput`, `onChange`, `onKeyDown`…) with `if`", A(`return <input onInput={(e) => { if (e.currentTarget.value) setS(1); else setS(0); }} />;`), "✅", "`examples/widgets.tsx`"],
+  ["handlers", "`async` named handler", A(`async function go(){ const r = await fetch("https://example.com"); setS(await r.text()); } return <button onClick={go}>x</button>;`), "❌", "call an async module-level function from an expression-bodied handler, or use `createResource`"],
+  ["statements", "`while` / `do…while` in component code", A(`function go(){ let i = 0; while (i < 3) i++; setS(i); } return <button onClick={go}>x</button>;`), "❌", "use `for…of`"],
+  ["statements", "classic `for (;;)` in component code", A(`function go(){ let t = 0; for (let i = 0; i < 3; i++) t += i; setS(t); } return <button onClick={go}>x</button>;`), "❌", "use `for…of` (e.g. over `Array.from({ length: n }, (_, i) => i)`)"],
+  ["statements", "`switch` in component code", A(`function go(){ switch (s()) { case 0: setS(1); break; default: setS(0); } } return <button onClick={go}>x</button>;`), "❌", "use `if`/`else`"],
+  ["statements", "`try`/`catch` in component code", A(`function go(){ try { setS(JSON.parse("1")); } catch (e) { setS(0); } } return <button onClick={go}>x</button>;`), "❌", "module-level functions are transpiled too; code that needs it belongs in an npm package (mirrored and executed unmodified on V4)"],
+  ["modules", "a helper function imported from a relative non-component module (`import { f } from \"./util\"`)", `import { f } from "./util"; ${A(`return <button onClick={() => setS(f(s()))}>{s()}</button>;`)}`, "⚠️", "only components are followed through relative imports: `f` is undefined at runtime. Keep helpers in the component's file, or in an npm package (mirrored, runs unmodified)", { "/virtual/util.ts": "export function f(x){ return x + 1; }" }],
+  ["expressions", "RegExp literal in component code", A(`function go(){ setS(String(s()).replace(/0/g, "o")); } return <button onClick={go}>x</button>;`), "❌", "no transpiled form of a RegExp works today (see the next two rows): use string methods (`replaceAll`, `split`, `includes`…) or put the logic in an npm package"],
+  ["expressions", "RegExp literal in a module-level constant", `const RE = /a+/; ${A(`return <text>{RE.test(String(s())) ? "y" : "n"}</text>;`)}`, "⚠️", "the constant is not emitted: `RE` is undefined at runtime"],
+  ["expressions", "`new` expressions in component code (`new Date()`, `new Map()`…)", A(`function go(){ setS(new Date().getTime()); } return <button onClick={go}>x</button>;`), "❌", "use factory calls (`Date.now()`) or an npm package"],
+  ["expressions", "a module-level constant initialised with `new` (`const M = new Map()`)", `const M = new Map(); ${A(`return <text>{M.size}</text>;`)}`, "⚠️", "the constant is not emitted: `M` is undefined at runtime (literal/array/object constants are emitted — `transpiler/test/module-const-positions.test.ts`)"],
+  ["expressions", "optional chaining `a?.b`", A(`const [o] = createSignal(null); return <text>{o()?.a}</text>;`), "❌", "use `o() ? o().a : undefined`"],
+  ["expressions", "nullish coalescing `a ?? b`", A(`const [o] = createSignal(null); return <text>{o() ?? "none"}</text>;`), "✅", ""],
+  ["expressions", "`BigInt` literal", A(`return <text>{String(10n)}</text>;`), "❌", "V4 has no BigInt"],
+];
+
+async function probesTable() {
+  const rows = ["| Area | Construct | Status | Transpiler today (generated) | Notes / evidence |", "|---|---|---|---|---|"];
+  for (const [area, what, prog, status, notes, files] of PROBES) {
+    const r = await run(prog, files);
+    const verdict = r.err ? `rejected: \`${cell(r.err).slice(0, 140)}\`` : "accepted";
+    const consistent = status === "❌" ? !!r.err : !r.err;
+    if (!consistent)
+      throw new Error(`support-matrix: probe "${what}" is marked ${status} but the transpiler ${r.err ? "rejects it: " + r.err : "accepts it"} — update its status in scripts/support-matrix.mjs`);
+    rows.push(`| ${area} | ${cell(what)} | ${status} | ${verdict} | ${cell(notes)} |`);
+  }
+  return rows.join("\n");
+}
+
+// ── doc splice ──────────────────────────────────────────────────────────────────────────────────
+const GENERATORS = { elements: elementsTable, widgets: widgetsTable, probes: probesTable };
+
+export async function render(doc) {
+  let out = doc;
+  for (const [name, gen] of Object.entries(GENERATORS)) {
+    const begin = `<!-- generated:${name}:begin (scripts/support-matrix.mjs — do not edit by hand) -->`;
+    const end = `<!-- generated:${name}:end -->`;
+    const i = out.indexOf(begin), j = out.indexOf(end);
+    if (i < 0 || j < i) throw new Error(`support-matrix: markers for "${name}" missing in docs/support-matrix.md`);
+    out = out.slice(0, i + begin.length) + "\n" + (await gen()) + "\n" + out.slice(j);
+  }
+  return out;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const doc = await readFile(DOC, "utf8");
+  const next = await render(doc);
+  if (process.argv.includes("--check")) {
+    if (next !== doc) {
+      console.error("docs/support-matrix.md is out of date — run: node --import tsx scripts/support-matrix.mjs");
+      process.exit(1);
+    }
+    console.log("docs/support-matrix.md is up to date");
+  } else {
+    await writeFile(DOC, next);
+    console.log("docs/support-matrix.md regenerated");
+  }
+}
