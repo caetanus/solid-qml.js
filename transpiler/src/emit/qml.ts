@@ -186,7 +186,13 @@ function emitInteractions(props: Props, children: t.Node[], scope: Scope, level:
   const wantsHover = !!(props.onMouseEnter || props.onMouseLeave);
   // A child can own a hover area (including inside a component/conditional). MouseArea's
   // containsMouse then drops out. Observe the parent passively in that case, without bubbling.
-  const passiveHover = wantsHover && (!clickHandler || hasHoverAreaDescendant(children));
+  const nestedHover = hasHoverAreaDescendant(children);
+  const passiveHover = wantsHover && (!clickHandler || nestedHover);
+  // `:hover` holds on the ancestors of what the pointer is over (CSS): a row stays hovered while
+  // the pointer crosses its chip or its buttons. The click area's containsMouse drops there, so
+  // with such a descendant the state follows a passive HoverHandler, which keeps seeing the
+  // pointer over the children (it blocks nothing).
+  const passiveState = !!clickHandler && nestedHover;
   const hoverEdge = (condition: string, point: string) => {
     const handler = (node: t.Node | undefined) => {
       if (!node) return "";
@@ -200,7 +206,7 @@ function emitInteractions(props: Props, children: t.Node[], scope: Scope, level:
   if (clickHandler) {
     const counter = scope.hoverCounter ?? { n: 0 };
     maId = `__hover${counter.n++}`;
-    stateLine.push(`${pad}${INDENT}cssState: ${maId}.containsMouse ? ["hover"] : []`);
+    if (!passiveState) stateLine.push(`${pad}${INDENT}cssState: ${maId}.containsMouse ? ["hover"] : []`);
     clickLines.push(
       `${pad}${INDENT}MouseArea {`,
       `${pad}${INDENT}${INDENT}id: ${maId}`,
@@ -354,13 +360,14 @@ function emitInteractions(props: Props, children: t.Node[], scope: Scope, level:
   // area's hover when there is one; otherwise a passive HoverHandler, which takes no clicks.
   const tipLines: string[] = [];
   let passiveId: string | null = null;
-  if (passiveHover) {
+  if (passiveHover || passiveState) {
     const counter = scope.hoverCounter ?? { n: 0 };
     passiveId = `__enter${counter.n++}`;
     tipLines.push(`${pad}${INDENT}HoverHandler {`,
       `${pad}${INDENT}${INDENT}id: ${passiveId}`,
-      `${pad}${INDENT}${INDENT}onHoveredChanged: { ${hoverEdge("hovered", "({offsetX: point.position.x, offsetY: point.position.y})")} }`,
+      ...(passiveHover ? [`${pad}${INDENT}${INDENT}onHoveredChanged: { ${hoverEdge("hovered", "({offsetX: point.position.x, offsetY: point.position.y})")} }`] : []),
       `${pad}${INDENT}}`);
+    if (passiveState) stateLine.push(`${pad}${INDENT}cssState: ${passiveId}.hovered ? ["hover"] : []`);
   }
   if (props.title) {
     let hover = passiveId ? `${passiveId}.hovered` : maId ? `${maId}.containsMouse` : "";

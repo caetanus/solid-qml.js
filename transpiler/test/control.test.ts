@@ -225,6 +225,16 @@ test("onClick nested in onClick: the outer click area sits beneath the content",
   assert.doesNotMatch(areas[0].split("}")[0], /z: -1/);
 });
 
+test(":hover holds on a clickable element while the pointer is over its interactive child", async () => {
+  // CSS :hover applies to the ancestors of the hovered element. The row's click area loses
+  // containsMouse to the chip's own area, so the row flickered off and on as the pointer crossed
+  // its chips and buttons; with an interactive descendant the state follows a passive HoverHandler.
+  const out = await qml(`export function C(){ const [n,setN]=createSignal(0); return <div class="row" onClick={() => setN(1)}><text>t</text><div class="chip" onClick={() => setN(2)}><text>c</text></div></div>; }`);
+  const id = out.match(/HoverHandler \{\s*\n\s*id: (__enter\d+)\s*\n\s*\}/)![1];
+  assert.match(out, new RegExp(`cssState: ${id}\\.hovered \\? \\["hover"\\] : \\[\\]`));
+  assert.equal(out.match(/cssState: __hover\d+\.containsMouse/g)?.length, 1, "the chip keeps its own area's hover");
+});
+
 test("onClick without an interactive descendant keeps the default stacking", async () => {
   const out = await qml(`export function C(){ const [n,setN]=createSignal(0); return <div class="row" onClick={() => setN(1)}><text>t</text></div>; }`);
   assert.doesNotMatch(out, /z: -1/);
