@@ -5,10 +5,18 @@
 # -artifact smoke test (meson install to a prefix, then author + transpile + run a tiny
 # app OUTSIDE the checkout against the installed artifacts).
 #
-# Factored out so TWO callers never drift from each other:
-#   - .github/workflows/ci.yml   runs this directly inside its `archlinux:latest` job container.
-#   - scripts/clean-room-check.sh (release-plan M6) runs this inside its own podman container,
-#     via `podman exec`, as the clean-machine proof for an end user following the docs.
+# This script is environment-agnostic by design: it assumes a working toolchain is already on
+# PATH/PKG_CONFIG_PATH (Qt, Node, meson/ninja, a C++20 compiler, libvterm) and does none of the
+# OS/package-manager-specific provisioning itself. That provider-specific setup lives in each
+# caller instead, so the two callers never drift from each other on what they verify (only on HOW
+# they got there):
+#   - .github/workflows/ci.yml       provisions manylinux_2_34 (AlmaLinux 9) via dnf + aqtinstall
+#                                     (Qt 6.11.2 official binaries) + a pinned Node tarball, then
+#                                     runs this script directly inside that job container.
+#   - scripts/clean-room-check.sh    provisions either Arch (pacman, the local dev-machine
+#                                     verification path) or, with --manylinux, the SAME manylinux
+#                                     provider as CI — inside its own podman container, via
+#                                     `podman exec`, as the clean-machine proof for release-plan M6.
 #
 # Usage:
 #   scripts/ci-steps.sh                 # run every step, in order
@@ -33,7 +41,7 @@ JOBS="${JOBS:-$(nproc)}"
 cd "$APP_DIR"
 
 step_versions() {
-  echo "== ci-steps: pinned-environment versions (preview scope: Linux x86_64, Arch, Qt 6.11.2, Node 26, meson>=1.1 — see docs/RELEASE-PLAN.md) =="
+  echo "== ci-steps: pinned-environment versions (preview scope: Linux x86_64, glibc >= 2.34, Qt 6.11.2, Node 26, meson>=1.1 — see docs/RELEASE-PLAN.md) =="
   echo "-- OS --"; (. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME") || uname -a
   echo "-- Qt --"; pkg-config --modversion Qt6Core 2>/dev/null || qmake6 -query QT_VERSION 2>/dev/null || echo "unknown"
   echo "-- Node --"; node --version
@@ -42,6 +50,12 @@ step_versions() {
   echo "-- ninja --"; ninja --version
   echo "-- gcc --"; gcc --version | head -1
 }
+
+# ---- Portable steps (npm-ci, typecheck, test-transpiler) ------------------------------------
+# These three run plain `npm`/node commands with no OS-specific logic and no dependency on the
+# meson/Qt/native toolchain below — the macOS and Windows CI workflows (separate workflow files +
+# step scripts, owned separately) can mirror this exact shape (one function per step, same
+# command) rather than re-deriving it. Keep them free of Linux-isms if you touch them.
 
 step_npm_ci() {
   echo "== ci-steps: npm ci =="
@@ -57,6 +71,12 @@ step_test_transpiler() {
   echo "== ci-steps: npm run test:transpiler =="
   npm run test:transpiler
 }
+
+# ---- Linux-specific steps from here down --------------------------------------------------
+# native-build/native-test/install/smoke assume this script's own Linux provider environment
+# (meson + ninja + a Qt found via PKG_CONFIG_PATH/CMAKE_PREFIX_PATH, Linux paths/LD_LIBRARY_PATH,
+# offscreen QPA). This script itself is only ever invoked by .github/workflows/ci.yml (manylinux,
+# job `linux`) and scripts/clean-room-check.sh — macOS/Windows CI owns its own step script.
 
 step_native_build() {
   echo "== ci-steps: meson setup + ninja -j $JOBS =="

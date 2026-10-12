@@ -1,14 +1,42 @@
 # Getting started
 
 This is the preview (0.x) install story: build the framework from source, run its test suite, and
-author a new app **outside** the checkout against the installed artifacts. Verified on a from-scratch
-Arch Linux container (`podman run archlinux:latest`) on 2026-10-11 — see
-[`scripts/clean-room-check.sh`](../scripts/clean-room-check.sh), which automates every step below
-and is what CI (release-plan M7) will reuse.
+author a new app **outside** the checkout against the installed artifacts.
+
+## CI / reference environment
+
+The project's CI (release-plan M7, [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) and
+the authoritative reference environment for the 0.x preview is:
+
+- **Linux x86_64, glibc >= 2.34** — container image `quay.io/pypa/manylinux_2_34_x86_64`
+  (AlmaLinux 9). This matches Qt 6.11/6.12's own RHEL-9-family reference platform (glibc 2.34,
+  GCC 11+) more closely than a rolling-release distro can be pinned to, and ships GCC 14.2.1 on
+  PATH with full C++20 support out of the box.
+- **Qt 6.11.2**, installed from its *official* Linux x64 binaries via
+  [aqtinstall](https://github.com/miurahr/aqtinstall) (`aqt install-qt linux desktop 6.11.2
+  linux_gcc_64 -m qtshadertools`) — not distro packages. This is also the most reliable way to get
+  the *private* Qt headers this project's engine and widgets need
+  (`QtQuickTemplates2/private`, `QtQuick/private`, …): aqtinstall's binaries ship them unconditionally,
+  where distro packaging varies (Arch keeps them with the main package; Debian splits them out or
+  omits a CMake config for them — see release-plan M7 notes).
+- **Node 26.8.2**, the official linux-x64 tarball (checksum-pinned), meson 1.12.0, ninja 1.13.0,
+  aqtinstall 3.3.0.
+
+[`scripts/clean-room-check.sh --manylinux`](../scripts/clean-room-check.sh) automates the exact
+same provider steps as CI inside a local podman container — run it to reproduce a CI failure
+locally, or `--manylinux --local` to validate uncommitted changes in this worktree. Verified
+end to end on 2026-10-11 (see release-plan M7 notes for the run's timings and Qt download size).
 
 ## Requirements
 
-### Arch / Manjaro (verified)
+### Arch / Manjaro (supported local dev-machine path, verified)
+
+This is the easiest path for day-to-day development on an Arch/Manjaro machine (e.g. the author's
+own), and is what [`scripts/clean-room-check.sh`](../scripts/clean-room-check.sh) verifies by
+default (no flag). It is **not** the CI/reference environment above — the dependency versions here
+track whatever Arch's pinned archive snapshot carries, which can drift from the exact Qt 6.11.2
+reference; CI is the environment to trust for "does this actually work on the pinned preview
+stack."
 
 ```sh
 sudo pacman -S base-devel git cmake meson ninja nodejs npm \
