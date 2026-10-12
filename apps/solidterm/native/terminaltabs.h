@@ -104,6 +104,9 @@ public:
     // The active tab's focused pane's TerminalView::wantsMouseReport. Queried by the solid
     // <ContextMenu> before it opens on a right-click.
     Q_INVOKABLE bool wantsMouseReportFocused(int qtModifiers) const;
+    // "Copy link"/"Open link" (right-click menu) acting on the active tab's focused pane's hovered link.
+    Q_INVOKABLE void copyHoverLinkFocused();
+    Q_INVOKABLE void openHoverLinkFocused();
 
     // Pane drag & drop: this item is its WINDOW's drop target. It filters the window's drag events
     // (the compositor delivers them to the window under the cursor — no global coords needed) and
@@ -124,6 +127,7 @@ signals:
     void titleChanged(const QString &title);   // active tab's focused-pane title → window
     void accelerator(const QString &sequence); // a reserved chord from the active tab
     void searchChanged(int index, int count);  // active tab's search state → the Solid search bar
+    void hoverLinkChanged(const QString &url); // active tab's focused pane's hovered link ("" = none)
     void unsafePasteRequested(const QString &text);
     void zoomRequested(int delta);
     void paneMenuRequested(qreal x, qreal y, bool readOnly);

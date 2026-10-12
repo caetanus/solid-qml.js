@@ -669,7 +669,99 @@ int main(int argc, char **argv)
         });
     }
 
-    // Debug: SOLIDTERM_FINDTEST="query" opens the search bar + runs a search after a settle.
+    // Debug: SOLIDTERM_LINKTEST=1 prints a URL, hovers it (checks TerminalView::hoverLinkUrl), moves off
+    // it (checks it clears), double-clicks it (checks the WHOLE url gets copied, not a word-bounded
+    // chunk), then hovers it again right before a right-click (checks hoverLinkUrl is still correct —
+    // that's exactly what the Solid ContextMenu's "Copy link"/"Open link" Show binding reads). Real
+    // input via QWindowSystemInterface — see the AUTOSCROLLTEST comment for why (not a raw QMouseEvent).
+    if (qEnvironmentVariableIsSet("SOLIDTERM_LINKTEST") && window) {
+        QTimer::singleShot(1600, window, [&engine, window] {
+            TerminalView *view = nullptr;
+            for (QObject *o : engine.rootObjects()) {
+                if (auto *w = qobject_cast<QQuickWindow *>(o)) {
+                    QList<QQuickItem *> stack { w->contentItem() };
+                    while (!stack.isEmpty() && !view) {
+                        QQuickItem *it = stack.takeLast();
+                        view = qobject_cast<TerminalView *>(it);
+                        for (QQuickItem *k : it->childItems()) stack.append(k);
+                    }
+                }
+            }
+            if (!view) {
+                qWarning("solidterm: linktest found no TerminalView");
+                return;
+            }
+            const QString wantUrl = QStringLiteral("https://example.com/some/path?q=1");
+            view->sendText(QStringLiteral("printf 'see %s here\\n' ") + wantUrl + QStringLiteral("\n"));
+
+            QTimer::singleShot(2500, window, [view, window, wantUrl] {
+                // Row 0 printed "see <url> here". Rather than compute the exact cell (font-metric
+                // dependent), probe left to right in small steps and ask hoverLinkUrl() — robust to
+                // whatever font/size is configured, and exercises the real per-pixel-to-cell mapping.
+                QString foundAt;
+                QPointF foundScene;
+                // Scan rows too — exactly where "see <url> here" lands depends on however many prompt/
+                // banner lines came before it, not just column position.
+                for (int rowPx = 4; rowPx < 400 && foundAt.isEmpty(); rowPx += 16) {
+                    for (int col = 0; col < 120 && foundAt.isEmpty(); ++col) {
+                        const QPointF probe = view->mapToScene(QPointF(col * 4.0 + 2, rowPx));
+                        const QPointF g = window->mapToGlobal(probe.toPoint());
+                        QWindowSystemInterface::handleMouseEvent(window, probe, g, Qt::NoButton, Qt::NoButton,
+                            QEvent::MouseMove, Qt::NoModifier);
+                        QCoreApplication::processEvents();
+                        if (view->hoverLinkUrl() == wantUrl) {
+                            foundAt = view->hoverLinkUrl();
+                            foundScene = probe;
+                        }
+                    }
+                }
+                qInfo().noquote() << "solidterm: linktest hover found=" << (foundAt == wantUrl) << "url=" << foundAt;
+
+                // Move off the link (top-left corner, row 0 col 0 is "s" of "see" — not part of the URL).
+                const QPointF off = view->mapToScene(QPointF(1, 4));
+                const QPointF gOff = window->mapToGlobal(off.toPoint());
+                QWindowSystemInterface::handleMouseEvent(window, off, gOff, Qt::NoButton, Qt::NoButton,
+                    QEvent::MouseMove, Qt::NoModifier);
+                QCoreApplication::processEvents();
+                qInfo() << "solidterm: linktest hover cleared=" << view->hoverLinkUrl().isEmpty();
+
+                if (foundAt.isEmpty()) {
+                    QCoreApplication::quit();
+                    return;
+                }
+
+                // Double-click the link: must select the WHOLE url (copySelection + read the clipboard),
+                // not a word-bounded chunk (selectWordAt would stop at '/', ':', '?' etc.). Two rapid
+                // press/release pairs — Qt's own input stack synthesizes the double-click from their
+                // timing/position, the same as two real clicks would (not a literal DblClick WSI event,
+                // which the platform layer doesn't take as input — it's an OUTPUT of this synthesis).
+                const QPointF g2 = window->mapToGlobal(foundScene.toPoint());
+                for (int click = 0; click < 2; ++click) {
+                    QWindowSystemInterface::handleMouseEvent(window, foundScene, g2, Qt::LeftButton, Qt::LeftButton,
+                        QEvent::MouseButtonPress, Qt::NoModifier);
+                    QWindowSystemInterface::handleMouseEvent(window, foundScene, g2, Qt::NoButton, Qt::LeftButton,
+                        QEvent::MouseButtonRelease, Qt::NoModifier);
+                    QCoreApplication::processEvents();
+                }
+                view->copySelection();
+                const QString selected = QGuiApplication::clipboard()->text();
+                qInfo().noquote() << "solidterm: linktest doubleclick selected=" << selected
+                                   << "matchesWholeUrl=" << (selected == wantUrl);
+
+                // Hover it again right before a right-click — exactly what the ContextMenu's Show
+                // binding reads at open time (term.tsx: hoverLinkUrl() !== "").
+                QWindowSystemInterface::handleMouseEvent(window, foundScene, g2, Qt::NoButton, Qt::NoButton,
+                    QEvent::MouseMove, Qt::NoModifier);
+                QCoreApplication::processEvents();
+                qInfo().noquote() << "solidterm: linktest before right-click hoverLinkUrl="
+                                   << view->hoverLinkUrl() << "readyForContextMenu="
+                                   << (view->hoverLinkUrl() == wantUrl);
+                QCoreApplication::quit();
+            });
+        });
+    }
+
+// Debug: SOLIDTERM_FINDTEST="query" opens the search bar + runs a search after a settle.
     const QString findTest = qEnvironmentVariable("SOLIDTERM_FINDTEST");
     if (!findTest.isEmpty() && window) {
         QTimer::singleShot(1600, window, [&engine, findTest] {

@@ -164,6 +164,9 @@ public:
     // The focused pane's TerminalView::wantsMouseReport — see there for what it means. Queried by
     // the solid <ContextMenu> before it opens on a right-click.
     Q_INVOKABLE bool wantsMouseReportFocused(int qtModifiers) const;
+    // "Copy link"/"Open link" (right-click menu) acting on the focused pane's hovered link.
+    Q_INVOKABLE void copyHoverLinkFocused();
+    Q_INVOKABLE void openHoverLinkFocused();
 
 signals:
     void panesChanged();
@@ -174,6 +177,7 @@ signals:
     void styleChanged();
     void allClosed();           // last pane's shell exited → the app can quit/close the tab
     void titleChanged(const QString &title); // focused pane's OSC title
+    void hoverLinkChanged(const QString &url); // focused pane's hovered link changed ("" = none)
     void reservedChanged();
     void accelerator(const QString &sequence); // a reserved chord pressed in any pane
 

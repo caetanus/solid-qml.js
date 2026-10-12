@@ -116,6 +116,10 @@ TerminalPanes *TerminalTabs::makePanes()
         if (active() == panes)
             emit searchChanged(idx, count);
     });
+    connect(panes, &TerminalPanes::hoverLinkChanged, this, [this, panes](const QString &url) {
+        if (active() == panes)
+            emit hoverLinkChanged(url);
+    });
     connect(panes, &TerminalPanes::unsafePasteRequested, this, &TerminalTabs::unsafePasteRequested);
     connect(panes, &TerminalPanes::zoomRequested, this, &TerminalTabs::zoomRequested);
     connect(panes, &TerminalPanes::paneMenuRequested, this, [this, panes](qreal x, qreal y, bool ro) {
@@ -241,6 +245,8 @@ void TerminalTabs::searchFocused(const QString &q) { if (auto *p = active()) p->
 void TerminalTabs::searchNext() { if (auto *p = active()) p->searchNext(); }
 void TerminalTabs::searchPrev() { if (auto *p = active()) p->searchPrev(); }
 void TerminalTabs::clearSearch() { if (auto *p = active()) p->clearSearch(); }
+void TerminalTabs::copyHoverLinkFocused() { if (auto *p = active()) p->copyHoverLinkFocused(); }
+void TerminalTabs::openHoverLinkFocused() { if (auto *p = active()) p->openHoverLinkFocused(); }
 bool TerminalTabs::wantsMouseReportFocused(int qtModifiers) const
 {
     auto *p = active();

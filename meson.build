@@ -437,6 +437,12 @@ if build_solidterm
   test('solidterm-scrollbar',
     executable('test-solidterm-scrollbar', files('apps/solidterm/tests/scrollbar_test.cpp')),
     timeout: 10)
+
+  # URL-detection scanner (linkscan.h) used by TerminalView::linkAt — scheme/www. table, trailing
+  # punctuation trimming, and a soft-wrapped row-join scenario. No Qt, no vterm — see linkscan_test.cpp.
+  test('solidterm-linkscan',
+    executable('test-solidterm-linkscan', files('apps/solidterm/tests/linkscan_test.cpp')),
+    timeout: 10)
 endif
 
 # ── Tests ────────────────────────────────────────────────────────────────────────────────────

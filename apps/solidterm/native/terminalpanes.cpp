@@ -207,6 +207,10 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
         if (m_focused && m_focused->view == v)
             emit titleChanged(v->title());
     });
+    connect(v, &TerminalView::hoverLinkChanged, this, [this, v](const QString &url) {
+        if (m_focused && m_focused->view == v)
+            emit hoverLinkChanged(url);
+    });
     connect(header, &PaneHeader::clicked, this, [this, v] {
         if (Node *leaf = leafOfView(v)) setFocused(leaf);
     });
@@ -1277,6 +1281,8 @@ void TerminalPanes::searchFocused(const QString &q) { if (m_focused && m_focused
 void TerminalPanes::searchNext() { if (m_focused && m_focused->view) m_focused->view->searchNext(); }
 void TerminalPanes::searchPrev() { if (m_focused && m_focused->view) m_focused->view->searchPrev(); }
 void TerminalPanes::clearSearch() { if (m_focused && m_focused->view) m_focused->view->clearSearch(); }
+void TerminalPanes::copyHoverLinkFocused() { if (m_focused && m_focused->view) m_focused->view->copyHoverLink(); }
+void TerminalPanes::openHoverLinkFocused() { if (m_focused && m_focused->view) m_focused->view->openHoverLink(); }
 bool TerminalPanes::wantsMouseReportFocused(int qtModifiers) const
 {
     return m_focused && m_focused->view && m_focused->view->wantsMouseReport(qtModifiers);

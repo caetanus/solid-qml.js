@@ -112,6 +112,27 @@ closed now with fresh evidence, plus a new scrollbar-visibility option and one n
   `SOLIDTERM_SCROLLBARTEST`: idle (hidden) → wheel (visible, thumb moved) → drag (offset follows the
   thumb) → `less /etc/hostname` (hidden on the alt screen) → `scrollbarMode="never"` (hidden despite
   scrollback+offset>0) — screenshots in `docs/evidence/solidterm/scrollbar-*.png`.
+- **[x] Copy/open links (owner, 2026-10-12: "não dá pra copiar links no terminal").** The existing
+  auto-detected-link feature (`871c209`, Ctrl+click to open) had no way to COPY a link — that was the
+  actual complaint. Added: a right-click on a link now shows "Copy link"/"Open link" at the top of
+  the Solid `<ContextMenu>` (`term.tsx`, via `TerminalView::hoverLinkChanged` forwarded through the
+  same focused-pane delegation chain as `titleChanged`); double-click on a URL selects the WHOLE
+  thing (not word-bounded — `/:.?&=#` etc. no longer stop it); `mailto:` added to the scheme list;
+  trailing-punctuation trimming is now bracket-aware (VTE rule: an unmatched closing
+  `)`/`]`/`}` is trimmed, a balanced one — e.g. a Wikipedia "`…(disambiguation)`" link — is kept); a
+  URL split across a soft-wrapped row is detected whole (LIVE rows only — `VTermLineInfo::continuation`
+  has no scrollback equivalent, a documented limitation). With mouse reporting active (vim/htop/tmux),
+  all of this only applies with Shift held, same rule as local selection (`decideMouseAction`). The
+  scanner itself is a new pure (Qt-free) header, `apps/solidterm/native/linkscan.h`, replacing the
+  old inline `QRegularExpression` — unit tests in `apps/solidterm/tests/linkscan_test.cpp` (scheme
+  table, trailing-punctuation table, a row-joined soft-wrap scenario). OSC 8 explicit hyperlinks were
+  investigated (`vterm_screen_set_unrecognised_fallbacks` is the right hook) but NOT implemented:
+  libvterm's screen layer has no per-cell metadata and no `moverect` is currently wired, so tracking
+  an OSC 8 span reliably needs more plumbing than fit this pass — left as a follow-up, not started.
+  Verified live via `SOLIDTERM_LINKTEST` on the real GPU: hover found the right URL, moving off
+  cleared it, double-click copied the whole URL (not a fragment), and the hover state was still
+  correct immediately before a right-click (exactly what the context menu's reactive binding reads).
+
 ## Open
 
 

@@ -26,6 +26,7 @@ W.Div {
     property var uiScrollbar: termConfig.getString("scrollbar", "auto")
     property var cfgOpen: false
     property var title: "solidterm"
+    property var hoverLinkUrl: ""
     property var searchOpen: false
     property var searchQuery: ""
     property var searchIdx: 0
@@ -247,6 +248,7 @@ W.Div {
                 reservedSequences: [kSplitRight, kSplitDown, kClosePane, kFocusNext, kFocusPrev, kNewTab, kNextTab, kPrevTab, kSearch, kZoomPane, "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]
                 onAccelerator: function(seq) { return onAccel(seq) }
                 onTitleChanged: function(t) { title = t; onTitle(t); }
+                onHoverLinkChanged: function(url) { return hoverLinkUrl = url }
             }
         }
         Item {
@@ -267,6 +269,39 @@ W.Div {
                     id: __menu1
                     cssAncestor: __ctxAnchor1
                     authorClass: ["tmenu"]
+                    Instantiator {
+                        id: __menuDyn2
+                        model: (hoverLinkUrl !== "") ? 1 : 0
+                        delegate: Component {
+                            W.MenuItem {
+                                text: "Copy &link"
+                                onTriggered: { _ref_term.copyHoverLinkFocused() }
+                            }
+                        }
+                        onObjectAdded: (index, object) => __menu1.insertItem(0 + index, object)
+                        onObjectRemoved: (index, object) => __menu1.removeItem(object)
+                    }
+                    Instantiator {
+                        id: __menuDyn3
+                        model: (hoverLinkUrl !== "") ? 1 : 0
+                        delegate: Component {
+                            W.MenuItem {
+                                text: "&Open link"
+                                onTriggered: { _ref_term.openHoverLinkFocused() }
+                            }
+                        }
+                        onObjectAdded: (index, object) => __menu1.insertItem(0 + __menuDyn2.count + index, object)
+                        onObjectRemoved: (index, object) => __menu1.removeItem(object)
+                    }
+                    Instantiator {
+                        id: __menuDyn4
+                        model: (hoverLinkUrl !== "") ? 1 : 0
+                        delegate: Component {
+                            W.MenuSeparator { }
+                        }
+                        onObjectAdded: (index, object) => __menu1.insertItem(0 + __menuDyn2.count + __menuDyn3.count + index, object)
+                        onObjectRemoved: (index, object) => __menu1.removeItem(object)
+                    }
                     W.MenuItem {
                         text: "&Copy"
                         onTriggered: { _ref_term.copyFocused() }
@@ -357,11 +392,11 @@ W.Div {
                                     text: "Font family"
                                 }
                                 W.TextField {
-                                    id: __input3
+                                    id: __input6
                                     cssClass: ["cfg-in-img"]
                                     onTextEdited: { uiFontFamily = text; termConfig.set("fontFamily", text); }
                                     Binding {
-                                        target: __input3
+                                        target: __input6
                                         property: "text"
                                         value: uiFontFamily
                                         restoreMode: Binding.RestoreNone
@@ -384,15 +419,15 @@ W.Div {
                                     text: "Font size"
                                 }
                                 W.Select {
-                                    id: __input4
+                                    id: __input7
                                     cssClass: ["cfg-sel"]
                                     model: ["9 px", "10 px", "11 px", "12 px", "13 px", "14 px", "15 px", "16 px", "17 px", "18 px", "19 px", "20 px", "21 px", "22 px", "23 px", "24 px", "25 px", "26 px", "27 px", "28 px", "32 px", "36 px"]
                                     values: ["9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "32", "36"]
-                                    onActivated: (__idx) => { uiFontSize = parseInt(__input4.values[__idx]); termConfig.set("fontSize", parseInt(__input4.values[__idx])); }
+                                    onActivated: (__idx) => { uiFontSize = parseInt(__input7.values[__idx]); termConfig.set("fontSize", parseInt(__input7.values[__idx])); }
                                     Binding {
-                                        target: __input4
+                                        target: __input7
                                         property: "currentIndex"
-                                        value: __input4.values.indexOf("" + uiFontSize)
+                                        value: __input7.values.indexOf("" + uiFontSize)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -408,15 +443,15 @@ W.Div {
                                     text: "Color scheme"
                                 }
                                 W.Select {
-                                    id: __input5
+                                    id: __input8
                                     cssClass: ["cfg-sel"]
                                     model: ["System", "Midnight", "Midnight (high contrast)", "Monokai", "Solarized Dark", "Gruvbox", "Paper (light)"]
                                     values: ["system", "midnight", "midnight-hc", "monokai", "solarized", "gruvbox", "paper"]
-                                    onActivated: (__idx) => { scheme = __input5.values[__idx]; termConfig.set("scheme", __input5.values[__idx]); }
+                                    onActivated: (__idx) => { scheme = __input8.values[__idx]; termConfig.set("scheme", __input8.values[__idx]); }
                                     Binding {
-                                        target: __input5
+                                        target: __input8
                                         property: "currentIndex"
-                                        value: __input5.values.indexOf(scheme)
+                                        value: __input8.values.indexOf(scheme)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -434,12 +469,12 @@ W.Div {
                                 W.Div {
                                     cssClass: ["cfg-imgrow"]
                                     W.TextField {
-                                        id: __input6
+                                        id: __input9
                                         cssClass: ["cfg-in-img"]
                                         placeholder: "none"
                                         onTextEdited: { bgImage = text; termConfig.set("bgImage", text); }
                                         Binding {
-                                            target: __input6
+                                            target: __input9
                                             property: "text"
                                             value: bgImage
                                             restoreMode: Binding.RestoreNone
@@ -470,14 +505,14 @@ W.Div {
                                 W.Div {
                                     cssClass: ["cfg-slide"]
                                     W.Slider {
-                                        id: __input7
+                                        id: __input10
                                         cssClass: ["cfg-range"]
                                         from: 40
                                         to: 100
                                         stepSize: 1
-                                        onMoved: { opacity_ = parseInt(__input7.value); termConfig.set("opacity", parseInt(__input7.value)); sysTheme.setUiOpacity(parseInt(__input7.value) / 100); }
+                                        onMoved: { opacity_ = parseInt(__input10.value); termConfig.set("opacity", parseInt(__input10.value)); sysTheme.setUiOpacity(parseInt(__input10.value) / 100); }
                                         Binding {
-                                            target: __input7
+                                            target: __input10
                                             property: "value"
                                             value: "" + opacity_
                                             restoreMode: Binding.RestoreNone
@@ -502,14 +537,14 @@ W.Div {
                                 W.Div {
                                     cssClass: ["cfg-slide"]
                                     W.Slider {
-                                        id: __input8
+                                        id: __input11
                                         cssClass: ["cfg-range"]
                                         from: 0
                                         to: 100
                                         stepSize: 5
-                                        onMoved: { uiBlur = parseInt(__input8.value); termConfig.set("blur", parseInt(__input8.value)); }
+                                        onMoved: { uiBlur = parseInt(__input11.value); termConfig.set("blur", parseInt(__input11.value)); }
                                         Binding {
-                                            target: __input8
+                                            target: __input11
                                             property: "value"
                                             value: "" + uiBlur
                                             restoreMode: Binding.RestoreNone
@@ -532,15 +567,15 @@ W.Div {
                                     text: "Header bar"
                                 }
                                 W.Select {
-                                    id: __input9
+                                    id: __input12
                                     cssClass: ["cfg-sel"]
                                     model: ["Shown", "Hidden"]
                                     values: ["1", "0"]
-                                    onActivated: (__idx) => { showHeader = parseInt(__input9.values[__idx]); termConfig.set("showHeader", parseInt(__input9.values[__idx])); }
+                                    onActivated: (__idx) => { showHeader = parseInt(__input12.values[__idx]); termConfig.set("showHeader", parseInt(__input12.values[__idx])); }
                                     Binding {
-                                        target: __input9
+                                        target: __input12
                                         property: "currentIndex"
-                                        value: __input9.values.indexOf("" + showHeader)
+                                        value: __input12.values.indexOf("" + showHeader)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -556,15 +591,15 @@ W.Div {
                                     text: "Status bar"
                                 }
                                 W.Select {
-                                    id: __input10
+                                    id: __input13
                                     cssClass: ["cfg-sel"]
                                     model: ["Shown", "Hidden"]
                                     values: ["1", "0"]
-                                    onActivated: (__idx) => { showStatus = parseInt(__input10.values[__idx]); termConfig.set("showStatus", parseInt(__input10.values[__idx])); }
+                                    onActivated: (__idx) => { showStatus = parseInt(__input13.values[__idx]); termConfig.set("showStatus", parseInt(__input13.values[__idx])); }
                                     Binding {
-                                        target: __input10
+                                        target: __input13
                                         property: "currentIndex"
-                                        value: __input10.values.indexOf("" + showStatus)
+                                        value: __input13.values.indexOf("" + showStatus)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -580,15 +615,15 @@ W.Div {
                                     text: "Split animation"
                                 }
                                 W.Select {
-                                    id: __input11
+                                    id: __input14
                                     cssClass: ["cfg-sel"]
                                     model: ["On", "Off"]
                                     values: ["1", "0"]
-                                    onActivated: (__idx) => { animSplits = parseInt(__input11.values[__idx]); termConfig.set("animSplits", parseInt(__input11.values[__idx])); }
+                                    onActivated: (__idx) => { animSplits = parseInt(__input14.values[__idx]); termConfig.set("animSplits", parseInt(__input14.values[__idx])); }
                                     Binding {
-                                        target: __input11
+                                        target: __input14
                                         property: "currentIndex"
-                                        value: __input11.values.indexOf("" + animSplits)
+                                        value: __input14.values.indexOf("" + animSplits)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -606,14 +641,14 @@ W.Div {
                                 W.Div {
                                     cssClass: ["cfg-slide"]
                                     W.Slider {
-                                        id: __input12
+                                        id: __input15
                                         cssClass: ["cfg-range"]
                                         from: 0
                                         to: 24
                                         stepSize: 1
-                                        onMoved: { uiSplitGap = parseInt(__input12.value); termConfig.set("splitGap", parseInt(__input12.value)); }
+                                        onMoved: { uiSplitGap = parseInt(__input15.value); termConfig.set("splitGap", parseInt(__input15.value)); }
                                         Binding {
-                                            target: __input12
+                                            target: __input15
                                             property: "value"
                                             value: "" + uiSplitGap
                                             restoreMode: Binding.RestoreNone
@@ -642,15 +677,15 @@ W.Div {
                                     text: "Scrollback"
                                 }
                                 W.Select {
-                                    id: __input13
+                                    id: __input16
                                     cssClass: ["cfg-sel"]
                                     model: ["1000 lines", "5000 lines", "8000 lines", "20000 lines", "100000 lines"]
                                     values: ["1000", "5000", "8000", "20000", "100000"]
-                                    onActivated: (__idx) => { scrollback = parseInt(__input13.values[__idx]); termConfig.set("scrollback", parseInt(__input13.values[__idx])); }
+                                    onActivated: (__idx) => { scrollback = parseInt(__input16.values[__idx]); termConfig.set("scrollback", parseInt(__input16.values[__idx])); }
                                     Binding {
-                                        target: __input13
+                                        target: __input16
                                         property: "currentIndex"
-                                        value: __input13.values.indexOf("" + scrollback)
+                                        value: __input16.values.indexOf("" + scrollback)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -666,15 +701,15 @@ W.Div {
                                     text: "Focus follows mouse"
                                 }
                                 W.Select {
-                                    id: __input14
+                                    id: __input17
                                     cssClass: ["cfg-sel"]
                                     model: ["Off", "On"]
                                     values: ["0", "1"]
-                                    onActivated: (__idx) => { uiFocusHover = parseInt(__input14.values[__idx]); termConfig.set("focusOnHover", parseInt(__input14.values[__idx])); }
+                                    onActivated: (__idx) => { uiFocusHover = parseInt(__input17.values[__idx]); termConfig.set("focusOnHover", parseInt(__input17.values[__idx])); }
                                     Binding {
-                                        target: __input14
+                                        target: __input17
                                         property: "currentIndex"
-                                        value: __input14.values.indexOf("" + uiFocusHover)
+                                        value: __input17.values.indexOf("" + uiFocusHover)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -803,11 +838,13 @@ W.Div {
                 }
                 W.TextField {
                     id: __input18
+                    id: __input20
                     cssClass: ["cfg-in", "rename-in"]
                     placeholder: "(empty = automatic)"
                     onTextEdited: { renameValue = text }
                     Binding {
                         target: __input18
+                        target: __input20
                         property: "text"
                         value: renameValue
                         restoreMode: Binding.RestoreNone

@@ -1,6 +1,7 @@
 #include "terminalview.h"
 
 #include "autoscroll.h"
+#include "linkscan.h"
 #include "mousereport.h"
 #include "scrollanchor.h"
 #include "scrollbackcells.h"
@@ -18,7 +19,6 @@
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
-#include <QRegularExpression>
 #include <QTimer>
 #include <QQuickWindow>
 #include <QSGGeometry>
@@ -893,6 +893,25 @@ void TerminalView::copySelection()
         QGuiApplication::clipboard()->setText(text);
 }
 
+// "Copy link" / "Open link" (right-click context menu, Solid-side — see term.tsx): act on whatever
+// link is CURRENTLY hovered. The menu only offers these when hoverLinkUrl() is non-empty (see
+// hoverLinkChanged), so by the time either runs m_hoverLink should still be valid — but the mouse
+// could in principle have moved between the right-click and the menu action, so both no-op quietly
+// on an empty/stale hover rather than acting on the wrong link.
+void TerminalView::copyHoverLink()
+{
+    if (!m_hoverLink.valid)
+        return;
+    QGuiApplication::clipboard()->setText(m_hoverLink.url);
+    QGuiApplication::clipboard()->setText(m_hoverLink.url, QClipboard::Selection);
+}
+
+void TerminalView::openHoverLink()
+{
+    if (m_hoverLink.valid)
+        QDesktopServices::openUrl(QUrl::fromUserInput(m_hoverLink.url));
+}
+
 void TerminalView::pasteClipboard()
 {
     const QString text = QGuiApplication::clipboard()->text();
@@ -1070,6 +1089,11 @@ void TerminalView::clearSearch()
 
 // ─── hyperlinks ───────────────────────────────────────────────────────────────────────────────
 
+// Soft-wrap join cap: a URL can legitimately run this many terminal rows before we give up growing
+// it (good for very long URLs, bounds the cost of a hover/click — VTermLineInfo::continuation only
+// exists for the LIVE screen, so a scrollback row never joins; see the file-level note in linkscan.h).
+namespace { constexpr int kLinkJoinRowCap = 6; }
+
 TerminalView::LinkSpan TerminalView::linkAt(const QPointF &p) const
 {
     if (!m_screen)
@@ -1079,48 +1103,64 @@ TerminalView::LinkSpan TerminalView::linkAt(const QPointF &p) const
     if (row < 0 || row >= m_rows || col < 0 || col >= m_cols)
         return {};
 
-    // Reconstruct the row as a col-indexed string (URLs are ASCII, so the first char per cell is
-    // enough), from the same source the renderer uses (scrollback when scrolled, else live).
-    const int sbShown = m_scrollOffset;
-    const int liveRow = row - sbShown;
-    const VTermScreenCell *sbCells = nullptr;
-    int sbCols = 0;
-    if (liveRow < 0) {
-        const int idx = m_scrollback.size() + liveRow;
-        if (idx < 0)
-            return {};
-        sbCells = m_scrollback.at(idx).cells.constData();
-        sbCols = int(m_scrollback.at(idx).cells.size());
-    }
-    QString line(m_cols, QLatin1Char(' '));
-    for (int c = 0; c < m_cols; ++c) {
-        VTermScreenCell cell {};
-        if (sbCells) { if (c < sbCols) cell = sbCells[c]; }
-        else vterm_screen_get_cell(m_screen, VTermPos{ liveRow, c }, &cell);
-        if (cell.chars[0])
-            line[c] = QChar(char32_t(cell.chars[0]));
+    const int sbSize = int(m_scrollback.size());
+    const int queriedAbsRow = sbSize - m_scrollOffset + row;
+    const int liveRow = queriedAbsRow - sbSize; // >= 0 while this row is the live screen, not scrollback
+
+    // Find the actual start of the (possibly wrapped) line: walk backward over LIVE rows flagged as
+    // a continuation of the previous one. Scrollback rows never join (no VTermLineInfo there).
+    int startAbsRow = queriedAbsRow;
+    if (liveRow >= 0 && m_vt) {
+        VTermState *state = vterm_obtain_state(m_vt);
+        int steps = 0;
+        int lr = liveRow;
+        while (lr > 0 && steps < kLinkJoinRowCap) {
+            const VTermLineInfo *info = vterm_state_get_lineinfo(state, lr);
+            if (!info || !info->continuation)
+                break;
+            --lr;
+            ++steps;
+        }
+        startAbsRow = queriedAbsRow - (liveRow - lr);
     }
 
-    static const QRegularExpression re(
-        QStringLiteral(R"((?:https?|ftp|file)://[^\s]+|www\.[^\s]+)"));
-    auto it = re.globalMatch(line);
-    while (it.hasNext()) {
-        const auto m = it.next();
-        int start = m.capturedStart();
-        int end = m.capturedEnd(); // exclusive
-        while (end > start && QStringLiteral(").,;:!?\"'>").contains(line[end - 1]))
-            --end; // trailing punctuation isn't part of the URL
-        if (col >= start && col < end) {
-            LinkSpan s;
-            s.absRow = int(m_scrollback.size()) - sbShown + row;
-            s.c0 = start;
-            s.c1 = end - 1;
-            s.url = line.mid(start, end - start);
-            if (s.url.startsWith(QLatin1String("www.")))
-                s.url.prepend(QLatin1String("http://"));
-            s.valid = true;
-            return s;
+    // Join forward from startAbsRow while each NEXT row is itself a continuation, capped. Every
+    // row contributes exactly m_cols characters, so position <-> (row, col) is a simple divmod.
+    QString joined;
+    int rows = 1;
+    joined += rowText(startAbsRow);
+    if (liveRow >= 0 && m_vt) {
+        VTermState *state = vterm_obtain_state(m_vt);
+        int lr = startAbsRow - sbSize + 1;
+        while (rows < kLinkJoinRowCap && lr < m_rows) {
+            const VTermLineInfo *info = vterm_state_get_lineinfo(state, lr);
+            if (!info || !info->continuation)
+                break;
+            joined += rowText(startAbsRow + rows);
+            ++rows;
+            ++lr;
         }
+    }
+
+    // ASCII-lossy on purpose (matches the renderer's own assumption — see rowText callers elsewhere):
+    // a non-Latin1 cell becomes '?', which can never start or extend a scheme match.
+    const std::string scan = joined.toLatin1().toStdString();
+    const int queriedIdx = (queriedAbsRow - startAbsRow) * m_cols + col;
+    for (const LinkMatch &m : scanLinks(scan)) {
+        const int mStart = int(m.start), mEnd = int(m.end);
+        if (queriedIdx < mStart || queriedIdx >= mEnd)
+            continue;
+        const int rowStartIdx = (queriedAbsRow - startAbsRow) * m_cols;
+        const int rowEndIdx = rowStartIdx + m_cols;
+        LinkSpan s;
+        s.absRow = queriedAbsRow;
+        s.c0 = qMax(mStart, rowStartIdx) - rowStartIdx;
+        s.c1 = qMin(mEnd, rowEndIdx) - rowStartIdx - 1;
+        s.url = joined.mid(mStart, mEnd - mStart);
+        if (s.url.startsWith(QLatin1String("www.")))
+            s.url.prepend(QLatin1String("http://"));
+        s.valid = true;
+        return s;
     }
     return {};
 }
@@ -1135,14 +1175,17 @@ void TerminalView::hoverMoveEvent(QHoverEvent *event)
 {
     // MOVE mode (DECSET 1003) reports motion with NO button down too — that only ever reaches this
     // item as a hover (mouseMoveEvent is only delivered between a press and its release).
-    if (decideMouseAction(m_mouseMode, m_altScreen, event->modifiers() & Qt::ShiftModifier) == MouseAction::Report)
+    const bool isReport = decideMouseAction(m_mouseMode, m_altScreen, event->modifiers() & Qt::ShiftModifier) == MouseAction::Report;
+    if (isReport)
         reportMouseMotion(event->position(), event->modifiers(), Qt::NoButton);
-    const LinkSpan link = linkAt(event->position());
-    const bool ctrl = event->modifiers() & Qt::ControlModifier;
-    setCursor(link.valid && ctrl ? Qt::PointingHandCursor : Qt::IBeamCursor);
+    // Links are a LOCAL thing (like selection): with mouse reporting active, they only apply when
+    // Shift is held too — decideMouseAction already encodes that rule (Report wins unless Shift).
+    const LinkSpan link = isReport ? LinkSpan{} : linkAt(event->position());
+    setCursor(link.valid ? Qt::PointingHandCursor : Qt::IBeamCursor);
     if (link.valid != m_hoverLink.valid || link.absRow != m_hoverLink.absRow
         || link.c0 != m_hoverLink.c0 || link.c1 != m_hoverLink.c1) {
         m_hoverLink = link;
+        emit hoverLinkChanged(link.valid ? link.url : QString());
         update();
     }
 }
@@ -1152,6 +1195,7 @@ void TerminalView::hoverLeaveEvent(QHoverEvent *)
     unsetCursor();
     if (m_hoverLink.valid) {
         m_hoverLink = {};
+        emit hoverLinkChanged(QString());
         update();
     }
 }
@@ -1307,7 +1351,24 @@ void TerminalView::selectLineAt(const CellPos &c)
 
 void TerminalView::mouseDoubleClickEvent(QMouseEvent *event)
 {
-    selectWordAt(cellAt(event->position())); // double-click → select the word
+    // Local only (same rule as selection/links generally — see hoverMoveEvent): with mouse reporting
+    // active, this double-click would already have gone through mousePressEvent's Report branch for
+    // BOTH of the two presses that make up a double-click, so reaching here at all already implies
+    // Local — still, be explicit rather than relying on that.
+    const bool isReport = decideMouseAction(m_mouseMode, m_altScreen, event->modifiers() & Qt::ShiftModifier) == MouseAction::Report;
+    const LinkSpan link = isReport ? LinkSpan{} : linkAt(event->position());
+    if (link.valid) {
+        // The whole URL, not a "word" — VTE/GNOME Terminal convention: double-click on a link
+        // selects it entirely, ignoring selectWordAt's narrower word-separator rules (/:.?&=# etc.
+        // are all valid URL characters that a plain word-select would stop at).
+        m_selAnchor = { link.absRow, link.c0 };
+        m_selEnd = { link.absRow, link.c1 };
+        m_selValid = true;
+        emit selectionChanged();
+        update();
+    } else {
+        selectWordAt(cellAt(event->position())); // double-click → select the word
+    }
     m_lastDblTime = event->timestamp();
     m_selecting = false;
     event->accept();

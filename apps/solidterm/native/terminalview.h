@@ -154,6 +154,13 @@ public:
     // reporting — see TerminalPanes/TerminalTabs::wantsMouseReportFocused for the delegation chain.
     Q_INVOKABLE bool wantsMouseReport(int qtModifiers) const;
 
+    // The auto-detected link currently under the mouse (""  = none) — the Solid <ContextMenu> reads
+    // this (via TerminalPanes/TerminalTabs::hoverLinkChanged, same focused-pane delegation chain as
+    // titleChanged) to show "Copy link"/"Open link" only when the right-click landed on one.
+    Q_INVOKABLE QString hoverLinkUrl() const { return m_hoverLink.valid ? m_hoverLink.url : QString(); }
+    Q_INVOKABLE void copyHoverLink();
+    Q_INVOKABLE void openHoverLink();
+
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) override;
 
 signals:
@@ -175,6 +182,7 @@ signals:
     void zoomRequested(int delta);          // Ctrl+wheel → font zoom (+1 in / −1 out)
     void hovered();                         // the mouse entered this pane (focus-follows-mouse)
     void focusRequested();                  // user clicked in the body → make this the focused pane
+    void hoverLinkChanged(const QString &url); // the auto-detected link under the mouse changed ("" = none)
 
 protected:
     void componentComplete() override;
