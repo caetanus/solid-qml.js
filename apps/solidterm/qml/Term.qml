@@ -725,15 +725,15 @@ W.Div {
                                     text: "Scrollbar"
                                 }
                                 W.Select {
-                                    id: __input15
+                                    id: __input18
                                     cssClass: ["cfg-sel"]
                                     model: ["Always", "Auto (while scrolling or on hover)", "Never"]
                                     values: ["always", "auto", "never"]
-                                    onActivated: (__idx) => { uiScrollbar = __input15.values[__idx]; termConfig.set("scrollbar", __input15.values[__idx]); }
+                                    onActivated: (__idx) => { uiScrollbar = __input18.values[__idx]; termConfig.set("scrollbar", __input18.values[__idx]); }
                                     Binding {
-                                        target: __input15
+                                        target: __input18
                                         property: "currentIndex"
-                                        value: __input15.values.indexOf(uiScrollbar)
+                                        value: __input18.values.indexOf(uiScrollbar)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -837,14 +837,12 @@ W.Div {
                     text: "Tab title"
                 }
                 W.TextField {
-                    id: __input18
-                    id: __input20
+                    id: __input21
                     cssClass: ["cfg-in", "rename-in"]
                     placeholder: "(empty = automatic)"
                     onTextEdited: { renameValue = text }
                     Binding {
-                        target: __input18
-                        target: __input20
+                        target: __input21
                         property: "text"
                         value: renameValue
                         restoreMode: Binding.RestoreNone
