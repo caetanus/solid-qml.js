@@ -1295,6 +1295,7 @@ void TerminalPanes::applyStyle(TerminalView *v)
     v->setBackgroundImage(m_bgImage);
     v->setBackgroundOpacity(m_bgOpacity);
     v->setBlur(m_blur);
+    v->setScrollbarMode(m_scrollbarMode);
 }
 
 #define STYLE_SETTER(Setter, Member, Type) \
@@ -1312,6 +1313,7 @@ STYLE_SETTER(setAnsiPalette, m_palette, const QStringList &)
 STYLE_SETTER(setScrollbackLimit, m_scrollbackLimit, int)
 STYLE_SETTER(setBackgroundImage, m_bgImage, const QString &)
 STYLE_SETTER(setBlur, m_blur, int)
+STYLE_SETTER(setScrollbarMode, m_scrollbarMode, const QString &)
 #undef STYLE_SETTER
 
 void TerminalPanes::setBackgroundOpacity(qreal v)

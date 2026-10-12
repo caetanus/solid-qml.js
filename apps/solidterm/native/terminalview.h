@@ -72,6 +72,18 @@ private:
     Q_PROPERTY(QString backgroundImage READ backgroundImage WRITE setBackgroundImage NOTIFY decorChanged)
     Q_PROPERTY(qreal backgroundOpacity READ backgroundOpacity WRITE setBackgroundOpacity NOTIFY decorChanged)
     Q_PROPERTY(int blur READ blur WRITE setBlur NOTIFY decorChanged)
+    // Scrollbar (owner 2026-10-12): the composed QML bar (composeScrollBar) reads these three
+    // read-only properties — all behind the ONE scrollChanged() signal, fired from every site that
+    // moves the offset, grows/shrinks the scrollback, or resizes the grid (see terminalview.cpp) —
+    // plus scrollTo() to act on a drag/page/wheel, and scrollbarMode for the "always"/"auto"/"never"
+    // policy (termConfig key "scrollbar", forwarded via TerminalPanes::applyStyle like the others).
+    Q_PROPERTY(int scrollOffset READ scrollOffset NOTIFY scrollChanged)
+    Q_PROPERTY(int scrollbackCount READ scrollbackCount NOTIFY scrollChanged)
+    Q_PROPERTY(int viewportRows READ viewportRows NOTIFY scrollChanged)
+    // True on the alternate screen (vim/less/htop): the bar hides there too, even with scrollback
+    // left over from before — an alt-screen app owns its own scrolling, ours would be meaningless.
+    Q_PROPERTY(bool altScreen READ isAltScreen NOTIFY scrollChanged)
+    Q_PROPERTY(QString scrollbarMode READ scrollbarMode WRITE setScrollbarMode NOTIFY scrollbarModeChanged)
 
 public:
     explicit TerminalView(QQuickItem *parent = nullptr);
@@ -98,6 +110,15 @@ public:
     void setBackgroundOpacity(qreal v);
     int blur() const { return m_blur; }
     void setBlur(int v);
+    int scrollOffset() const { return m_scrollOffset; }
+    int scrollbackCount() const { return int(m_scrollback.size()); }
+    int viewportRows() const { return m_rows; }
+    bool isAltScreen() const { return m_altScreen; }
+    QString scrollbarMode() const { return m_scrollbarMode; }
+    void setScrollbarMode(const QString &v);
+    // Absolute scroll (clamped to [0, scrollbackCount]) — the composed scrollbar's drag/page/wheel
+    // all funnel through here, same as a real wheelEvent would, just not pixel-delta driven.
+    Q_INVOKABLE void scrollTo(int offset);
 
     // C++-created panes (TerminalPanes uses `new`, so componentComplete never fires) call this
     // once sized to boot the pty+vterm; idempotent (m_started guard).
@@ -145,6 +166,8 @@ signals:
     void sessionFinished();
     void selectionChanged();
     void readOnlyChanged();
+    void scrollChanged();       // scrollOffset, scrollbackCount, or viewportRows moved
+    void scrollbarModeChanged();
     void reservedSequencesChanged();
     void accelerator(const QString &sequence); // a reserved chord was pressed (consumed)
     void searchChanged(int index, int count);  // current match (1-based; 0 = none) + total
@@ -232,6 +255,14 @@ private:
     bool m_dimmed = false;                  // dark overlay for an unfocused split pane
     bool m_bellActive = false;              // visual bell flash in progress (short-timer cleared)
     bool m_readOnly = false;                // block keyboard + paste to the pty
+
+    // Optional scrollbar (composed QML, same desktop look as QmlCss::composeScrollBar — see
+    // composeScrollBar() in terminalview.cpp): lazily created once this item has a QQmlEngine
+    // (ensureStarted()), parented to `this`, visibility/geometry entirely driven by its own bindings
+    // against scrollOffset/scrollbackCount/viewportRows/scrollbarMode — no per-frame C++ upkeep.
+    QString m_scrollbarMode = QStringLiteral("auto"); // "always" | "auto" | "never"
+    class QQuickItem *m_scrollBar = nullptr;
+    void composeScrollBar();
     // Scene-graph nodes (owned by the returned root), kept so the optional image layer can slot in
     // below the others without index juggling. Nulled when the node tree is dropped (0-size).
     QSGImageNode *m_imageNode = nullptr;

@@ -69,6 +69,10 @@ export function Term(props: { onTitle: (t: string) => void }) {
   // so QML resolves the binding RHS to the local prop → self-referential binding loop (stuck value,
   // config ignored). Same ui*/*_ disambiguation the other style signals use.
   const [uiBlur, setUiBlur] = createSignal(termConfig.getInt("blur", 0));
+  // Scrollbar policy: "always" | "auto" | "never" (default "auto" — shown while scrolling/hovering,
+  // fades out otherwise; TerminalView composes the actual bar). The Preferences control wires
+  // setUiScrollbarMode + termConfig.set("scrollbar", v) the same way the other cfg-* rows do.
+  const [uiScrollbarMode, setUiScrollbarMode] = createSignal(termConfig.getString("scrollbar", "auto"));
   const [showHeader, setShowHeader] = createSignal(termConfig.getInt("showHeader", 1));
   const [showStatus, setShowStatus] = createSignal(termConfig.getInt("showStatus", 1));
   const [animSplits, setAnimSplits] = createSignal(termConfig.getInt("animSplits", 1));
@@ -250,6 +254,7 @@ export function Term(props: { onTitle: (t: string) => void }) {
           backgroundImage={bgImage()}
           backgroundOpacity={opacity() / 100}
           blur={uiBlur()}
+          scrollbarMode={uiScrollbarMode()}
           animateSplits={animSplits() !== 0}
           splitGap={uiSplitGap()}
           focusOnHover={uiFocusHover() !== 0}

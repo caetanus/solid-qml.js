@@ -261,6 +261,7 @@ void TerminalTabs::applyStyle(TerminalPanes *p)
     p->setBackgroundImage(m_bgImage);
     p->setBackgroundOpacity(m_bgOpacity);
     p->setBlur(m_blur);
+    p->setScrollbarMode(m_scrollbarMode);
     p->setAnimateSplits(m_animateSplits);
     p->setSplitGap(m_splitGap);
     p->setFocusOnHover(m_focusOnHover);
@@ -284,6 +285,7 @@ TABS_STYLE_SETTER(setHandleColor, m_handleColor, const QColor &, setHandleColor)
 TABS_STYLE_SETTER(setBackgroundImage, m_bgImage, const QString &, setBackgroundImage)
 TABS_STYLE_SETTER(setBackgroundOpacity, m_bgOpacity, qreal, setBackgroundOpacity)
 TABS_STYLE_SETTER(setBlur, m_blur, int, setBlur)
+TABS_STYLE_SETTER(setScrollbarMode, m_scrollbarMode, const QString &, setScrollbarMode)
 TABS_STYLE_SETTER(setAnimateSplits, m_animateSplits, bool, setAnimateSplits)
 TABS_STYLE_SETTER(setSplitGap, m_splitGap, int, setSplitGap)
 TABS_STYLE_SETTER(setFocusOnHover, m_focusOnHover, bool, setFocusOnHover)

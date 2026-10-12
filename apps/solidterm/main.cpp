@@ -568,6 +568,107 @@ int main(int argc, char **argv)
         });
     }
 
+    // Debug: SOLIDTERM_SCROLLBARTEST=<prefix> fills the scrollback, grabs it idle (bar faded, "auto"
+    // default), wheels back over the terminal to pulse+move the bar and grabs again, then drags the
+    // bar's thumb (real synthetic press/move/release on the thumb's OWN computed position — not a
+    // method call) and grabs a third time, printing the offsets so the drag's effect is provable from
+    // the log even without looking at the PNGs. Finally flips scrollbarMode to "never" and confirms
+    // the bar disappears despite nonzero scrollback+offset.
+    const QString scrollbarShot = qEnvironmentVariable("SOLIDTERM_SCROLLBARTEST");
+    if (!scrollbarShot.isEmpty() && window) {
+        QTimer::singleShot(1600, window, [&engine, window, scrollbarShot] {
+            TerminalView *view = nullptr;
+            for (QObject *o : engine.rootObjects()) {
+                if (auto *w = qobject_cast<QQuickWindow *>(o)) {
+                    QList<QQuickItem *> stack { w->contentItem() };
+                    while (!stack.isEmpty() && !view) {
+                        QQuickItem *it = stack.takeLast();
+                        view = qobject_cast<TerminalView *>(it);
+                        for (QQuickItem *k : it->childItems()) stack.append(k);
+                    }
+                }
+            }
+            if (!view) {
+                qWarning("solidterm: scrollbartest found no TerminalView");
+                return;
+            }
+            const auto grab = [window](const QString &tag) {
+                int i = 0;
+                for (QWindow *tw : QGuiApplication::topLevelWindows())
+                    if (auto *qw = qobject_cast<QQuickWindow *>(tw))
+                        qw->grabWindow().save(tag + QStringLiteral("-%1.png").arg(i++));
+            };
+            view->sendText(QStringLiteral("for i in $(seq 1 400); do echo scrollbar-line-$i; done\n"));
+
+            // Idle: wait past the 1000ms fade so "auto" has faded back out, then grab.
+            QTimer::singleShot(4000, window, [view, window, scrollbarShot, grab] {
+                qInfo() << "solidterm: scrollbartest idle offset=" << view->debugScrollOffset()
+                        << "scrollbackCount=" << view->scrollbackCount();
+                grab(scrollbarShot + QStringLiteral("-1-idle"));
+
+                // Wheel-scroll back over the terminal body (pulses + moves the bar).
+                const QPointF centre = view->mapToScene(QPointF(view->width() / 2, view->height() / 2));
+                const QPointF g = window->mapToGlobal(centre.toPoint());
+                QWindowSystemInterface::handleWheelEvent(window, centre, g, QPoint(0, 0), QPoint(0, 1200));
+
+                QTimer::singleShot(200, window, [view, window, scrollbarShot, grab] {
+                    const int afterWheel = view->debugScrollOffset();
+                    qInfo() << "solidterm: scrollbartest after wheel offset=" << afterWheel;
+                    grab(scrollbarShot + QStringLiteral("-2-wheel"));
+
+                    // Drag the thumb: compute its CURRENT y from the same geometry the bar itself
+                    // uses (viewport/(scrollback+rows) height, position from scrollOffset), press
+                    // there, move it down (toward live), release, and prove the offset dropped.
+                    const int rows = view->viewportRows();
+                    const int sbSize = view->scrollbackCount();
+                    const qreal trackH = view->height();
+                    const qreal thumbH = qMax(24.0, (qreal(rows) / qMax(1, sbSize + rows)) * trackH);
+                    const qreal fracTop = sbSize > 0 ? qBound(0.0, (sbSize - qreal(afterWheel)) / sbSize, 1.0) : 1.0;
+                    const qreal thumbY = fracTop * (trackH - thumbH);
+                    const QPointF thumbMid = view->mapToScene(QPointF(view->width() - 6, thumbY + thumbH / 2));
+                    const QPointF thumbEnd = view->mapToScene(QPointF(view->width() - 6, thumbY + thumbH / 2 + 80));
+                    const QPointF gThumbMid = window->mapToGlobal(thumbMid.toPoint());
+                    const QPointF gThumbEnd = window->mapToGlobal(thumbEnd.toPoint());
+
+                    // QWindowSystemInterface, not a raw QMouseEvent via sendEvent — see the
+                    // AUTOSCROLLTEST comment above: a hand-built QMouseEvent doesn't carry Qt's own
+                    // QPointingDevice grab state across calls, so the drag's MOVE never reaches the
+                    // thumb's MouseArea.
+                    QWindowSystemInterface::handleMouseEvent(window, thumbMid, gThumbMid, Qt::LeftButton,
+                        Qt::LeftButton, QEvent::MouseButtonPress, Qt::NoModifier);
+                    QWindowSystemInterface::handleMouseEvent(window, thumbEnd, gThumbEnd, Qt::LeftButton,
+                        Qt::NoButton, QEvent::MouseMove, Qt::NoModifier);
+                    QWindowSystemInterface::handleMouseEvent(window, thumbEnd, gThumbEnd, Qt::NoButton,
+                        Qt::LeftButton, QEvent::MouseButtonRelease, Qt::NoModifier);
+
+                    QTimer::singleShot(200, window, [view, scrollbarShot, grab, afterWheel] {
+                        const int afterDrag = view->debugScrollOffset();
+                        qInfo() << "solidterm: scrollbartest after drag offset=" << afterDrag
+                                << "(before drag:" << afterWheel << ")";
+                        grab(scrollbarShot + QStringLiteral("-3-drag"));
+
+                        // Alt screen (less/vim): the bar must hide even though scrollbackCount is
+                        // still > 0 from before — see TerminalView::isAltScreen / hasScrollback.
+                        view->sendText(QStringLiteral("less /etc/hostname\n"));
+                        QTimer::singleShot(600, view, [view, scrollbarShot, grab] {
+                            grab(scrollbarShot + QStringLiteral("-4-altscreen"));
+                            view->sendText(QStringLiteral("q"));
+
+                            QTimer::singleShot(400, view, [view, scrollbarShot, grab] {
+                                // scrollbarMode="never" must hide the bar even with scrollback + offset > 0.
+                                view->setScrollbarMode(QStringLiteral("never"));
+                                QTimer::singleShot(250, qApp, [scrollbarShot, grab] {
+                                    grab(scrollbarShot + QStringLiteral("-5-never"));
+                                    QCoreApplication::quit();
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    }
+
     // Debug: SOLIDTERM_FINDTEST="query" opens the search bar + runs a search after a settle.
     const QString findTest = qEnvironmentVariable("SOLIDTERM_FINDTEST");
     if (!findTest.isEmpty() && window) {

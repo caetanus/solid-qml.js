@@ -431,6 +431,12 @@ if build_solidterm
   test('solidterm-autoscroll',
     executable('test-solidterm-autoscroll', files('apps/solidterm/tests/autoscroll_test.cpp')),
     timeout: 10)
+
+  # Scrollbar thumb geometry/paging (scrollbar.h) — the formulas the composed QML bar's JS mirrors
+  # (TerminalView::composeScrollBar). No Qt, no vterm — see scrollbar_test.cpp.
+  test('solidterm-scrollbar',
+    executable('test-solidterm-scrollbar', files('apps/solidterm/tests/scrollbar_test.cpp')),
+    timeout: 10)
 endif
 
 # ── Tests ────────────────────────────────────────────────────────────────────────────────────

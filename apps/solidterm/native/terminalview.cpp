@@ -5,6 +5,8 @@
 #include "scrollanchor.h"
 #include "scrollbackcells.h"
 
+#include "qmlcss/componentcache.h"
+
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QGuiApplication>
@@ -13,6 +15,9 @@
 #include <QFileInfo>
 #include <QInputMethodEvent>
 #include <QKeySequence>
+#include <QQmlComponent>
+#include <QQmlContext>
+#include <QQmlEngine>
 #include <QRegularExpression>
 #include <QTimer>
 #include <QQuickWindow>
@@ -201,6 +206,7 @@ int TerminalView::cbSetTermProp(VTermProp prop, VTermValue *val, void *user)
         self->m_mouseMode = val->number;
     } else if (prop == VTERM_PROP_ALTSCREEN) {
         self->m_altScreen = val->boolean;
+        self->scrollChanged(); // the scrollbar hides on the alt screen (vim/less), see altScreen()
     }
     return 1;
 }
@@ -251,6 +257,7 @@ int TerminalView::cbSbPushLine(int cols, const VTermScreenCell *cells, void *use
     if (self->m_scrollback.size() > self->m_scrollbackLimit)
         self->m_scrollback.removeFirst();
     self->m_scrollOffset = offsetAfterPush(self->m_scrollOffset, int(self->m_scrollback.size()));
+    self->scrollChanged(); // scrollbackCount (and maybe scrollOffset) moved — the scrollbar listens
     return 1;
 }
 
@@ -261,6 +268,7 @@ int TerminalView::cbSbPopLine(int cols, VTermScreenCell *cells, void *user)
         return 0;
     const SbLine line = self->m_scrollback.takeLast();
     self->m_scrollOffset = clampOffset(self->m_scrollOffset, int(self->m_scrollback.size()));
+    self->scrollChanged();
     const int n = qMin(cols, int(line.cells.size()));
     std::copy(line.cells.begin(), line.cells.begin() + n, cells);
     // A line pushed while the terminal was narrower is padded with REAL blanks — a zeroed cell has
@@ -336,6 +344,7 @@ void TerminalView::ensureStarted()
 {
     applyGrid();
     ensureSession();
+    composeScrollBar(); // no-op once composed; needs this item's QQmlEngine, available by now
 }
 
 void TerminalView::applyGrid()
@@ -357,6 +366,7 @@ void TerminalView::applyGrid()
         vterm_screen_flush_damage(m_screen);
         m_pty.resize(rows, cols);
     }
+    emit scrollChanged(); // viewportRows moved — the scrollbar's thumb size depends on it
     update();
 }
 
@@ -727,6 +737,7 @@ void TerminalView::inputMethodEvent(QInputMethodEvent *event)
     if (m_vt && !m_readOnly && !commit.isEmpty()) {
         if (m_scrollOffset > 0) {
             m_scrollOffset = 0;
+            emit scrollChanged();
             update();
         }
         resetBlink();
@@ -805,6 +816,7 @@ void TerminalView::keyPressEvent(QKeyEvent *event)
     // Typing snaps back to live output.
     if (m_scrollOffset > 0) {
         m_scrollOffset = 0;
+        emit scrollChanged();
         update();
     }
     if (m_readOnly) { // read-only pane: consume the key but don't feed the pty
@@ -905,6 +917,7 @@ void TerminalView::clearScrollback()
     m_scrollOffset = 0;
     m_selValid = false;
     emit selectionChanged();
+    emit scrollChanged();
     update();
 }
 
@@ -929,6 +942,7 @@ void TerminalView::resetTerminal()
     if (m_screen)
         vterm_screen_reset(m_screen, 1); // hard reset: clears attrs, modes, cursor, alt-screen
     m_scrollOffset = 0;
+    emit scrollChanged();
     update();
 }
 
@@ -1020,6 +1034,7 @@ void TerminalView::scrollToMatch(int i)
     const int sbSize = m_scrollback.size();
     const int desiredTop = m_matches[i].absRow - m_rows / 2; // centre the match
     m_scrollOffset = qBound(0, sbSize - desiredTop, sbSize);
+    emit scrollChanged();
 }
 
 void TerminalView::searchNext()
@@ -1179,6 +1194,7 @@ void TerminalView::snapToLive()
 {
     if (m_scrollOffset > 0) {
         m_scrollOffset = 0;
+        emit scrollChanged();
         update();
     }
 }
@@ -1439,6 +1455,7 @@ void TerminalView::autoscrollTick()
         return;
     const bool above = overshoot < 0;
     m_scrollOffset = autoscrollOffsetAfterTick(m_scrollOffset, int(m_scrollback.size()), lines, above);
+    emit scrollChanged();
 
     const int edgeRow = above ? 0 : m_rows - 1;
     const CellPos edge = cellAt(QPointF(m_autoscrollPos.x(), edgeRow * m_cellH));
@@ -1481,6 +1498,7 @@ void TerminalView::wheelEvent(QWheelEvent *event)
     // Local (today's behaviour): scroll SolidTerm's own scrollback.
     const int lines = event->angleDelta().y() / 40; // 3 lines per notch
     m_scrollOffset = qBound(0, m_scrollOffset + lines, int(m_scrollback.size()));
+    emit scrollChanged();
     update();
     event->accept();
 }
@@ -1587,6 +1605,128 @@ void TerminalView::setBlur(int v)
     rebuildBackgroundImage(); // the effect lives on the background image, not on the glyphs
     emit decorChanged();
     update();
+}
+
+void TerminalView::setScrollbarMode(const QString &v)
+{
+    if (m_scrollbarMode == v)
+        return;
+    m_scrollbarMode = v;
+    emit scrollbarModeChanged();
+}
+
+void TerminalView::scrollTo(int offset)
+{
+    const int clamped = clampOffset(offset, int(m_scrollback.size()));
+    if (clamped == m_scrollOffset)
+        return;
+    m_scrollOffset = clamped;
+    emit scrollChanged();
+    update();
+}
+
+// Composes the desktop scrollbar — same look as QmlCss::composeScrollBar (vendor/qml-css-engine's
+// cssscroll.h: 12px track, 6px rounded thumb, the same three alpha-black thumb states) but bound to
+// scrollOffset/scrollbackCount/viewportRows instead of a Flickable's contentY/contentHeight, since
+// TerminalView paints its own grid rather than hosting content in one — "a thin custom bar styled
+// from the same CSS hooks" (owner), not a reuse of composeScrollBar itself (its required `flick`
+// interface — contentY, contentHeight, visibleArea.heightRatio — has no TerminalView equivalent).
+// Lazy + idempotent: called from ensureStarted(), which only has a QQmlEngine once this item is
+// actually in a QML scene (C++-created panes go through TerminalPanes' QQmlComponent, so this is
+// never null in practice — see TerminalPanes::makeLeaf).
+void TerminalView::composeScrollBar()
+{
+    if (m_scrollBar)
+        return;
+    QQmlEngine *eng = qmlEngine(this);
+    if (!eng)
+        return;
+    QQmlComponent *comp = QmlCss::cachedComponent(eng, QStringLiteral("solidterm-scroll-bar"), R"(
+import QtQuick
+Rectangle {
+    id: sbTrack
+    required property var view
+    objectName: "termScrollTrack"
+    z: 1000
+    x: view.width - width
+    y: 0
+    width: 12
+    height: view.height
+    color: "transparent"
+    readonly property int sbSize: view.scrollbackCount
+    readonly property int rowCount: view.viewportRows
+    readonly property bool hasScrollback: sbSize > 0 && !view.altScreen
+    property bool dragging: false
+    property bool hoveredBar: false
+    property bool pulseOn: false
+    function pulse() { pulseOn = true; fadeTimer.restart() }
+    Timer { id: fadeTimer; interval: 1000; onTriggered: sbTrack.pulseOn = false }
+    Connections { target: view; function onScrollChanged() { sbTrack.pulse() } }
+    readonly property bool shown: view.scrollbarMode === "always" ? true
+        : view.scrollbarMode === "never" ? false
+        : (pulseOn || dragging || hoveredBar)
+    visible: hasScrollback && opacity > 0.01
+    opacity: shown ? 1 : 0
+    Behavior on opacity { NumberAnimation { duration: 180 } }
+    HoverHandler {
+        onHoveredChanged: { sbTrack.hoveredBar = hovered; if (hovered) sbTrack.pulse() }
+    }
+    WheelHandler {
+        onWheel: (ev) => view.scrollTo(view.scrollOffset + Math.round(ev.angleDelta.y / 40))
+    }
+    MouseArea {
+        anchors.fill: parent
+        onPressed: (m) => {
+            sbTrack.pulse()
+            var page = Math.max(1, Math.round(sbTrack.rowCount * 0.9))
+            if (m.y < sbThumb.y) view.scrollTo(view.scrollOffset + page)
+            else if (m.y > sbThumb.y + sbThumb.height) view.scrollTo(view.scrollOffset - page)
+        }
+    }
+    Rectangle {
+        id: sbThumb
+        objectName: "termScrollThumb"
+        x: 3
+        width: 6
+        radius: 3
+        color: thumbArea.pressed ? "#99000000" : (thumbArea.containsMouse ? "#77000000" : "#55000000")
+        height: Math.min(sbTrack.height, Math.max(24,
+            (sbTrack.rowCount / Math.max(1, sbTrack.sbSize + sbTrack.rowCount)) * sbTrack.height))
+        y: {
+            if (sbTrack.sbSize <= 0) return sbTrack.height - height
+            var fracTop = Math.max(0, Math.min(1, (sbTrack.sbSize - view.scrollOffset) / sbTrack.sbSize))
+            return fracTop * (sbTrack.height - height)
+        }
+        MouseArea {
+            id: thumbArea
+            objectName: "termScrollThumbArea"
+            anchors.fill: parent
+            hoverEnabled: true
+            preventStealing: true
+            property real __grab: 0
+            onPressed: (m) => { __grab = m.y; sbTrack.dragging = true; sbTrack.pulse() }
+            onReleased: sbTrack.dragging = false
+            onPositionChanged: (m) => {
+                if (!pressed) return
+                var maxY = sbTrack.height - sbThumb.height
+                if (maxY <= 0) return
+                var ny = sbThumb.y + (m.y - __grab)
+                var fracTop = Math.max(0, Math.min(ny / maxY, 1))
+                view.scrollTo(Math.round((1 - fracTop) * sbTrack.sbSize))
+            }
+        }
+    }
+}
+)");
+    auto *bar = qobject_cast<QQuickItem *>(comp->createWithInitialProperties(
+        {{QStringLiteral("view"), QVariant::fromValue<QObject *>(this)}}, qmlContext(this)));
+    if (!bar) {
+        qWarning("solidterm: failed to compose the scrollbar: %s", qPrintable(comp->errorString()));
+        return;
+    }
+    bar->setParent(this);
+    bar->setParentItem(this);
+    m_scrollBar = bar;
 }
 
 void TerminalView::setFontFamily(const QString &f)

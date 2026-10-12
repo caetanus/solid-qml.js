@@ -41,6 +41,8 @@ class TerminalPanes : public QQuickItem {
     Q_PROPERTY(QString backgroundImage READ backgroundImage WRITE setBackgroundImage NOTIFY styleChanged)
     Q_PROPERTY(qreal backgroundOpacity READ backgroundOpacity WRITE setBackgroundOpacity NOTIFY styleChanged)
     Q_PROPERTY(int blur READ blur WRITE setBlur NOTIFY styleChanged)
+    // "always" | "auto" | "never" — forwarded to TerminalView::scrollbarMode (termConfig key "scrollbar").
+    Q_PROPERTY(QString scrollbarMode READ scrollbarMode WRITE setScrollbarMode NOTIFY styleChanged)
 
 public:
     // Where a dragged pane lands on a target pane: centre (swap) or a side (re-split).
@@ -73,6 +75,8 @@ public:
     void setBackgroundOpacity(qreal v);
     int blur() const { return m_blur; }
     void setBlur(int v);
+    QString scrollbarMode() const { return m_scrollbarMode; }
+    void setScrollbarMode(const QString &v);
     bool animateSplits() const { return m_animateSplits; }
     void setAnimateSplits(bool v) { m_animateSplits = v; }
     // Gap between split panes, px. 0 = the classic 6 px handle-coloured divider; above 0 the divider
@@ -272,6 +276,7 @@ private:
     QString m_bgImage;
     qreal m_bgOpacity = 1.0;
     int m_blur = 0;                         // 0-100 blur strength on the background image
+    QString m_scrollbarMode = QStringLiteral("auto");
     bool m_animateSplits = true;
     int m_splitGap = 0;
     bool m_focusOnHover = false;

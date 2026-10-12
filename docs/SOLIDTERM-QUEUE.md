@@ -98,6 +98,20 @@ closed now with fresh evidence, plus a new scrollbar-visibility option and one n
   to the originating `QPointingDevice`/point id, which a from-scratch `QMouseEvent` doesn't carry
   across calls. Use `QWindowSystemInterface::handleMouseEvent` (same entry point `QTest::mouseMove`
   uses) for any hook that presses then moves outside the item's bounds.
+- **[x] Optional scrollbar for the scrollback (owner, 2026-10-12).** `TerminalView` composes a small
+  Controls-free QML bar (`TerminalView::composeScrollBar`, same visual language as the engine's
+  `QmlCss::composeScrollBar` in `cssscroll.h` — 12px track, 6px rounded thumb, same alpha states —
+  but bound to `scrollOffset`/`scrollbackCount`/`viewportRows` instead of a Flickable's `contentY`,
+  since TerminalView paints its own grid rather than hosting content in one). Thumb size =
+  viewport/(scrollback+rows); drag/track-click/wheel all funnel through `TerminalView::scrollTo()`.
+  Config key `scrollbar` ("always"/"auto"/"never", default "auto" — shown while scrolling/hovering,
+  fades after 1s idle), forwarded `TerminalPanes`→`TerminalTabs`→`term.tsx` the same way `blur` is.
+  Hidden with no scrollback AND on the alternate screen (`TerminalView::altScreen`, vim/less — their
+  own scrolling, ours would be meaningless) even if scrollback is left over from before. Unit tests:
+  `apps/solidterm/tests/scrollbar_test.cpp` (thumb geometry/paging formulas). Verified live via
+  `SOLIDTERM_SCROLLBARTEST`: idle (hidden) → wheel (visible, thumb moved) → drag (offset follows the
+  thumb) → `less /etc/hostname` (hidden on the alt screen) → `scrollbarMode="never"` (hidden despite
+  scrollback+offset>0) — screenshots in `docs/evidence/solidterm/scrollbar-*.png`.
 ## Open
 
 

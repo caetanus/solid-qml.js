@@ -17,6 +17,7 @@ W.Div {
     property var bgImage: termConfig.getString("bgImage", "")
     property var opacity_: termConfig.getInt("opacity", 100)
     property var uiBlur: termConfig.getInt("blur", 0)
+    property var uiScrollbarMode: termConfig.getString("scrollbar", "auto")
     property var showHeader: termConfig.getInt("showHeader", 1)
     property var showStatus: termConfig.getInt("showStatus", 1)
     property var animSplits: termConfig.getInt("animSplits", 1)
@@ -238,6 +239,7 @@ W.Div {
                 backgroundImage: bgImage
                 backgroundOpacity: opacity_ / 100
                 blur: uiBlur
+                scrollbarMode: uiScrollbarMode
                 animateSplits: animSplits !== 0
                 splitGap: uiSplitGap
                 focusOnHover: uiFocusHover !== 0
