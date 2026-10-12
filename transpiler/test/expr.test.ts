@@ -130,7 +130,7 @@ test("emitStmt: ForOfStatement emits bare signal read in iterable", async () => 
   const scope = await scopeFor(`export function C(){ const [items,setItems]=createSignal([]); return <div></div>; }`, "handler");
   const stmt = await stmtIn("for (const todo of items()) { doSomething(todo); }");
   const result = emitStmt(stmt, scope);
-  assert.match(result, /for \(var todo of items\)/);
+  assert.match(result, /for \(const todo of items\)/); // per-iteration binding, as in JS
   assert.match(result, /doSomething\(todo\)/);
 });
 

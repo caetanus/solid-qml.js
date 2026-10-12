@@ -14,7 +14,6 @@ export function BenchRows() {
   const [rows, setRows] = createSignal([]);
   let nextId = 1;
 
-  // (Array.from, not a `for (;;)`: the transpiler rejects ForStatement in a component body.)
   const build = (n) => {
     const base = nextId;
     nextId += n;

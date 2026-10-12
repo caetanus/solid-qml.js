@@ -1,8 +1,8 @@
 import * as t from "@babel/types";
 import _generate from "@babel/generator";
 import { emitQml } from "./qml.ts";
-import { emitExpr, shadowOwnParams, type Scope } from "./expr.ts";
-import { emitStmt, emitValue, emitBindingStmt } from "./stmt.ts";
+import { emitExpr, emitPattern, shadowOwnParams, type Scope } from "./expr.ts";
+import { emitStmt, emitValue, emitBindingStmt, emitStatements } from "./stmt.ts";
 import { analyzeSignals, analyzeProps, analyzeSetup, analyzeResources, analyzeMutableLocals, analyzeRenderLocals, renderLocalLiveTaint, analyzeHelpers, analyzeModuleFunctions, moduleLevelMutableNames, collectModuleFunctionClosure, collectFetcherDeps, effectDeps, type HelperInfo, type ProviderInfo, type UseContextBinding } from "../model/symbols.ts";
 import { safeName } from "../names/safe.ts";
 import { hParts, isHCall, isFragmentTag } from "../ast/h.ts";
@@ -284,16 +284,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
       ...(mutableLocals ? { mutableLocals } : {}),
       ...(helpers ? { helpers } : {}),
     };
-    for (const [name, info] of helpersMap) {
-      const paramStr = info.params.map(safeName).join(", "); // safeName so a reserved param (e.g. `id`→`id_`) matches its body refs
-      // The helper's own params shadow any same-named const alias / mutable local inherited above —
-      // real JS lexical scoping (e.g. `function f(RULE_FIELDS) { … }` must NOT rewrite its own param).
-      const bodyScope = info.params.length
-        ? { ...helperScope, locals: { ...(helperScope.locals ?? {}), ...Object.fromEntries(info.params.map((p) => [p, safeName(p)])) } }
-        : helperScope;
-      const body = info.body.body.map((st) => emitStmt(st, bodyScope)).join(" ");
-      decls.push(`${INDENT}function ${safeName(name)}(${paramStr}) { ${body} }`);
-    }
+    for (const [name, info] of helpersMap) decls.push(`${INDENT}${emitHelperMethod(name, info, helperScope)}`);
   }
   // Module-level helper functions selected above (moduleFnDecls): emitted as QML object methods
   // too, but with a DELIBERATELY MINIMAL scope — unlike a local helper, a module-level function is
@@ -310,14 +301,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
       table: new Map(), mode: "handler", jsImports,
       ...(Object.keys(constAliases).length ? { locals: constAliases } : {}),
     };
-    for (const [name, info] of moduleFnDecls) {
-      const paramStr = info.params.map(safeName).join(", ");
-      const bodyScope = info.params.length
-        ? { ...moduleFnScope, locals: { ...(moduleFnScope.locals ?? {}), ...Object.fromEntries(info.params.map((p) => [p, safeName(p)])) } }
-        : moduleFnScope;
-      const body = info.body.body.map((st) => emitStmt(st, bodyScope)).join(" ");
-      decls.push(`${INDENT}function ${safeName(name)}(${paramStr}) { ${body} }`);
-    }
+    for (const [name, info] of moduleFnDecls) decls.push(`${INDENT}${emitHelperMethod(name, info, moduleFnScope)}`);
   }
   // init(self) sidecar (inline): non-render setup statements + onMount bodies run in
   // Component.onCompleted on __self; onCleanup(fn) registrations collect into __cleanups and run in
@@ -470,6 +454,18 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
 
   if (openIdx >= 0) lines.splice(openIdx + 1, 0, ...decls, ...lifecycle);
   return lines;
+}
+
+/** A helper (local or module-level function) as a QML object method. Its own params shadow any
+ *  same-named const alias / mutable local inherited from `scope` — real JS lexical scoping (e.g.
+ *  `function f(RULE_FIELDS) { … }` must NOT rewrite its own param); a destructured param keeps its
+ *  pattern. safeName so a reserved param (e.g. `id`→`id_`) matches its body refs. */
+function emitHelperMethod(name: string, info: HelperInfo, scope: Scope): string {
+  const paramStr = info.paramNodes.map((p) => emitPattern(p, scope)).join(", ");
+  const bodyScope = info.params.length
+    ? { ...scope, locals: { ...(scope.locals ?? {}), ...Object.fromEntries(info.params.map((p) => [p, safeName(p)])) } }
+    : scope;
+  return `function ${safeName(name)}(${paramStr}) { ${emitStatements(info.body.body, bodyScope)} }`;
 }
 
 /** Resolve the initial value for a signal property, handling the same-name prop+signal collision.

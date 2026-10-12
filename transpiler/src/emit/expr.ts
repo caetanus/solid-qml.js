@@ -1,6 +1,7 @@
 import * as t from "@babel/types";
 import { safeName } from "../names/safe.ts";
 import type { SymbolTable } from "../model/symbols.ts";
+import { emitStatements } from "./stmt.ts";
 
 /** Where an expression sits decides how names resolve. */
 export type Mode = "binding" | "handler" | "init";
@@ -68,6 +69,9 @@ export interface Scope {
   /** Helper function names (from `analyzeHelpers`): top-level `function f(){}` and param/block arrows
    *  emitted as QML object methods. Used in `emitHandler` to recognise `onClick={add}` → `add()`. */
   helpers?: Set<string>;
+  /** Where `onCleanup(fn)` registers: the enclosing effect's cleanup list property (inside an
+   *  effect body), else the component's `__cleanups`. */
+  cleanupList?: string;
   /** Imported JS bindings mirrored as QML ES modules: local name → QML expression. */
   jsImports?: Record<string, string>;
   /** Mutable flag set by widget emitters when a T.* control is emitted.
@@ -107,14 +111,41 @@ function cellRef(name: string, _scope: Scope): string {
  *  substitution, … — exactly like real JS lexical scoping. `toName` must match whatever string the
  *  function's own signature uses for that param (callers emit the signature separately). One place
  *  owns this so every site that emits a function/arrow with real params applies it the same way. */
-export function shadowOwnParams(scope: Scope, params: t.Function["params"], toName: (name: string) => string = safeName): Scope {
+export function shadowOwnParams(scope: Scope, params: t.Node[], toName: (name: string) => string = safeName): Scope {
   let locals: Record<string, string> | undefined;
   for (const p of params) {
-    if (!t.isIdentifier(p)) continue;
-    locals = locals ?? { ...(scope.locals ?? {}) };
-    locals[p.name] = toName(p.name);
+    // A destructured param (`({ a, b = 1 }) => …`) binds every name in its pattern.
+    const names = t.isIdentifier(p) ? [p.name] : Object.keys(t.getBindingIdentifiers(p));
+    for (const name of names) {
+      locals = locals ?? { ...(scope.locals ?? {}) };
+      locals[name] = t.isIdentifier(p) ? toName(name) : safeName(name);
+    }
   }
   return locals ? { ...scope, locals } : scope;
+}
+
+/** A binding target — a declaration id, a function param, a for-of/catch head: an identifier or a
+ *  destructuring pattern (`[a, b = 1, ...rest]`, `{ a, b: c = 2 }`), emitted as the same pattern
+ *  (V4 destructures natively). Object REST (`{ a, ...rest }`) is not supported by V4 and fails. */
+export function emitPattern(node: t.Node, scope: Scope): string {
+  if (t.isIdentifier(node)) return safeName(node.name);
+  if (t.isAssignmentPattern(node)) return `${emitPattern(node.left, scope)} = ${emitExpr(node.right, scope)}`;
+  if (t.isRestElement(node)) return `...${emitPattern(node.argument, scope)}`;
+  if (t.isArrayPattern(node)) return `[${node.elements.map((e) => (e ? emitPattern(e, scope) : "")).join(", ")}]`;
+  if (t.isObjectPattern(node)) {
+    const props = node.properties.map((p) => {
+      if (t.isRestElement(p))
+        throw new Error("object rest in a destructuring pattern (`{ a, ...rest }`) is not supported by the V4 engine — read the fields you need explicitly");
+      const key = p.computed ? `[${emitExpr(p.key, scope)}]`
+        : t.isIdentifier(p.key) ? p.key.name : t.isStringLiteral(p.key) ? JSON.stringify(p.key.value)
+        : t.isNumericLiteral(p.key) ? String(p.key.value) : null;
+      if (key === null) throw new Error(`unsupported destructuring key ${p.key.type}`);
+      return `${key}: ${emitPattern(p.value, scope)}`;
+    });
+    return `{ ${props.join(", ")} }`;
+  }
+  if (t.isMemberExpression(node)) return emitExpr(node, scope); // `for (o.x of xs)`
+  throw new Error(`unsupported binding pattern ${node.type}`);
 }
 
 /** Translate a Babel expression node to a QML-JS string, resolving names through the SymbolTable. */
@@ -146,13 +177,52 @@ export function emitExpr(node: t.Node, scope: Scope): string {
   }
 
   if (t.isObjectExpression(node)) {
+    // V4 has no object spread: `{ ...a, x: 1, ...b }` is lowered to the equivalent
+    // `Object.assign({}, a, { x: 1 }, b)` (same own-enumerable copy, same last-wins order).
+    if (node.properties.some((p) => t.isSpreadElement(p))) {
+      const parts: string[] = ["{}"];
+      let run: (t.ObjectProperty | t.ObjectMethod)[] = [];
+      const flush = () => { if (run.length) parts.push(emitExpr(t.objectExpression(run), scope)); run = []; };
+      for (const p of node.properties) {
+        if (t.isSpreadElement(p)) { flush(); parts.push(emitExpr(p.argument, scope)); }
+        else run.push(p);
+      }
+      flush();
+      return `Object.assign(${parts.join(", ")})`;
+    }
     const props = node.properties.map((p) => {
-      if (!t.isObjectProperty(p) || p.computed) throw new Error("emitExpr: spread/computed object property not supported");
-      const key = t.isIdentifier(p.key) ? p.key.name : t.isStringLiteral(p.key) ? JSON.stringify(p.key.value) : null;
-      if (key === null) throw new Error("emitExpr: unsupported object key");
+      if (t.isSpreadElement(p)) throw new Error("unreachable");
+      const key = p.computed ? `[${emitExpr(p.key, scope)}]`
+        : t.isIdentifier(p.key) ? p.key.name : t.isStringLiteral(p.key) ? JSON.stringify(p.key.value)
+        : t.isNumericLiteral(p.key) ? String(p.key.value) : null;
+      if (key === null) throw new Error(`emitExpr: unsupported object key ${p.key.type}`);
+      if (t.isObjectMethod(p)) {
+        if (p.kind !== "method" || p.generator || p.async)
+          throw new Error(`emitExpr: object ${p.kind === "method" ? (p.async ? "async method" : "generator method") : `${p.kind}ter`} not supported — use a plain method or a function property`);
+        const params = p.params.map((q) => emitPattern(q, scope)).join(", ");
+        return `${key}: function(${params}) { ${emitStatements(p.body.body, shadowOwnParams(scope, p.params))} }`;
+      }
       return `${key}: ${t.isExpression(p.value) ? emitExpr(p.value, scope) : "undefined"}`; // shorthand `{x}` → x: x
     });
     return `({ ${props.join(", ")} })`;
+  }
+  if (t.isRegExpLiteral(node)) return `/${node.pattern}/${node.flags}`;
+  if (t.isThisExpression(node)) return "this";
+  if (t.isSequenceExpression(node)) return `(${node.expressions.map((e) => emitExpr(e, scope)).join(", ")})`;
+  if (t.isNewExpression(node)) {
+    const callee = t.isIdentifier(node.callee) || t.isMemberExpression(node.callee) ? emitExpr(node.callee, scope) : `(${emitExpr(node.callee, scope)})`;
+    return `new ${callee}(${emitArgs(node.arguments, scope)})`;
+  }
+  // `a?.b`, `a?.[k]`, `f?.(x)` — V4 evaluates optional chains natively; only the names are resolved.
+  if (t.isOptionalMemberExpression(node)) {
+    const obj = parenObject(node.object, emitExpr(node.object, scope));
+    const dot = node.optional ? "?." : ".";
+    if (node.computed) return `${obj}${node.optional ? "?." : ""}[${emitExpr(node.property, scope)}]`;
+    return `${obj}${dot}${(node.property as t.Identifier).name}`;
+  }
+  if (t.isOptionalCallExpression(node)) {
+    const callee = parenObject(node.callee, emitExpr(node.callee, scope));
+    return `${callee}${node.optional ? "?." : ""}(${emitArgs(node.arguments, scope)})`;
   }
 
   if (t.isIdentifier(node)) {
@@ -200,6 +270,12 @@ export function emitExpr(node: t.Node, scope: Scope): string {
   }
 
   if (t.isCallExpression(node) && t.isIdentifier(node.callee)) {
+    // onCleanup(fn) → register a teardown on the current owner: the enclosing effect's own list
+    // (run before its next run and on unmount), else the component's `__cleanups` (run on unmount).
+    if (node.callee.name === "onCleanup" && !scope.table.has("onCleanup") && !(scope.locals && "onCleanup" in scope.locals)) {
+      if (node.arguments.length !== 1) throw new Error("onCleanup takes exactly one function");
+      return `${scope.cleanupList ?? "__cleanups"}.push(${emitExpr(node.arguments[0], scope)})`;
+    }
     if (scope.accessors && node.callee.name in scope.accessors && node.arguments.length === 0)
       return scope.accessors[node.callee.name]; // <Index> item() → modelData
     const sym = scope.table.get(node.callee.name);
@@ -232,8 +308,7 @@ export function emitExpr(node: t.Node, scope: Scope): string {
 
   if (t.isCallExpression(node)) {
     const callee = parenObject(node.callee, emitExpr(node.callee, scope));
-    const args = node.arguments.map((a) => emitExpr(a, scope)).join(", ");
-    return `${callee}(${args})`;
+    return `${callee}(${emitArgs(node.arguments, scope)})`;
   }
 
   if (t.isMemberExpression(node)) {
@@ -263,14 +338,13 @@ export function emitExpr(node: t.Node, scope: Scope): string {
   }
 
   if (t.isArrowFunctionExpression(node) || t.isFunctionExpression(node)) {
-    const params = node.params.map((p) => (t.isIdentifier(p) ? safeName(p.name) : "_")).join(", ");
+    if (node.generator) throw new Error("generator functions are not supported in component code — move them into a plain .ts module (loaded as a JS module, unmodified)");
+    const params = node.params.map((p) => emitPattern(p, scope)).join(", ");
     const inner = shadowOwnParams(scope, node.params);
     if (t.isBlockStatement(node.body)) {
-      // Block-bodied callback in an expression context (e.g. a .filter()/.map() argument). Statements
-      // are emitted inline here because expr.ts can't import stmt.ts (circular); only the subset
-      // callbacks need is implemented. Reads stay bare (the object scope resolves them).
-      const body = node.body.body.map((st) => emitInlineStmt(st, inner)).join(" ");
-      return `function(${params}) { ${body} }`;
+      // Block-bodied callback in an expression context (e.g. a .filter()/.map() argument). Reads
+      // stay bare (the object scope resolves them).
+      return `function(${params}) { ${emitStatements(node.body.body, inner)} }`;
     }
     return `function(${params}) { return ${emitExpr(node.body, inner)} }`;
   }
@@ -319,21 +393,19 @@ export function emitExpr(node: t.Node, scope: Scope): string {
   }
 
   // Fallback for the few node kinds not yet handled — keep it visible, don't silently drop.
-  throw new Error(`emitExpr: unsupported node ${node.type}`);
+  throw new Error(`unsupported expression in component code: ${node.type}${EXPR_HINT[node.type] ? ` — ${EXPR_HINT[node.type]}` : ""}`);
 }
 
-/** Minimal inline statement emitter for block-bodied callbacks inside expression contexts.
- *  Avoids a circular import with stmt.ts by only handling the subset of statements that appear in
- *  callback bodies: VariableDeclaration, ReturnStatement, ExpressionStatement. */
-function emitInlineStmt(node: t.Statement, scope: Scope): string {
-  if (t.isVariableDeclaration(node))
-    return node.declarations.map((d) =>
-      `var ${safeName((d.id as t.Identifier).name)} = ${d.init ? emitExpr(d.init, scope) : "undefined"};`).join(" ");
-  if (t.isReturnStatement(node))
-    return `return ${node.argument ? emitExpr(node.argument, scope) : "undefined"};`;
-  if (t.isExpressionStatement(node))
-    return `${emitExpr(node.expression, scope)};`;
-  throw new Error(`emitInlineStmt: unsupported statement ${node.type}`);
+const EXPR_HINT: Record<string, string> = {
+  BigIntLiteral: "the V4 engine has no BigInt",
+  ClassExpression: "declare the class in a plain .ts module and import it (loaded as a JS module, unmodified)",
+  TaggedTemplateExpression: "call the tag function explicitly",
+  YieldExpression: "generators are not supported in component code",
+};
+
+/** Call/`new` arguments — a spread argument (`f(...xs)`) passes through (V4 spreads natively). */
+function emitArgs(args: t.Node[], scope: Scope): string {
+  return args.map((a) => (t.isSpreadElement(a) ? `...${emitExpr(a.argument, scope)}` : emitExpr(a, scope))).join(", ");
 }
 
 /** setStore(...) → reassign the store property to a NEW value so the `property var` notifies (QML

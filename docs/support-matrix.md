@@ -42,10 +42,13 @@ The rules that catch people most often:
   component (`onClick={save}`). The `fn`-kind events (`onInput`, `onChange`, `onKeyDown`…) also
   accept a block body.
 - Component code (including module-level helper functions in a component's file) is translated
-  statement by statement into QML JavaScript. `if`/`else`, `for…of`, `const`/`let`, `return` and
-  expressions are supported. `while`, classic `for (;;)`, `switch`, `try`, `new`, RegExp literals
-  and `?.` are not. Code that needs them belongs in an npm package, which is mirrored and executed
-  unmodified (see [npm packages](#npm-packages-and-the-v4-engine)).
+  statement by statement into QML JavaScript, with only the names rewritten: every statement V4
+  runs (`if`, all loops, `switch`, `try`/`catch`/`finally`, `throw`, labels, destructuring) and
+  every expression form (`new`, RegExp literals, `?.`, `??`, spread) is emitted as written. Two
+  things V4 lacks are handled at compile time: object spread `{ ...a }` is lowered to
+  `Object.assign`, and object rest (`{ a, ...rest }`), `class`, generators and `BigInt` are
+  rejected with an error. Code that needs those belongs in an npm package, which is mirrored and
+  executed unmodified (see [npm packages](#npm-packages-and-the-v4-engine)).
 
 *Generated:*
 
@@ -99,18 +102,22 @@ The rules that catch people most often:
 | handlers | `onClick={go}` (named function in the component, `if`/`for…of` inside) | ✅ | accepted | `transpiler/test/module-fn-positions.test.ts` |
 | handlers | block body in `fn`-kind events (`onInput`, `onChange`, `onKeyDown`…) with `if` | ✅ | accepted | `examples/widgets.tsx` |
 | handlers | `async` named handler | ❌ | rejected: `only inline arrow handlers (or a context fn-member reference) are supported in this plan` | call an async module-level function from an expression-bodied handler, or use `createResource` |
-| statements | `while` / `do…while` in component code | ❌ | rejected: `emitStmt: unsupported statement WhileStatement` | use `for…of` |
-| statements | classic `for (;;)` in component code | ❌ | rejected: `emitStmt: unsupported statement ForStatement` | use `for…of` (e.g. over `Array.from({ length: n }, (_, i) => i)`) |
-| statements | `switch` in component code | ❌ | rejected: `emitStmt: unsupported statement SwitchStatement` | use `if`/`else` |
-| statements | `try`/`catch` in component code | ❌ | rejected: `emitStmt: unsupported statement TryStatement` | module-level functions are transpiled too; code that needs it belongs in an npm package (mirrored and executed unmodified on V4) |
+| statements | `while` / `do…while` in component code | ✅ | accepted | `transpiler/test/statements.test.ts` (emitted methods are executed) |
+| statements | classic `for (;;)` in component code | ✅ | accepted | `let`/`const` heads keep per-iteration bindings — `transpiler/test/statements.test.ts` |
+| statements | `switch` in component code | ✅ | accepted | `transpiler/test/statements.test.ts` |
+| statements | `try`/`catch` in component code | ✅ | accepted | with `finally`, `throw`, labelled `break`/`continue` — `transpiler/test/statements.test.ts` |
+| statements | destructuring (declarations, params, `for…of` heads; defaults; array rest) | ✅ | accepted | `transpiler/test/statements.test.ts` |
+| statements | object rest `const { a, ...rest } = o` | ❌ | rejected: `object rest in a destructuring pattern (`{ a, ...rest }`) is not supported by the V4 engine — read the fields you need explicitly` | V4 has no object rest: read the fields you need |
+| statements | `class` in component code | ❌ | rejected: `unsupported statement in component code: ClassDeclaration — declare the class in a plain .ts module and import it (loaded as a JS module, un` | declare the class in a plain `.ts` module and import it |
 | modules | a helper function imported from a relative non-component module (`import { f } from "./util"`) | ⚠️ | accepted | only components are followed through relative imports: `f` is undefined at runtime. Keep helpers in the component's file, or in an npm package (mirrored, runs unmodified) |
-| expressions | RegExp literal in component code | ❌ | rejected: `emitExpr: unsupported node RegExpLiteral` | no transpiled form of a RegExp works today (see the next two rows): use string methods (`replaceAll`, `split`, `includes`…) or put the logic in an npm package |
+| expressions | RegExp literal in component code | ✅ | accepted | `transpiler/test/statements.test.ts` |
 | expressions | RegExp literal in a module-level constant | ⚠️ | accepted | the constant is not emitted: `RE` is undefined at runtime |
-| expressions | `new` expressions in component code (`new Date()`, `new Map()`…) | ❌ | rejected: `emitExpr: unsupported node NewExpression` | use factory calls (`Date.now()`) or an npm package |
+| expressions | `new` expressions in component code (`new Date()`, `new Map()`…) | ✅ | accepted | `transpiler/test/statements.test.ts` |
 | expressions | a module-level constant initialised with `new` (`const M = new Map()`) | ⚠️ | accepted | the constant is not emitted: `M` is undefined at runtime (literal/array/object constants are emitted — `transpiler/test/module-const-positions.test.ts`) |
-| expressions | optional chaining `a?.b` | ❌ | rejected: `emitExpr: unsupported node OptionalMemberExpression` | use `o() ? o().a : undefined` |
+| expressions | optional chaining `a?.b` | ✅ | accepted | `?.`, `?.[k]`, `?.()` — `transpiler/test/statements.test.ts` |
+| expressions | object spread `{ ...a, x: 1 }` | ✅ | accepted | lowered to `Object.assign({}, …)` (V4 has no object spread) — `transpiler/test/statements.test.ts` |
 | expressions | nullish coalescing `a ?? b` | ✅ | accepted |  |
-| expressions | `BigInt` literal | ❌ | rejected: `emitExpr: unsupported node BigIntLiteral` | V4 has no BigInt |
+| expressions | `BigInt` literal | ❌ | rejected: `unsupported expression in component code: BigIntLiteral — the V4 engine has no BigInt` | V4 has no BigInt |
 <!-- generated:probes:end -->
 
 ## Elements and their attributes

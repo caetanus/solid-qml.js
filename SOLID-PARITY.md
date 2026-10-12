@@ -130,18 +130,18 @@ Owner decision 2026-10-11: **web semantics by default, reuse by key is opt-in.**
 |---|---|
 | literals, binary, unary, postfix `x++`, ternary | ✅ |
 | member / element access, calls | ✅ |
-| array / object literals (computed keys, shorthand, spread-in-literal) | ✅ |
+| array / object literals (computed keys, shorthand, methods, spread — object spread lowered to `Object.assign`, V4 has none) | ✅ |
 | arrow / function expressions (param-scoped) | ✅ |
 | template literals | ✅ |
 | `for…of` | ✅ |
-| classic `for (;;)` / `while` / `do…while` | ❌ (rejected at compile time) |
+| classic `for (;;)` / `while` / `do…while` / `for…in` | ✅ (`let`/`const` heads keep per-iteration bindings) |
 | `async`/`await` | ✅ (Babel → Promise chains; V4 has no native async) |
 | nullish `??` | ✅ |
-| optional chaining `?.` | ❌ (rejected at compile time) |
-| `new` expressions (`new Date()`, `new Map()`) in component code | ❌ (rejected at compile time; a module-level `const x = new …` is accepted but not emitted — undefined at runtime) |
-| RegExp literals | ❌ (rejected in component code; a module-level `const RE = /…/` is accepted but not emitted — undefined at runtime) |
-| destructuring in statements | 🟡 |
-| labelled/try/throw/switch statements | ❌ (rejected at compile time) |
+| optional chaining `?.` / `?.[k]` / `?.()` | ✅ |
+| `new` expressions (`new Date()`, `new Map()`) in component code | ✅ (a module-level `const x = new …` is accepted but not emitted — undefined at runtime) |
+| RegExp literals | ✅ in component code (a module-level `const RE = /…/` is accepted but not emitted — undefined at runtime) |
+| destructuring (declarations, params, loop heads, defaults, array rest) | ✅ (object rest `{ a, ...rest }` is rejected: V4 has none) |
+| labelled/try/catch/finally/throw/switch statements | ✅ (`transpiler/test/statements.test.ts` executes the emitted code) |
 | block-bodied `onClick={() => { … }}` | ❌ (rejected; pass a named component function `onClick={go}` instead — block bodies are accepted in `onInput`/`onChange`/`onKeyDown`) |
 
 ## Runtime (browser shims, already C++)

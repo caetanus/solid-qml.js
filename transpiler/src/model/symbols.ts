@@ -916,15 +916,23 @@ export function analyzeProps(fn: t.Function): { param: string | null; used: stri
  *
  *  Excluded: createSignal/Memo/Resource, mergeProps/splitProps, useContext (handled elsewhere).
  *  Returns a map: helper name → { params, body as BlockStatement }. */
-export interface HelperInfo { params: string[]; body: t.BlockStatement }
+export interface HelperInfo {
+  /** Every name the params bind (a destructured param binds each name in its pattern). */
+  params: string[];
+  /** The param nodes themselves — identifiers or destructuring patterns — for the emitted signature. */
+  paramNodes: t.Function["params"];
+  body: t.BlockStatement;
+}
+function helperInfo(params: t.Function["params"], body: t.BlockStatement): HelperInfo {
+  return { params: params.flatMap((p) => Object.keys(t.getBindingIdentifiers(p))), paramNodes: params, body };
+}
 export function analyzeHelpers(fn: t.Function): Map<string, HelperInfo> {
   const out = new Map<string, HelperInfo>();
   if (!t.isBlockStatement(fn.body)) return out;
   for (const s of fn.body.body) {
     // function foo(params) { body } → helper
     if (t.isFunctionDeclaration(s) && s.id) {
-      const params = s.params.filter((p): p is t.Identifier => t.isIdentifier(p)).map((p) => p.name);
-      out.set(s.id.name, { params, body: s.body });
+      out.set(s.id.name, helperInfo(s.params, s.body));
       continue;
     }
     if (!t.isVariableDeclaration(s) || s.kind !== "const") continue;
@@ -944,17 +952,15 @@ export function analyzeHelpers(fn: t.Function): Map<string, HelperInfo> {
         // about which path a name takes (see hasNonCallReference's own doc comment).
         if (init.params.length === 0 && !t.isBlockStatement(init.body)) {
           if (!hasNonCallReference(fn, d.id.name, d.id)) continue; // stays inlined — not a helper
-          out.set(d.id.name, { params: [], body: exprArrowToHelperBody(init.body) });
+          out.set(d.id.name, helperInfo([], exprArrowToHelperBody(init.body)));
           continue;
         }
         // Param-having or block-bodied arrows → helpers (QML object methods). An expression body
         // IS the return value — wrapping it as a bare statement silently made every such helper
         // return undefined.
-        const params = init.params.filter((p): p is t.Identifier => t.isIdentifier(p)).map((p) => p.name);
-        out.set(d.id.name, { params, body: exprArrowToHelperBody(init.body) });
+        out.set(d.id.name, helperInfo(init.params, exprArrowToHelperBody(init.body)));
       } else if (t.isFunctionExpression(init)) {
-        const params = init.params.filter((p): p is t.Identifier => t.isIdentifier(p)).map((p) => p.name);
-        out.set(d.id.name, { params, body: init.body });
+        out.set(d.id.name, helperInfo(init.params, init.body));
       }
     }
   }
@@ -985,8 +991,7 @@ export function analyzeModuleFunctions(file: t.File): Map<string, HelperInfo> {
   for (const node of file.program.body) {
     if (t.isFunctionDeclaration(node) && node.id && t.isBlockStatement(node.body)) {
       if (looksLikeComponentBody(node.body)) continue;
-      const params = node.params.filter((p): p is t.Identifier => t.isIdentifier(p)).map((p) => p.name);
-      out.set(node.id.name, { params, body: node.body });
+      out.set(node.id.name, helperInfo(node.params, node.body));
       continue;
     }
     if (!t.isVariableDeclaration(node) || node.kind !== "const") continue;
@@ -995,15 +1000,13 @@ export function analyzeModuleFunctions(file: t.File): Map<string, HelperInfo> {
       const init = d.init;
       if (t.isArrowFunctionExpression(init)) {
         if (looksLikeComponentBody(init.body)) continue;
-        const params = init.params.filter((p): p is t.Identifier => t.isIdentifier(p)).map((p) => p.name);
         const body: t.BlockStatement = t.isBlockStatement(init.body)
           ? init.body
           : t.blockStatement([t.returnStatement(init.body as t.Expression)]);
-        out.set(d.id.name, { params, body });
+        out.set(d.id.name, helperInfo(init.params, body));
       } else if (t.isFunctionExpression(init)) {
         if (looksLikeComponentBody(init.body)) continue;
-        const params = init.params.filter((p): p is t.Identifier => t.isIdentifier(p)).map((p) => p.name);
-        out.set(d.id.name, { params, body: init.body });
+        out.set(d.id.name, helperInfo(init.params, init.body));
       }
     }
   }
