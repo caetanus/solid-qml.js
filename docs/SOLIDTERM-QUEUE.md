@@ -75,3 +75,7 @@ pra blur"). `SOLIDTERM_BLURINFO=1` logs whether the compositor supports it.
 
 **Open:** the owner's sway (1.13-dev) does not implement the protocol — blur shows there only once the
 compositor side exists.
+
+## 2026-10-11 — owner report
+- Mouse events are not forwarded to terminal apps (lvim, TUIs): no VTERM_PROP_MOUSE handling, wheel only scrolls
+  SolidTerm's own scrollback. In progress (branch term-mouse): xterm-style reporting, Shift bypass, alternate scroll.
