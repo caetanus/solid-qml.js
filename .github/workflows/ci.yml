@@ -91,6 +91,8 @@ jobs:
       # auto-wraps the compiler with it when found on PATH).
       - name: System dependencies (dnf)
         run: |
+          # TMPDIR/CCACHE_DIR point into the workspace; dnf (librepo) mkstemps in TMPDIR.
+          mkdir -p "$TMPDIR" "$CCACHE_DIR"
           dnf -y -q install \
             mesa-libGL-devel mesa-libEGL-devel \
             libxkbcommon-devel libxkbcommon-x11-devel \
