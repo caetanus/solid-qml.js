@@ -16,6 +16,7 @@ with plain CSS, and run it as a native app.
 :caption: Contents
 
 getting-started
+windows
 architecture
 keyboard-accessibility
 document-editor
