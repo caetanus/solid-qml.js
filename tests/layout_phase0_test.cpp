@@ -58,14 +58,20 @@ struct View {
         edit->setParentItem(window.contentItem());
         window.resize(320, 240); window.setColor(Qt::white); window.show();
         edit->forceActiveFocus();
-        QTest::qWait(30);
+        if (!QTest::qWaitForWindowExposed(&window))
+            QTest::qFail("Test window was not exposed", __FILE__, __LINE__);
     }
     ~View() { delete edit; }
     void publicRepaint() {
         const auto color=edit->property("color");
         edit->setProperty("color",QColor("#010101")); edit->setProperty("color",color);
     }
-    QImage frame() { QTest::qWait(30); return window.grabWindow(); }
+    QImage frame() {
+        // Deliver queued layout adapters before the synchronous polish/sync/render grab.
+        QCoreApplication::sendPostedEvents();
+        QCoreApplication::processEvents();
+        return window.grabWindow();
+    }
     QTextDocument *doc() { return edit->textDocument()->textDocument(); }
     void inventory(const char *name) {
         qInfo() << "CONNECTION INVENTORY" << name;
@@ -243,7 +249,8 @@ private slots:
         QCOMPARE(layout->hitTest(caret.center(),Qt::FuzzyHit),5);
         qInfo() << "caret" << caret << "hit" << layout->hitTest(caret.center(),Qt::FuzzyHit);
         v.edit->setCursorVisible(true); auto on=v.frame();
-        QTest::qWait(QGuiApplication::styleHints()->cursorFlashTime()/2+50); auto off=v.frame();
+        QImage off;
+        QTRY_VERIFY_WITH_TIMEOUT(changedPixels(on,off=v.frame())>0, 5000);
         QVERIFY(changedPixels(on,off)>0);
         qInfo() << "blink changed pixels" << changedPixels(on,off);
         layout->counts={};
@@ -267,20 +274,24 @@ private slots:
         if(preinstalled) v.edit->textDocument()->setTextDocument(doc);
         if(adaptive) installAdapter(v.edit,doc,preinstalled);
         v.edit->setCursorVisible(false);
+        QTRY_COMPARE_WITH_TIMEOUT(v.edit->resourcesLoading(), 0, 5000);
         auto before=v.frame();
         c.movePosition(QTextCursor::End); c.insertImage("spike:red");
         auto after=v.frame(); qInfo() << "image inserted after pixels" << changedPixels(before,after);
         auto redPixels=[](const QImage &im) { int n=0; for(int y=0;y<im.height();++y) for(int x=0;x<im.width();++x) { auto rgb=im.pixelColor(x,y); n+=rgb.red()>200 && rgb.green()<70 && rgb.blue()<70; } return n; };
         qInfo() << "red image pixels before/after" << redPixels(before) << redPixels(after);
         QVERIFY(redPixels(before)>=24*18);
+        // Deliberately outlast the former fixed waits to guard against their return.
         // Delayed resource completion, public resource API, explicit metric invalidation.
-        QTimer::singleShot(40,doc,[doc] {
+        QTimer::singleShot(200,doc,[doc] {
             QImage image(48,36,QImage::Format_ARGB32); image.fill(Qt::green);
             doc->addResource(QTextDocument::ImageResource,QUrl("spike:red"),image);
             doc->addResource(QTextDocument::ImageResource,QUrl("spike:late"),image);
             doc->markContentsDirty(0,doc->characterCount());
         });
-        QTest::qWait(70); auto delayed=v.frame();
+        QTRY_COMPARE_WITH_TIMEOUT(qvariant_cast<QImage>(doc->resource(QTextDocument::ImageResource, QUrl("spike:red"))).size(), QSize(48,36), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(doc->begin().layout()->lineAt(0).height()>=36, 5000);
+        auto delayed=v.frame();
         if(!adaptive) { QEXPECT_FAIL("","Raw attachment loses delayed resource node invalidation",Continue); }
         QVERIFY(changedPixels(after,delayed)>0);
         qInfo() << "delayed image resize pixels" << changedPixels(after,delayed) << "line height" << doc->begin().layout()->lineAt(0).height();
@@ -294,13 +305,15 @@ private slots:
         auto rebuilt=v.frame(); qInfo() << "image stale pixels after private diagnostic rebuild" << changedPixels(publicRebuilt,rebuilt);
         QCOMPARE(changedPixels(publicRebuilt,rebuilt),0);
         QVERIFY(QObject::connect(layout,SIGNAL(updateBlock(QTextBlock)),v.edit,SLOT(invalidateBlock(QTextBlock))));
-        QTimer::singleShot(40,doc,[doc] {
+        QTimer::singleShot(200,doc,[doc] {
             QImage image(36,24,QImage::Format_ARGB32); image.fill(Qt::blue);
             doc->addResource(QTextDocument::ImageResource,QUrl("spike:red"),image);
             doc->addResource(QTextDocument::ImageResource,QUrl("spike:late"),image);
             doc->markContentsDirty(0,doc->characterCount());
         });
-        QTest::qWait(70); auto connected=v.frame();
+        QTRY_COMPARE_WITH_TIMEOUT(qvariant_cast<QImage>(doc->resource(QTextDocument::ImageResource, QUrl("spike:red"))).size(), QSize(36,24), 5000);
+        QImage connected;
+        QTRY_VERIFY_WITH_TIMEOUT(changedPixels(rebuilt,connected=v.frame())>0, 5000);
         QVERIFY(changedPixels(rebuilt,connected)>0);
         qInfo() << "image private connection automatic repaint pixels" << changedPixels(rebuilt,connected);
 
