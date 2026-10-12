@@ -140,7 +140,17 @@ TerminalView::TerminalView(QQuickItem *parent)
         update();
     });
     m_blinkTimer->start();
-    connect(this, &QQuickItem::activeFocusChanged, this, [this] { resetBlink(); updateFocusReport(); });
+    connect(this, &QQuickItem::activeFocusChanged, this, [this] {
+        resetBlink();
+        updateFocusReport();
+        // Losing focus mid-drag (a popup/dialog/menu grabbing it, window deactivation) is one of the
+        // ways a local selection drag can end without ever reaching mouseReleaseEvent.
+        if (!hasActiveFocus() && m_selecting) {
+            m_selecting = false;
+            stopAutoscroll();
+            resumeOutputFromSelection();
+        }
+    });
 
     // Visual bell: BEL raises a brief bright wash, cleared ~130ms later. bellRang is emitted from the
     // vterm callback on the GUI thread, so this runs synchronously here (update() is safe).
@@ -227,6 +237,14 @@ void TerminalView::itemChange(ItemChange change, const ItemChangeData &data)
         m_bgNode = m_glyphNode = m_cursorNode = nullptr;
         m_imageNode = nullptr;
         m_glyphs.reset();
+        // Window close (data.window == nullptr, item leaving the scene for good) or pane detach/
+        // reattach (data.window == the new window) both end any local selection drag that was live —
+        // either way, pty reads must resume rather than stay frozen forever.
+        if (m_selecting) {
+            m_selecting = false;
+            stopAutoscroll();
+        }
+        resumeOutputFromSelection();
         update();
     }
     // Focus reporting (DECSET 1004) cares about the WINDOW's activation, not just this item's — a
@@ -1371,6 +1389,8 @@ void TerminalView::mouseDoubleClickEvent(QMouseEvent *event)
     }
     m_lastDblTime = event->timestamp();
     m_selecting = false;
+    resumeOutputFromSelection(); // the first press of the pair already paused output; the pair's own
+                                 // mouseReleaseEvent never runs (this handler replaces it) — resume here
     event->accept();
 }
 
@@ -1389,6 +1409,7 @@ void TerminalView::mousePressEvent(QMouseEvent *event)
         return;
     }
     stopAutoscroll(); // a fresh press always starts clean, even if a previous drag leaked one somehow
+    resumeOutputFromSelection(); // ditto for a leaked pause (no-op when not paused)
 
     // Middle-click pastes the PRIMARY selection (X11/Wayland convention).
     if (event->button() == Qt::MiddleButton) {
@@ -1421,6 +1442,7 @@ void TerminalView::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton) {
         m_selAnchor = m_selEnd = cellAt(event->position());
         m_selecting = true;
+        pauseOutputForSelection(); // STOP reading the pty for as long as this drag lasts
         if (m_selValid) {
             m_selValid = false;
             emit selectionChanged();
@@ -1466,6 +1488,7 @@ void TerminalView::mouseReleaseEvent(QMouseEvent *event)
     }
     m_selecting = false;
     stopAutoscroll();
+    resumeOutputFromSelection(); // drag is over — resume pty reads and drain whatever queued up
     // Copy-on-select to the PRIMARY selection (middle-click paste; doesn't clobber the clipboard).
     if (m_selValid) {
         const QString text = selectedText();
@@ -1473,6 +1496,19 @@ void TerminalView::mouseReleaseEvent(QMouseEvent *event)
             QGuiApplication::clipboard()->setText(text, QClipboard::Selection);
     }
     event->accept();
+}
+
+// Involuntary grab loss (e.g. an ancestor Flickable/ScrollView deciding to steal the mouse mid-drag):
+// the only way a local selection drag can end WITHOUT mouseReleaseEvent ever firing, so this is the
+// backstop that still resumes pty output rather than leaving it frozen.
+void TerminalView::mouseUngrabEvent()
+{
+    QQuickItem::mouseUngrabEvent();
+    if (m_selecting) {
+        m_selecting = false;
+        stopAutoscroll();
+    }
+    resumeOutputFromSelection();
 }
 
 // Called from mouseMoveEvent with every fresh LOCAL-selection position: starts the timer the first
@@ -1498,6 +1534,28 @@ void TerminalView::stopAutoscroll()
 {
     if (m_autoscrollTimer)
         m_autoscrollTimer->stop();
+}
+
+// STOP reading the pty master while the local selection drag this call corresponds to is live (see
+// ptysession.h). Idempotent — safe to call speculatively from a defensive reset site.
+void TerminalView::pauseOutputForSelection()
+{
+    if (m_outputPaused)
+        return;
+    m_outputPaused = true;
+    m_pty.pause();
+    emit outputPausedChanged();
+}
+
+// Resume reading. Safe to call even when not currently paused (every drag-ending site calls this
+// unconditionally rather than tracking "did I pause").
+void TerminalView::resumeOutputFromSelection()
+{
+    if (!m_outputPaused)
+        return;
+    m_outputPaused = false;
+    m_pty.resume();
+    emit outputPausedChanged();
 }
 
 // One tick: scroll toward whichever edge the LAST known pointer position (m_autoscrollPos) sits past,
@@ -1725,8 +1783,10 @@ Rectangle {
     Connections { target: view; function onScrollChanged() { sbTrack.pulse() } }
     readonly property bool shown: view.scrollbarMode === "always" ? true
         : view.scrollbarMode === "never" ? false
-        : (pulseOn || dragging || hoveredBar)
-    visible: hasScrollback && opacity > 0.01
+        : (pulseOn || dragging || hoveredBar || view.outputPaused)
+    // A paused drag always shows the bar — even with no scrollback yet — so there's some minimal,
+    // theme-able feedback that output is frozen (owner: optional "subtle paused tint").
+    visible: (hasScrollback && opacity > 0.01) || view.outputPaused
     opacity: shown ? 1 : 0
     Behavior on opacity { NumberAnimation { duration: 180 } }
     HoverHandler {
@@ -1750,7 +1810,10 @@ Rectangle {
         x: 3
         width: 6
         radius: 3
-        color: thumbArea.pressed ? "#99000000" : (thumbArea.containsMouse ? "#77000000" : "#55000000")
+        // Paused tint (amber) wins over the normal hover/pressed grey states — minimal, theme-able
+        // feedback that a local selection drag has frozen pty reads (owner: subtle, not alarming).
+        color: view.outputPaused ? "#99f59e0b"
+            : thumbArea.pressed ? "#99000000" : (thumbArea.containsMouse ? "#77000000" : "#55000000")
         height: Math.min(sbTrack.height, Math.max(24,
             (sbTrack.rowCount / Math.max(1, sbTrack.sbSize + sbTrack.rowCount)) * sbTrack.height))
         y: {

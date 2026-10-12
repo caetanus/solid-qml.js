@@ -24,6 +24,19 @@ public:
     bool running() const { return m_pid > 0; }
     qint64 pid() const { return m_pid; }
 
+    // Selection-drag backpressure (owner: "quando seleciono texto o stdout tem que travar"): while a
+    // LOCAL selection drag is live, TerminalView calls pause() to STOP reading the master fd — no
+    // event-loop polling, just disabling the QSocketNotifier. The writing program's own write(2) then
+    // blocks on the kernel's full pty buffer (the same backpressure a real XOFF gives a flow-controlled
+    // line) — nothing is read into OUR process and buffered, so nothing can grow unbounded. resume()
+    // re-enables the notifier; since it's level-triggered, it simply fires again for whatever the
+    // kernel already has queued (and keeps firing, one bounded read(2) per event-loop turn — see
+    // onReadable — until drained), no special "drain" loop needed here. Both are idempotent and safe
+    // to call before start() (pause()'d-before-start is honoured when the notifier is created).
+    void pause();
+    void resume();
+    bool paused() const { return m_paused; }
+
 signals:
     void bytesRead(const QByteArray &bytes);
     void finished();
@@ -34,4 +47,5 @@ private:
     int m_master = -1;
     qint64 m_pid = -1;
     QSocketNotifier *m_notifier = nullptr;
+    bool m_paused = false;
 };

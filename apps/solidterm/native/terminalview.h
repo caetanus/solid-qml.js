@@ -84,6 +84,11 @@ private:
     // left over from before — an alt-screen app owns its own scrolling, ours would be meaningless.
     Q_PROPERTY(bool altScreen READ isAltScreen NOTIFY scrollChanged)
     Q_PROPERTY(QString scrollbarMode READ scrollbarMode WRITE setScrollbarMode NOTIFY scrollbarModeChanged)
+    // True while a LOCAL selection drag has paused pty reads (owner: "quando seleciono texto o stdout
+    // tem que travar") — see pauseOutputForSelection()/resumeOutputFromSelection() in terminalview.cpp
+    // and PtySession::pause()/resume(). Read by the composed scrollbar (composeScrollBar) for a
+    // minimal "paused" tint; a theme/TSX layer could bind it too.
+    Q_PROPERTY(bool outputPaused READ isOutputPaused NOTIFY outputPausedChanged)
 
 public:
     explicit TerminalView(QQuickItem *parent = nullptr);
@@ -116,6 +121,7 @@ public:
     bool isAltScreen() const { return m_altScreen; }
     QString scrollbarMode() const { return m_scrollbarMode; }
     void setScrollbarMode(const QString &v);
+    bool isOutputPaused() const { return m_outputPaused; }
     // Absolute scroll (clamped to [0, scrollbackCount]) — the composed scrollbar's drag/page/wheel
     // all funnel through here, same as a real wheelEvent would, just not pixel-delta driven.
     Q_INVOKABLE void scrollTo(int offset);
@@ -175,6 +181,7 @@ signals:
     void readOnlyChanged();
     void scrollChanged();       // scrollOffset, scrollbackCount, or viewportRows moved
     void scrollbarModeChanged();
+    void outputPausedChanged();
     void reservedSequencesChanged();
     void accelerator(const QString &sequence); // a reserved chord was pressed (consumed)
     void searchChanged(int index, int count);  // current match (1-based; 0 = none) + total
@@ -197,6 +204,10 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    // Grab stolen involuntarily (e.g. an ancestor Flickable deciding to take it mid-drag) — the only
+    // way a LOCAL selection drag can end WITHOUT a mouseReleaseEvent ever reaching us, so this is the
+    // backstop that still resumes pty output.
+    void mouseUngrabEvent() override;
     void wheelEvent(QWheelEvent *event) override;
     void hoverEnterEvent(QHoverEvent *event) override;
     void hoverMoveEvent(QHoverEvent *event) override;
@@ -304,6 +315,16 @@ private:
     quint64 m_lastDblTime = 0;               // for triple-click (line select) detection
     void selectWordAt(const CellPos &c);
     void selectLineAt(const CellPos &c);
+
+    // ── Output pause (local selection drag; see ptysession.h) ────────────────────────────────────
+    // STOPS reading the pty master for as long as a local selection drag is live, so new output can't
+    // move the text under the pointer — the writing program simply blocks on write() (kernel
+    // backpressure, no data lost, no buffering in this process). Idempotent; every path that can end
+    // a drag (release, double/triple-click, involuntary ungrab, focus loss, window-close/pane-detach
+    // via itemChange's ItemSceneChange) calls resumeOutputFromSelection().
+    bool m_outputPaused = false;
+    void pauseOutputForSelection();
+    void resumeOutputFromSelection();
 
     // ── Selection autoscroll (local selection only; see autoscroll.h) ─────────────────────────────
     // While m_selecting and the pointer sits past the top/bottom edge, m_autoscrollTimer fires at a

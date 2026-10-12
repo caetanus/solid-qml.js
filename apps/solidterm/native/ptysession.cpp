@@ -83,6 +83,7 @@ bool PtySession::start(int rows, int cols, const QString &program, const QString
     m_master = master;
     m_pid = pid;
     m_notifier = new QSocketNotifier(m_master, QSocketNotifier::Read, this);
+    m_notifier->setEnabled(!m_paused); // honour a pause() requested before start() somehow raced in
     connect(m_notifier, &QSocketNotifier::activated, this, [this] { onReadable(); });
     return true;
 }
@@ -108,6 +109,24 @@ void PtySession::writeBytes(const QByteArray &bytes)
             break;
         off += n;
     }
+}
+
+void PtySession::pause()
+{
+    if (m_paused)
+        return;
+    m_paused = true;
+    if (m_notifier)
+        m_notifier->setEnabled(false);
+}
+
+void PtySession::resume()
+{
+    if (!m_paused)
+        return;
+    m_paused = false;
+    if (m_notifier)
+        m_notifier->setEnabled(true); // level-triggered: re-fires immediately if the kernel buffer has data
 }
 
 void PtySession::onReadable()

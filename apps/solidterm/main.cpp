@@ -761,6 +761,82 @@ int main(int argc, char **argv)
         });
     }
 
+// Debug: SOLIDTERM_PAUSETEST=1 proves the owner's ask live ("quando seleciono texto o stdout tem
+// que travar"): starts a fast, continuous counter, presses+drags a LOCAL selection (no mouse
+// reporting active) inside the view, holds it with NO further movement for ~1s, and logs
+// scrollbackCount (new output arriving pushes old live rows into scrollback — a visible proxy) and
+// TerminalView::outputPaused across press/hold/release/resume. Must show frozen counts + paused=true
+// for the whole hold, then paused=false and growing counts again after release. Real input via
+// QWindowSystemInterface — see the AUTOSCROLLTEST comment above for why (not a raw QMouseEvent).
+    if (qEnvironmentVariableIsSet("SOLIDTERM_PAUSETEST") && window) {
+        QTimer::singleShot(1600, window, [&engine, window] {
+            TerminalView *view = nullptr;
+            for (QObject *o : engine.rootObjects()) {
+                if (auto *w = qobject_cast<QQuickWindow *>(o)) {
+                    QList<QQuickItem *> stack { w->contentItem() };
+                    while (!stack.isEmpty() && !view) {
+                        QQuickItem *it = stack.takeLast();
+                        view = qobject_cast<TerminalView *>(it);
+                        for (QQuickItem *k : it->childItems()) stack.append(k);
+                    }
+                }
+            }
+            if (!view) {
+                qWarning("solidterm: pausetest found no TerminalView");
+                QCoreApplication::quit();
+                return;
+            }
+            // A continuous counter — exactly the "program output would move the text under the
+            // selection" scenario the owner described. Throttled (sleep 0.02 ~ 50 lines/s): run
+            // flat-out, scrollbackCount (our freeze/growth proxy below) saturates at the 8000-line
+            // default limit within a fraction of a second and then stays constant FOREVER —
+            // indistinguishable from "frozen". Slowed down, it stays comfortably incremental for
+            // the whole test.
+            view->sendText(QStringLiteral(
+                "i=1; while true; do echo pausetest-line-$i; i=$((i+1)); sleep 0.02; done\n"));
+
+            QTimer::singleShot(1200, window, [view, window] {
+                const int countBeforePress = view->scrollbackCount();
+                const QPointF p1 = view->mapToScene(QPointF(10, view->height() / 2));
+                const QPointF p2 = view->mapToScene(QPointF(view->width() / 2, view->height() / 2));
+                const QPointF g1 = window->mapToGlobal(p1.toPoint());
+                const QPointF g2 = window->mapToGlobal(p2.toPoint());
+
+                QWindowSystemInterface::handleMouseEvent(window, p1, g1, Qt::LeftButton, Qt::LeftButton,
+                    QEvent::MouseButtonPress, Qt::NoModifier);
+                QWindowSystemInterface::handleMouseEvent(window, p2, g2, Qt::LeftButton, Qt::NoButton,
+                    QEvent::MouseMove, Qt::NoModifier);
+                QCoreApplication::processEvents();
+
+                const bool pausedAtPress = view->isOutputPaused();
+                const int countAtPress = view->scrollbackCount();
+
+                // Hold for ~1s with NO further movement — output must stay frozen the whole time.
+                QTimer::singleShot(1000, window, [view, window, p2, g2, countBeforePress, countAtPress, pausedAtPress] {
+                    const int countAfterHold = view->scrollbackCount();
+                    const bool stillPaused = view->isOutputPaused();
+                    qInfo().noquote() << "solidterm: pausetest before-press count=" << countBeforePress
+                                       << "at-press count=" << countAtPress << "paused-at-press=" << pausedAtPress
+                                       << "after-1s-hold count=" << countAfterHold << "still-paused=" << stillPaused
+                                       << "frozen=" << (countAfterHold == countAtPress);
+
+                    QWindowSystemInterface::handleMouseEvent(window, p2, g2, Qt::NoButton, Qt::LeftButton,
+                        QEvent::MouseButtonRelease, Qt::NoModifier);
+                    QCoreApplication::processEvents();
+                    const bool pausedAfterRelease = view->isOutputPaused();
+
+                    QTimer::singleShot(600, window, [view, countAfterHold, pausedAfterRelease] {
+                        const int countAfterResume = view->scrollbackCount();
+                        qInfo().noquote() << "solidterm: pausetest paused-after-release=" << pausedAfterRelease
+                                           << "after-resume count=" << countAfterResume
+                                           << "resumed=" << (countAfterResume > countAfterHold);
+                        QCoreApplication::quit();
+                    });
+                });
+            });
+        });
+    }
+
 // Debug: SOLIDTERM_FINDTEST="query" opens the search bar + runs a search after a settle.
     const QString findTest = qEnvironmentVariable("SOLIDTERM_FINDTEST");
     if (!findTest.isEmpty() && window) {

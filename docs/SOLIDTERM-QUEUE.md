@@ -8,6 +8,41 @@ closed now with fresh evidence, plus a new scrollbar-visibility option and one n
 
 ## Done
 
+- **[x] Output pauses while selecting text (owner, 2026-10-12: "quando seleciono texto o stdout
+  tem que travar").** While a LOCAL selection drag is held (left button down, no mouse reporting,
+  or Shift with reporting — same `decideMouseAction` rule as always), `TerminalView` now STOPS
+  reading the pty master entirely — `PtySession::pause()`/`resume()` (`apps/solidterm/native/
+  ptysession.{h,cpp}`) just disable/re-enable the existing `QSocketNotifier`, no polling, no
+  buffering in our process. The writing program's own `write(2)` then blocks on the kernel's full
+  pty buffer — real backpressure, like XOFF, no data lost — until release (or an involuntary mouse
+  ungrab, losing active focus, or the item leaving the scene for window-close/pane-detach-reattach,
+  all via the same code paths that already end a drag), at which point reads resume and the
+  level-triggered notifier drains whatever queued up in bounded per-turn chunks (the existing
+  64 KB-per-`onReadable` read loop — no new drain logic needed). While paused the view keeps
+  repainting normally (cursor blink, autoscroll through existing scrollback, selection highlight);
+  typing still reaches the pty (only READS are paused, not writes) but the program may not react
+  until resumed if it's blocked on output. No timeout on how long a drag can hold the pause. A
+  small paused indicator (amber tint, `view.outputPaused`) appears on the composed scrollbar
+  (`TerminalView::composeScrollBar`) — forced visible even with no scrollback — entirely in C++/QML,
+  no TSX/CSS change needed. Unit tests: `apps/solidterm/tests/ptypause_test.cpp`, a REAL pty + real
+  child shell (no Qt GUI needed — PtySession is pure QtCore + POSIX): pause stops our reads AND
+  plateaus a side-channel progress file the child writes right after its own echo (proving the
+  child is genuinely blocked, not just unread by us); resume drains a 20000-line bounded sequence
+  byte-for-byte (checksummed via strict 1..N reconstruction) even after the kernel buffer overflowed
+  while frozen. Verified live via `SOLIDTERM_PAUSETEST` on the real Wayland display (not just
+  offscreen): a throttled counter's `scrollbackCount` freezes bit-for-bit for the whole ~1s hold
+  (`outputPaused=true` throughout) and resumes growing immediately on release
+  (`outputPaused=false`, count 15→90 in the next 600ms). *Gotchas found while building the test*:
+  (1) a login shell sources `/etc/profile`, which here pulls in VTE shell-integration OSC escape
+  sequences interleaved with the real output — stripped before parsing in the test, exactly as a
+  real terminal (libvterm) already discards them; (2) the pty echoes back whatever bytes we WRITE,
+  so a literal marker string in the command we send can match inside its own echoed copy before the
+  shell ever runs it — worked around by never spelling the marker contiguously in the sent bytes
+  (`m1="PTYPAUSE"; m2="-DONE"; echo "$m1$m2"`); (3) a plain `>` redirect for a polled progress file
+  truncates-then-writes, which a concurrent reader can catch mid-truncate — fixed with an atomic
+  `mv -f` rename; (4) `scrollbackCount` is a poor "is output flowing" proxy once the 8000-line ring
+  saturates (it then stays constant forever, indistinguishable from frozen) — the live hook
+  throttles its counter so the ring never fills during the test.
 - **[x] Maximize icon was wrong.** It drew one continuous diagonal with corner brackets (reads as a
   resize cursor). Tilix's zoom glyph is TWO SEPARATE arrows pointing out to opposite corners with a
   gap between them — redrawn that way in `apps/solidterm/native/paneheader.cpp` (stem + arrowhead per

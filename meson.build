@@ -443,6 +443,25 @@ if build_solidterm
   test('solidterm-linkscan',
     executable('test-solidterm-linkscan', files('apps/solidterm/tests/linkscan_test.cpp')),
     timeout: 10)
+
+  # Output pause on a local selection drag (owner: "quando seleciono texto o stdout tem que
+  # travar") — PtySession::pause()/resume() against a REAL pty + real child shell: pause() stops
+  # OUR reads AND the child's own write(2) blocks on the full kernel pty buffer (backpressure, no
+  # data lost); resume() drains it. No Qt GUI needed — PtySession is pure QtCore + POSIX, so this
+  # links only Core+Test. See ptypause_test.cpp.
+  ptypause_test_deps = [dependency('qt6', modules: ['Core', 'Test']), util_dep]
+  test('solidterm-ptypause',
+    executable('test-solidterm-ptypause',
+      files('apps/solidterm/tests/ptypause_test.cpp', 'apps/solidterm/native/ptysession.cpp'),
+      qt6.preprocess(
+        moc_headers: files('apps/solidterm/native/ptysession.h'),
+        moc_sources: files('apps/solidterm/tests/ptypause_test.cpp'),
+        dependencies: ptypause_test_deps,
+      ),
+      dependencies: ptypause_test_deps),
+    env: ['SHELL=/bin/sh'],
+    timeout: 180) # generous: it waits for the kernel pty buffer to actually fill, which depends on
+                  # how much CPU its child gets — slower when the whole suite runs in parallel
 endif
 
 # ── Tests ────────────────────────────────────────────────────────────────────────────────────
