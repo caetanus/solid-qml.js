@@ -1,12 +1,15 @@
 #pragma once
 
 #include <QColor>
+#include <QPointer>
+#include <QQuickWindow>
 #include <QQuickItem>
 #include <QStringList>
 #include <QVariantList>
 #include <QVector>
 
 class TerminalPanes;
+class TerminalView;
 
 // The session/tab stack (owner's queue: "TABS … manter panes vivos por tab"; + directive: chrome
 // in Solid, native only for the terminal). Each tab is a full split tree (TerminalPanes). Switching
@@ -99,6 +102,15 @@ public:
     // <ContextMenu> before it opens on a right-click.
     Q_INVOKABLE bool wantsMouseReportFocused(int qtModifiers) const;
 
+    // Pane drag & drop: this item is its WINDOW's drop target. It filters the window's drag events
+    // (the compositor delivers them to the window under the cursor — no global coords needed) and
+    // routes them: over the panes → the active TerminalPanes' split zones; over the chrome strip
+    // above them (header / tab bar) → "new tab here".
+    void adoptViewAsTab(TerminalView *v); // a moved live view becomes a new tab (pty rides along)
+    static void hideAllTabDropIndicators();
+    TerminalPanes *activePanes() const { return active(); }
+    int tabCount() const { return m_tabs.size(); }
+
 signals:
     void styleChanged();
     void reservedChanged();
@@ -117,6 +129,8 @@ protected:
     void componentComplete() override;
     void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
     void focusInEvent(QFocusEvent *event) override;
+    void itemChange(ItemChange change, const ItemChangeData &data) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     struct Tab {
@@ -127,6 +141,11 @@ private:
     };
 
     TerminalPanes *makePanes();
+    bool routeDrag(class QDropEvent *event, bool drop); // false = not a SolidTerm pane drag
+    void showTabDropIndicator(bool on);
+    QPointer<QQuickWindow> m_filteredWindow;
+    QQuickItem *m_tabDropOverlay = nullptr;
+    static QVector<TerminalTabs *> s_allTabs;
     void applyStyle(TerminalPanes *p);
     void relayout();
     void emitModel();          // push (titles, active) to the TSX

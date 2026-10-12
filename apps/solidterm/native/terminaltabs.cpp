@@ -1,8 +1,10 @@
 #include "terminaltabs.h"
 
 #include "terminalpanes.h"
+#include "terminalview.h"
 
 #include <QCoreApplication>
+#include <QDropEvent>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
@@ -19,9 +21,17 @@ TerminalTabs::TerminalTabs(QQuickItem *parent)
 {
     setFlag(ItemIsFocusScope, true);
     setActiveFocusOnTab(true);
+    s_allTabs.append(this);
 }
 
-TerminalTabs::~TerminalTabs() = default;
+TerminalTabs::~TerminalTabs()
+{
+    s_allTabs.removeAll(this);
+    if (m_filteredWindow)
+        m_filteredWindow->removeEventFilter(this);
+}
+
+QVector<TerminalTabs *> TerminalTabs::s_allTabs;
 
 TerminalPanes *TerminalTabs::active() const
 {
@@ -287,4 +297,134 @@ void TerminalTabs::setReservedSequences(const QStringList &v)
     for (const Tab &t : std::as_const(m_tabs))
         t.panes->setReservedSequences(v);
     emit reservedChanged();
+}
+
+// ─── pane drag & drop routing ───────────────────────────────────────────────────────────────────
+
+void TerminalTabs::itemChange(ItemChange change, const ItemChangeData &data)
+{
+    if (change == ItemSceneChange) {
+        if (m_filteredWindow)
+            m_filteredWindow->removeEventFilter(this);
+        m_filteredWindow = data.window;
+        if (m_filteredWindow)
+            m_filteredWindow->installEventFilter(this);
+    }
+    QQuickItem::itemChange(change, data);
+}
+
+bool TerminalTabs::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_filteredWindow) {
+        switch (event->type()) {
+        case QEvent::DragEnter:
+        case QEvent::DragMove:
+            if (routeDrag(static_cast<QDropEvent *>(event), false))
+                return true;
+            break;
+        case QEvent::Drop:
+            if (routeDrag(static_cast<QDropEvent *>(event), true))
+                return true;
+            break;
+        case QEvent::DragLeave:
+            if (TerminalPanes::dragInProgress()) {
+                if (auto *p = active())
+                    p->dragClear();
+                showTabDropIndicator(false);
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    return QQuickItem::eventFilter(watched, event);
+}
+
+bool TerminalTabs::routeDrag(QDropEvent *event, bool drop)
+{
+    TerminalView *src = TerminalPanes::dragSource(event->mimeData());
+    if (!src)
+        return false; // not ours (or another process's pane: a pty cannot cross processes)
+    const QPointF scene = event->position();
+    TerminalPanes *panes = active();
+    const QPointF local = panes ? panes->mapFromScene(scene) : QPointF();
+    if (panes && QRectF(0, 0, panes->width(), panes->height()).contains(local)) {
+        showTabDropIndicator(false);
+        if (drop)
+            panes->dragDrop(src, local);
+        else
+            panes->dragHover(src, local);
+    } else {
+        if (panes)
+            panes->dragClear();
+        // The chrome strip above the panes (header / tab bar) = "make it a tab of THIS window" —
+        // pointless for a pane that already is the only one of a tab here.
+        const qreal top = mapToScene(QPointF(0, 0)).y();
+        TerminalPanes *owner = TerminalPanes::ownerOf(src);
+        const bool alreadyATab = owner && owner->parentItem() == this && owner->count() == 1;
+        const bool tabZone = scene.y() >= 0 && scene.y() < top && !alreadyATab;
+        if (drop) {
+            if (tabZone)
+                TerminalPanes::recordNewTabDrop(this);
+            else
+                TerminalPanes::recordNoopDrop();
+        } else {
+            showTabDropIndicator(tabZone);
+        }
+    }
+    if (drop)
+        TerminalPanes::hideAllDropIndicators();
+    event->setDropAction(Qt::MoveAction);
+    event->accept();
+    return true;
+}
+
+void TerminalTabs::showTabDropIndicator(bool on)
+{
+    QQuickWindow *w = window();
+    if (!on || !w) {
+        if (m_tabDropOverlay)
+            m_tabDropOverlay->setVisible(false);
+        return;
+    }
+    if (!m_tabDropOverlay) {
+        QQmlEngine *eng = qmlEngine(this);
+        if (!eng)
+            return;
+        QQmlComponent c(eng);
+        // Same look as the split-zone indicator (TerminalPanes' DropZone).
+        c.setData(QByteArrayLiteral("import QtQuick\nRectangle { visible: false; z: 99999; color: \"#403584e4\"; "
+                                    "border.color: \"#3584e4\"; border.width: 2; radius: 4 }"),
+                  QUrl(QStringLiteral("qrc:/solidterm/TabDropZone.qml")));
+        m_tabDropOverlay = qobject_cast<QQuickItem *>(c.create(qmlContext(this)));
+        if (!m_tabDropOverlay)
+            return;
+        m_tabDropOverlay->setParent(this);
+    }
+    const qreal top = mapToScene(QPointF(0, 0)).y();
+    m_tabDropOverlay->setParentItem(w->contentItem());
+    m_tabDropOverlay->setX(2);
+    m_tabDropOverlay->setY(2);
+    m_tabDropOverlay->setWidth(qMax<qreal>(0, w->width() - 4));
+    m_tabDropOverlay->setHeight(qMax<qreal>(0, top - 4));
+    m_tabDropOverlay->setVisible(true);
+}
+
+void TerminalTabs::hideAllTabDropIndicators()
+{
+    for (TerminalTabs *t : std::as_const(s_allTabs))
+        t->showTabDropIndicator(false);
+}
+
+void TerminalTabs::adoptViewAsTab(TerminalView *v)
+{
+    if (!v)
+        return;
+    TerminalPanes::adoptOnNextCreate(v); // the new tab's container adopts the live view as pane 1
+    TerminalPanes *panes = makePanes();
+    TerminalPanes::adoptOnNextCreate(nullptr);
+    if (!panes)
+        return;
+    m_tabs.append({ panes, v->title(), QString() });
+    selectTab(m_tabs.size() - 1);
 }

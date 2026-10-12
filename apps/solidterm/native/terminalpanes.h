@@ -1,7 +1,11 @@
 #pragma once
 
 class QQuickWindow;
+class QMimeData;
+class TerminalTabs;
 
+#include <QPixmap>
+#include <QPointer>
 #include <QQuickItem>
 #include <QStringList>
 #include <QUrl>
@@ -39,6 +43,9 @@ class TerminalPanes : public QQuickItem {
     Q_PROPERTY(int blur READ blur WRITE setBlur NOTIFY styleChanged)
 
 public:
+    // Where a dragged pane lands on a target pane: centre (swap) or a side (re-split).
+    enum DropZone { ZoneNone, ZoneCenter, ZoneLeft, ZoneRight, ZoneTop, ZoneBottom, ZoneNewTab };
+
     explicit TerminalPanes(QQuickItem *parent = nullptr);
     ~TerminalPanes() override;
 
@@ -93,7 +100,44 @@ public:
     // rearrange without a synthetic gesture.
     Q_INVOKABLE void debugDragLeaf(int srcIdx, int dstIdx, int zone);
     Q_INVOKABLE void debugDetachFocused(); // test hook: detach the focused pane to a new window
-    static void debugReattachLastToFirst();  // test hook: reattach the newest window's pane into the first
+    // Test hook: drag the newest window's focused pane onto the FIRST other window — `zone` 1-5 of
+    // that window's first pane, or ZoneNewTab = its tab strip — through the real drop path
+    // (synthetic QDragEnter/Move/Drop events to the window + the same finish step a QDrag runs).
+    // `hoverShot`: grab the target window while the drop indicator shows (empty = no grab).
+    static void debugReattachLastToFirst(int zone = ZoneRight, const QString &hoverShot = QString());
+    // Test hook: deliver a synthetic drag of `src` to `window` at scene `pos` and finish it.
+    // `drop` false = hover only (the indicator shows; the session stays open until finishDrag).
+    static void debugSyntheticDrag(TerminalView *src, QQuickWindow *window, const QPointF &pos, bool drop);
+
+    // ── Pane drag & drop (cross-window, Wayland-safe) ──────────────────────────────────────────
+    // A header drag is a real QDrag carrying paneMimeType() ("<pid>:<serial>"). Every SolidTerm
+    // window is a drop target (TerminalTabs filters its window's drag events), so the compositor —
+    // not global coordinates, which Wayland does not give — says which window the cursor is over.
+    // The drop only RECORDS the target; the source applies it once QDrag::exec has returned (after
+    // the header's stack unwound). An unaccepted drag (Esc, outside every SolidTerm window)
+    // detaches the pane to a new window, as before.
+    static QString paneMimeType();
+    static QMimeData *makeDragMime(TerminalView *v); // opens a drag session for v
+    static TerminalView *dragSource(const QMimeData *mime); // the live source if `mime` is OUR session
+    static bool dragInProgress() { return !s_dragSource.isNull(); }
+    static void finishDrag(TerminalView *v);         // apply the recorded drop, else detach
+    static void recordNewTabDrop(class TerminalTabs *tabs);
+    static void recordNoopDrop();
+    static TerminalPanes *ownerOf(TerminalView *v);  // the container holding v (any window)
+    static void hideAllDropIndicators();
+    // Called with the drag-icon window once a drag starts (main attaches the compositor blur).
+    static void setDragIconHook(void (*hook)(QWindow *)) { s_dragIconHook = hook; }
+    // The next container to be created adopts `v` as its first pane (detach / drop-as-new-tab).
+    static void adoptOnNextCreate(TerminalView *v) { s_pendingAdopt = v; }
+    // Drop-target side, in this container's local coords. dragHover shows the indicator and
+    // returns the zone (ZoneNone = no-op here); dragDrop records the drop for finishDrag.
+    int dragHover(TerminalView *src, const QPointF &local);
+    void dragDrop(TerminalView *src, const QPointF &local);
+    void dragClear();
+    // The drag preview: a translucent, rounded snapshot of v's cell (keeps the window's alpha).
+    QPixmap dragPreview(TerminalView *v, const QPointF &grabInCell, QPoint *hotSpot) const;
+    TerminalView *focusedView() const;
+    TerminalView *viewAt(int leafIndex) const;
 
     // The URL of the top-level solidterm Window component (App.generated.qml), set by main() — used to
     // spawn a full new window when a pane is detached.
@@ -170,13 +214,10 @@ private:
     void relayout();
 
     // Header-drag pane rearrange (drop a pane onto a side of another to re-split; onto the centre to
-    // swap). Positions arrive as GLOBAL screen coords (works within and, later, across windows).
-    enum DropZone { ZoneNone, ZoneCenter, ZoneLeft, ZoneRight, ZoneTop, ZoneBottom };
-    void beginPaneDrag(TerminalView *v);
-    void updatePaneDrag(const QPointF &globalPos);
-    void endPaneDrag(const QPointF &globalPos);
+    // swap — within one container; across containers the centre folds into the nearest side).
+    void beginPaneDrag(TerminalView *v, const QPointF &pressInCell); // runs the QDrag (nested loop)
     Node *leafAtLocal(const QPointF &p) const;      // leaf whose cell contains a TerminalPanes-local point
-    int zoneAt(const QPointF &inCell, qreal w, qreal h) const;
+    int zoneAt(const QPointF &inCell, qreal w, qreal h, bool allowCenter = true) const;
     QRectF zoneRect(Node *leaf, int zone) const;    // highlight rect (TerminalPanes coords) for a zone
     void moveLeaf(TerminalView *v, Node *target, int side); // re-split: move the live pane beside target
     void swapLeaves(TerminalView *v, Node *target);         // centre drop: exchange two panes' positions
@@ -185,7 +226,6 @@ private:
     TerminalView *detachViewKeepAlive(TerminalView *v);     // remove from this tree, return the live view
     void insertExternalView(TerminalView *v, Node *target, int zone); // adopt a view from another window
     void detachToNewWindow(TerminalView *v);
-    bool tryCrossWindowDrop(TerminalView *v, const QPointF &globalPos); // reattach into a window under the cursor
 
     Node *m_root = nullptr;
     Node *m_focused = nullptr;          // focused LEAF
@@ -201,11 +241,21 @@ private:
     static inline void (*s_windowCreated)(QQuickWindow *) = nullptr;
     static TerminalView *s_pendingAdopt; // a detached view the next new window should adopt as pane 1
 
-    // Live drag state (a pane being dragged by its header).
-    TerminalView *m_dragView = nullptr;  // non-null while dragging
+    // Drag session (process-wide: one pointer, one drag at a time).
+    static QPointer<TerminalView> s_dragSource; // non-null while a pane drag is live
+    static quint64 s_dragSerial;
+    struct PendingDrop {
+        quint64 serial = 0;               // the session it belongs to (0 = nothing recorded)
+        bool noop = false;                // dropped where nothing changes (e.g. its own pane)
+        QPointer<TerminalPanes> panes;    // split drop: target container…
+        QPointer<TerminalView> anchor;    // …and the pane it lands beside (views persist, nodes may not)
+        int zone = ZoneNone;
+        QPointer<class TerminalTabs> tabs; // tab-strip drop: a new tab in that window
+    };
+    static PendingDrop s_pending;
+    static inline void (*s_dragIconHook)(QWindow *) = nullptr;
+    QQuickItem *ensureDropOverlay();
     QQuickItem *m_dropOverlay = nullptr;  // translucent highlight over the hovered drop zone
-    Node *m_dropTarget = nullptr;
-    int m_dropZone = ZoneNone;
 
     QString m_fontFamily = QStringLiteral("monospace");
     int m_fontSize = 15;

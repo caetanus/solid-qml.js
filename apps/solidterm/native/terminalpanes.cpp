@@ -1,9 +1,17 @@
 #include "terminalpanes.h"
 
 #include "paneheader.h"
+#include "terminaltabs.h"
 #include "terminalview.h"
 
+#include <unistd.h>
+
 #include <QCursor>
+#include <QDrag>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QPainter>
+#include <QPainterPath>
 #include <QGuiApplication>
 #include <QMouseEvent>
 #include <QQmlComponent>
@@ -104,6 +112,9 @@ const char *kDropQml =
 QVector<TerminalPanes *> TerminalPanes::s_all;
 QUrl TerminalPanes::s_windowUrl;
 TerminalView *TerminalPanes::s_pendingAdopt = nullptr;
+QPointer<TerminalView> TerminalPanes::s_dragSource;
+quint64 TerminalPanes::s_dragSerial = 0;
+TerminalPanes::PendingDrop TerminalPanes::s_pending;
 
 void TerminalPanes::setWindowUrl(const QUrl &url) { s_windowUrl = url; }
 
@@ -209,9 +220,7 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
         if (Node *leaf = leafOfView(v)) setFocused(leaf);
         emit paneMenuRequested(x, y, v->readOnly());
     });
-    connect(header, &PaneHeader::dragStarted, this, [this, v] { beginPaneDrag(v); });
-    connect(header, &PaneHeader::dragMoved, this, [this](qreal gx, qreal gy) { updatePaneDrag(QPointF(gx, gy)); });
-    connect(header, &PaneHeader::dragEnded, this, [this](qreal gx, qreal gy) { endPaneDrag(QPointF(gx, gy)); });
+    connect(header, &PaneHeader::dragStarted, this, [this, v](qreal x, qreal y) { beginPaneDrag(v, QPointF(x, y)); });
     connect(v, &TerminalView::readOnlyChanged, this, [v, header] { header->setReadOnly(v->readOnly()); });
     connect(v, &TerminalView::sessionFinished, this, [this, v] {
         if (Node *leaf = leafOfView(v)) removeLeaf(leaf);
@@ -224,7 +233,7 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
     // active (never steals focus from another app), no button is held (a drag-selection may cross
     // panes) and no pane is being dragged.
     connect(v, &TerminalView::hovered, this, [this, v] {
-        if (!m_focusOnHover || m_dragView || QGuiApplication::mouseButtons() != Qt::NoButton)
+        if (!m_focusOnHover || dragInProgress() || QGuiApplication::mouseButtons() != Qt::NoButton)
             return;
         if (!window() || !window()->isActive())
             return;
@@ -464,13 +473,13 @@ TerminalPanes::Node *TerminalPanes::leafAtLocal(const QPointF &p) const
 
 // Which zone of a cell (w×h) a local point falls in: a centre square (swap) surrounded by four
 // triangular edge zones (split). The dominant axis decides left/right vs top/bottom.
-int TerminalPanes::zoneAt(const QPointF &inCell, qreal w, qreal h) const
+int TerminalPanes::zoneAt(const QPointF &inCell, qreal w, qreal h, bool allowCenter) const
 {
     if (w <= 0 || h <= 0)
         return ZoneNone;
     const qreal nx = inCell.x() / w - 0.5; // [-0.5, 0.5]
     const qreal ny = inCell.y() / h - 0.5;
-    if (qAbs(nx) < 0.18 && qAbs(ny) < 0.18)
+    if (allowCenter && qAbs(nx) < 0.18 && qAbs(ny) < 0.18)
         return ZoneCenter;
     if (qAbs(nx) > qAbs(ny))
         return nx < 0 ? ZoneLeft : ZoneRight;
@@ -493,9 +502,70 @@ QRectF TerminalPanes::zoneRect(Node *leaf, int zone) const
     }
 }
 
-void TerminalPanes::beginPaneDrag(TerminalView *v)
+// ─── pane drag & drop ───────────────────────────────────────────────────────────────────────────
+//
+// Mechanism (why it works on Wayland): a header drag becomes a real QDrag. On Wayland that is a
+// wl_data_device drag — the COMPOSITOR tracks the pointer and sends enter/motion/drop to whichever
+// surface is under it, including the other windows of this same process. So no global coordinates
+// are needed (Wayland has none): every SolidTerm window is a drop target (TerminalTabs filters its
+// window's drag events and routes them here), and the window that receives the drop is, by
+// construction, the one under the cursor. The mime payload is "<pid>:<serial>": a drop from another
+// process (a --standalone instance) is refused — a live pty cannot be re-parented across processes.
+
+QString TerminalPanes::paneMimeType() { return QStringLiteral("application/x-solidterm-pane"); }
+
+QMimeData *TerminalPanes::makeDragMime(TerminalView *v)
 {
-    m_dragView = v;
+    ++s_dragSerial;
+    s_dragSource = v;
+    s_pending = PendingDrop();
+    auto *mime = new QMimeData;
+    mime->setData(paneMimeType(), QByteArray::number(qint64(::getpid())) + ':' + QByteArray::number(s_dragSerial));
+    return mime;
+}
+
+TerminalView *TerminalPanes::dragSource(const QMimeData *mime)
+{
+    if (!mime || !s_dragSource || !mime->hasFormat(paneMimeType()))
+        return nullptr;
+    const QList<QByteArray> parts = mime->data(paneMimeType()).split(':');
+    if (parts.size() != 2 || parts[0].toLongLong() != qint64(::getpid()) || parts[1].toULongLong() != s_dragSerial)
+        return nullptr;
+    return s_dragSource.data();
+}
+
+TerminalPanes *TerminalPanes::ownerOf(TerminalView *v)
+{
+    for (TerminalPanes *p : std::as_const(s_all))
+        if (p->leafOfView(v))
+            return p;
+    return nullptr;
+}
+
+void TerminalPanes::recordNewTabDrop(TerminalTabs *tabs)
+{
+    s_pending = PendingDrop();
+    s_pending.serial = s_dragSerial;
+    s_pending.tabs = tabs;
+    s_pending.zone = ZoneNewTab;
+}
+
+void TerminalPanes::recordNoopDrop()
+{
+    s_pending = PendingDrop();
+    s_pending.serial = s_dragSerial;
+    s_pending.noop = true;
+}
+
+void TerminalPanes::hideAllDropIndicators()
+{
+    for (TerminalPanes *p : std::as_const(s_all))
+        p->dragClear();
+    TerminalTabs::hideAllTabDropIndicators();
+}
+
+QQuickItem *TerminalPanes::ensureDropOverlay()
+{
     if (!m_dropOverlay) {
         if (QQmlEngine *eng = qmlEngine(this)) {
             QQmlComponent c(eng);
@@ -507,71 +577,206 @@ void TerminalPanes::beginPaneDrag(TerminalView *v)
             }
         }
     }
+    return m_dropOverlay;
 }
 
-void TerminalPanes::updatePaneDrag(const QPointF &globalPos)
+int TerminalPanes::dragHover(TerminalView *src, const QPointF &local)
 {
-    if (!m_dragView)
-        return;
-    const QPointF local = mapFromGlobal(globalPos);
     Node *t = leafAtLocal(local);
-    if (!t) {
-        m_dropTarget = nullptr;
-        m_dropZone = ZoneNone;
-        if (m_dropOverlay) m_dropOverlay->setVisible(false);
-        return;
+    if (!t || !t->cell || !src) {
+        dragClear();
+        return ZoneNone;
     }
+    // Within one container the centre swaps; across containers there is no swap partner, so the
+    // centre folds into the nearest side (the indicator shows exactly what will happen).
+    const bool same = leafOfView(src) != nullptr;
     const QPointF inCell(local.x() - t->cell->x(), local.y() - t->cell->y());
-    int zone = zoneAt(inCell, t->cell->width(), t->cell->height());
-    // Dropping a pane onto its own centre is a no-op → don't highlight it.
-    Node *src = leafOfView(m_dragView);
-    if (t == src && zone == ZoneCenter)
-        zone = ZoneNone;
-    m_dropTarget = t;
-    m_dropZone = zone;
-    if (m_dropOverlay) {
-        if (zone == ZoneNone) {
-            m_dropOverlay->setVisible(false);
-        } else {
-            const QRectF r = zoneRect(t, zone);
-            m_dropOverlay->setX(r.x());
-            m_dropOverlay->setY(r.y());
-            m_dropOverlay->setWidth(r.width());
-            m_dropOverlay->setHeight(r.height());
-            m_dropOverlay->setParentItem(this); // keep on top of freshly-added cells
-            m_dropOverlay->setVisible(true);
-        }
+    int zone = zoneAt(inCell, t->cell->width(), t->cell->height(), same);
+    if (t->view == src)
+        zone = ZoneNone; // onto its own pane: nothing to do
+    if (zone == ZoneNone) {
+        dragClear();
+        return ZoneNone;
     }
+    if (QQuickItem *o = ensureDropOverlay()) {
+        const QRectF r = zoneRect(t, zone);
+        o->setX(r.x());
+        o->setY(r.y());
+        o->setWidth(r.width());
+        o->setHeight(r.height());
+        o->setParentItem(this); // keep on top of freshly-added cells
+        o->setVisible(true);
+    }
+    return zone;
 }
 
-void TerminalPanes::endPaneDrag(const QPointF &globalPos)
+void TerminalPanes::dragDrop(TerminalView *src, const QPointF &local)
 {
-    updatePaneDrag(globalPos); // settle target/zone on the final position
-    TerminalView *v = m_dragView;
-    Node *t = m_dropTarget;
-    const int zone = m_dropZone;
-    m_dragView = nullptr;
-    m_dropTarget = nullptr;
-    m_dropZone = ZoneNone;
+    const int zone = dragHover(src, local);
+    Node *t = leafAtLocal(local);
+    dragClear();
+    if (zone == ZoneNone || !t || !t->view) {
+        recordNoopDrop();
+        return;
+    }
+    s_pending = PendingDrop();
+    s_pending.serial = s_dragSerial;
+    s_pending.panes = this;
+    s_pending.anchor = t->view;
+    s_pending.zone = zone;
+}
+
+void TerminalPanes::dragClear()
+{
     if (m_dropOverlay)
         m_dropOverlay->setVisible(false);
+}
 
-    if (!v)
+QPixmap TerminalPanes::dragPreview(TerminalView *v, const QPointF &grabInCell, QPoint *hotSpot) const
+{
+    Node *leaf = leafOfView(v);
+    QQuickWindow *w = window();
+    if (!leaf || !leaf->cell || !w)
+        return {};
+    const QSizeF cellSize(leaf->cell->width(), leaf->cell->height());
+    if (cellSize.isEmpty())
+        return {};
+    // Small enough to see what's under it, big enough to recognise the pane.
+    const qreal scale = qMin<qreal>(1.0, 360.0 / qMax<qreal>(cellSize.width(), cellSize.height()));
+    const QSizeF size = cellSize * scale;
+    const qreal dpr = w->effectiveDevicePixelRatio();
+
+    // The pane exactly as it looks now — including the window's own alpha when it is translucent
+    // (grabWindow keeps alpha on a transparent-clear window), so the preview carries the chrome's
+    // translucency.
+    const QImage shot = w->grabWindow();
+    const QRectF sceneRect = leaf->cell->mapRectToScene(QRectF(QPointF(0, 0), cellSize));
+    const qreal sdpr = shot.isNull() ? dpr : (shot.width() / qMax<qreal>(1.0, w->width()));
+    const QImage crop = shot.isNull() ? QImage()
+        : shot.copy(QRectF(sceneRect.topLeft() * sdpr, sceneRect.size() * sdpr).toAlignedRect());
+
+    QPixmap pm((size * dpr).toSize());
+    pm.setDevicePixelRatio(dpr);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+    const QRectF r(QPointF(0, 0), size);
+    QPainterPath clip;
+    clip.addRoundedRect(r.adjusted(1, 1, -1, -1), 8, 8);
+    p.setClipPath(clip);
+    p.setOpacity(0.82); // a proxy, not the pane: let the target show through
+    if (!crop.isNull()) {
+        p.drawImage(r, crop);
+    } else {
+        p.fillRect(r, m_background);
+        p.setPen(m_foreground);
+        p.drawText(r, Qt::AlignCenter, v->title());
+    }
+    p.setClipping(false);
+    p.setOpacity(1.0);
+    p.setPen(QPen(QColor("#3584e4"), 2));
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 8, 8);
+    p.end();
+    if (hotSpot)
+        *hotSpot = (grabInCell * scale).toPoint();
+    return pm;
+}
+
+void TerminalPanes::beginPaneDrag(TerminalView *v, const QPointF &pressInCell)
+{
+    if (!leafOfView(v) || dragInProgress())
         return;
-    if (t && zone != ZoneNone) {
-        Node *src = leafOfView(v);
-        if (!src || src == t)
-            return; // dropped on itself
-        if (zone == ZoneCenter)
-            swapLeaves(v, t);
-        else
-            moveLeaf(v, t, zone);
+    QPoint hot;
+    const QPixmap preview = dragPreview(v, pressInCell, &hot);
+    auto *drag = new QDrag(this);
+    drag->setMimeData(makeDragMime(v));
+    if (!preview.isNull()) {
+        drag->setPixmap(preview);
+        drag->setHotSpot(hot);
+    }
+    // The drag icon is a window Qt creates inside exec(); once it exists (first turn of the drag's
+    // event loop), hand it to main so it gets the same compositor blur as the chrome.
+    if (s_dragIconHook) {
+        QTimer::singleShot(0, qApp, [] {
+            for (QWindow *w : QGuiApplication::allWindows()) {
+                if (qstrcmp(w->metaObject()->className(), "QShapedPixmapWindow") != 0
+                    || w->property("solidtermDragIcon").toBool())
+                    continue;
+                w->setProperty("solidtermDragIcon", true);
+                s_dragIconHook(w);
+            }
+        });
+    }
+    QPointer<TerminalView> pv(v);
+    QPointer<QDrag> pd(drag);
+    static const bool log = qEnvironmentVariableIsSet("SOLIDTERM_DRAGLOG");
+    if (log)
+        qInfo("solidterm: pane drag started (preview %dx%d)", preview.width(), preview.height());
+    const Qt::DropAction action = drag->exec(Qt::MoveAction); // nested loop; drop targets record into s_pending
+    if (log)
+        qInfo("solidterm: pane drag ended (action %d)", int(action));
+    if (pd)
+        pd->deleteLater(); // unless the platform owns (and already freed) it — as Qt Quick's Drag does
+    s_dragSource = nullptr;
+    hideAllDropIndicators();
+    // Apply on the main loop, after the header that started this has unwound its event handler
+    // (a move deletes that header's cell).
+    QTimer::singleShot(0, qApp, [pv] {
+        if (pv)
+            finishDrag(pv);
+    });
+}
+
+void TerminalPanes::finishDrag(TerminalView *v)
+{
+    const PendingDrop d = s_pending;
+    s_pending = PendingDrop();
+    s_dragSource = nullptr;
+    hideAllDropIndicators();
+    TerminalPanes *src = ownerOf(v);
+    if (!src)
+        return;
+    static const bool log = qEnvironmentVariableIsSet("SOLIDTERM_DRAGLOG");
+    if (log)
+        qInfo("solidterm: pane drop → %s (zone %d)",
+              d.serial != s_dragSerial ? "detach to a new window" : d.noop ? "no-op"
+              : d.zone == ZoneNewTab ? "new tab" : d.panes == src ? "same container" : "another container",
+              d.zone);
+    if (d.serial != s_dragSerial) {
+        // Nobody of ours took it (Esc, dropped on the desktop or another app) → its own window.
+        src->detachToNewWindow(v);
         return;
     }
-    // No in-window target: dropped over ANOTHER window → reattach there; over nothing → detach to a
-    // fresh window. Both keep the live pty (the view is reparented, not recreated).
-    if (!tryCrossWindowDrop(v, globalPos))
-        detachToNewWindow(v);
+    if (d.noop)
+        return;
+    if (d.zone == ZoneNewTab) {
+        if (!d.tabs)
+            return;
+        src->detachViewKeepAlive(v); // may close the source tab/window when it empties
+        d.tabs->adoptViewAsTab(v);
+        if (QWindow *w = d.tabs->window())
+            w->requestActivate();
+        return;
+    }
+    TerminalPanes *dst = d.panes;
+    Node *t = (dst && d.anchor) ? dst->leafOfView(d.anchor) : nullptr;
+    if (!t)
+        return;
+    if (dst == src) {
+        if (d.zone == ZoneCenter)
+            src->swapLeaves(v, t);
+        else
+            src->moveLeaf(v, t, d.zone);
+        return;
+    }
+    // Another container (another tab, or another window of this process): the live view — pty,
+    // running program, scrollback — moves; nothing is restarted.
+    src->detachViewKeepAlive(v);
+    dst->insertExternalView(v, t, d.zone);
+    if (QWindow *w = dst->window())
+        w->requestActivate();
 }
 
 void TerminalPanes::moveLeaf(TerminalView *v, Node *target, int side)
@@ -683,26 +888,6 @@ void TerminalPanes::insertExternalView(TerminalView *v, Node *target, int zone)
     emit panesChanged();
 }
 
-bool TerminalPanes::tryCrossWindowDrop(TerminalView *v, const QPointF &globalPos)
-{
-    for (TerminalPanes *p : std::as_const(s_all)) {
-        if (p == this || !p->window())
-            continue;
-        const QPointF local = p->mapFromGlobal(globalPos);
-        Node *t = p->leafAtLocal(local);
-        if (!t || !t->cell)
-            continue;
-        const QPointF inCell(local.x() - t->cell->x(), local.y() - t->cell->y());
-        int zone = p->zoneAt(inCell, t->cell->width(), t->cell->height());
-        detachViewKeepAlive(v);
-        p->insertExternalView(v, t, zone);
-        if (QWindow *w = p->window())
-            w->requestActivate();
-        return true;
-    }
-    return false;
-}
-
 void TerminalPanes::detachToNewWindow(TerminalView *v)
 {
     QQmlEngine *eng = qmlEngine(this);
@@ -735,26 +920,73 @@ void TerminalPanes::debugDetachFocused()
         detachToNewWindow(m_focused->view);
 }
 
-void TerminalPanes::debugReattachLastToFirst()
+void TerminalPanes::debugSyntheticDrag(TerminalView *src, QQuickWindow *window, const QPointF &pos, bool drop)
+{
+    if (!src || !window)
+        return;
+    // The same events the platform delivers during a real QDrag (Wayland: wl_data_device enter /
+    // motion / drop on that window's surface), through the window's normal event path.
+    QMimeData *mime = makeDragMime(src);
+    QDragEnterEvent enter(pos.toPoint(), Qt::MoveAction, mime, Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(window, &enter);
+    QDragMoveEvent move(pos.toPoint(), Qt::MoveAction, mime, Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(window, &move);
+    if (drop) {
+        QDropEvent dropEv(pos, Qt::MoveAction, mime, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(window, &dropEv);
+        delete mime;
+        finishDrag(src);
+    } else {
+        delete mime; // hover only: the indicator stays until finishDrag / hideAllDropIndicators
+    }
+}
+
+void TerminalPanes::debugReattachLastToFirst(int zone, const QString &hoverShot)
 {
     if (s_all.size() < 2)
         return;
     TerminalPanes *last = s_all.last();
-    if (!last->m_focused || !last->m_focused->view)
+    TerminalView *v = last->focusedView();
+    if (!v)
         return;
-    // Aim at the centre of the first OTHER window's first leaf and run the real cross-window drop.
+    // Aim at the requested zone of the first OTHER window's first leaf (or at that window's tab
+    // strip) and run the real drop path.
     for (TerminalPanes *p : std::as_const(s_all)) {
-        if (p == last || !p->window())
+        if (p == last || !p->window() || p->window() == last->window() || !p->isVisible())
             continue;
         QVector<Node *> lv;
         p->collectLeaves(p->m_root, lv);
         if (lv.isEmpty() || !lv.first()->cell)
             continue;
-        const QPointF c(lv.first()->cell->x() + lv.first()->cell->width() / 2,
-                        lv.first()->cell->y() + lv.first()->cell->height() / 2);
-        last->tryCrossWindowDrop(last->m_focused->view, p->mapToGlobal(c));
+        QPointF scene;
+        if (zone == ZoneNewTab) {
+            const QPointF top = p->mapToScene(QPointF(0, 0));
+            scene = QPointF(p->width() / 2, top.y() / 2); // middle of the chrome strip above the panes
+        } else {
+            const QRectF r = p->zoneRect(lv.first(), zone);
+            scene = p->mapToScene(r.center());
+        }
+        if (!hoverShot.isEmpty()) {
+            debugSyntheticDrag(v, p->window(), scene, false);
+            p->window()->grabWindow().save(hoverShot);
+            QPoint hot;
+            last->dragPreview(v, QPointF(40, 12), &hot).save(QString(hoverShot).replace(QLatin1String(".png"), QLatin1String("-preview.png")));
+        }
+        debugSyntheticDrag(v, p->window(), scene, true);
         return;
     }
+}
+
+TerminalView *TerminalPanes::focusedView() const
+{
+    return m_focused ? m_focused->view : nullptr;
+}
+
+TerminalView *TerminalPanes::viewAt(int leafIndex) const
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    return (leafIndex >= 0 && leafIndex < leaves.size()) ? leaves[leafIndex]->view : nullptr;
 }
 
 // ─── dividers + layout ──────────────────────────────────────────────────────────────────────────
@@ -980,17 +1212,15 @@ void TerminalPanes::debugDragLeaf(int srcIdx, int dstIdx, int zone)
         return;
     Node *src = leaves[srcIdx];
     Node *dst = leaves[dstIdx];
-    if (!src->view || !dst->cell)
+    if (!src->view || !dst->cell || !window())
         return;
-    // Aim at the centre of the requested zone so zoneAt() classifies it the same way a real drop would.
-    const QRectF r = zoneRect(dst, zone); // zone ints line up with DropZone (1=L 2=R 3=T 4=B 5=C)
+    // Aim at the centre of the requested zone so zoneAt() classifies it the same way a real drop
+    // would, and deliver it as drag events to the window (the real drop path).
+    const QRectF r = zoneRect(dst, zone);
     const QPointF center = r.isEmpty()
         ? QPointF(dst->cell->x() + dst->cell->width() / 2, dst->cell->y() + dst->cell->height() / 2)
         : r.center();
-    const QPointF g = mapToGlobal(center);
-    beginPaneDrag(src->view);
-    updatePaneDrag(g);
-    endPaneDrag(g);
+    debugSyntheticDrag(src->view, window(), mapToScene(center), true);
 }
 
 void TerminalPanes::refocus()

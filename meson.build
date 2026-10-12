@@ -357,7 +357,7 @@ if build_solidterm
     moc_headers: (blur_src.length() > 0 ? files('apps/solidterm/native/windowblur.h') : []) + files('apps/solidterm/native/ptysession.h', 'apps/solidterm/native/terminalview.h', 'apps/solidterm/native/terminalpanes.h', 'apps/solidterm/native/terminaltabs.h', 'apps/solidterm/native/systemtheme.h', 'apps/solidterm/native/keyrecorder.h', 'apps/solidterm/native/termconfig.h', 'apps/solidterm/native/paneheader.h'),
     qresources: files('apps/solidterm/shaders.qrc'),
   )
-  executable(
+  solidterm_exe = executable(
     'solidterm',
     files(
       'apps/solidterm/main.cpp',
@@ -371,6 +371,7 @@ if build_solidterm
       'apps/solidterm/native/termconfig.cpp',
       'apps/solidterm/native/paneheader.cpp',
       'apps/solidterm/native/singleinstance.cpp',
+      'apps/solidterm/native/panedropselftest.cpp',
     ),
     blur_src,
     solidterm_moc,
@@ -405,6 +406,24 @@ if build_solidterm
     executable('test-solidterm-mousereport', files('apps/solidterm/tests/mousereport_test.cpp'),
       dependencies: [vterm_dep]),
     timeout: 10)
+
+  # Pane drag & drop across windows (the app itself, offscreen, self-checking): an unaccepted drag
+  # detaches a pane to a new window; dropping it on another window's split zone moves the LIVE view
+  # (same shell PID) and closes the emptied window; a tab-strip drop makes a new tab; a drop on its
+  # own pane is a no-op. Drives the real drop path (window drag events → TerminalTabs routing →
+  # TerminalPanes::finishDrag); only QDrag::exec itself (the compositor's half) is not exercised.
+  test('solidterm-pane-drop', solidterm_exe,
+    args: ['--standalone'],
+    env: {
+      'QT_QPA_PLATFORM': 'offscreen',
+      'QT_FORCE_STDERR_LOGGING': '1',
+      'SHELL': '/bin/sh',
+      'XDG_CONFIG_HOME': meson.current_build_dir() / 'solidterm-test-config',
+      'SOLIDTERM_XDROPTEST': '1',
+      'SOLIDTERM_PIDLOG': meson.current_build_dir() / 'solidterm-xdrop-pid.log',
+    },
+    is_parallel: false,
+    timeout: 40)
 endif
 
 # ── Tests ────────────────────────────────────────────────────────────────────────────────────

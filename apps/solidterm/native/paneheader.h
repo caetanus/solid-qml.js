@@ -46,11 +46,11 @@ signals:
     void closeRequested();
     void maximizeRequested(); // the ⤡ button (zoom this pane)
     void menuRequested(qreal x, qreal y); // title/▼ clicked → open the dropdown (scene coords)
-    // Drag a pane by its header (rearrange / detach). Positions are GLOBAL (screen) coords so the
-    // same gesture works within a window and across windows.
-    void dragStarted();
-    void dragMoved(qreal globalX, qreal globalY);
-    void dragEnded(qreal globalX, qreal globalY);
+    // Drag a pane by its header (rearrange / move to another window / detach). Emitted once the press
+    // passes the threshold, with the press point (header-local = cell-local: the header sits at the
+    // top of its cell). The receiver runs a QDrag synchronously: the compositor owns the gesture
+    // from here (cross-window on Wayland), so no move/release reaches this item afterwards.
+    void dragStarted(qreal pressX, qreal pressY);
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -64,6 +64,7 @@ private:
     bool m_armed = false;      // pressed on the title area (a drag candidate)
     bool m_dragging = false;   // moved past the threshold → a real drag
     QPointF m_pressGlobal;      // press position in screen coords (drag threshold origin)
+    QPointF m_pressLocal;       // …and in item coords (the drag preview's hot spot)
 
     QString m_title;
     int m_index = 0;       // 0 = no number (single pane); >0 shows "N: title"

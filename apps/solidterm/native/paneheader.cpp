@@ -2,6 +2,7 @@
 
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPointer>
 
 PaneHeader::PaneHeader(QQuickItem *parent)
     : QQuickPaintedItem(parent)
@@ -136,36 +137,38 @@ void PaneHeader::mousePressEvent(QMouseEvent *event)
         emit clicked();
         m_armed = true;
         m_pressGlobal = event->globalPosition();
+        m_pressLocal = event->position();
     }
     event->accept();
 }
 
 void PaneHeader::mouseMoveEvent(QMouseEvent *event)
 {
-    if (!m_armed) {
+    if (!m_armed || m_dragging) {
         event->ignore();
         return;
     }
-    const QPointF g = event->globalPosition();
-    if (!m_dragging) {
-        // Past the threshold → promote the press to a drag (tilix-style pane rearrange).
-        if ((g - m_pressGlobal).manhattanLength() < 8) {
-            event->accept();
-            return;
-        }
-        m_dragging = true;
-        emit dragStarted();
+    // Past the threshold → promote the press to a drag (tilix-style pane rearrange).
+    if ((event->globalPosition() - m_pressGlobal).manhattanLength() < 8) {
+        event->accept();
+        return;
     }
-    emit dragMoved(g.x(), g.y());
+    m_dragging = true;
     event->accept();
+    // The receiver runs the QDrag to completion (a nested loop) before this returns; the drag eats
+    // the release, so reset the press state here and drop our stale mouse grab.
+    QPointer<PaneHeader> self(this);
+    emit dragStarted(m_pressLocal.x(), m_pressLocal.y());
+    if (!self)
+        return;
+    m_armed = false;
+    m_dragging = false;
+    ungrabMouse();
 }
 
 void PaneHeader::mouseReleaseEvent(QMouseEvent *event)
 {
-    if (m_dragging) {
-        const QPointF g = event->globalPosition();
-        emit dragEnded(g.x(), g.y());
-    } else if (m_armed) {
+    if (m_armed && !m_dragging) {
         // No drag happened → this was a click: open the dropdown below the header.
         const QPointF sp = mapToScene(QPointF(4, height()));
         emit menuRequested(sp.x(), sp.y());

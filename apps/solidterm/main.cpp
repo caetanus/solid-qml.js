@@ -13,6 +13,7 @@
 #include "native/windowblur.h"
 #endif
 #include "native/keyrecorder.h"
+#include "native/panedropselftest.h"
 #include "native/paneheader.h"
 #include "native/termconfig.h"
 #include "native/terminalpanes.h"
@@ -208,6 +209,21 @@ int main(int argc, char **argv)
     }
     // Detached panes open their own windows: same per-window wiring.
     TerminalPanes::setWindowCreatedHook(wireWindow);
+    // A dragged pane's preview (the drag icon) carries the chrome's look: the preview is already a
+    // translucent snapshot; where the compositor offers ext-background-effect-v1 the icon surface
+    // asks for the same blur as the windows (compositor policy decides whether drag icons get it).
+    TerminalPanes::setDragIconHook([](QWindow *icon) {
+#ifdef HAVE_BACKGROUND_EFFECT
+        const int strength = g_app.config->getInt(QStringLiteral("blur"), 0);
+        auto *blur = new WindowBlur(icon); // owned by the icon window: goes when the drag ends
+        blur->setStrength(strength);
+        blur->setEnabled(strength > 0);
+        if (qEnvironmentVariableIsSet("SOLIDTERM_BLURINFO"))
+            qInfo("solidterm: drag icon blur %s (strength %d)", blur->isSupported() ? "requested" : "unsupported", strength);
+#else
+        Q_UNUSED(icon);
+#endif
+    });
 
     if (role == SingleInstance::Role::Server) {
         g_app.windowComponent = new QQmlComponent(&engine, windowUrl, &engine); // already compiled: cached
@@ -378,11 +394,15 @@ int main(int argc, char **argv)
     }
 
     // Debug: SOLIDTERM_REATTACH=1 (with SOLIDTERM_DETACH) reattaches the detached window's pane back
-    // into the first window, then grabs — exercises the full detach→reattach round trip.
+    // into the first window through the drop path, then grabs — the full detach→reattach round trip.
+    // The value picks the target: 2/3/4/5 = left/right/top/bottom of the first pane (1 = right,
+    // the default), 6 = its tab strip (new tab). With SOLIDTERM_DETACHSHOT the hover (drop indicator) is grabbed too.
     if (qEnvironmentVariableIsSet("SOLIDTERM_REATTACH") && window) {
         QTimer::singleShot(3200, window, [] {
-            TerminalPanes::debugReattachLastToFirst();
+            const int z = qEnvironmentVariableIntValue("SOLIDTERM_REATTACH");
             const QString pfx = qEnvironmentVariable("SOLIDTERM_DETACHSHOT");
+            TerminalPanes::debugReattachLastToFirst(z >= 2 && z <= 6 ? z : TerminalPanes::ZoneRight,
+                                                    pfx.isEmpty() ? QString() : pfx + QStringLiteral("-hover.png"));
             if (!pfx.isEmpty())
                 QTimer::singleShot(700, qApp, [pfx] {
                     int i = 0;
@@ -392,6 +412,14 @@ int main(int argc, char **argv)
                     QCoreApplication::quit();
                 });
         });
+    }
+
+    // Debug/CI: SOLIDTERM_XDROPTEST=1 — self-checking pane drag & drop run (see panedropselftest.h).
+    if (qEnvironmentVariableIsSet("SOLIDTERM_XDROPTEST") && window) {
+        QString log = qEnvironmentVariable("SOLIDTERM_PIDLOG");
+        if (log.isEmpty())
+            log = QDir::current().absoluteFilePath(QStringLiteral("solidterm-xdrop-pid.log"));
+        PaneDropSelfTest::start(log, qEnvironmentVariable("SOLIDTERM_XDROPSHOT"));
     }
 
     // Debug: SOLIDTERM_OVERVIEW=1 opens the F12 overview after a settle (use with AUTOSPLIT).
