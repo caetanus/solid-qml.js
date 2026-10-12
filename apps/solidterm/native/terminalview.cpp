@@ -27,6 +27,11 @@
 #include <memory>
 #include <vector>
 
+#if defined(Q_OS_MACOS)
+#include <libproc.h>     // proc_pidinfo: no /proc on Darwin
+#include <sys/proc_info.h>
+#endif
+
 // ─── GPU glyph material ───────────────────────────────────────────────────────────────────────────
 // Samples the coverage atlas (.r) and tints by the per-vertex foreground colour (premultiplied in
 // the fragment shader). One instance per TerminalView; its texture is the item's glyph atlas.
@@ -1571,7 +1576,15 @@ QString TerminalView::currentDirectory() const
     const qint64 pid = m_pty.pid();
     if (pid <= 0)
         return {};
+#if defined(Q_OS_MACOS)
+    // No /proc on Darwin: ask the kernel directly via libproc (part of libSystem, no extra link).
+    struct proc_vnodepathinfo vpi;
+    if (proc_pidinfo(int(pid), PROC_PIDVNODEPATHINFO, 0, &vpi, sizeof(vpi)) <= 0)
+        return {};
+    const QString cwd = QString::fromUtf8(vpi.pvi_cdir.vip_path);
+#else
     const QString cwd = QFileInfo(QStringLiteral("/proc/%1/cwd").arg(pid)).symLinkTarget();
+#endif
     return QFileInfo(cwd).isDir() ? cwd : QString();
 }
 

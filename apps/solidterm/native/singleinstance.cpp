@@ -20,6 +20,10 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#if defined(Q_OS_MACOS)
+#include <mach-o/dyld.h> // _NSGetExecutablePath: no /proc/self/exe on Darwin
+#endif
+
 extern char **environ;
 
 namespace SingleInstance {
@@ -71,15 +75,37 @@ std::string fileStamp(const std::string &path)
     struct stat st;
     if (::stat(path.c_str(), &st) != 0)
         return {};
+#if defined(Q_OS_MACOS)
+    // Darwin's struct stat has no st_mtim — the same field is st_mtimespec there.
+    return std::to_string(st.st_ino) + ':' + std::to_string(st.st_mtimespec.tv_sec) + '.'
+        + std::to_string(st.st_mtimespec.tv_nsec);
+#else
     return std::to_string(st.st_ino) + ':' + std::to_string(st.st_mtim.tv_sec) + '.'
         + std::to_string(st.st_mtim.tv_nsec);
+#endif
+}
+
+// The running executable's own path. No /proc on Darwin, so ask the dynamic linker instead.
+std::string executablePath()
+{
+#if defined(Q_OS_MACOS)
+    char exe[PATH_MAX] = {};
+    uint32_t size = sizeof exe;
+    if (_NSGetExecutablePath(exe, &size) != 0)
+        return "solidterm"; // buffer too small (path > PATH_MAX): fall back, same as the Linux miss case
+    char real[PATH_MAX] = {};
+    const char *resolved = ::realpath(exe, real); // _NSGetExecutablePath may return a symlink
+    return resolved ? std::string(resolved) : std::string(exe);
+#else
+    char exe[PATH_MAX] = {};
+    const ssize_t n = ::readlink("/proc/self/exe", exe, sizeof exe - 1);
+    return n > 0 ? std::string(exe, size_t(n)) : std::string("solidterm");
+#endif
 }
 
 std::string socketPath()
 {
-    char exe[PATH_MAX] = {};
-    const ssize_t n = ::readlink("/proc/self/exe", exe, sizeof exe - 1);
-    const std::string exePath = n > 0 ? std::string(exe, size_t(n)) : std::string("solidterm");
+    const std::string exePath = executablePath();
     std::string key = exePath;
     for (const char *v : { "SOLIDTERM_DIR", "WAYLAND_DISPLAY", "DISPLAY", "QT_QPA_PLATFORM" }) {
         key += '\n';

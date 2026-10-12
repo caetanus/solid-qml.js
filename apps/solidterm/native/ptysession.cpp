@@ -5,10 +5,18 @@
 
 #include <csignal>
 #include <vector>
+#if defined(Q_OS_MACOS)
+#include <util.h> // forkpty: Darwin declares it here, not <pty.h> (glibc-only header)
+#else
 #include <pty.h>
+#endif
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+#if defined(Q_OS_MACOS)
+extern char **environ; // execvpe (GNU extension) doesn't exist on Darwin; emulated below
+#endif
 
 PtySession::PtySession(QObject *parent)
     : QObject(parent)
@@ -71,7 +79,13 @@ bool PtySession::start(int rows, int cols, const QString &program, const QString
         if (!cwdBytes.isEmpty())
             (void)::chdir(cwdBytes.constData()); // gone/unreadable → stay in the inherited cwd
         if (!envp.empty()) {
+#if defined(Q_OS_MACOS)
+            // No execvpe on Darwin: set the environment the child will see, then execvp.
+            environ = envp.data();
+            ::execvp(shell.constData(), argv);
+#else
             ::execvpe(shell.constData(), argv, envp.data());
+#endif
         } else {
             ::setenv("TERM", "xterm-256color", 1);
             ::setenv("COLORTERM", "truecolor", 1);
