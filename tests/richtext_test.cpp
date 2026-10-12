@@ -641,7 +641,7 @@ private slots:
 
     void asyncCopyMatchesBookAndLeavesDocumentAlone()
     {
-        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
         if (!QFile::exists(book)) QSKIP("book sample unavailable");
         QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(book)));
         const QString sync = m_dir.filePath(QStringLiteral("sync.odt"));
@@ -1227,7 +1227,7 @@ private slots:
     void bookRoundTripKeepsEveryCharacterAndStyle()
     {
         // A 300-page LibreOffice book (headings, footnotes, tables, lists); RICHTEXT_BOOK overrides.
-        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
         if (!QFile::exists(book))
             QSKIP("livro-300p.odt sample not on this machine");
         QElapsedTimer t;
@@ -1677,7 +1677,7 @@ private slots:
         // Cheap, incremental: a load does one full scan (infrequent, not a keystroke — see
         // docs/document-editor.md "Outline"); logged here alongside a handful of edits to show
         // the per-edit cost stays small on a large document, not proportional to its size.
-        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
         if (!QFile::exists(book))
             QSKIP("livro-300p.odt sample not on this machine");
         QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(book)));
@@ -2222,7 +2222,7 @@ private slots:
 
     void countsOnThe300PageBook()
     {
-        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
         if (!QFile::exists(book))
             QSKIP("livro-300p.odt sample not on this machine");
         QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(book)));
@@ -2984,7 +2984,7 @@ private slots:
 
     void bookPagesKeepLinesOutOfGapsAndRecycleSheets()
     {
-        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
         if (!QFile::exists(book)) QSKIP("book sample unavailable");
         PageEditor w;
         QVERIFY(w.root);
@@ -3107,7 +3107,7 @@ private slots:
 
     void bookBareQtPaginationPerformance()
     {
-        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
         if (!QFile::exists(book)) QSKIP("book sample unavailable");
         PageEditor reference;
         QVERIFY(reference.root);
@@ -3161,7 +3161,7 @@ private slots:
     void bookPaginationAfterEdits()
     {
         QTest::failOnWarning(QRegularExpression(QStringLiteral(".*Binding loop.*")));
-        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
         if (!QFile::exists(book)) QSKIP("book sample unavailable");
         PageEditor w;
         QVERIFY(w.root);
@@ -3203,7 +3203,7 @@ private slots:
         QVERIFY(loadFile.open(QIODevice::ReadOnly));
         const double load = loadFile.readAll().split(' ').first().toDouble();
         if (load > 6) QSKIP("load average exceeds 6");
-        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
         if (!QFile::exists(book)) QSKIP("book sample unavailable");
         double medians[2];
         for (int pages = 0; pages < 2; ++pages) {
@@ -3248,7 +3248,7 @@ private slots:
     void bookEditPerformance()
     {
         QFETCH(bool, pages);
-        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
         if (!QFile::exists(book)) QSKIP("book sample unavailable");
         PageEditor w;
         QVERIFY(w.root);
@@ -3357,7 +3357,7 @@ private slots:
 
     void bookPagePerformance()
     {
-        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
         if (!QFile::exists(book)) QSKIP("book sample unavailable");
         PageEditor w;
         QVERIFY(w.root);
@@ -3399,7 +3399,7 @@ private slots:
     void bookViewportPaintsBottomLines()
     {
         QFETCH(bool, pageView);
-        const QString book = qEnvironmentVariable("RICHTEXT_BOOK", QStringLiteral("/home/caetano/lab/.wt/office-samples/livro-300p.odt"));
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
         if (!QFile::exists(book)) QSKIP("book sample unavailable");
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
         QmlCss::CssTheme theme;

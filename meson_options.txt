@@ -45,3 +45,9 @@ option(
   value: 'auto',
   description: 'Build the AOT (C++ codegen) demos — the release path that emits QtQuick C++ 1:1 instead of interpreted QML. Currently the M-AOT-0 counter proof.',
 )
+option(
+  'richtext_book',
+  type: 'string',
+  value: '',
+  description: 'Path to a large .odt (e.g. a 300-page book) for the RichText large-document tests; empty = those tests skip.',
+)

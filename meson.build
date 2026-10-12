@@ -489,7 +489,7 @@ if build_richtext
       cpp_args: richtext_args,
       include_directories: include_directories('src'),
       dependencies: richtext_test_deps),
-    env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)
+    env: ['QT_QPA_PLATFORM=offscreen', 'RICHTEXT_BOOK=' + get_option('richtext_book')], timeout: 60)
 endif
 
 # <Swipe>: a click reaches the child; a sideways drag or touchpad swipe slides the row and acts.
