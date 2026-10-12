@@ -76,6 +76,9 @@ export function Term(props: { onTitle: (t: string) => void }) {
   // ui* names: a signal named like the native property (splitGap/focusOnHover) would shadow it.
   const [uiSplitGap, setUiSplitGap] = createSignal(termConfig.getInt("splitGap", 0));
   const [uiFocusHover, setUiFocusHover] = createSignal(termConfig.getInt("focusOnHover", 0));
+  // Terminal scrollbar visibility; the native TerminalView reads the "scrollbar" key itself
+  // (termConfig.changed) — this signal only drives the Preferences control.
+  const [uiScrollbar, setUiScrollbar] = createSignal(termConfig.getString("scrollbar", "auto"));
   sysTheme.setUiOpacity(opacity() / 100); // apply saved translucency to the chrome at startup
   const [cfgOpen, setCfgOpen] = createSignal(false);
   const [title, setTitle] = createSignal("solidterm");
@@ -440,6 +443,16 @@ export function Term(props: { onTitle: (t: string) => void }) {
                       onChange={(v) => { setUiFocusHover(parseInt(v)); termConfig.set("focusOnHover", parseInt(v)); }}>
                 <option value="0">Off</option>
                 <option value="1">On</option>
+              </select>
+            </div>
+            <hr class="cfg-div" />
+            <div class="cfg-row">
+              <text class="cfg-l">Scrollbar</text>
+              <select class="cfg-sel" value={uiScrollbar()}
+                      onChange={(v) => { setUiScrollbar(v); termConfig.set("scrollbar", v); }}>
+                <option value="always">Always</option>
+                <option value="auto">Auto (while scrolling or on hover)</option>
+                <option value="never">Never</option>
               </select>
             </div>
           </div>

@@ -22,6 +22,7 @@ W.Div {
     property var animSplits: termConfig.getInt("animSplits", 1)
     property var uiSplitGap: termConfig.getInt("splitGap", 0)
     property var uiFocusHover: termConfig.getInt("focusOnHover", 0)
+    property var uiScrollbar: termConfig.getString("scrollbar", "auto")
     property var cfgOpen: false
     property var title: "solidterm"
     property var searchOpen: false
@@ -65,12 +66,12 @@ W.Div {
     function applyRename() { _ref_term.setTabTitle(activeTab, renameValue); renameOpen = false; _ref_term.refocus(); }
     function tabLabel(t) { if (!t) { return "terminal"; } var s = t; if (s.endsWith("/")) { s = s.slice(0, -1); } var slash = s.lastIndexOf("/"); return slash >= 0 ? s.slice(slash + 1) : s; }
     function getKey(k) { return k === "splitRight" ? kSplitRight : k === "splitDown" ? kSplitDown : k === "closePane" ? kClosePane : k === "focusNext" ? kFocusNext : k === "focusPrev" ? kFocusPrev : k === "newTab" ? kNewTab : k === "nextTab" ? kNextTab : k === "prevTab" ? kPrevTab : k === "search" ? kSearch : k === "zoomPane" ? kZoomPane : termConfig.getString("keys." + k, ""); }
-    function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { var n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } else { if (seq === kSearch) { openSearch(); } else { if (seq === "Ctrl+=" || seq === "Ctrl++") { zoom(1); } else { if (seq === "Ctrl+-") { zoom(-1); } else { if (seq === "Ctrl+0") { zoom(0); } else { if (seq === "Ctrl+,") { cfgOpen = true; } else { if (seq === kZoomPane) { _ref_term.toggleZoom(); } else { if (seq === "F12") { toggleOverview(); } } } } } } } } } } } } } } } }
+    function onAccel(seq) { if (seq === kSplitRight) { _ref_term.split(Qt.Horizontal); } else { if (seq === kSplitDown) { _ref_term.split(Qt.Vertical); } else { if (seq === kClosePane) { _ref_term.closeFocused(); } else { if (seq === kFocusNext) { _ref_term.focusNext(); } else { if (seq === kFocusPrev) { _ref_term.focusPrev(); } else { if (seq === kNewTab) { _ref_term.newTab(); } else { if (seq === kNextTab) { const n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab + 1) % n); } } else { if (seq === kPrevTab) { const n = tabTitles.length; if (n > 1) { _ref_term.selectTab((activeTab - 1 + n) % n); } } else { if (seq === kSearch) { openSearch(); } else { if (seq === "Ctrl+=" || seq === "Ctrl++") { zoom(1); } else { if (seq === "Ctrl+-") { zoom(-1); } else { if (seq === "Ctrl+0") { zoom(0); } else { if (seq === "Ctrl+,") { cfgOpen = true; } else { if (seq === kZoomPane) { _ref_term.toggleZoom(); } else { if (seq === "F12") { toggleOverview(); } } } } } } } } } } } } } } } }
     function zoom(d) { var px = _ref_term.zoomFocused(d); if (px > 0) { termConfig.set("fontSize", px); } }
     function setKey(k, seq) { termConfig.set("keys." + k, seq); if (k === "splitRight") { kSplitRight = seq; } else { if (k === "splitDown") { kSplitDown = seq; } else { if (k === "closePane") { kClosePane = seq; } else { if (k === "focusNext") { kFocusNext = seq; } else { if (k === "focusPrev") { kFocusPrev = seq; } else { if (k === "newTab") { kNewTab = seq; } else { if (k === "nextTab") { kNextTab = seq; } else { if (k === "prevTab") { kPrevTab = seq; } else { if (k === "search") { kSearch = seq; } else { if (k === "zoomPane") { kZoomPane = seq; } } } } } } } } } } }
     property var __cleanups: []
     Component.onCompleted: { sysTheme.setUiOpacity(opacity_ / 100); }
-    Component.onDestruction: { for (var i = 0; i < __cleanups.length; i++) __cleanups[i](); }
+    Component.onDestruction: { for (var i = __cleanups.length - 1; i >= 0; i--) __cleanups[i](); }
     cssClass: ["term-root"]
     Item {
         id: _ref_paneMenu
@@ -146,7 +147,7 @@ W.Div {
                 model: tabTitles
                 W.Div {
                     cssClass: ["tab"].concat(index === activeTab ? ["tab-active"] : [])
-                    cssState: __hover0.containsMouse ? ["hover"] : []
+                    cssState: __enter1.hovered ? ["hover"] : []
                     W.Text {
                         cssClass: ["tab-label"]
                         text: "" + (tabLabel(modelData))
@@ -163,6 +164,9 @@ W.Div {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: _ref_term.selectTab(index)
+                    }
+                    HoverHandler {
+                        id: __enter1
                     }
                 }
             }
@@ -673,6 +677,30 @@ W.Div {
                                     }
                                 }
                             }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Scrollbar"
+                                }
+                                W.Select {
+                                    id: __input15
+                                    cssClass: ["cfg-sel"]
+                                    model: ["Always", "Auto (while scrolling or on hover)", "Never"]
+                                    values: ["always", "auto", "never"]
+                                    onActivated: (__idx) => { uiScrollbar = __input15.values[__idx]; termConfig.set("scrollbar", __input15.values[__idx]); }
+                                    Binding {
+                                        target: __input15
+                                        property: "currentIndex"
+                                        value: __input15.values.indexOf(uiScrollbar)
+                                        restoreMode: Binding.RestoreNone
+                                    }
+                                }
+                            }
                         }
                         W.Text {
                             cssClass: ["cfg-group"]
@@ -737,7 +765,7 @@ W.Div {
                     model: overviewOpen ? _ref_term.overview() : []
                     W.Div {
                         cssClass: ["ov-row"].concat(modelData.active ? ["ov-active"] : [])
-                        cssState: __hover1.containsMouse ? ["hover"] : []
+                        cssState: __hover2.containsMouse ? ["hover"] : []
                         W.Text {
                             cssClass: ["ov-tab"]
                             text: "Tab " + (modelData.tab + 1)
@@ -747,7 +775,7 @@ W.Div {
                             text: "" + ((modelData.panes > 1 ? modelData.pane + 1 + ": " : "") + (modelData.title || "terminal"))
                         }
                         MouseArea {
-                            id: __hover1
+                            id: __hover2
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
@@ -772,12 +800,12 @@ W.Div {
                     text: "Tab title"
                 }
                 W.TextField {
-                    id: __input17
+                    id: __input18
                     cssClass: ["cfg-in", "rename-in"]
                     placeholder: "(empty = automatic)"
                     onTextEdited: { renameValue = text }
                     Binding {
-                        target: __input17
+                        target: __input18
                         property: "text"
                         value: renameValue
                         restoreMode: Binding.RestoreNone
