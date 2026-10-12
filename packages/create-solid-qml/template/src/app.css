@@ -12,6 +12,13 @@
   padding: 32px 24px;
 }
 
+/* Text stretches across a column-flex parent in the native engine; center the glyphs too. */
+.title,
+.subtitle,
+.count {
+  text-align: center;
+}
+
 .title {
   font-size: 26px;
   font-weight: bold;
@@ -47,6 +54,11 @@
   padding: 10px 22px;
   border-radius: 8px;
   font-size: 16px;
+}
+
+/* The native button label is a `text` primitive: give it the color explicitly. */
+.counter button text {
+  color: #ffffff;
 }
 
 .counter button.secondary {
