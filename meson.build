@@ -20,6 +20,41 @@ project(
 
 qt6 = import('qt6')
 
+# macOS: meson's qt6 module computes a Qt .framework's private-header include dir as
+# "<Module>.framework/Headers/<version>" (mesonbuild/dependencies/qt.py, QtExtraFrameworkDependency
+# .get_compile_args) — that path never exists. Qt's real mac layout keeps private headers under a
+# SEPARATE "<Module>.framework/PrivateHeaders/" tree, so every `private_headers: true` dependency
+# below would silently get non-existent -I dirs and fail to find QQuickItemPrivate etc. Work around
+# it by finding the real directory on disk (the exact subpath is Qt-packaging-dependent, so we
+# search rather than guess) and injecting it ourselves. scripts/ci-macos.sh exports
+# QT_MAC_FRAMEWORKS_DIR (the "…/lib" dir the .frameworks live in) for this to search under; the
+# qml-css-engine subproject carries its own copy of this block (separate meson project/scope).
+mac_qt_private_dep = declare_dependency()
+if host_machine.system() == 'darwin'
+  mac_fw_dir = run_command('sh', '-c', 'printf %s "${QT_MAC_FRAMEWORKS_DIR:-}"', check: true).stdout().strip()
+  if mac_fw_dir == ''
+    warning('QT_MAC_FRAMEWORKS_DIR is unset on macOS: Qt private-header dependencies (RichText, ' +
+            'the Templates2 widgets) will likely fail to find their headers.')
+  else
+    mac_private_dirs = run_command('sh', '-c',
+      'for m in QtCore QtGui QtQml QtQmlModels QtQuick QtQuickTemplates2; do ' +
+      'd=$(find "$1" -type d -path "*/$m.framework/PrivateHeaders/*/$m" 2>/dev/null | head -1); ' +
+      '[ -n "$d" ] && printf "%s\n" "$d"; done',
+      '--', mac_fw_dir, check: true).stdout().strip().split('\n')
+    mac_private_args = []
+    foreach d : mac_private_dirs
+      if d != ''
+        mac_private_args += ['-I' + d]
+      endif
+    endforeach
+    if mac_private_args.length() == 0
+      warning('No Qt PrivateHeaders found under ' + mac_fw_dir + ' — private-header dependencies ' +
+              'will likely fail to compile.')
+    endif
+    mac_qt_private_dep = declare_dependency(compile_args: mac_private_args)
+  endif
+endif
+
 # The project version, visible to app code as process.versions.solidQml (Electron idiom).
 add_project_arguments('-DSOLID_QML_VERSION="' + meson.project_version() + '"', language: 'cpp')
 
@@ -55,12 +90,22 @@ notify_args = qt6_dbus_dep.found() ? ['-DHAVE_QTDBUS'] : []
 # the loader's type registration.
 build_richtext = not get_option('richtext').disabled()
 richtext_args = build_richtext ? ['-DHAVE_RICHTEXT'] : []
-core_private_deps = build_richtext ? [dependency('qt6', modules: ['Core'], private_headers: true)] : []
+# private_headers: false on darwin — meson's own mac-framework private-header lookup is broken
+# there (see the mac_qt_private_dep comment above); mac_qt_private_dep supplies the real -I instead.
+core_private_deps = build_richtext ? [declare_dependency(dependencies: [
+  dependency('qt6', modules: ['Core'], private_headers: host_machine.system() != 'darwin'),
+  mac_qt_private_dep,
+])] : []
 
 # TabButton/Menu/MenuItem/MenuSeparator: their containers (QQuickTabBar/QQuickMenu) manage the
 # children through qobject_cast to these PRIVATE Templates classes, so the C++ widgets must
 # subclass them (same private-header precedent as QZipReader; ABI follows the installed Qt).
-qt6_templates_private_dep = dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'QmlModels', 'Quick', 'QuickTemplates2'], private_headers: true)
+# See the mac_qt_private_dep comment above: private_headers: true is broken for mac .frameworks.
+qt6_templates_private_dep = declare_dependency(dependencies: [
+  dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'QmlModels', 'Quick', 'QuickTemplates2'],
+    private_headers: host_machine.system() != 'darwin'),
+  mac_qt_private_dep,
+])
 
 
 # No qresources: the generated app (App.generated.qml + its .js sidecar) and the stylesheet are
@@ -234,7 +279,10 @@ if get_option('loader').allowed()
     cpp_args: notify_args + richtext_args,
     include_directories: include_directories('src'),
     dependencies: [solidqml_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep, qt6_templates_private_dep] + core_private_deps,
-    install_rpath: '$ORIGIN/../' + get_option('libdir'),
+      # meson never translates $ORIGIN for macOS (it's a Linux ld.so-ism dyld doesn't expand;
+  # it would bake the literal string into LC_RPATH, resolving to nothing at runtime) — @loader_path
+  # is dyld's equivalent.
+  install_rpath: (host_machine.system() == 'darwin' ? '@loader_path/../' : '$ORIGIN/../') + get_option('libdir'),
     install: true,
   )
 endif
@@ -377,7 +425,10 @@ if build_solidterm
     cpp_args: notify_args + blur_args + ['-DSOLIDTERM_DEV_DIR="' + meson.current_source_dir() + '/apps/solidterm/qml"'],
     include_directories: include_directories('src', 'apps/solidterm'),
     dependencies: [solidqml_dep, qt6_widgets_dep, qt6_network_dep, vterm_dep, util_dep] + blur_deps, # Network: QLocalServer (single instance)
-    install_rpath: '$ORIGIN/../' + get_option('libdir'),
+      # meson never translates $ORIGIN for macOS (it's a Linux ld.so-ism dyld doesn't expand;
+  # it would bake the literal string into LC_RPATH, resolving to nothing at runtime) — @loader_path
+  # is dyld's equivalent.
+  install_rpath: (host_machine.system() == 'darwin' ? '@loader_path/../' : '$ORIGIN/../') + get_option('libdir'),
     install: true,
   )
 
