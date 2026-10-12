@@ -164,6 +164,11 @@ function Step-Deploy {
         --qmldir (Join-Path $SmokeDir 'qmlout') `
         --qmldir $scan `
         (Join-Path $bin 'solid-qml-loader.exe')
+    # The MSVC runtime DLLs themselves (windeployqt --compiler-runtime only adds the vc_redist
+    # installer): the zip must run on a clean Windows without installing anything.
+    $crt = Get-ChildItem -Directory (Join-Path $env:VCToolsRedistDir 'x64') -Filter 'Microsoft.VC*.CRT' | Select-Object -First 1
+    if (-not $crt) { throw "ci-windows: no MSVC CRT redist under $env:VCToolsRedistDir" }
+    Copy-Item (Join-Path $crt.FullName '*.dll') $bin
     # windeployqt ships only the windows QPA plugin; headless runs (CI, the smoke test) need offscreen.
     New-Item -ItemType Directory -Force (Join-Path $bin 'platforms') | Out-Null
     Copy-Item (Join-Path $QtPrefix 'plugins\platforms\qoffscreen.dll') (Join-Path $bin 'platforms')
