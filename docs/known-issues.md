@@ -64,6 +64,11 @@ against the support matrix.
   re-verified for this release, since offscreen rendering cannot show it. A possible workaround
   (not verified): mount the view under `<Show>`, so that hiding destroys it and showing creates it
   again.
+- **Form controls have no default look.** An unstyled `<input type="checkbox">` (or radio) has
+  zero size and is invisible. *Workaround:* give it a `width`/`height` and style `.indicator`,
+  `:checked .indicator` and `.indicator-glyph`; the CSS snippet is in
+  [support matrix → elements](support-matrix.md#elements-and-their-attributes), and
+  `examples/widgets.css` styles every control.
 - **Scrolling:** wheel and scrollbar only. There is no keyboard scrolling (PageUp/PageDown/
   Home/End), no horizontal scrolling (`overflow-x`) and no kinetic fling
   (`vendor/qml-css-engine/src/qmlcss/cssscroll.h`).
@@ -99,6 +104,9 @@ The full list is in [support matrix → CSS](support-matrix.md#css).
   No AppImage or binary SDK either; this preview is source only.
 - **`qml-css-engine:text` is sensitive to the exact font and HarfBuzz version.** See
   [getting started → troubleshooting](getting-started.md#troubleshooting).
+- **Headless interaction testing is mouse-only.** `solid-qml-loader --click x,y,ms` sends real
+  clicks before `--grab`; there is no way to inject keystrokes, so typing into an `<input>` cannot
+  be tested offscreen with the loader.
 - **Offscreen tests cannot check popups, GPU materials or 3D.** Those were checked by hand on a
   real display, and only partly (release-plan M4).
 - **The embed library has no automated test.** `examples/embed-host` (the `embed-host-demo`

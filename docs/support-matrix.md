@@ -28,6 +28,13 @@ contract and its `key` extension), see [`SOLID-PARITY.md`](../SOLID-PARITY.md).
 
 The rules that catch people most often:
 
+- **Signals are read by calling them, stores are not.** `count()` reads a signal; a store is read
+  like a plain object or array (`items.length`, `items.filter(…)`, `todo.done`), exactly as in
+  Solid. Writing `items()` for a store is a mistake the transpiler does not catch
+  (`examples/todomvc.tsx` shows both).
+- **Input events** carry the element as `e.currentTarget` (and `e.target`):
+  `onInput={(e) => setTitle(e.currentTarget.value)}`, `onChange={(e) => setOn(e.currentTarget.checked)}`
+  (`examples/fetch.tsx`, `examples/widgets.tsx`).
 - An **effect's dependencies** are what its body reads: signals, memos, props, store fields,
   context values, and properties of `QObject`s. A component's own plain (non-reactive) values are
   never dependencies (`transpiler/test/effect-reactive-deps.test.ts`).
@@ -194,6 +201,18 @@ documented in [keyboard & accessibility](keyboard-accessibility.md).
 | `Dynamic` | `Css.CssText` | `component` expr |
 | `Suspense` | `W.Text` | `fallback` elem |
 <!-- generated:elements:end -->
+
+Form controls have no default look: an `<input type="checkbox">` or `type="radio"` with no CSS
+has zero size and does not show. Give it a size and style its indicator, for example:
+
+```css
+.row input { width: 18px; height: 18px; }
+.row input .indicator { border: 2px solid #8899aa; border-radius: 4px; background: #fff; }
+.row input:checked .indicator { background: #41cd52; border-color: #41cd52; }
+.row input .indicator-glyph { color: #fff; font-size: 11px; }
+```
+
+`examples/widgets.css` styles every control this way.
 
 Any other lowercase tag (`section`, `ul`, `li`, `table`, `label`, `canvas`…) is a generic box
 (`W.Div`) that CSS type selectors can target. It takes the `div` contract, so `<a href>`,

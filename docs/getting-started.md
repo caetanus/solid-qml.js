@@ -161,8 +161,14 @@ LD_LIBRARY_PATH=/opt/solidqml/usr/local/lib \
   /opt/solidqml/usr/local/bin/solid-qml-loader --qml ./qmlout/App.generated.qml
 ```
 
+Without `--css`, the loader loads the stylesheet the generator wrote next to the entry
+(`qmlout/App.generated.css` here), on top of the framework's built-in base sheet.
+
 Add `QT_QPA_PLATFORM=offscreen --grab shot.png` to render one frame to a PNG headlessly (what
-`scripts/clean-room-check.sh` does) instead of opening a window.
+`scripts/clean-room-check.sh` does) instead of opening a window. To test interaction headlessly,
+add `--click x,y,delayMs` (repeatable, window coordinates): it sends a real mouse click before the
+frame is grabbed. There is no equivalent for keyboard input yet. `solid-qml-loader --help` lists
+every option.
 
 ## Native dev loop (inside the checkout)
 

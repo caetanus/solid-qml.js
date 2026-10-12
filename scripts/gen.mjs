@@ -9,7 +9,15 @@ const entry = process.argv[2] ?? "src/mainqml.tsx";
 const out = process.argv[3] ?? "qml/solidqml/App.generated.qml";
 const outDir = path.dirname(out);
 
-const app = await generate(await readFile(entry, "utf8"), entry);
+let app;
+try {
+  app = await generate(await readFile(entry, "utf8"), entry);
+} catch (e) {
+  // A transpile error is a message for the app author, not a crash: print it without the stack
+  // (SQ_GEN_STACK=1 keeps the stack, for debugging the transpiler itself).
+  console.error(`[gen] ${entry}: ${process.env.SQ_GEN_STACK ? e.stack : e.message}`);
+  process.exit(1);
+}
 await mkdir(path.join(outDir, "modules"), { recursive: true });
 for (const [name, qml] of Object.entries(app.components)) await writeFile(path.join(outDir, `${name}.qml`), qml);
 for (const [name, source] of Object.entries(app.modules)) await writeFile(path.join(outDir, name), source);
