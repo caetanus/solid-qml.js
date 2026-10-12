@@ -1,0 +1,53 @@
+SolidTerm pane drag & drop across windows — evidence (2026-10-12, branch st-detach)
+
+Mechanism: a pane-header drag is a real QDrag (mime application/x-solidterm-pane = "<pid>:<serial>").
+On Wayland that is a wl_data_device drag: the compositor sends enter/motion/drop to whichever surface
+is under the pointer, including other windows of this process, so no global coordinates are needed.
+Every window's TerminalTabs filters its window's drag events and routes them: over the panes -> split
+zones of the active TerminalPanes (drop indicator), over the chrome strip above them -> "new tab"
+(indicator over the strip). The drop only records the target; the source applies it after
+QDrag::exec returns. Unaccepted drag (Esc, desktop, another app) -> detach to a new window (old
+behaviour). Drops from another process are refused (a pty cannot cross processes).
+
+1) Real pointer gesture, nested HEADLESS sway (owner's sway build, ext-background-effect-v1),
+   harness: xdrop-nested-harness.sh + xdrop-vptr.c (virtual pointer -> genuine wl_data_device DnD)
+
+   MODE=split  (B's pane header -> right half of A's pane)
+     solidterm: pane drag started (preview 350x360)
+     solidterm: drag icon blur requested (strength 60)
+     solidterm: pane drag ended (action 2)            # MoveAction: accepted by window A
+     solidterm: pane drop -> another container (zone 3)
+     windows after: 1                                  # window B closed once empty
+     shells before == shells after                     # no shell restarted
+     PNGs: xdrop-nested-0-before, -1-dragging (translucent preview + split indicator), -2-after
+
+   MODE=tab    (-> A's header strip)
+     pane drag ended (action 2); pane drop -> new tab (zone 6); windows after: 1; same shell PIDs
+     PNGs: xdrop-nested-tab-1-dragging (strip indicator), -2-after (A now has 2 tabs)
+
+   MODE=outside (-> the wallpaper gap below the windows)
+     pane drag ended (action 0); pane drop -> detach to a new window; windows after: 2; same PIDs
+     PNGs: xdrop-nested-outside-1-dragging, -2-after
+
+2) Real display (owner's sway, wayland-1), `solidterm --standalone`, SOLIDTERM_XDROPTEST=1
+   (the drop path driven by window drag events; self-checking, quits by itself in ~8 s):
+     PASS window A split into 2 panes
+     PASS unaccepted drag detached the pane into a 2nd window
+     PASS window A kept 1 pane / the pane lives in window B
+     PASS window B closed once empty
+     PASS the SAME view now lives in A's split tree / window A has 2 panes again
+     PASS dropped on the right side of pane 1
+     PASS tab-strip drop opened a 2nd tab / the pane is that tab's only pane
+     PASS drop on its own pane is a no-op
+     PASS the shell survived the move (same PID before and after)   pid 1332633 == 1332633
+   PNGs: xdrop-live-1-detached-1, -2-hover (indicator), -2-hover-preview (the drag icon pixmap),
+         -3-reattached-0, -4-newtab-0
+
+3) meson: `solidterm-pane-drop` runs the same self-test offscreen (QT_QPA_PLATFORM=offscreen,
+   SHELL=/bin/sh) — 18/18 suite OK.
+
+Limits seen:
+- Blur under the drag ICON: the request is sent on the icon surface (ext-background-effect-v1 +
+  strength), but the owner's sway blurs only views (sway/desktop/blur.c), so the icon is
+  translucent without blur there. A compositor that honours the effect on drag icons will blur it.
+- With the header hidden (showHeader 0) and a single tab there is no chrome strip, so no tab target.

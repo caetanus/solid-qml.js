@@ -79,11 +79,21 @@ closed now with fresh evidence, plus a new scrollbar-visibility option and one n
 - **[ ] Maximize needs an animation.** Toggling zoom snaps. It should tween the pane geometry
   (the CSS engine supports `transition`, so a class swap may be enough — otherwise animate in
   `paneheader.cpp` / the pane container).
-- **[ ] Detach does not blur / alpha.** Dragging a pane out gives no visual feedback; the detached
-  preview should carry the window's blur/translucency like the rest of the chrome.
-- **[ ] Cannot re-attach a pane between two SolidTerm windows.** Drag-and-drop of a pane from one
-  window into another window's split tree does not work — today the tree only accepts moves within
-  its own window.
+- **[x] Detach does not blur / alpha.** Done (st-detach): the dragged pane now shows a drag preview
+  — a rounded, translucent snapshot of the pane (keeps the window's own alpha, then 82 % opacity,
+  accent border) — and the drop indicator appears on every valid target (split zone of any pane in
+  any window, or the chrome strip for "new tab"). The preview is the QDrag icon; its surface gets the
+  same `ext-background-effect-v1` request as the windows (`WindowBlur`, config `blur`). Limit: the
+  owner's sway blurs only views, so the icon is translucent without blur there.
+- **[x] Cannot re-attach a pane between two SolidTerm windows.** Done (st-detach): the header drag is
+  a real QDrag (`application/x-solidterm-pane`, "<pid>:<serial>"); every window's `TerminalTabs`
+  filters its window's drag events, so the COMPOSITOR picks the window under the cursor (Wayland has
+  no global coordinates — the old `mapFromGlobal` hit-test could not work there). Drop on a pane's
+  side → spliced into that window's split tree (the live `TerminalView` + pty move; same shell PID,
+  scrollback intact); on the header/tab strip → a new tab; the emptied source window closes; Esc or
+  a drop outside every SolidTerm window → detach to a new window as before; another process's pane
+  is refused. Verified with a real pointer drag in a nested headless sway and on the real display;
+  meson test `solidterm-pane-drop`. Evidence: `docs/evidence/solidterm/xdrop-*`.
 - **[x] New option: focus-on-hover.** Done (4b76be1): Preferences → Behavior → "Focus follows
   mouse" (off by default, `termConfig` key `focusOnHover`). Entering a pane focuses it only while the
   SolidTerm window is already active, with no mouse button held and no pane drag in progress.
