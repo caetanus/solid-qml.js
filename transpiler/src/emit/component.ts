@@ -5,6 +5,7 @@ import { emitExpr, emitPattern, shadowOwnParams, type Scope } from "./expr.ts";
 import { emitStmt, emitValue, emitBindingStmt, emitStatements } from "./stmt.ts";
 import { onDepsCall, type EffectInfo } from "../model/symbols.ts";
 import { BATCH_MODULE_PATH } from "./runtime.ts";
+import { analyzeChildrenAccessors } from "../model/symbols.ts";
 import { analyzeSignals, analyzeProps, analyzeSetup, analyzeResources, analyzeMutableLocals, analyzeRenderLocals, renderLocalLiveTaint, analyzeHelpers, analyzeModuleFunctions, moduleLevelMutableNames, collectModuleFunctionClosure, collectFetcherDeps, effectDeps, type HelperInfo, type ProviderInfo, type UseContextBinding } from "../model/symbols.ts";
 import { safeName } from "../names/safe.ts";
 import { hParts, isHCall, isFragmentTag } from "../ast/h.ts";
@@ -32,6 +33,10 @@ export interface CtxWiring {
 export interface ComponentOptions {
   /** The app calls `batch` somewhere: every computation defers itself while a batch is open. */
   batching?: boolean;
+  /** Per instantiated component (use-name → declared props), for spread props `<C {...o}>`. */
+  componentProps?: Map<string, Set<string>>;
+  /** Props this component must declare beyond the ones it reads: forwarded by a `{...props}` spread. */
+  forwardedProps?: Set<string>;
 }
 
 export function emitComponentType(fn: t.Function, render: t.CallExpression, components?: Map<string, string>, contexts?: Set<string>, provider?: ProviderInfo | null, ctx?: CtxWiring, moduleFile?: t.File, jsImports?: Record<string, string>, moduleInit?: string[], foreignQml?: Set<string>, foreignImports?: Map<string, string>, options: ComponentOptions = {}): string[] {
@@ -69,7 +74,8 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   };
   const renderLocalsLive = renderLocalLiveTaint(renderLocalsMap, isLiveName);
   const renderLocals = renderLocalsMap.size > 0 ? new Set(renderLocalsMap.keys()) : undefined;
-  validateChildrenSlot(render, props.param);
+  const childrenAccessors = analyzeChildrenAccessors(fn, render, props.param, propAliases);
+  validateChildrenSlot(render, props.param, propAliases, childrenAccessors);
   const collectedRefs: string[] = [];
   // Consumer wiring: local → ctx, so `c.member` resolves to `__ctx_<ctx>.member` in render bindings.
   const ctxBindings: Record<string, string> = {};
@@ -158,6 +164,10 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   const scope: Scope = {
     table, mode: "binding", propsParam: props.param ?? undefined, propAliases, components, contexts, refs: collectedRefs, lazyRefs, foreignQml, foreignImports,
     inputCounter, hoverCounter, usedWidgets, buttonGroups, resources: resources.map((r) => r.name), jsImports, solidApi, runtime,
+    ...(childrenAccessors.size ? { childrenAccessors } : {}),
+    ...(moduleFile && referencesComponentAsValue(fn, moduleComponentNames(moduleFile, components)) ? { componentsAsValues: true } : {}),
+    ...(Object.keys(props.rests).length ? { restExcludes: props.rests } : {}),
+    ...(options.componentProps ? { componentProps: options.componentProps } : {}),
     ...(baseLocals ? { locals: baseLocals } : {}),
     ...(mutableLocals ? { mutableLocals } : {}),
     ...(helpers ? { helpers } : {}),
@@ -211,13 +221,38 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   // Prop reads inside reactive initializers (e.g. createSignal(props.x || 0)) resolve through the
   // props param to the sibling prop property. (init mode is non-self-qualified → bare property ref.)
   const initScope: Scope = { table, mode: "init", propsParam: props.param ?? undefined, propAliases, jsImports, solidApi, runtime, ...(baseLocals ? { locals: baseLocals } : {}) };
-  for (const name of props.used) {
+  // Props read here, plus props this component forwards with a `{...props}` spread (index.ts).
+  // A root that is itself a component instance (`return <Mid …/>`) IS that component's object: its
+  // props are already properties here. A prop of this component with the same name is the same
+  // property — forwarded as is (`label={props.label}`, `{...props}`) it needs no declaration and no
+  // binding (`label: label` would bind the property to itself); a default becomes a plain value
+  // the parent can override. Any other use of the name would need two properties in one: fail loud.
+  const rootTag = hParts(render).tag;
+  const rootName = t.isIdentifier(rootTag) ? rootTag.name : "";
+  const rootInner = rootName && components?.has(rootName) ? options.componentProps?.get(rootName) : undefined;
+  const inherited = new Set<string>();
+  if (rootInner) {
+    const rootLine = (k: string) => new RegExp(`^${INDENT}${safeName(k).replace(/\$/g, "\\$")}: `);
+    for (const name of new Set([...props.used, ...(options.forwardedProps ?? [])])) {
+      if (name === "children" || !rootInner.has(name)) continue;
+      const at = lines.findIndex((l, k) => k > openIdx && rootLine(name).test(l));
+      if (at >= 0 && lines[at] !== `${INDENT}${safeName(name)}: ${safeName(name)}`)
+        throw new Error(`<${rootName}> is this component's root and already has a prop \`${name}\`: the component cannot also take its own \`${name}\` and pass something else — rename one, or wrap the root in a <div>`);
+      if (at >= 0) lines.splice(at, 1);
+      inherited.add(name);
+    }
+    for (const sym of table.values())
+      if ("name" in sym && rootInner.has(sym.name))
+        throw new Error(`<${rootName}> is this component's root and already has a prop \`${sym.name}\`: a ${sym.kind} of the same name would be the same property — rename it, or wrap the root in a <div>`);
+  }
+  for (const name of new Set([...props.used, ...(options.forwardedProps ?? [])])) {
     if (name === "children") continue;
     // A signal/memo of the same name already owns this property (the prop binds to it); skip the
     // duplicate prop declaration so the type stays valid QML.
     const sameName = table.get(name);
     if (sameName && (sameName.kind === "signal" || sameName.kind === "memo")) continue;
     const def = props.defaults[name];
+    if (inherited.has(name)) { if (def) decls.push(`${INDENT}${safeName(name)}: ${emitExpr(def, initScope)}`); continue; }
     decls.push(def
       ? `${INDENT}property var ${safeName(name)}: ${emitExpr(def, initScope)}`
       : `${INDENT}property var ${safeName(name)}`);
@@ -669,10 +704,11 @@ function resolveSignalInit(
  *  plan — so reject it rather than silently mount children at the wrong place.
  *  NB: only the props param is checked, not mergeProps/splitProps aliases (alias.children) — no
  *  current example mixes child slots with prop helpers; tighten when one does. */
-function validateChildrenSlot(render: t.CallExpression, propsParam: string | null): void {
+function validateChildrenSlot(render: t.CallExpression, propsParam: string | null, propAliases: Set<string>, accessors: Set<string>): void {
   if (!propsParam) return;
-  const isMarker = (n: t.Node): boolean => t.isMemberExpression(n) && !n.computed &&
-    t.isIdentifier(n.object, { name: propsParam }) && t.isIdentifier(n.property, { name: "children" });
+  const isMarker = (n: t.Node): boolean => (t.isMemberExpression(n) && !n.computed && t.isIdentifier(n.object)
+    && (n.object.name === propsParam || propAliases.has(n.object.name)) && t.isIdentifier(n.property, { name: "children" }))
+    || (t.isCallExpression(n) && n.arguments.length === 0 && t.isIdentifier(n.callee) && accessors.has(n.callee.name));
   const rootChildren = new Set(hParts(render).children);
   const walk = (n: t.Node): void => {
     if (isHCall(n)) {
@@ -684,6 +720,40 @@ function validateChildrenSlot(render: t.CallExpression, propsParam: string | nul
     }
   };
   walk(render);
+}
+
+/** Names that denote components in this module: its own component functions, the components it
+ *  instantiates, and capitalised imports from relative modules. */
+function moduleComponentNames(file: t.File, used?: Map<string, string>): Set<string> {
+  const out = new Set<string>(used?.keys() ?? []);
+  const returnsH = (body: t.Node | null | undefined) => !!body && t.isBlockStatement(body) && body.body.some((st) => t.isReturnStatement(st) && isHCall(st.argument));
+  for (const node of file.program.body) {
+    const decl = t.isExportNamedDeclaration(node) || t.isExportDefaultDeclaration(node) ? node.declaration : node;
+    if (t.isFunctionDeclaration(decl) && decl.id && returnsH(decl.body)) out.add(decl.id.name);
+    if (t.isImportDeclaration(node) && node.source.value.startsWith("."))
+      for (const sp of node.specifiers) if (/^[A-Z]/.test(sp.local.name)) out.add(sp.local.name);
+  }
+  return out;
+}
+
+/** Does the component use a component name as a value (not as an h() tag)? */
+function referencesComponentAsValue(fn: t.Function, components: Set<string>): boolean {
+  let found = false;
+  const walk = (n: unknown, parent: t.Node | null): void => {
+    if (found || !n || typeof n !== "object") return;
+    if (Array.isArray(n)) { for (const x of n) walk(x, parent); return; }
+    const nn = n as t.Node;
+    if (!nn.type) return;
+    if (t.isIdentifier(nn) && components.has(nn.name)) {
+      const isTag = !!parent && isHCall(parent) && parent.arguments[0] === nn;
+      const isKey = !!parent && ((t.isMemberExpression(parent) && parent.property === nn && !parent.computed)
+        || (t.isObjectProperty(parent) && parent.key === nn && !parent.computed));
+      if (!isTag && !isKey) { found = true; return; }
+    }
+    for (const k of t.VISITOR_KEYS[nn.type] ?? []) walk((nn as unknown as Record<string, unknown>)[k], nn);
+  };
+  walk(fn.body, null);
+  return found;
 }
 
 /** The names this module imports from Solid (`solid-js`, `solid-js/store`, `solid-js/web`):

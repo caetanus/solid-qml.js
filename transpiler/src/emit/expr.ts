@@ -75,6 +75,15 @@ export interface Scope {
   /** Solid API names imported by the module (local → exported). A call to one the emitter does not
    *  model fails loud instead of becoming a call to an undefined function. */
   solidApi?: Map<string, string>;
+  /** `const c = children(() => props.children)` names: `{c()}` slots the children like `{props.children}`. */
+  childrenAccessors?: Set<string>;
+  /** The component references a component name as a VALUE somewhere (not as a tag): a runtime
+   *  value may hold a component (<Dynamic> must not take it for a tag string). */
+  componentsAsValues?: boolean;
+  /** splitProps rest aliases → the keys split off (absent from the rest). */
+  restExcludes?: Record<string, string[]>;
+  /** Per instantiated component (use-name → the props it declares), for spread props `<C {...o}>`. */
+  componentProps?: Map<string, Set<string>>;
   /** Collector: runtime helpers the emitted code uses (untrack → `__untrack`, batch → SolidBatch). */
   runtime?: { untrack: boolean; batch: boolean };
   /** Imported JS bindings mirrored as QML ES modules: local name → QML expression. */

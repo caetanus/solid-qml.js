@@ -975,18 +975,24 @@ function isReactiveDecl(d: t.VariableDeclarator): boolean {
       && ["mergeProps", "splitProps"].includes(init.callee.name)) return true;
   // useContext binding — modelled by analyzeUseContext, resolved through __ctx_<ctx>, not setup
   if (init && t.isCallExpression(init) && t.isIdentifier(init.callee, { name: "useContext" })) return true;
+  // `const c = children(() => props.children)` — a children slot accessor (analyzeChildrenAccessors)
+  if (init && t.isCallExpression(init) && t.isIdentifier(init.callee, { name: "children" })) return true;
   return false;
 }
 
 /** A component's props: the param name, the prop names it reads (via props.X or a mergeProps/
  *  splitProps alias.X), default values (from mergeProps' defaults object), and the alias names
  *  (variables bound to mergeProps/splitProps that forward to props). */
-export function analyzeProps(fn: t.Function): { param: string | null; used: string[]; defaults: Record<string, t.Expression>; aliases: string[] } {
+export function analyzeProps(fn: t.Function): { param: string | null; used: string[]; defaults: Record<string, t.Expression>; aliases: string[]; rests: Record<string, string[]> } {
   const param = fn.params[0] && t.isIdentifier(fn.params[0]) ? fn.params[0].name : null;
   const used = new Set<string>();
   const defaults: Record<string, t.Expression> = {};
   const aliases = new Set<string>();
-  if (!param) return { param: null, used: [], defaults, aliases: [] };
+  /** splitProps rest aliases: name → the keys split OFF (absent from it). */
+  const rests: Record<string, string[]> = {};
+  if (fn.params[0] && !param)
+    throw new Error("a component's props must be one parameter (`function C(props)`): destructuring it (`({ a, b })`) reads each prop once, untracked — not supported natively");
+  if (!param) return { param: null, used: [], defaults, aliases: [], rests };
 
   const body = t.file(t.program(fn.body.type === "BlockStatement" ? fn.body.body : [t.expressionStatement(fn.body)]));
   // First pass: find alias declarations + mergeProps defaults.
@@ -997,6 +1003,11 @@ export function analyzeProps(fn: t.Function): { param: string | null; used: stri
       if (!init || !t.isCallExpression(init) || !t.isIdentifier(init.callee)) continue;
       if (init.callee.name === "mergeProps") {
         if (t.isIdentifier(d.id)) aliases.add(d.id.name);
+        // An object AFTER props overrides it (Solid: the last source with a defined value wins);
+        // only the defaults form `mergeProps({ … }, props)` maps onto overridable properties.
+        const at = init.arguments.findIndex((a) => t.isIdentifier(a, { name: param }));
+        if (at >= 0 && init.arguments.slice(at + 1).some((a) => t.isObjectExpression(a)))
+          throw new Error("mergeProps(props, { … }): an object after props OVERRIDES the passed props — not supported natively; put the defaults first: mergeProps({ … }, props)");
         // NB: every object-literal arg is treated as defaults (prop init values). mergeProps used
         // for last-wins OVERRIDE (object after props) is NOT modelled — out of scope for now.
         for (const arg of init.arguments) // the object-literal arg(s) carry defaults
@@ -1006,6 +1017,16 @@ export function analyzeProps(fn: t.Function): { param: string | null; used: stri
       } else if (init.callee.name === "splitProps") {
         // const [local, rest] = splitProps(props, [...]) — `local` (first element) aliases props.
         if (t.isArrayPattern(d.id) && d.id.elements[0] && t.isIdentifier(d.id.elements[0])) aliases.add((d.id.elements[0] as t.Identifier).name);
+        // `rest` (second element): the other props — read through it like props, spread as props
+        // minus the split keys.
+        const rest = t.isArrayPattern(d.id) ? d.id.elements[1] : null;
+        if (rest && t.isIdentifier(rest)) {
+          const keys = init.arguments[1];
+          if (!keys || !t.isArrayExpression(keys) || !keys.elements.every((e) => t.isStringLiteral(e)))
+            throw new Error("splitProps(props, keys): keys must be an array of string literals");
+          aliases.add(rest.name);
+          rests[rest.name] = keys.elements.map((e) => (e as t.StringLiteral).value);
+        }
       }
     }
   }
@@ -1017,7 +1038,46 @@ export function analyzeProps(fn: t.Function): { param: string | null; used: stri
       if (object.name === param || aliases.has(object.name)) used.add(property.name);
     },
   });
-  return { param, used: [...used], defaults, aliases: [...aliases] };
+  return { param, used: [...used], defaults, aliases: [...aliases], rests };
+}
+
+/** `const c = children(() => props.children)` at a component's top level: `c` is a children slot
+ *  accessor — `{c()}` directly inside the root element slots the children exactly like
+ *  `{props.children}`. Resolving or inspecting the children (`c.toArray()`, `c()` used as a value)
+ *  has no native equivalent (the children are QML objects mounted into the root) and fails loud. */
+export function analyzeChildrenAccessors(fn: t.Function, render: t.CallExpression, propsParam: string | null, propAliases: Set<string>): Set<string> {
+  const out = new Set<string>();
+  if (!t.isBlockStatement(fn.body)) return out;
+  const decls = new Set<t.Node>();
+  for (const st of fn.body.body) {
+    if (!t.isVariableDeclaration(st)) continue;
+    for (const d of st.declarations) {
+      if (!d.init || !t.isCallExpression(d.init) || !t.isIdentifier(d.init.callee, { name: "children" })) continue;
+      const arg = d.init.arguments[0];
+      const body = arg && (t.isArrowFunctionExpression(arg) || t.isFunctionExpression(arg)) && arg.params.length === 0
+        ? (t.isBlockStatement(arg.body) ? (arg.body.body.length === 1 && t.isReturnStatement(arg.body.body[0]) ? arg.body.body[0].argument : null) : arg.body)
+        : null;
+      const ok = !!body && t.isMemberExpression(body) && !body.computed && t.isIdentifier(body.property, { name: "children" })
+        && t.isIdentifier(body.object) && (body.object.name === propsParam || propAliases.has(body.object.name));
+      if (!ok || !t.isIdentifier(d.id))
+        throw new Error("children(): only `const c = children(() => props.children)` is supported natively");
+      out.add(d.id.name);
+      decls.add(d.id);
+    }
+  }
+  if (!out.size) return out;
+  // The only allowed use: `{c()}` as a direct child of the root element.
+  const rootSlots = new Set<t.Node>(hParts(render).children.filter((c) => t.isCallExpression(c) && c.arguments.length === 0
+    && t.isIdentifier(c.callee) && out.has(c.callee.name)).map((c) => (c as t.CallExpression).callee));
+  traverse(t.file(t.program(fn.body.body)), {
+    Identifier(path) {
+      if (!out.has(path.node.name) || decls.has(path.node) || rootSlots.has(path.node)) return;
+      if (t.isMemberExpression(path.parent) && !path.parent.computed && path.parent.property === path.node) return;
+      if (t.isObjectProperty(path.parent) && !path.parent.computed && path.parent.key === path.node) return;
+      throw new Error(`children(): \`${path.node.name}\` can only be rendered as {${path.node.name}()} directly inside the component's root element — resolving or inspecting the children (${path.node.name}.toArray(), ${path.node.name}() as a value, inside <Show>/<For>) is not supported natively`);
+    },
+  });
+  return out;
 }
 
 /** Top-level helper functions in a component body: `function f(params) { body }` (FunctionDeclaration)
@@ -1081,6 +1141,30 @@ export function analyzeHelpers(fn: t.Function): Map<string, HelperInfo> {
   return out;
 }
 
+/** Babel's object-spread helper for JSX props (`_extends`, `_extends2`…). */
+export function isSpreadHelperName(name: string): boolean {
+  return /^_extends\d*$/.test(name);
+}
+
+/** A component instance's props argument as an ordered list of sources: object literals and spread
+ *  expressions (`<C a={1} {...o} b={2}>` → `{a}`, `o`, `{b}`). */
+export type PropSource = { props: t.ObjectProperty[] } | { spread: t.Expression };
+export function propSources(propsArg: t.Node | undefined): PropSource[] {
+  if (!propsArg || t.isNullLiteral(propsArg)) return [];
+  const one = (n: t.Node): PropSource => {
+    if (t.isObjectExpression(n)) {
+      if (n.properties.some((p) => !t.isObjectProperty(p))) throw new Error("component props: only `key={value}` and `{...spread}` attributes are supported");
+      return { props: n.properties as t.ObjectProperty[] };
+    }
+    if (t.isExpression(n)) return { spread: n };
+    throw new Error(`component props: unsupported ${n.type}`);
+  };
+  if (t.isCallExpression(propsArg) && ((t.isIdentifier(propsArg.callee) && isSpreadHelperName(propsArg.callee.name))
+      || (t.isMemberExpression(propsArg.callee) && t.isIdentifier(propsArg.callee.object, { name: "Object" }) && t.isIdentifier(propsArg.callee.property, { name: "assign" }))))
+    return propsArg.arguments.map(one).filter((src) => !("props" in src) || src.props.length > 0);
+  return [one(propsArg)];
+}
+
 /** True if a function-like body IS a component (returns an `h(...)` call) — the same shape
  *  `findComponents` (index.ts) looks for. A module-level declaration with this shape is a
  *  component, not a plain helper, and must never be pulled into another component as a method. */
@@ -1103,6 +1187,8 @@ function looksLikeComponentBody(body: t.BlockStatement | t.Expression): boolean 
 export function analyzeModuleFunctions(file: t.File): Map<string, HelperInfo> {
   const out = new Map<string, HelperInfo>();
   for (const node of file.program.body) {
+    // Babel's JSX spread helper (`h(C, _extends({…}, o))`): consumed by the instance emitter.
+    if (t.isFunctionDeclaration(node) && node.id && isSpreadHelperName(node.id.name)) continue;
     if (t.isFunctionDeclaration(node) && node.id && t.isBlockStatement(node.body)) {
       if (looksLikeComponentBody(node.body)) continue;
       out.set(node.id.name, helperInfo(node.params, node.body));

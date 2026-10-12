@@ -1,12 +1,13 @@
 import * as t from "@babel/types";
 import { emitExpr, shadowOwnParams, type Scope } from "./expr.ts";
-import { emitStmt } from "./stmt.ts";
+import { emitStmt, emitStatements } from "./stmt.ts";
 import { safeName } from "../names/safe.ts";
 import { CONTROL_TAGS, hParts, isFragmentTag, isHCall } from "../ast/h.ts";
 import { nativeTags, requireImport } from "./native/index.ts";
 import { translateArgsHandler } from "./native/inputs.ts";
 import { certifyForRow } from "./forCertify.ts";
 import { checkAttrs, checkElement, forKeyField, rejectForKey, warnOnce } from "./attrs.ts";
+import { propSources } from "../model/symbols.ts";
 
 export const INDENT = "    ";
 export const TEXT_TAGS = new Set(["text", "span", "h1", "h2", "h3", "h4", "h5", "h6", "p", "cite", "bio"]);
@@ -408,6 +409,8 @@ function emitInstance(name: string, propsArg: t.Node | undefined, children: t.No
       if (scope.refs) scope.refs.push(props.ref);
     }
     const inner = [`${i(1)}${typeName} {`, ...refLine, `${i(2)}anchors.fill: parent`];
+    if (propSources(propsArg).some((src) => "spread" in src))
+      throw new Error(`<${name} {...}>: spread props on a foreign QML type are not supported — its property set is not known at compile time; pass each property explicitly`);
     if (propsArg && t.isObjectExpression(propsArg)) {
       for (const p of propsArg.properties) {
         if (!t.isObjectProperty(p) || !t.isIdentifier(p.key) || !t.isExpression(p.value)) continue;
@@ -447,15 +450,70 @@ function emitInstance(name: string, propsArg: t.Node | undefined, children: t.No
     }
   }
 
-  if (propsArg && t.isObjectExpression(propsArg)) {
-    for (const p of propsArg.properties) {
-      if (t.isObjectProperty(p) && t.isIdentifier(p.key) && p.key.name !== "children" && t.isExpression(p.value))
-        lines.push(`${pad}${INDENT}${safeName(p.key.name)}: ${emitExpr(p.value, { ...scope, mode: "binding" })}`);
-    }
-  }
-  lines.push(...emitChildren(children, childScope, level + 1));
+  lines.push(...instanceProps(name, propsArg, scope).map((l) => `${pad}${INDENT}${l}`));
+  // Children a component never reads (`props.children` nowhere in it) are not rendered in Solid —
+  // they are a lazy getter nobody calls. Mounting them into the root would show them anyway.
+  const declared = scope.componentProps?.get(name);
+  if (declared?.has("children") && !children.length && propSources(propsArg).some((src) => "spread" in src && t.isIdentifier(src.spread)
+      && (src.spread.name === scope.propsParam || !!scope.propAliases?.has(src.spread.name)) && !scope.restExcludes?.[src.spread.name]?.includes("children")))
+    throw new Error(`<${name} {...props} />: forwarding children through a props spread is not supported natively — pass them explicitly: <${name} {...props}>{props.children}</${name}>`);
+  if (!declared || declared.has("children")) lines.push(...emitChildren(children, childScope, level + 1));
   lines.push(`${pad}}`);
   return lines;
+}
+
+/** A component instance's prop bindings. Plain attributes bind one by one. With spreads
+ *  (`<C a={1} {...o} b={2}>`), each prop the component declares reads the sources from last to
+ *  first and takes the first value that is not undefined — Solid's mergeProps rule for JSX spreads;
+ *  a spread of this component's own props (`{...props}`, a mergeProps/splitProps alias) forwards
+ *  them (index.ts declares the forwarded props here). */
+function instanceProps(name: string, propsArg: t.Node | undefined, scope: Scope): string[] {
+  const bind: Scope = { ...scope, mode: "binding" };
+  const sources = propSources(propsArg);
+  const keyOf = (p: t.ObjectProperty) => t.isIdentifier(p.key) ? p.key.name : t.isStringLiteral(p.key) ? p.key.value : null;
+  // A prop the component never reads has no effect in Solid; here it would be an assignment to a
+  // property the type does not have (a load error) — leave it out.
+  const declared = scope.componentProps?.get(name);
+  if (!sources.some((src) => "spread" in src)) {
+    const out: string[] = [];
+    for (const src of sources) for (const p of (src as { props: t.ObjectProperty[] }).props) {
+      const k = keyOf(p);
+      if (k && k !== "children" && t.isExpression(p.value) && (!declared || declared.has(k))) out.push(`${safeName(k)}: ${emitExpr(p.value, bind)}`);
+    }
+    return out;
+  }
+  if (!declared) throw new Error(`<${name} {...}>: spread props need the component's prop list (not known for ${name})`);
+  const names = [...declared].filter((k) => k !== "children");
+  const out: string[] = [];
+  for (const k of names) {
+    // Candidate values, last source first.
+    const cands: { expr: string; definite: boolean }[] = [];
+    for (const src of [...sources].reverse()) {
+      if ("props" in src) {
+        const p = [...src.props].reverse().find((q) => keyOf(q) === k);
+        if (p && t.isExpression(p.value)) {
+          const definite = (t.isStringLiteral(p.value) || t.isNumericLiteral(p.value) || t.isBooleanLiteral(p.value) || t.isNullLiteral(p.value)
+            || t.isArrowFunctionExpression(p.value) || t.isFunctionExpression(p.value) || t.isObjectExpression(p.value) || t.isArrayExpression(p.value));
+          cands.push({ expr: emitExpr(p.value, bind), definite });
+        }
+      } else {
+        const sp = src.spread;
+        const own = t.isIdentifier(sp) && (sp.name === scope.propsParam || !!scope.propAliases?.has(sp.name));
+        if (own) {
+          if (scope.restExcludes?.[(sp as t.Identifier).name]?.includes(k)) continue; // split off: not in the rest
+          cands.push({ expr: emitExpr(t.memberExpression(sp, t.identifier(k)), bind), definite: false });
+        } else {
+          cands.push({ expr: `(${emitExpr(sp, bind)})${/^[A-Za-z_$][\w$]*$/.test(k) ? `.${k}` : `[${JSON.stringify(k)}]`}`, definite: false });
+        }
+      }
+      if (cands.at(-1)?.definite) break;
+    }
+    if (!cands.length) continue;
+    const value = cands.length === 1 ? cands[0].expr
+      : `(function() { var __v; ${cands.slice(0, -1).map((c) => `__v = ${c.expr}; if (__v !== undefined) return __v;`).join(" ")} return ${cands.at(-1)!.expr}; })()`;
+    out.push(`${safeName(k)}: ${value}`);
+  }
+  return out;
 }
 
 /** <Ctx.Provider value={V}>children</Ctx.Provider> → a transparent passthrough container (a "div"
@@ -1832,7 +1890,9 @@ function emitHandler(node: t.Node | undefined, scope: Scope): string | null {
   if (!node) return null;
   const handlerScope: Scope = { ...scope, mode: "handler" };
   if (t.isArrowFunctionExpression(node) || t.isFunctionExpression(node)) {
-    if (t.isBlockStatement(node.body)) throw new Error("block-bodied handler not supported in this plan");
+    // A block body runs as its own function, so a `return` inside it ends only the handler (the
+    // same text is also spliced into key handlers, where it must not skip `event.accepted`).
+    if (t.isBlockStatement(node.body)) return `(function() { ${emitStatements(node.body.body, handlerScope)} })()`;
     return emitExpr(node.body, handlerScope);
   }
   // A helper identifier as a handler — `onClick={add}` where `add` is a local helper function:
@@ -1943,8 +2003,11 @@ function isJsxText(n: t.Node): boolean {
 
 /** `props.children` (the default-slot marker) — a member expr on the component's props param. */
 function isChildrenMarker(n: t.Node, scope: Scope): boolean {
-  return !!scope.propsParam && t.isMemberExpression(n) && !n.computed &&
-    t.isIdentifier(n.object, { name: scope.propsParam }) && t.isIdentifier(n.property, { name: "children" });
+  // `{c()}` where `const c = children(() => props.children)` — the resolved children, slotted here.
+  if (t.isCallExpression(n) && n.arguments.length === 0 && t.isIdentifier(n.callee) && scope.childrenAccessors?.has(n.callee.name))
+    return true;
+  return t.isMemberExpression(n) && !n.computed && t.isIdentifier(n.property, { name: "children" }) && t.isIdentifier(n.object)
+    && (n.object.name === scope.propsParam || !!scope.propAliases?.has(n.object.name));
 }
 
 /** <Show when={C} fallback={F}>children</Show> → LAZY, like Solid's Show: the children exist only
@@ -2450,20 +2513,113 @@ function readEach(propsArg: t.Node | undefined, scope: Scope): string {
   return "[]";
 }
 
-/** <Dynamic component={E}>text</Dynamic> → a CssText whose cssPrimitive is the (reactive) tag E. */
+/** <Dynamic component={E} …props>children</Dynamic>.
+ *  - E names components (`cond ? Card : List`, `ok && Badge`, mixed with tag strings): the candidates
+ *    are known at compile time, so each becomes a lazily mounted branch (gated like a <Show> child)
+ *    present while E selects it; the other props and the children go to whichever is
+ *    mounted. Changing E destroys the old one and creates the new one, as in Solid.
+ *  - E is a tag string, or any expression yielding one (`tag()`): one generic element whose
+ *    `cssPrimitive` (the type CSS matches) follows E — a CssText for text content, a W.Div when the
+ *    children include elements.
+ *  - E is a runtime value that might be a component (a signal holding one, `options[i]`): there is
+ *    no candidate list — fail loud. */
 function emitDynamic(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
-  let comp = "div";
-  if (propsArg && t.isObjectExpression(propsArg)) {
-    for (const p of propsArg.properties) {
-      if (t.isObjectProperty(p) && t.isIdentifier(p.key, { name: "component" }) && t.isExpression(p.value))
-        comp = emitExpr(p.value, { ...scope, mode: "binding" });
+  const sources = propSources(propsArg);
+  if (sources.some((src) => "spread" in src)) throw new Error("<Dynamic {...props}>: spread props on <Dynamic> are not supported natively — pass each prop explicitly");
+  const props = sources.flatMap((src) => (src as { props: t.ObjectProperty[] }).props);
+  const compProp = props.find((p) => t.isIdentifier(p.key, { name: "component" }));
+  const others = props.filter((p) => p !== compProp);
+  const compExpr = compProp && t.isExpression(compProp.value) ? compProp.value : null;
+  // No component: Solid renders nothing (the other props still have to be valid).
+  if (!compExpr) { if (others.length) emitDynamicTag(t.stringLiteral("div"), others, [], scope, level); return []; }
+
+  // Leaves of the selector expression: component names, tag strings, or "nothing" (`cond && C`).
+  type Leaf = { kind: "comp"; name: string } | { kind: "tag"; tag: string } | { kind: "none" };
+  const leaves = new Map<t.Node, Leaf>();
+  const collect = (n: t.Node): boolean => {
+    if (t.isParenthesizedExpression(n)) return collect(n.expression);
+    if (t.isConditionalExpression(n)) return collect(n.consequent) && collect(n.alternate);
+    if (t.isLogicalExpression(n) && n.operator === "&&") { leaves.set(n.left, { kind: "none" }); return collect(n.right); }
+    if (t.isStringLiteral(n)) { leaves.set(n, { kind: "tag", tag: n.value }); return true; }
+    if (t.isNullLiteral(n)) { leaves.set(n, { kind: "none" }); return true; }
+    if (t.isIdentifier(n)) {
+      if (n.name === "undefined") { leaves.set(n, { kind: "none" }); return true; }
+      if (scope.components?.has(n.name)) { leaves.set(n, { kind: "comp", name: n.name }); return true; }
     }
+    return false;
+  };
+  const enumerable = collect(compExpr);
+  const hasComp = [...leaves.values()].some((l) => l.kind === "comp");
+  if (!hasComp) {
+    if (enumerable || !mayBeComponent(compExpr, scope)) return emitDynamicTag(compExpr, others, children, scope, level, guard);
+    throw new Error("<Dynamic component={…}>: the component must be visible at compile time — write it as a conditional over component names (`cond ? CardA : CardB`, `ok && Badge`) or a tag string; a component held in a signal/variable/array has no native equivalent");
+  }
+  if (!enumerable)
+    throw new Error("<Dynamic component={…}>: mixing component names with a runtime value — write the selector as a conditional over component names and tag strings only");
+
+  // The selector, with each leaf replaced by its key — evaluated by every branch's `active`.
+  const keyOf = (l: Leaf) => l.kind === "comp" ? `c:${l.name}` : l.kind === "tag" ? `t:${l.tag}` : "";
+  const sel = (n: t.Node): t.Expression => {
+    if (t.isParenthesizedExpression(n)) return sel(n.expression);
+    if (t.isConditionalExpression(n)) return t.conditionalExpression(n.test, sel(n.consequent), sel(n.alternate));
+    if (t.isLogicalExpression(n) && n.operator === "&&") return t.conditionalExpression(n.left, sel(n.right), t.stringLiteral(""));
+    return t.stringLiteral(keyOf(leaves.get(n)!));
+  };
+  const selector = emitExpr(sel(compExpr), { ...scope, mode: "binding" });
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const leaf of leaves.values()) {
+    const key = keyOf(leaf);
+    if (leaf.kind === "none" || seen.has(key)) continue;
+    seen.add(key);
+    const call = t.callExpression(t.identifier("h"), [
+      leaf.kind === "comp" ? t.identifier((leaf as { name: string }).name) : t.stringLiteral((leaf as { tag: string }).tag),
+      others.length ? t.objectExpression(others) : t.nullLiteral(),
+      ...children.filter((c): c is t.Expression => t.isExpression(c)),
+    ]);
+    // Mounted like a <Show> child (a Repeater gated on the condition): created while selected,
+    // destroyed when not, in its place among its siblings.
+    const active = `(${selector}) === ${JSON.stringify(key)}`;
+    out.push(...lazyGate(call, guard ? `(${guard}) && (${active})` : active, scope, level));
+  }
+  return out;
+}
+
+/** Could this expression evaluate to a component at runtime? A component name in it, or a value
+ *  whose origin the transpiler cannot see (a signal, a variable, a member of a table). Plain string
+ *  expressions (`tag()` of a string signal, a template) are tags. */
+function mayBeComponent(n: t.Node, scope: Scope): boolean {
+  let found = false;
+  const walk = (x: unknown): void => {
+    if (found || !x || typeof x !== "object") return;
+    if (Array.isArray(x)) { for (const y of x) walk(y); return; }
+    const nn = x as t.Node;
+    if (!nn.type) return;
+    if (t.isIdentifier(nn) && scope.components?.has(nn.name)) { found = true; return; }
+    for (const k of t.VISITOR_KEYS[nn.type] ?? []) walk((nn as unknown as Record<string, unknown>)[k]);
+  };
+  walk(n);
+  // A component name used as a value anywhere in this component (`createSignal(Card)`,
+  // `setView(List)`): a runtime value here may hold it.
+  return found || !!scope.componentsAsValues;
+}
+
+/** <Dynamic component={"tag" expression}>: a generic element whose type selector follows the tag. */
+function emitDynamicTag(comp: t.Expression, others: t.ObjectProperty[], children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
+  if (others.length) {
+    const k = t.isIdentifier(others[0].key) ? others[0].key.name : t.isStringLiteral(others[0].key) ? others[0].key.value : "?";
+    throw new Error(`<Dynamic component={tag}> does not support \`${k}\` natively (it would be silently dropped); supported: component`);
   }
   const pad = INDENT.repeat(level);
+  const prim = emitExpr(comp, { ...scope, mode: "binding" });
+  if (children.some((c) => isHCall(c))) {
+    if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
+    return [`${pad}W.Div {`, ...guardLine(guard, level), `${pad}${INDENT}cssPrimitive: ${prim}`, ...emitChildren(children, scope, level + 1), `${pad}}`];
+  }
   return [
     `${pad}Css.CssText {`,
     ...guardLine(guard, level),
-    `${pad}${INDENT}cssPrimitive: ${comp}`,
+    `${pad}${INDENT}cssPrimitive: ${prim}`,
     `${pad}${INDENT}text: ${textBinding(children, scope)}`,
     `${pad}}`,
   ];

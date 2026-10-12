@@ -71,7 +71,7 @@ out-of-band) — "runs without a QML error" alone is NOT proof, since broken cod
 | `<Switch>`/`<Match>` | ✅ | cascading visibility (first match wins) |
 | `<Suspense>` | ✅ | fallback while any read resource is loading |
 | `<Index>` | ✅ | → `Repeater` (shared with `<For>`); the row item is an accessor (`item()`→`modelData`), index a plain number |
-| `<Dynamic component=…>` | 🟡 | reactive intrinsic TAG → a generic element with a reactive `cssPrimitive` (type selectors track it). Component-valued (`component={options[sel()]}`) needs a QML `Loader` over the candidate types — deferred; **today it compiles to a wrong element (no error) — do not use** |
+| `<Dynamic component=…>` | ✅ | a tag (or tag expression) → a generic element with a reactive `cssPrimitive`; component names in a conditional (`cond ? A : B`, `ok && A`, mixed with tags) → one lazily mounted branch per candidate, props and children forwarded. A component held in a signal/variable/array fails at compile time |
 | `<Portal>` | ❌ | render elsewhere (overlay layer) |
 | `<ErrorBoundary>` | ❌ | catch render/async errors + fallback |
 | `<SuspenseList>` | ❌ | rare |
@@ -106,8 +106,8 @@ Owner decision 2026-10-11: **web semantics by default, reuse by key is opt-in.**
 | function component + props | ✅ | inlined at use site; `props.x` substituted |
 | reactive props | ✅ | substituted exprs stay reactive |
 | function props (callbacks) | ✅ | `props.onX(...)`→ resolved local fn via sidecar |
-| `props.children` | ✅ | `<Comp>…</Comp>` slots into the body's `{props.children}` |
-| `mergeProps` / `splitProps` | ✅ | treated as prop aliases: a `mergeProps` default becomes a property's initial value (a passed prop overrides it); `splitProps` `local` is a props alias. `splitProps` `rest` (for spread) deferred until spread props land |
+| `props.children` | ✅ | `<Comp>…</Comp>` slots into the body's `{props.children}` (also through a mergeProps/splitProps alias, and `const c = children(() => props.children)` + `{c()}`); children a component never reads are not rendered |
+| `mergeProps` / `splitProps` | ✅ | treated as prop aliases: a `mergeProps` default becomes a property's initial value (a passed prop overrides it); `splitProps` `local` and `rest` are props aliases (`{...rest}` forwards all but the split keys). The override form `mergeProps(props, { … })` fails at compile time |
 | `createContext` / `useContext` | ✅ | compile-time value substitution: `<Ctx.Provider value=…>` pushes a value, `useContext(Ctx)` (single instance) resolves to it; provider state hoists to the window. Nested/multi-instance providers untested |
 | `lazy` | ❌ | code-split components (likely out of scope for native) |
 
@@ -121,7 +121,7 @@ Owner decision 2026-10-11: **web semantics by default, reuse by key is opt-in.**
 | events (`onClick`/`onInput`/`onKeyDown`) | 🟡 | click/input/keydown + event-arg mapping; not every DOM event |
 | `ref` | ✅ | `ref={el}` → element QML id + a window property bound to it (code reads it via window.el). `ref={setEl}` callback form: not yet. Refs inside a component-type: not yet |
 | `use:` directives | ❌ | custom directives |
-| spread props `{...obj}` | ❌ | on an element: rejected at compile time; **on a component: accepted and the spread is silently dropped — do not use** |
+| spread props `{...obj}` | 🟡 | on a component ✅: each prop it declares reads the sources last to first (first defined value wins), `{...props}` forwards through any depth. On an element: rejected at compile time |
 | Fragments `<>…</>` | 🟡 | top level handled implicitly; nested untested |
 | text whitespace | ✅ | `{x} word` keeps the space |
 
@@ -142,7 +142,7 @@ Owner decision 2026-10-11: **web semantics by default, reuse by key is opt-in.**
 | RegExp literals | ✅ in component code (a module-level `const RE = /…/` is accepted but not emitted — undefined at runtime) |
 | destructuring (declarations, params, loop heads, defaults, array rest) | ✅ (object rest `{ a, ...rest }` is rejected: V4 has none) |
 | labelled/try/catch/finally/throw/switch statements | ✅ (`transpiler/test/statements.test.ts` executes the emitted code) |
-| block-bodied `onClick={() => { … }}` | ❌ (rejected; pass a named component function `onClick={go}` instead — block bodies are accepted in `onInput`/`onChange`/`onKeyDown`) |
+| block-bodied `onClick={() => { … }}` | ✅ |
 
 ## Runtime (browser shims, already C++)
 localStorage ✅ · fetch (+Headers/Request/Response/Abort) ✅ · timers/microtask ✅ ·
@@ -158,11 +158,11 @@ each maps to a known QML construct.
 
 ## Path to 99% (prioritised)
 1. **Components glue** ✅ — `props.children`, `createContext`/`useContext`, `ref`, `mergeProps`/
-   `splitProps` all done. (`splitProps` rest waits on spread props.)
-2. **Control-flow completion**: `<Index>` ✅, `<Dynamic>` 🟡 (tag form) — remaining: `<ErrorBoundary>`, `<Portal>`, Dynamic component-form.
+   `splitProps` (incl. rest + spread, M2) all done.
+2. **Control-flow completion**: `<Index>` ✅, `<Dynamic>` ✅ (tag and component forms, M2) — remaining: `<ErrorBoundary>`, `<Portal>`.
 3. **Lifecycle/reactivity edges**: ~~`onCleanup` (+ effect cleanup), `untrack`, `batch`, `on`~~ (✅ M2).
 4. **Stores depth**: arbitrary deep path setters, `reconcile`, `unwrap`.
-5. **JSX edges**: spread props `{...}`, `?.`, `new`/RegExp in component code, broader event set.
+5. **JSX edges**: ~~spread props on components, `?.`, `new`/RegExp in component code~~ (✅ M2), broader event set.
 6. **Polish**: ~~keyed `<For>`~~ (✅ `key="field"`, C23), more DOM events, ~~`createComputed`/`createRenderEffect`/`createSelector`~~ (✅ M2).
 
 Out of scope (won't chase for 99%): `lazy`/code-split, `getOwner`/`runWithOwner`, `BigInt`,

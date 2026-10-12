@@ -4,7 +4,7 @@ import * as t from "@babel/types";
 import { normalize } from "./babel/transform.ts";
 import { emitComponentType } from "./emit/component.ts";
 import { STOCK_COMPONENTS } from "./emit/stock.ts";
-import { analyzeContexts, analyzeProvider, analyzeSignals, analyzeUseContext } from "./model/symbols.ts";
+import { analyzeContexts, analyzeProps, analyzeProvider, analyzeSignals, analyzeUseContext, propSources } from "./model/symbols.ts";
 import { hParts, isComponentIdentifier, isHCall } from "./ast/h.ts";
 import { isBareSpecifier, isRuntimeOnlyImport, mirrorNodeImports, resolveNodeImport } from "./resolve/node.ts";
 import { emitStmt } from "./emit/stmt.ts";
@@ -103,6 +103,20 @@ function usedComponentTags(render: t.CallExpression, known: Set<string>): string
       // `Window` is a built-in primitive (emitQml emits a real QML Window), not a followed component —
       // don't mirror the runtime's web-only Window component for it.
       if (isComponentIdentifier(tag, known)) tags.add(tag.name);
+      // <Dynamic component={cond ? A : B}>: the candidates are instantiated by name too.
+      if (t.isIdentifier(tag, { name: "Dynamic" })) {
+        const { props } = hParts(n);
+        const comp = t.isObjectExpression(props) ? props.properties.find((p) => t.isObjectProperty(p) && t.isIdentifier(p.key, { name: "component" })) : undefined;
+        const scan = (x: t.Node): void => {
+          if (t.isIdentifier(x) && known.has(x.name) && isComponentIdentifier(x, known)) tags.add(x.name);
+          for (const k of t.VISITOR_KEYS[x.type] ?? []) {
+            const v = (x as unknown as Record<string, unknown>)[k];
+            if (Array.isArray(v)) { for (const c of v) if (c && typeof (c as t.Node).type === "string") scan(c as t.Node); }
+            else if (v && typeof (v as t.Node).type === "string") scan(v as t.Node);
+          }
+        };
+        if (comp && t.isObjectProperty(comp)) scan(comp.value);
+      }
     }
     for (const key of Object.keys(n)) {
       const v = (n as unknown as Record<string, unknown>)[key];
@@ -313,6 +327,41 @@ export async function generate(source: string, filename: string, opts: GenerateO
     }
   }
 
+  // Phase 1c — the props each component declares: the ones it reads, plus — to a fixpoint — the
+  // props of every component it hands its own props to with a spread (`<Inner {...props} />`), so a
+  // forwarded prop has a property to land in at each level. Spreads of other objects need nothing.
+  const propSets = new Map<string, Set<string>>();
+  const forwards: { from: string; to: string; exclude: Set<string> }[] = [];
+  for (const [key, node] of nodes) {
+    const info = node.mod.comps.get(node.declName)!;
+    const pa = analyzeProps(info.fn);
+    propSets.set(key, new Set(pa.used)); // "children" included: whether the component renders its children
+    const own = new Set([pa.param, ...pa.aliases].filter((n): n is string => !!n));
+    const walk = (n: t.Node): void => {
+      if (isHCall(n)) {
+        const { tag, props } = hParts(n);
+        const target = t.isIdentifier(tag) ? node.edges.get(tag.name) : undefined;
+        if (target) for (const src of propSources(props))
+          if ("spread" in src && t.isIdentifier(src.spread) && own.has(src.spread.name))
+            forwards.push({ from: key, to: target, exclude: new Set(pa.rests[src.spread.name] ?? []) });
+      }
+      for (const k of t.VISITOR_KEYS[n.type] ?? []) {
+        const v = (n as unknown as Record<string, unknown>)[k];
+        if (Array.isArray(v)) { for (const c of v) if (c && typeof (c as t.Node).type === "string") walk(c as t.Node); }
+        else if (v && typeof (v as t.Node).type === "string") walk(v as t.Node);
+      }
+    };
+    walk(info.render);
+  }
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const f of forwards) {
+      const to = propSets.get(f.to), from = propSets.get(f.from)!;
+      if (!to) continue; // a foreign .qml target: its emitter rejects the spread
+      for (const p of to) if (!f.exclude.has(p) && !from.has(p)) { from.add(p); changed = true; }
+    }
+  }
+
   // `batch` anywhere in the graph: every computation must defer itself while a batch is open (an
   // effect in one component can depend on a signal another component writes inside its batch).
   const batching = [...modules.values()].some((m) =>
@@ -324,6 +373,8 @@ export async function generate(source: string, filename: string, opts: GenerateO
   const entryKey = keyOf(entryPath, entryName);
   for (const [key, node] of nodes) {
     const typeMap = new Map<string, string>(); // use-name → emitted type name (from this node's edges)
+    const componentProps = new Map<string, Set<string>>(); // use-name → the props that component declares
+    for (const [useName, targetKey] of node.edges) { const ps = propSets.get(targetKey); if (ps) componentProps.set(useName, ps); }
     const componentMeta = new Map<string, { provides?: string; consumes?: string[] }>(); // use-name → ctx role
     for (const [useName, targetKey] of node.edges) {
       typeMap.set(useName, typeName.get(targetKey)!);
@@ -347,7 +398,7 @@ export async function generate(source: string, filename: string, opts: GenerateO
     const foreignQml = new Set([...qmlForeign.values()].map((q) => q.typeName));
     for (const { typeName: tn } of qmlModuleForeign.values()) foreignQml.add(tn);
     const foreignImports = new Map([...qmlModuleForeign.values()].map((q) => [q.typeName, q.importLine]));
-    const qml = [...headerFor(node.mod), ...emitComponentType(info.fn, info.render, typeMap, node.mod.contexts, role.provider, ctxWiring, node.mod.file, node.mod.jsImports, moduleInit, foreignQml, foreignImports, { batching }), ""].join("\n");
+    const qml = [...headerFor(node.mod), ...emitComponentType(info.fn, info.render, typeMap, node.mod.contexts, role.provider, ctxWiring, node.mod.file, node.mod.jsImports, moduleInit, foreignQml, foreignImports, { batching, componentProps, forwardedProps: propSets.get(key) }), ""].join("\n");
     if (key === entryKey) entry = qml;
     else components[typeName.get(key)!] = qml;
   }

@@ -370,7 +370,8 @@ export function checkElement(call: t.CallExpression, textTags: ReadonlySet<strin
   // A parent-specific contract (`MenuBar>Menu`) wins over the tag's own.
   const key = own && parent && `${parent}>${own}` in ELEMENT_ATTRS ? `${parent}>${own}` : own;
   const { props, children } = hParts(call);
-  if (key) checkAttrs(key, props);
+  // <Dynamic>: its props go to whichever component/tag it mounts — emitDynamic checks them.
+  if (key && key !== "Dynamic") checkAttrs(key, props);
   for (const k of children) {
     if (!isHCall(k)) continue;
     const { tag } = hParts(k as t.CallExpression);

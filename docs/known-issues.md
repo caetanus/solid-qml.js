@@ -13,9 +13,6 @@ marks them ⚠️ and a test keeps that list up to date. In short:
 
 | Construct | What happens | Workaround |
 |---|---|---|
-| `<Dynamic component={Comp}>` with a component value | emits a text element, not the component | use `<Switch>`/`<Match>` over the candidate components (the tag form `component="div"` works) |
-| `<C {...props} />` spread on a component | the spread is dropped | pass each prop explicitly |
-| `children(() => props.children)` | miscompiled | use `{props.children}` directly |
 | A helper imported from a relative non-component module (`import { f } from "./util"`) | only components are followed through relative imports; `f` is undefined at runtime | keep helpers in the component's own file, or move them into an npm package |
 | A module-level constant initialised with `new …` or a RegExp literal (`const RE = /a/`) | the constant is not emitted; it is undefined at runtime | use string methods, a literal/array/object constant, or an npm package |
 
@@ -31,6 +28,8 @@ against the support matrix.
   saw at the write that re-evaluated it, where Solid re-evaluates it once after the batch.
 - **Effects triggered by the same write run in creation order.** Solid orders them by when each
   last subscribed, which can differ after re-runs. No program should depend on either order.
+- **`<Dynamic>` switching components may mount the new one before the old one's cleanups run.**
+  Each candidate is its own lazily mounted branch; Solid disposes the old component first.
 - **Dependencies are static.** An effect re-runs when anything its body (or the helpers it calls)
   can read changes, not only what the last run read: a branch not taken still subscribes. The
   values are right; an effect may run more often than in Solid.

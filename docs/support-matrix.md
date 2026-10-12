@@ -81,7 +81,8 @@ The rules that catch people most often:
 | control flow | `<Index>` | ✅ | accepted | `examples/index-list.tsx` |
 | control flow | `<Suspense>` | ✅ | accepted | `examples/fetch.tsx` |
 | control flow | `<Dynamic component="tag">` (intrinsic tag) | ✅ | accepted | `examples/dynamic.tsx` |
-| control flow | `<Dynamic component={Comp}>` (component value) | ⚠️ | accepted | emits a text element whose type selector is the component value — not the component |
+| control flow | `<Dynamic component={Comp}>` (component value) | ✅ | accepted | candidates written as a conditional over component names (and tag strings): one lazily mounted branch each, props and children forwarded — `transpiler/test/components-jsx.test.ts` |
+| control flow | `<Dynamic component={c()}>` with a component held in a signal/variable | ❌ | rejected: `<Dynamic component={…}>: the component must be visible at compile time — write it as a conditional over component names (`cond ? CardA : Car` | write the selector as a conditional over component names |
 | control flow | `<Portal>` | ❌ | rejected: `unknown component or control flow: Portal` |  |
 | control flow | `<ErrorBoundary>` | ❌ | rejected: `unknown component or control flow: ErrorBoundary` |  |
 | control flow | `lazy()` | ❌ | rejected: `unknown component or control flow: L` | out of scope |
@@ -89,9 +90,11 @@ The rules that catch people most often:
 | components | `mergeProps` / `splitProps` (local part) | ✅ | accepted | `examples/props-helpers.tsx` |
 | components | context: a provider component wrapping `props.children`, `useContext` in descendants | 🟡 | accepted | `examples/context.tsx`; nested/multi-instance providers untested |
 | components | context: `<Ctx.Provider>` written inline in the consumer's parent | ❌ | rejected: `consumer Child uses context Ctx with no provider in scope` | use the provider-component form above |
-| components | spread props on a component `<C {...o} />` | ⚠️ | accepted | the spread is dropped |
+| components | spread props on a component `<C {...o} />` | ✅ | accepted | every prop the component declares reads the sources last to first (first defined value wins); `{...props}` forwards — `transpiler/test/components-jsx.test.ts` |
 | components | spread attributes on an element `<div {...o}>` | ❌ | rejected: `<div>: spread attributes ({...props}) are not supported natively — pass each attribute explicitly` |  |
-| components | `children()` helper | ❌ | rejected: ``children(…)`: children (from solid-js) is not supported natively.` | use `{props.children}` directly |
+| components | `children()` helper | 🟡 | accepted | `{c()}` in the root element slots the children; inspecting them (`c.toArray()`) fails at compile time |
+| components | `mergeProps(props, { … })` (an object after props overrides) | ❌ | rejected: `mergeProps(props, { … }): an object after props OVERRIDES the passed props — not supported natively; put the defaults first: mergeProps({ … ` | put the defaults first: `mergeProps({ … }, props)` |
+| components | destructured props `function C({ a })` | ❌ | rejected: `a component's props must be one parameter (`function C(props)`): destructuring it (`({ a, b })`) reads each prop once, untracked — not suppo` | use `props.a` (destructuring reads each prop once, untracked) |
 | components | `ref={el}` (variable) | ✅ | accepted | `examples/refs.tsx`, `transpiler/test/ref-render.test.ts` |
 | components | `ref={(e) => …}` (callback) | ❌ | rejected: `<div> ref must be a variable: ref={x}` |  |
 | JSX | inline `style=` | ❌ | rejected: `<div> does not support `style` natively (it would be silently dropped); supported: class, classList, ref, onClick, onKeyDown, onContextMenu,` | use a class and CSS |
@@ -100,7 +103,7 @@ The rules that catch people most often:
 | JSX | nested fragments | ✅ | accepted |  |
 | JSX | events beyond the contract (`onMouseMove`, `onDblClick`, `onFocus`, `onSubmit`…) | ❌ | rejected: `<div> does not support `onDblClick` natively (it would be silently dropped); supported: class, classList, ref, onClick, onKeyDown, onContext` | see the element table for each tag's events |
 | handlers | `onClick` with an expression body | ✅ | accepted |  |
-| handlers | `onClick` with a block body `() => { … }` | ❌ | rejected: `block-bodied handler not supported in this plan` | move the statements into a named function in the component and pass it: `onClick={go}` |
+| handlers | `onClick` with a block body `() => { … }` | ✅ | accepted | the block runs as its own function — `transpiler/test/components-jsx.test.ts` |
 | handlers | `onClick={go}` (named function in the component, `if`/`for…of` inside) | ✅ | accepted | `transpiler/test/module-fn-positions.test.ts` |
 | handlers | block body in `fn`-kind events (`onInput`, `onChange`, `onKeyDown`…) with `if` | ✅ | accepted | `examples/widgets.tsx` |
 | handlers | `async` named handler | ❌ | rejected: `only inline arrow handlers (or a context fn-member reference) are supported in this plan` | call an async module-level function from an expression-bodied handler, or use `createResource` |
