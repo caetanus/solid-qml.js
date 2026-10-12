@@ -44,15 +44,17 @@ jobs:
       - name: Install meson + ninja (pinned)
         run: python -m pip install meson==1.12.0 ninja==1.13.0
 
-      - name: Install Qt 6.11.2 (msvc2022_64, cached)
-        uses: jurplel/install-qt-action@v4
+      # Not jurplel/install-qt-action: aqtinstall 3.3.0 (latest) predates the per-arch repository
+      # layout Qt 6.11 uses. scripts/ci-windows.ps1 install-qt fetches the official archives itself
+      # (SHA1-checked) into ../Qt, cached here.
+      - name: Cache Qt 6.11.2 (msvc2022_64)
+        uses: actions/cache@v4
         with:
-          version: '6.11.2'
-          host: windows
-          target: desktop
-          arch: win64_msvc2022_64
-          aqtversion: '==3.3.0'
-          cache: true
+          path: ${{ github.workspace }}\..\Qt
+          key: qt-6.11.2-msvc2022_64-base-declarative-svg-v1
+
+      - name: Install Qt 6.11.2 (msvc2022_64)
+        run: scripts/ci-windows.ps1 install-qt
 
       - name: MSVC 2022 x64 developer environment
         uses: ilammy/msvc-dev-cmd@v1.13.0

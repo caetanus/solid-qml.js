@@ -7,7 +7,7 @@
 #   pwsh scripts/ci-windows.ps1                        # every step, in order
 #   pwsh scripts/ci-windows.ps1 native-build native-test   # only the named steps
 #
-# Steps: versions npm-ci typecheck test-transpiler native-build native-test install deploy smoke package
+# Steps: install-qt versions npm-ci typecheck test-transpiler native-build native-test install deploy smoke package
 #
 # Env:
 #   PREFIX_DIR  install prefix (default: <checkout>\.scratch\prefix)
@@ -15,11 +15,13 @@
 #               NEXT TO the checkout, never inside it)
 #   DIST_DIR    where the unsigned zip lands (default: <checkout>\.scratch\dist)
 #   JOBS        ninja -j (default: number of processors)
+#   QT_DIR      where install-qt unpacks Qt (default: a Qt directory NEXT TO the checkout)
 #
 # What differs from Linux (and why) is listed in docs/windows.md.
 param([string[]]$Steps)
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue' # Invoke-WebRequest's progress bar slows downloads a lot
 # A native command's non-zero exit code throws (PowerShell 7.4+), like `set -e`.
 $PSNativeCommandUseErrorActionPreference = $true
 
@@ -33,6 +35,49 @@ $BuildDir = Join-Path $AppDir 'build'
 function Fwd([string]$p) { $p -replace '\\', '/' }
 
 Set-Location $AppDir
+
+# Qt 6.11.2 msvc2022_64 straight from the official online repository (download.qt.io), each archive
+# checked against the repository's .sha1. aqtinstall 3.3.0 (the latest release) cannot install it:
+# from 6.11 the repository is split per arch (qt6_6112/qt6_6112_msvc2022_64/), a layout it predates.
+# Only the modules the build needs: qtbase (incl. private headers and windeployqt), qtdeclarative,
+# qtsvg, plus the d3dcompiler/opengl32sw runtimes windeployqt bundles.
+$QtVersion = '6.11.2'
+$QtDir = if ($env:QT_DIR) { $env:QT_DIR } else { Join-Path (Split-Path $AppDir -Parent) 'Qt' }
+$QtPrefix = Join-Path $QtDir "$QtVersion\msvc2022_64"
+function Get-Text([string]$url) {
+    $c = (Invoke-WebRequest -UseBasicParsing $url).Content
+    if ($c -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($c) } else { $c }
+}
+function Step-InstallQt {
+    Write-Host "== ci-windows: Qt $QtVersion msvc2022_64 -> $QtPrefix =="
+    if (-not (Test-Path (Join-Path $QtPrefix 'bin\qmake.exe'))) {
+        $tag = $QtVersion -replace '\.', ''
+        $repo = "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_$tag/qt6_${tag}_msvc2022_64"
+        $name = "qt.qt6.$tag.win64_msvc2022_64"
+        [xml]$updates = Get-Text "$repo/Updates.xml"
+        $pkg = $updates.Updates.PackageUpdate | Where-Object { $_.Name -eq $name }
+        if (-not $pkg) { throw "ci-windows: $name not found in $repo/Updates.xml" }
+        $dl = Join-Path $QtDir 'download'
+        New-Item -ItemType Directory -Force $dl | Out-Null
+        $wanted = $pkg.DownloadableArchives -split ',\s*' | Where-Object { $_ -match '^(qtbase|qtdeclarative|qtsvg|d3dcompiler_47|opengl32sw)' }
+        foreach ($a in $wanted) {
+            $url = "$repo/$name/$($pkg.Version)$a"
+            $file = Join-Path $dl $a
+            Write-Host "  $a"
+            Invoke-WebRequest -UseBasicParsing $url -OutFile $file
+            $sha = (Get-Text "$url.sha1").Trim().Split(' ')[0]
+            $got = (Get-FileHash -Algorithm SHA1 $file).Hash
+            if ($got -ne $sha) { throw "ci-windows: SHA1 mismatch for $a ($got, expected $sha)" }
+            7z x -y -bso0 "-o$QtDir" $file
+        }
+        Remove-Item -Recurse -Force $dl
+        if (-not (Test-Path (Join-Path $QtPrefix 'bin\qmake.exe'))) { Get-ChildItem $QtDir; throw "ci-windows: no qmake.exe under $QtPrefix after unpacking" }
+    }
+    # Later workflow steps see Qt like install-qt-action would expose it.
+    if ($env:GITHUB_ENV) { "QT_ROOT_DIR=$QtPrefix" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+    if ($env:GITHUB_PATH) { Join-Path $QtPrefix 'bin' | Out-File -Append -Encoding utf8 $env:GITHUB_PATH }
+    & (Join-Path $QtPrefix 'bin\qmake.exe') -query QT_VERSION
+}
 
 function Step-Versions {
     Write-Host '== ci-windows: toolchain versions =='
@@ -103,7 +148,7 @@ function Step-Deploy {
         (Join-Path $bin 'solid-qml-loader.exe')
     # windeployqt ships only the windows QPA plugin; headless runs (CI, the smoke test) need offscreen.
     New-Item -ItemType Directory -Force (Join-Path $bin 'platforms') | Out-Null
-    Copy-Item (Join-Path $env:QT_ROOT_DIR 'plugins\platforms\qoffscreen.dll') (Join-Path $bin 'platforms')
+    Copy-Item (Join-Path $QtPrefix 'plugins\platforms\qoffscreen.dll') (Join-Path $bin 'platforms')
 }
 
 function Step-Smoke {
@@ -139,10 +184,11 @@ function Step-Package {
     Get-ChildItem $DistDir | Format-Table Name, Length
 }
 
-$All = 'versions', 'npm-ci', 'typecheck', 'test-transpiler', 'native-build', 'native-test', 'install', 'deploy', 'smoke', 'package'
+$All = 'install-qt', 'versions', 'npm-ci', 'typecheck', 'test-transpiler', 'native-build', 'native-test', 'install', 'deploy', 'smoke', 'package'
 if (-not $Steps -or $Steps.Count -eq 0) { $Steps = $All }
 foreach ($s in $Steps) {
     switch ($s) {
+        'install-qt' { Step-InstallQt }
         'versions' { Step-Versions }
         'npm-ci' { Step-NpmCi }
         'typecheck' { Step-Typecheck }
