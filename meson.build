@@ -483,6 +483,13 @@ test('select-widget',
 # contract, content/format state and an .odt round-trip — what an app driving the document uses.
 if build_richtext
   richtext_test_deps = [solidqml_dep, qt6_templates_private_dep, dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'Test'])] + core_private_deps
+  test('layout-phase0',
+    executable('test-layout-phase0', files('tests/layout_phase0_test.cpp'),
+      qt6.preprocess(moc_sources: files('tests/layout_phase0_test.cpp'), dependencies: richtext_test_deps),
+      cpp_args: richtext_args + ['-DPHASE0_SOURCE_DIR="' + meson.project_source_root() + '"'],
+      include_directories: include_directories('src'),
+      dependencies: richtext_test_deps),
+    env: ['QT_QPA_PLATFORM=offscreen'], timeout: 120)
   test('richtext-handler',
     executable('test-richtext-handler', files('tests/richtext_test.cpp'),
       qt6.preprocess(moc_sources: files('tests/richtext_test.cpp'), dependencies: richtext_test_deps),

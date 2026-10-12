@@ -1,0 +1,18 @@
+margin -8,-6 y=10,23
+margin -8,0 y=10,29
+margin -8,18 y=10,47
+margin 0,-6 y=10,29
+margin 0,0 y=10,29
+margin 0,18 y=10,47
+margin 12,-6 y=10,41
+margin 12,0 y=10,41
+margin 12,18 y=10,47
+outer-empty 0 first=10 last=47 size=76
+outer-empty 1 first=10 last=47 size=76
+page-top 0 block=123 line=27
+page-top 1 block=168 line=0
+line-height 1 y=0 baseline=24.8438 height=19 y=28.5 baseline=53.3438 height=19
+line-height 2 y=5.15625 baseline=30 height=19 y=30.1563 baseline=55 height=19
+line-height 3 y=6 baseline=30.8438 height=19 y=31 baseline=55.8438 height=19
+column 0 x=16.5 width=5
+column 1 x=30.5 width=253
