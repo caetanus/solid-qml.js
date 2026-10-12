@@ -4,6 +4,7 @@
 //   dist/linux/<Product>-x86_64.AppImage           (single file; type-2 runtime, static)
 //   dist/linux/<Product>-<version>-linux-x86_64.tar.gz   (portable directory, ./AppRun)
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile, chmod, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -31,6 +32,24 @@ Terminal=false
 StartupWMClass=${project.appId}
 X-AppImage-Version=${project.version}
 `;
+
+// appimagetool refuses to run without `file(1)` (it uses it to sniff ELF architectures), which bare
+// systems and slim containers lack. With ARCH set, a minimal stand-in that recognises x86-64 ELF
+// files is all it needs; it is put on PATH only when the real `file` is missing.
+const FILE_SHIM = `#!/bin/sh
+for f in "$@"; do
+  case "$f" in -*) continue ;; esac
+  if [ "$(od -An -N4 -c "$f" 2>/dev/null | tr -d ' ')" = '177ELF' ]; then
+    echo "$f: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked"
+  else
+    echo "$f: data"
+  fi
+done
+`;
+
+function hasProgram(name) {
+  return (process.env.PATH ?? "").split(path.delimiter).some((d) => d && existsSync(path.join(d, name)));
+}
 
 const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
 
@@ -83,9 +102,17 @@ export async function buildLinux(opts) {
   const tmp = path.join(project.workDir, "tmp");
   await mkdir(tmp, { recursive: true });
   await rm(appImage, { force: true });
+  let PATH = process.env.PATH ?? "";
+  if (!hasProgram("file")) {
+    const shimDir = path.join(tmp, "bin");
+    await mkdir(shimDir, { recursive: true });
+    await writeFile(path.join(shimDir, "file"), FILE_SHIM);
+    await chmod(path.join(shimDir, "file"), 0o755);
+    PATH = `${shimDir}${path.delimiter}${PATH}`;
+  }
   try {
     await run(appimagetool, ["--appimage-extract-and-run", "--no-appstream", "--runtime-file", rtFile, appDir, appImage], {
-      env: { ...process.env, ARCH: "x86_64", VERSION: project.version, TMPDIR: tmp, APPIMAGE_EXTRACT_AND_RUN: "1" },
+      env: { ...process.env, PATH, ARCH: "x86_64", VERSION: project.version, TMPDIR: tmp, APPIMAGE_EXTRACT_AND_RUN: "1" },
       cwd: tmp,
       maxBuffer: 64 * 1024 * 1024,
     });

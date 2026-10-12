@@ -8,7 +8,9 @@
 //
 // It maps the QML-flavoured authoring surface onto the DOM (signal-style handlers, the <text>
 // primitive, `import X from "./X.qml"`), and keeps the "solid-qml" package (shipped as TSX) out of
-// esbuild's dependency pre-bundling so vite-plugin-solid compiles it. The NATIVE side (TSX → QML
+// esbuild's dependency pre-bundling so vite-plugin-solid compiles it. (The package deliberately has
+// no "solid" export condition: vite-plugin-solid would then pre-bundle every CommonJS dependency of
+// it — the CLI's Babel, which is node-only — and break `vite dev`.) The NATIVE side (TSX → QML
 // + the native window) is `npx solid-qml dev` / `npx solid-qml build`, not Vite.
 
 const qmlModulePrefix = "\0solid-qml:qml:";

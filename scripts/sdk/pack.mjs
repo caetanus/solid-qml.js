@@ -18,6 +18,7 @@ if (!existsSync(path.join(root, "packages/runtime-linux-x64/runtime.json"))) {
 }
 for (const p of ["create-solid-qml", "solid-qml", "runtime-linux-x64"]) {
   const res = execFileSync("npm", ["pack", "--json", "--pack-destination", out], { cwd: path.join(root, "packages", p), encoding: "utf8" });
-  const [info] = JSON.parse(res);
-  console.log(`sdk:pack: ${path.join(out, info.filename)} (${(info.size / 1048576).toFixed(1)} MB packed, ${info.entryCount} files)`);
+  const parsed = JSON.parse(res); // npm <= 10: [info]; npm 11+: { "<name>": info }
+  const info = Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0];
+  console.log(`sdk:pack: ${path.relative(root, path.join(out, info.filename))} (${(info.size / 1048576).toFixed(1)} MB packed, ${info.entryCount} files)`);
 }

@@ -11,7 +11,7 @@ function Counter() {
     <div class="counter">
       <text class="count">{count()}</text>
       <div class="row">
-        <button class="secondary" onClick={() => setCount(count() - 1)}>−</button>
+        <button class="secondary" onClick={() => setCount(count() - 1)}>-</button>
         <button onClick={() => setCount(count() + 1)}>+1</button>
       </div>
     </div>

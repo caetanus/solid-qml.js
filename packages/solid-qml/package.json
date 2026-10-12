@@ -9,7 +9,16 @@
     "url": "git+https://github.com/caetanus/solid-qml.js.git",
     "directory": "packages/solid-qml"
   },
-  "keywords": ["solid", "solid-js", "qml", "qt", "qtquick", "native", "desktop", "vite"],
+  "keywords": [
+    "solid",
+    "solid-js",
+    "qml",
+    "qt",
+    "qtquick",
+    "native",
+    "desktop",
+    "vite"
+  ],
   "engines": {
     "node": ">=20.19"
   },
@@ -19,7 +28,6 @@
   "exports": {
     ".": {
       "types": "./runtime/index.tsx",
-      "solid": "./runtime/index.tsx",
       "default": "./runtime/index.tsx"
     },
     "./vite": {

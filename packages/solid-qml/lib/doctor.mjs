@@ -88,6 +88,9 @@ export async function doctor(opts) {
   console.log("\npackaging (build --target linux)");
   const tar = spawnSync("tar", ["--version"], { encoding: "utf8" });
   tar.error ? (bad("tar not found (needed for the .tar.gz and to stage the AppImage)"), failures++) : ok("tar");
+  spawnSync("file", ["--version"]).error
+    ? ok("file(1) not installed — build uses its built-in stand-in for appimagetool")
+    : ok("file(1)");
   for (const [name, t] of Object.entries(TOOLS)) {
     existsSync(path.join(cacheDir(), "tools", t.file))
       ? ok(`${name} cached (${t.file})`)

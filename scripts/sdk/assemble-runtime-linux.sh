@@ -159,6 +159,17 @@ sort -u -o "$R/licenses/system/PACKAGES.txt" "$R/licenses/system/PACKAGES.txt" 2
 # Strip debug info from the fallback system libraries (Qt's own libs come stripped).
 find "$R/lib/fallback" -type f -name '*.so*' -exec strip --strip-unneeded {} + 2>/dev/null || true
 
+# npm tarballs cannot carry symlinks (npm pack drops them), so flatten the SONAME chains: each library
+# is stored once, under its SONAME (libQt6Core.so.6 — what the dynamic loader looks up); the
+# development links (libX.so) and the fully versioned names (libX.so.6.11.2) go away.
+find "$R" -type l -name '*.so' -delete
+while IFS= read -r -d '' link; do
+  target="$(readlink -f "$link")"
+  rm "$link"
+  mv "$target" "$link"
+done < <(find "$R" -type l -print0)
+[ -z "$(find "$R" -type l)" ] || { echo "assemble-runtime-linux: symlinks left in the payload" >&2; exit 1; }
+
 # ---- 4. Fallback font (for hosts without any fonts — bare containers) ------------------------
 for f in NotoSans-Regular.ttf NotoSans-Bold.ttf; do
   src="$(find /usr/share/fonts -name "$f" | head -1)"
