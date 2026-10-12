@@ -1,10 +1,15 @@
 {
-  "name": "solid-qml",
+  "name": "solid-qml-monorepo",
   "private": true,
   "version": "0.3.0-preview.1",
   "description": "Solid.js, rendered natively via QML/QtQuick — no browser.",
   "license": "MIT",
   "type": "module",
+  "workspaces": [
+    "packages/solid-qml",
+    "packages/create-solid-qml",
+    "packages/runtime-linux-x64"
+  ],
   "security": {
     "postinstall": "disabled",
     "npmLifecycleScripts": "ignored via .npmrc"
@@ -22,7 +27,9 @@
     "gen:cpp": "node --import tsx scripts/gen-cpp.mjs",
     "twin-render": "node --import tsx scripts/twin-render.mjs",
     "preview": "vite preview --host 0.0.0.0",
-    "bench": "node --import tsx scripts/bench-aot.mjs"
+    "bench": "node --import tsx scripts/bench-aot.mjs",
+    "sdk:build": "node scripts/sdk/build-packages.mjs",
+    "sdk:pack": "node scripts/sdk/pack.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-basic-ssl": "^2.1.0",
@@ -41,6 +48,7 @@
     "@types/node": "^26.1.1",
     "babel-plugin-transform-async-to-promises": "^0.8.18",
     "core-js": "^3.49.0",
+    "esbuild": "^0.28.1",
     "tsx": "^4.22.4",
     "typescript": "^5.9.3",
     "vite-plugin-solid": "^2.11.8"

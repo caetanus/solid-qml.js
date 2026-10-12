@@ -1,0 +1,29 @@
+{
+  "name": "__NAME__",
+  "productName": "__PRODUCT__",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build:web": "vite build",
+    "preview": "vite preview",
+    "native": "solid-qml dev",
+    "build:linux": "solid-qml build --target linux",
+    "typecheck": "tsc --noEmit"
+  },
+  "solidQml": {
+    "entry": "src/main.tsx",
+    "appId": "__NAME__",
+    "icon": "public/icon.svg"
+  },
+  "dependencies": {
+    "solid-js": "^1.9.10"
+  },
+  "devDependencies": {
+    "solid-qml": "^__SOLID_QML_VERSION__",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.7",
+    "vite-plugin-solid": "^2.11.8"
+  }
+}

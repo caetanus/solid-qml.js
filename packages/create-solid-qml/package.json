@@ -1,0 +1,29 @@
+{
+  "name": "create-solid-qml",
+  "version": "0.3.0-preview.1",
+  "description": "Scaffold a solid-qml app (Solid.js + Vite, rendered natively with Qt Quick): npm create solid-qml@latest my-app",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/caetanus/solid-qml.js.git",
+    "directory": "packages/create-solid-qml"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "bin": {
+    "create-solid-qml": "./bin/create-solid-qml.mjs"
+  },
+  "exports": {
+    ".": "./index.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin/",
+    "index.mjs",
+    "template/",
+    "README.md",
+    "LICENSE"
+  ]
+}

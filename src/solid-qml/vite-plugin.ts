@@ -1,6 +1,8 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import type { Plugin } from "vite";
+// One copy of the web-preview rewrite, shared with the published `solid-qml/vite` plugin.
+import { transformWebEvents } from "../../packages/solid-qml/vite.mjs";
 
 const qmlModulePrefix = "\0solid-qml:file:";
 
@@ -14,21 +16,6 @@ export type SolidQmlPluginOptions = {
   css?: string;
   loaderBin?: string;
 };
-
-function transformWebEvents(code: string) {
-  // Web preview compatibility for QML/Qt signal-style handlers.
-  return (
-    code
-      .replace(/\bonClicked=/g, "onClick=")
-      .replace(/\bonPressed=/g, "onPointerDown=")
-      .replace(/\bonReleased=/g, "onPointerUp=")
-      // `<text>` is the CssText primitive; in the browser it must be a real element. A raw
-      // lowercase <text> is an (invalid) HTMLUnknownElement that doesn't lay out in flex, so
-      // map it to <span> — matching the native CssText (inline text) and keeping its class.
-      .replace(/<text(\s|>|\/)/g, "<span$1")
-      .replace(/<\/text>/g, "</span>")
-  );
-}
 
 function qmlComponentModule(path: string) {
   return `

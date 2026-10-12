@@ -67,9 +67,25 @@ for (const confPath of ["docs/conf.py", "docs/v4-engine/conf.py"]) {
   }
 }
 
+// 6. The npm packages (packages/*): each version, and the lockstep pins between them (the CLI
+// pins its scaffolder and its prebuilt runtimes to exactly the same release).
+const sdkPackages = ["packages/solid-qml", "packages/create-solid-qml", "packages/runtime-linux-x64"];
+const sdkNames = new Set();
+for (const dir of sdkPackages) {
+  const p = JSON.parse(read(`${dir}/package.json`));
+  sdkNames.add(p.name);
+  if (p.version !== appVersion) fail(`${dir}/package.json version is "${p.version}", expected "${appVersion}"`);
+}
+const cli = JSON.parse(read("packages/solid-qml/package.json"));
+for (const [name, range] of Object.entries({ ...cli.dependencies, ...cli.optionalDependencies })) {
+  if (sdkNames.has(name) && range !== appVersion) {
+    fail(`packages/solid-qml/package.json pins ${name}@"${range}", expected exactly "${appVersion}"`);
+  }
+}
+
 if (process.exitCode) {
   console.error("version-consistency: one source of truth, meson.build project version — fix the files above to match it.");
   process.exit(process.exitCode);
 }
 
-console.log("version-consistency: OK — package.json, package-lock.json, docs/conf.py and docs/v4-engine/conf.py all match meson.build.");
+console.log("version-consistency: OK — package.json, package-lock.json, packages/*, docs/conf.py and docs/v4-engine/conf.py all match meson.build.");

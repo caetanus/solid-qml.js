@@ -1,0 +1,20 @@
+{
+  "name": "@solid-qml/runtime-linux-x64",
+  "version": "0.3.0-preview.1",
+  "description": "Prebuilt solid-qml native runtime for Linux x86_64 (glibc >= 2.34): solid-qml-loader, libsolidqml, the qml-css-engine and the Qt 6.11.2 runtime it needs.",
+  "license": "SEE LICENSE IN NOTICE.md",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/caetanus/solid-qml.js.git",
+    "directory": "packages/runtime-linux-x64"
+  },
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "libc": ["glibc"],
+  "files": [
+    "runtime/",
+    "runtime.json",
+    "NOTICE.md",
+    "README.md"
+  ]
+}
