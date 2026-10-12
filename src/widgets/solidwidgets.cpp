@@ -29,10 +29,24 @@
 #include "tumbler.h"
 #include "toggles.h"
 
+#ifdef SOLIDQML_STATIC
+// Static libsolidqml (Windows, see meson.build): nothing references the rcc objects (base.css, the
+// solidqml.Widgets qmldir/.qml), so the linker drops them unless their initializers are called.
+// Q_INIT_RESOURCE must be used outside any namespace.
+static void solidqmlInitResources()
+{
+    Q_INIT_RESOURCE(base);
+    Q_INIT_RESOURCE(widgets);
+}
+#endif
+
 namespace SolidWidgets {
 
 void registerTypes()
 {
+#ifdef SOLIDQML_STATIC
+    solidqmlInitResources();
+#endif
     // Same module URI as the remaining qmldir composite types — the registrations merge into
     // one namespace, so the port can proceed widget by widget.
     //

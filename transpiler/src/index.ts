@@ -155,7 +155,7 @@ export async function generate(source: string, filename: string, opts: GenerateO
     // identical on both targets. Detected on the RAW source: normalize() strips the runtime
     // import whenever JSX consumed all its specifiers (lowercase tags compile to h("div")
     // strings), so the normalized AST cannot be trusted to still carry it.
-    for (const m of src.matchAll(/from\s+["']([./][^"']*\/solid-qml\/runtime(?:\.tsx?)?)["']/g)) {
+    for (const m of src.matchAll(/from\s+["']((?:[./]|[A-Za-z]:[\\/])[^"']*\/solid-qml\/runtime(?:\.tsx?)?)["']/g)) {
       const abs = path.resolve(path.dirname(absPath), path.dirname(m[1]), "reset.css");
       if (!seenCss.has(abs)) { seenCss.add(abs); cssFiles.push(abs); }
     }

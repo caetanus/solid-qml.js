@@ -47,6 +47,12 @@ qt6_widgets_dep = dependency('qt6', modules: ['Widgets'])
 # thread (the qbar pattern — QDBusConnection is synchronous). Optional: without it the
 # notifications shim compiles as unavailable; other platforms get their own backends later.
 qt6_dbus_dep = dependency('qt6', modules: ['DBus'], required: false)
+# Windows: Qt ships QtDBus there too, but no session bus/notification daemon exists, so the D-Bus
+# backend would only ever report "unavailable" at runtime. Build the explicit no-backend path instead.
+if host_machine.system() == 'windows'
+  warning('Desktop notifications are unavailable on Windows (the backend is org.freedesktop.Notifications over D-Bus); the notifications shim reports available=false. The tray icon (Qt Labs Platform) is unaffected.')
+  qt6_dbus_dep = dependency('', required: false)
+endif
 notify_args = qt6_dbus_dep.found() ? ['-DHAVE_QTDBUS'] : []
 
 # <RichText> feature (#4): its ODF loader uses the private QZipReader (Qt ships no public unzip;
@@ -178,13 +184,25 @@ endif
 # loader/examples/solidterm all link it.
 install_lib = get_option('embed').allowed()
 
+solidqml_lib_kwargs = {
+  'cpp_args': notify_args + richtext_args,
+  'include_directories': include_directories('src'),
+  'dependencies': [qml_css_engine_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep, qt6_templates_private_dep] + core_private_deps,
+}
+# Windows: a static library. The code declares no dllexport/dllimport (the loader, the AOT demos and
+# the C++ tests use internal classes and their staticMetaObject DATA symbols, which an auto-export
+# .def cannot import correctly), so a DLL would need an export macro on every class. SOLIDQML_STATIC
+# makes registerTypes() pull in the rcc resources a static link would otherwise drop.
+if host_machine.system() == 'windows'
+  solidqml_lib_kwargs += {'cpp_args': solidqml_lib_kwargs['cpp_args'] + ['-DSOLIDQML_STATIC']}
+  solidqml_lib = static_library('solidqml', solidqml_sources, solid_qml_loader_qt_sources,
+    kwargs: solidqml_lib_kwargs, install: install_lib)
+else
 solidqml_lib = shared_library(
   'solidqml',
   solidqml_sources,
   solid_qml_loader_qt_sources,
-  cpp_args: notify_args + richtext_args,
-  include_directories: include_directories('src'),
-  dependencies: [qml_css_engine_dep, qt6_network_dep, qt6_widgets_dep, qt6_dbus_dep, qt6_templates_private_dep] + core_private_deps,
+  kwargs: solidqml_lib_kwargs,
   # SONAME/ABI policy for 0.x (docs/release-policy.md): soversion stays '0' for the whole 0.x
   # series (no ABI stability promise pre-1.0) and `version` is the numeric libsolidqml.so.X.Y.Z
   # filename suffix — decoupled from the project's "-preview.N" marketing version above. This
@@ -194,6 +212,7 @@ solidqml_lib = shared_library(
   soversion: '0',
   install: install_lib,
 )
+endif
 
 solidqml_dep = declare_dependency(
   link_with: solidqml_lib,
@@ -247,8 +266,8 @@ if get_option('examples').allowed()
     'embed-host-demo',
     files('examples/embed-host/main.cpp'),
     cpp_args: notify_args + [
-      '-DSOLIDQML_APP_DIR="' + meson.current_source_dir() + '/qml/solidqml/"',
-      '-DEMBED_HOST_QML="' + meson.current_source_dir() + '/examples/embed-host/main.qml"',
+      '-DSOLIDQML_APP_DIR="' + meson.current_source_dir().replace('\\', '/') + '/qml/solidqml/"',
+      '-DEMBED_HOST_QML="' + meson.current_source_dir().replace('\\', '/') + '/examples/embed-host/main.qml"',
     ],
     include_directories: include_directories('src'),
     dependencies: [solidqml_dep, qt6_widgets_dep],
@@ -271,7 +290,7 @@ if get_option('examples').allowed()
     command: [
       'sh', '-c',
       'mkdir -p @OUTDIR@/qmlmods/Acme && cp @INPUT0@ @OUTDIR@/qmlmods/Acme/ && cp ' +
-      meson.current_build_dir() + '/libacmeplugin.so @OUTDIR@/qmlmods/Acme/ && touch @OUTPUT@',
+      acme_plugin.full_path().replace('\\', '/') + ' @OUTDIR@/qmlmods/Acme/ && touch @OUTPUT@',
     ],
     depends: acme_plugin,
     build_by_default: true,
@@ -315,7 +334,13 @@ endif
 solidterm_opt = get_option('solidterm')
 # Only probe libvterm when solidterm is not turned off — a disabled build never touches vterm.
 build_solidterm = false
-if not solidterm_opt.disabled()
+# Windows: SolidTerm's pty layer is POSIX forkpty(); a ConPTY port does not exist yet.
+if host_machine.system() == 'windows' and not solidterm_opt.disabled()
+  if solidterm_opt.enabled()
+    error('SolidTerm is not available on Windows: its pty layer (apps/solidterm/native/ptysession.cpp) uses POSIX forkpty() and has no ConPTY port yet.')
+  endif
+  warning('SolidTerm is skipped on Windows: its pty layer uses POSIX forkpty() (no ConPTY port yet).')
+elif not solidterm_opt.disabled()
   vterm_dep = dependency('vterm', required: solidterm_opt.enabled())
   build_solidterm = vterm_dep.found()
 endif
@@ -374,7 +399,7 @@ if build_solidterm
     ),
     blur_src,
     solidterm_moc,
-    cpp_args: notify_args + blur_args + ['-DSOLIDTERM_DEV_DIR="' + meson.current_source_dir() + '/apps/solidterm/qml"'],
+    cpp_args: notify_args + blur_args + ['-DSOLIDTERM_DEV_DIR="' + meson.current_source_dir().replace('\\', '/') + '/apps/solidterm/qml"'],
     include_directories: include_directories('src', 'apps/solidterm'),
     dependencies: [solidqml_dep, qt6_widgets_dep, qt6_network_dep, vterm_dep, util_dep] + blur_deps, # Network: QLocalServer (single instance)
     install_rpath: '$ORIGIN/../' + get_option('libdir'),

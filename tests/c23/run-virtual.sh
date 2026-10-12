@@ -11,8 +11,9 @@ set -e
 LOADER=$1
 OUT=$2
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-case "$LOADER" in /*) ;; *) LOADER="$PWD/$LOADER" ;; esac
-case "$OUT" in /*) ;; *) OUT="$PWD/$OUT" ;; esac
+# Absolute = a POSIX path or a Windows drive path (meson passes D:\... there).
+case "$LOADER" in /*|[A-Za-z]:*) ;; *) LOADER="$PWD/$LOADER" ;; esac
+case "$OUT" in /*|[A-Za-z]:*) ;; *) OUT="$PWD/$OUT" ;; esac
 rm -rf "$OUT"
 mkdir -p "$OUT/gen"
 cd "$ROOT"

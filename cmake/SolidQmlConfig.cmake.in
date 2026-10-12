@@ -10,13 +10,25 @@ include(CMakeFindDependencyMacro)
 find_dependency(Qt6 COMPONENTS Quick)
 
 if(NOT TARGET SolidQml::solidqml)
-    find_library(_solidqml_lib NAMES solidqml HINTS "@PACKAGE_CMAKE_INSTALL_LIBDIR@" PATH_SUFFIXES lib)
+    find_library(_solidqml_lib NAMES solidqml libsolidqml libsolidqml.a HINTS "@PACKAGE_CMAKE_INSTALL_LIBDIR@" PATH_SUFFIXES lib)
     find_path(_solidqml_inc solidqml/solidqmlembed.h HINTS "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@" PATH_SUFFIXES include)
+    if(WIN32)
+        # Windows ships libsolidqml as a STATIC library (see meson.build): link the CSS engine and
+        # the Qt modules it uses as well. SolidQmlEmbed::init() initializes its own resources.
+        find_dependency(Qt6 COMPONENTS Network Widgets QuickTemplates2)
+        find_library(_solidqml_engine_lib NAMES qmlcssengine libqmlcssengine libqmlcssengine.a HINTS "@PACKAGE_CMAKE_INSTALL_LIBDIR@" PATH_SUFFIXES lib)
+        add_library(SolidQml::solidqml STATIC IMPORTED)
+        set_target_properties(SolidQml::solidqml PROPERTIES
+            IMPORTED_LOCATION "${_solidqml_lib}"
+            INTERFACE_INCLUDE_DIRECTORIES "${_solidqml_inc}"
+            INTERFACE_LINK_LIBRARIES "${_solidqml_engine_lib};Qt6::Quick;Qt6::Network;Qt6::Widgets;Qt6::QuickTemplates2")
+    else()
     add_library(SolidQml::solidqml SHARED IMPORTED)
     set_target_properties(SolidQml::solidqml PROPERTIES
         IMPORTED_LOCATION "${_solidqml_lib}"
         INTERFACE_INCLUDE_DIRECTORIES "${_solidqml_inc}"
         INTERFACE_LINK_LIBRARIES "Qt6::Quick")
+    endif()
 endif()
 
 check_required_components(SolidQml)

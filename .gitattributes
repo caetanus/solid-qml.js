@@ -1,0 +1,3 @@
+# Check text files out with LF on every platform (Windows clients default to core.autocrlf=true):
+# the transpiler goldens and fixtures are compared byte-for-byte, and CRLF would change them.
+* text=auto eol=lf

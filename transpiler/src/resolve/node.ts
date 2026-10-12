@@ -32,7 +32,8 @@ const BUILTINS = new Set([
 ]);
 
 export function isBareSpecifier(spec: string): boolean {
-  return !spec.startsWith(".") && !spec.startsWith("/") && !spec.startsWith("qrc:");
+  // A Windows absolute path ("C:/…", "C:\\…") is a path, not a package name.
+  return !spec.startsWith(".") && !spec.startsWith("/") && !spec.startsWith("qrc:") && !/^[A-Za-z]:[\\/]/.test(spec);
 }
 
 export function isRuntimeOnlyImport(spec: string): boolean {

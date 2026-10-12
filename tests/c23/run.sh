@@ -7,7 +7,8 @@ LOADER=$1
 OUT=$2
 EXPECTED=48 # PASS lines the fixture prints when every check runs
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-case "$OUT" in /*) ;; *) OUT="$PWD/$OUT" ;; esac
+# Absolute = a POSIX path or a Windows drive path (meson passes D:\... there).
+case "$OUT" in /*|[A-Za-z]:*) ;; *) OUT="$PWD/$OUT" ;; esac
 rm -rf "$OUT"
 mkdir -p "$OUT"
 cd "$ROOT"
