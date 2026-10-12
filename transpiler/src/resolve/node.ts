@@ -62,6 +62,20 @@ export async function mirrorNodeImports(
   fromDir: string,
   readFile: ReadFile,
 ): Promise<MirrorResult> {
+  const m = createMirror(readFile);
+  for (const ref of roots) {
+    if (!isBareSpecifier(ref.spec) || isRuntimeOnlyImport(ref.spec)) continue;
+    if (isShimmedNodeBuiltin(ref.spec)) continue; // host-provided module; left bare for registerModule
+    if (isNodeBuiltinSpecifier(ref.spec)) throw new Error(`Node builtin import is not supported in QML V4 mirror: ${ref.spec}`);
+    await m.mirror(await resolvePackage(fromDir, ref.spec, readFile));
+  }
+  return { byAbsPath: m.byAbsPath, modules: m.modules };
+}
+
+/** The mirroring machinery: `mirror(absPath)` rewrites one module (and, recursively, everything it
+ *  imports) into a V4-loadable ES module under `modules/`, returning its output path. Shared by npm
+ *  imports and by the app's own plain JS/TS modules (`import { f } from "./util"`). */
+export function createMirror(readFile: ReadFile) {
   const byAbsPath = new Map<string, string>();
   const modules = new Map<string, string>();
   const visiting = new Set<string>();
@@ -92,14 +106,45 @@ export async function mirrorNodeImports(
     return outPath;
   };
 
-  for (const ref of roots) {
-    if (!isBareSpecifier(ref.spec) || isRuntimeOnlyImport(ref.spec)) continue;
-    if (isShimmedNodeBuiltin(ref.spec)) continue; // host-provided module; left bare for registerModule
-    if (isNodeBuiltinSpecifier(ref.spec)) throw new Error(`Node builtin import is not supported in QML V4 mirror: ${ref.spec}`);
-    await mirror(await resolvePackage(fromDir, ref.spec, readFile));
-  }
+  return { mirror, byAbsPath, modules };
+}
 
-  return { byAbsPath, modules };
+/** Resolve a relative import of the app's own code to a file (`./util` → util.ts/.tsx/.js/.mjs or
+ *  a directory index). */
+export async function resolveLocalModule(importerDir: string, spec: string, readFile: ReadFile): Promise<string> {
+  return resolveFileOrDir(path.resolve(importerDir, spec), readFile);
+}
+
+/** Check that one of the app's own modules — and every module of the app it imports, transitively —
+ *  is plain JS/TS that can run as a JS module, unmodified: no JSX/components (those are transpiled
+ *  to QML types) and no Solid import (reactive state at module level is not shared natively).
+ *  Throws a message naming the module and the reason. */
+export async function checkPlainLocalModule(absPath: string, readFile: ReadFile, what: string, seen = new Set<string>()): Promise<void> {
+  if (seen.has(absPath)) return;
+  seen.add(absPath);
+  if (!/\.(m?[jt]sx?|cjs)$/.test(absPath))
+    throw new Error(`${what}: ${path.basename(absPath)} is not a JS/TS module — only .ts/.tsx/.js/.mjs modules can be imported`);
+  const { ast } = await normalize(await readFile(absPath), absPath);
+  const file = ast as t.File;
+  let jsx = false;
+  const walk = (n: unknown): void => {
+    if (jsx || !n || typeof n !== "object") return;
+    if (Array.isArray(n)) { for (const x of n) walk(x); return; }
+    const nn = n as t.Node;
+    if (!nn.type) return;
+    if (t.isCallExpression(nn) && t.isIdentifier(nn.callee) && (nn.callee.name === "h" || nn.callee.name === "hFrag")) { jsx = true; return; }
+    for (const k of t.VISITOR_KEYS[nn.type] ?? []) walk((nn as unknown as Record<string, unknown>)[k]);
+  };
+  walk(file.program);
+  if (jsx)
+    throw new Error(`${what}: ${path.basename(absPath)} also contains JSX (components) — a non-component binding can only be imported from a plain module; move it into a module without JSX`);
+  for (const node of file.program.body) {
+    const spec = importLikeSource(node);
+    if (!spec) continue;
+    if (isRuntimeOnlyImport(spec))
+      throw new Error(`${what}: ${path.basename(absPath)} imports "${spec}" — Solid state created at module level would not be shared or tracked natively; create it in a component (and share it through a context provider or props)`);
+    if (!isBareSpecifier(spec)) await checkPlainLocalModule(await resolveRelative(path.dirname(absPath), spec, readFile), readFile, what, seen);
+  }
 }
 
 export async function resolveNodeImport(fromDir: string, spec: string, readFile: ReadFile): Promise<string> {

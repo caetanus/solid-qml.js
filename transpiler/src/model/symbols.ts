@@ -1186,7 +1186,9 @@ function looksLikeComponentBody(body: t.BlockStatement | t.Expression): boolean 
  *  helpers are never emitted. */
 export function analyzeModuleFunctions(file: t.File): Map<string, HelperInfo> {
   const out = new Map<string, HelperInfo>();
-  for (const node of file.program.body) {
+  for (const top of file.program.body) {
+    // `export function f()` / `export const f = …` are module helpers too.
+    const node = t.isExportNamedDeclaration(top) && top.declaration ? top.declaration : top;
     // Babel's JSX spread helper (`h(C, _extends({…}, o))`): consumed by the instance emitter.
     if (t.isFunctionDeclaration(node) && node.id && isSpreadHelperName(node.id.name)) continue;
     if (t.isFunctionDeclaration(node) && node.id && t.isBlockStatement(node.body)) {
@@ -1222,7 +1224,8 @@ export function analyzeModuleFunctions(file: t.File): Map<string, HelperInfo> {
  *  wrong behavior. */
 export function moduleLevelMutableNames(file: t.File): Set<string> {
   const out = new Set<string>();
-  for (const node of file.program.body) {
+  for (const top of file.program.body) {
+    const node = t.isExportNamedDeclaration(top) && top.declaration ? top.declaration : top;
     if (!t.isVariableDeclaration(node) || node.kind === "const") continue;
     for (const d of node.declarations) if (t.isIdentifier(d.id)) out.add(d.id.name);
   }

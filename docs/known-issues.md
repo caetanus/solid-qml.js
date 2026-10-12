@@ -6,18 +6,13 @@ A workaround is given where there is one. What is supported at all is in the
 
 ## Constructs that compile but are wrong at runtime
 
-The transpiler rejects most constructs it cannot translate (the attribute contract and the
-statement translator both fail loudly). A few still get through without an error and produce an
-app that misbehaves at runtime. The [support matrix](support-matrix.md#solid-apis-jsx-and-statements)
-marks them ⚠️ and a test keeps that list up to date. In short:
-
-| Construct | What happens | Workaround |
-|---|---|---|
-| A helper imported from a relative non-component module (`import { f } from "./util"`) | only components are followed through relative imports; `f` is undefined at runtime | keep helpers in the component's own file, or move them into an npm package |
-| A module-level constant initialised with `new …` or a RegExp literal (`const RE = /a/`) | the constant is not emitted; it is undefined at runtime | use string methods, a literal/array/object constant, or an npm package |
-
-These belong to release-plan M2 ("no silent miscompiles"). Until they fail loudly, check new code
-against the support matrix.
+None of the Solid/JSX/statement constructs probed by the
+[support matrix](support-matrix.md#solid-apis-jsx-and-statements) is accepted and then wrong at
+runtime any more (release-plan M2): each one either works like Solid or fails at compile time with
+a message naming the construct and the way out. A test regenerates that table from the transpiler,
+so a construct that starts compiling again has to be re-classified. The semantic differences that
+remain are listed in the next section. (The ⚠️ rows left in the support matrix are CSS features the
+engine ignores, below.)
 
 ## Reactivity that differs from Solid
 

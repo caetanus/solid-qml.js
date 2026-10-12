@@ -42,7 +42,8 @@ This is a **developer preview**. See the [release notes](docs/release-notes/0.3.
   verified. Other distros are untested. There is no npm package, binary SDK, Windows, macOS or
   mobile build yet.
 - Only part of Solid is covered. Check the [support matrix](docs/support-matrix.md) before you
-  port an app: a few APIs (`untrack`, `batch`, `on`…) compile today but are **wrong at runtime**.
+  port an app: what is not supported fails at compile time with a message, and the few semantic
+  differences that remain are listed in [known issues](docs/known-issues.md).
 - Performance: the methodology and numbers have not been published yet (release-plan M10). Until
   they are, this project makes no performance claims.
 

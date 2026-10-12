@@ -1,5 +1,6 @@
 import * as t from "@babel/types";
 import _generate from "@babel/generator";
+import _traverse from "@babel/traverse";
 import { emitQml } from "./qml.ts";
 import { emitExpr, emitPattern, shadowOwnParams, type Scope } from "./expr.ts";
 import { emitStmt, emitValue, emitBindingStmt, emitStatements } from "./stmt.ts";
@@ -11,6 +12,7 @@ import { safeName } from "../names/safe.ts";
 import { hParts, isHCall, isFragmentTag } from "../ast/h.ts";
 
 const generate: typeof _generate = (_generate as any).default ?? _generate;
+const traverse: typeof _traverse = (_traverse as any).default ?? _traverse;
 
 const INDENT = "    ";
 
@@ -102,35 +104,38 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   const directRefs = collectIdentifierNames(fn);
   const moduleFunctionsAll = moduleFile ? analyzeModuleFunctions(moduleFile) : new Map<string, HelperInfo>();
   let moduleFnDecls = new Map<string, HelperInfo>();
-  let moduleFnReferencedNames = new Set<string>();
-  if (moduleFunctionsAll.size > 0) {
-    const moduleMutableNames = moduleLevelMutableNames(moduleFile!);
+  // Module-level `const NAME = …` referenced by this component — directly, OR through a module
+  // helper it calls, OR through another module const's initializer — surfaced as `__const_NAME`
+  // properties (QML property names cannot start with an upper-case letter, and these usually do;
+  // the identifier is aliased in scope). A pure-literal data table and any other initializer
+  // (`new Map()`, a RegExp, a call, an async function lowered by Babel) alike: it is evaluated once
+  // per component instance. Helpers and consts are closed over together (a const may call a helper,
+  // a helper may read a const), to a fixpoint.
+  const moduleConstDecls = new Map<string, t.Expression>();
+  if (moduleFile) {
+    const moduleMutableNames = moduleLevelMutableNames(moduleFile);
+    const decls = moduleLevelDecls(moduleFile);
     const locallyBound = new Set<string>([...table.keys(), ...renderLocalsMap.keys(), ...mutableLocalsMap.keys(), ...helpersMap.keys(), ...props.used]);
-    const seeds = [...directRefs].filter((n) => moduleFunctionsAll.has(n) && !locallyBound.has(n));
-    const closure = collectModuleFunctionClosure(seeds, moduleFunctionsAll, moduleMutableNames);
-    moduleFnDecls = closure.selected;
-    moduleFnReferencedNames = closure.referencedNames;
+    const fetchers = new Set(resources.map((r) => r.fetcher)); // inlined by the resource loader
+    const wanted = new Set([...directRefs].filter((n) => !locallyBound.has(n)));
+    for (let changed = true; changed;) {
+      changed = false;
+      const closure = collectModuleFunctionClosure([...wanted].filter((n) => moduleFunctionsAll.has(n)), moduleFunctionsAll, moduleMutableNames);
+      moduleFnDecls = closure.selected;
+      for (const n of closure.referencedNames) if (!wanted.has(n)) { wanted.add(n); changed = true; }
+      for (const [name, d] of decls) {
+        if (!wanted.has(name) || moduleConstDecls.has(name) || fetchers.has(name) || moduleFunctionsAll.has(name)) continue;
+        if (d.kind === "skip") continue;
+        if (d.kind === "error") throw new Error(d.message);
+        moduleConstDecls.set(name, d.init);
+        for (const n of identifiersIn(d.init)) if (!wanted.has(n)) { wanted.add(n); changed = true; }
+      }
+    }
+    checkModuleConstMutation(fn, [...moduleFnDecls.values()], new Set(moduleConstDecls.keys()));
   }
   const helpers = (helpersMap.size > 0 || moduleFnDecls.size > 0)
     ? new Set([...helpersMap.keys(), ...moduleFnDecls.keys()])
     : undefined;
-  // Module-level `const NAME = <pure literal>` data tables (menus, slides, feeds…) referenced by
-  // this component — directly, OR transitively through a module helper this component calls
-  // (moduleFnReferencedNames). QML property names cannot start with an upper-case letter (and
-  // these usually do), so each one is surfaced as `__const_NAME` and the identifier is aliased
-  // in scope.
-  const moduleConstDecls = new Map<string, t.Expression>();
-  if (moduleFile) {
-    const consts = moduleLevelConsts(moduleFile);
-    if (consts.size > 0) {
-      const referenced = new Set([...directRefs, ...moduleFnReferencedNames]);
-      for (const [name, init] of consts) {
-        if (!referenced.has(name)) continue;
-        if (table.has(name) || renderLocalsMap.has(name) || mutableLocalsMap.has(name) || helpersMap.has(name)) continue;
-        moduleConstDecls.set(name, init);
-      }
-    }
-  }
   const constAliases: Record<string, string> = {};
   for (const name of moduleConstDecls.keys()) constAliases[name] = `__const_${safeName(name)}`;
 
@@ -768,30 +773,129 @@ function solidImports(file: t.File): Map<string, string> {
   return out;
 }
 
-/** Module-level `const NAME = <pure literal>` declarations — static data tables usable as
- *  Repeater models / binding sources. Anything with calls, references or spreads is skipped. */
-function moduleLevelConsts(file: t.File): Map<string, t.Expression> {
-  const out = new Map<string, t.Expression>();
-  for (const st of file.program.body) {
-    if (!t.isVariableDeclaration(st) || st.kind !== "const") continue;
+type ModuleDecl = { kind: "const"; init: t.Expression } | { kind: "skip" } | { kind: "error"; message: string };
+
+const SOLID_PRIMITIVES = new Set(["createSignal", "createStore", "createMemo", "createEffect", "createResource",
+  "createRenderEffect", "createComputed", "createSelector", "createRoot", "createMutable", "createDeferred", "onMount", "onCleanup"]);
+
+/** Every top-level variable of a module (plain or exported) and what a component referencing it
+ *  gets: a const to emit, a binding owned elsewhere (`createContext`, a function — module helpers),
+ *  or a compile error for what has no per-component equivalent (module-level reactive state, JSX,
+ *  `let`/`var` state shared between components). */
+function moduleLevelDecls(file: t.File): Map<string, ModuleDecl> {
+  const out = new Map<string, ModuleDecl>();
+  const solid = solidImports(file);
+  for (const node of file.program.body) {
+    const st = t.isExportNamedDeclaration(node) && node.declaration ? node.declaration : node;
+    if (!t.isVariableDeclaration(st)) continue;
     for (const d of st.declarations) {
-      if (t.isIdentifier(d.id) && d.init && isPureLiteral(d.init)) out.set(d.id.name, d.init);
+      const names = Object.keys(t.getBindingIdentifiers(d.id));
+      const init = d.init;
+      const api = init && t.isCallExpression(init) && t.isIdentifier(init.callee) ? solid.get(init.callee.name) : undefined;
+      const set = (v: ModuleDecl) => { for (const n of names) out.set(n, v); };
+      if (api === "createContext") { set({ kind: "skip" }); continue; }
+      if (api && SOLID_PRIMITIVES.has(api)) {
+        set({ kind: "error", message: `module-level ${api}(…) (${names.join(", ")}): reactive state created outside a component is not supported natively — create it in a component and share it through a context provider or props` });
+        continue;
+      }
+      if (st.kind !== "const") {
+        set({ kind: "error", message: `module-level \`${st.kind} ${names.join(", ")}\`: module state is not shared between components natively (each component gets its own copy) — make it a const, move it into the component, or into a plain .ts module imported here (one shared JS module)` });
+        continue;
+      }
+      if (!t.isIdentifier(d.id) || !init) {
+        set({ kind: "error", message: `module-level destructuring \`const ${names.join(", ")}\` is not supported natively — declare each constant` });
+        continue;
+      }
+      if (t.isArrowFunctionExpression(init) || t.isFunctionExpression(init)) { set({ kind: "skip" }); continue; } // a module helper
+      if (containsH(init)) {
+        set({ kind: "error", message: `module-level JSX constant \`${d.id.name}\` is not supported natively — render it from a component` });
+        continue;
+      }
+      set({ kind: "const", init });
     }
   }
   return out;
 }
 
-function isPureLiteral(n: t.Node): boolean {
-  if (t.isStringLiteral(n) || t.isNumericLiteral(n) || t.isBooleanLiteral(n) || t.isNullLiteral(n)) return true;
-  if (t.isUnaryExpression(n) && n.operator === "-") return isPureLiteral(n.argument);
-  if (t.isTemplateLiteral(n)) return n.expressions.length === 0;
-  if (t.isArrayExpression(n))
-    return n.elements.every((e) => e != null && !t.isSpreadElement(e) && isPureLiteral(e));
-  if (t.isObjectExpression(n))
-    return n.properties.every((p) => t.isObjectProperty(p) && !p.computed
-      && (t.isIdentifier(p.key) || t.isStringLiteral(p.key))
-      && t.isExpression(p.value) && isPureLiteral(p.value));
-  return false;
+function containsH(n: t.Node): boolean {
+  let found = false;
+  const walk = (x: unknown): void => {
+    if (found || !x || typeof x !== "object") return;
+    if (Array.isArray(x)) { for (const y of x) walk(y); return; }
+    const nn = x as t.Node;
+    if (!nn.type) return;
+    if (isHCall(nn)) { found = true; return; }
+    for (const k of t.VISITOR_KEYS[nn.type] ?? []) walk((nn as unknown as Record<string, unknown>)[k]);
+  };
+  walk(n);
+  return found;
+}
+
+/** Identifier names referenced in an expression (property keys excluded). */
+function identifiersIn(n: t.Node): Set<string> {
+  const out = new Set<string>();
+  const walk = (x: unknown, parent: t.Node | null): void => {
+    if (!x || typeof x !== "object") return;
+    if (Array.isArray(x)) { for (const y of x) walk(y, parent); return; }
+    const nn = x as t.Node;
+    if (!nn.type) return;
+    if (t.isIdentifier(nn)) {
+      const isKey = !!parent && ((t.isMemberExpression(parent) && parent.property === nn && !parent.computed)
+        || (t.isObjectProperty(parent) && parent.key === nn && !parent.computed));
+      if (!isKey) out.add(nn.name);
+    }
+    for (const k of t.VISITOR_KEYS[nn.type] ?? []) walk((nn as unknown as Record<string, unknown>)[k], nn);
+  };
+  walk(n, null);
+  return out;
+}
+
+const MUTATORS = new Set(["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set", "delete", "clear", "add"]);
+
+/** A module const is instantiated once per component instance (a property), so mutating it is
+ *  not shared the way a JS module's object is: fail loud where the component (or a module helper it
+ *  uses) mutates one in place. */
+function checkModuleConstMutation(fn: t.Function, helpers: HelperInfo[], consts: Set<string>): void {
+  if (!consts.size) return;
+  const rootOf = (e: t.Node): t.Identifier | null => {
+    let n = e;
+    while (t.isMemberExpression(n) || t.isOptionalMemberExpression(n)) n = n.object;
+    return t.isIdentifier(n) ? n : null;
+  };
+  const check = (body: t.BlockStatement | t.Expression, params: t.Node[]) => {
+    const program = t.isBlockStatement(body) ? t.program(body.body) : t.program([t.expressionStatement(body)]);
+    const own = new Set(params.flatMap((p) => Object.keys(t.getBindingIdentifiers(p))));
+    const isModule = (id: t.Identifier, path: { scope: { getBinding(n: string): unknown } }) =>
+      consts.has(id.name) && !own.has(id.name) && !path.scope.getBinding(id.name);
+    const fail = (name: string, how: string) => {
+      throw new Error(`module-level const ${name} is mutated (${how}) — each component instance gets its own copy, so the change is not shared as in JS: move ${name} into the component, or into a plain .ts module imported here (one shared JS module)`);
+    };
+    traverse(t.file(program), {
+      AssignmentExpression(path) {
+        const l = path.node.left;
+        if (!t.isMemberExpression(l)) return;
+        const r = rootOf(l);
+        if (r && isModule(r, path)) fail(r.name, "an assignment to a member");
+      },
+      UpdateExpression(path) {
+        const r = t.isMemberExpression(path.node.argument) ? rootOf(path.node.argument) : null;
+        if (r && isModule(r, path)) fail(r.name, `${path.node.operator} on a member`);
+      },
+      UnaryExpression(path) {
+        if (path.node.operator !== "delete" || !t.isMemberExpression(path.node.argument)) return;
+        const r = rootOf(path.node.argument);
+        if (r && isModule(r, path)) fail(r.name, "delete");
+      },
+      CallExpression(path) {
+        const c = path.node.callee;
+        if (!t.isMemberExpression(c) || c.computed || !t.isIdentifier(c.property) || !MUTATORS.has(c.property.name)) return;
+        const r = rootOf(c.object);
+        if (r && isModule(r, path)) fail(r.name, `.${c.property.name}(…)`);
+      },
+    });
+  };
+  check(fn.body as t.BlockStatement, fn.params);
+  for (const h of helpers) check(h.body, h.paramNodes);
 }
 
 /** Names declared directly in the component body (variables, incl. destructured, and functions). */

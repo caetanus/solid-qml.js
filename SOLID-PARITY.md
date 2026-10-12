@@ -138,8 +138,9 @@ Owner decision 2026-10-11: **web semantics by default, reuse by key is opt-in.**
 | `async`/`await` | ✅ (Babel → Promise chains; V4 has no native async) |
 | nullish `??` | ✅ |
 | optional chaining `?.` / `?.[k]` / `?.()` | ✅ |
-| `new` expressions (`new Date()`, `new Map()`) in component code | ✅ (a module-level `const x = new …` is accepted but not emitted — undefined at runtime) |
-| RegExp literals | ✅ in component code (a module-level `const RE = /…/` is accepted but not emitted — undefined at runtime) |
+| `new` expressions (`new Date()`, `new Map()`) | ✅ (a module-level `const x = new …` is one value per component instance; mutating it in place fails at compile time) |
+| RegExp literals | ✅ (component code and module-level consts) |
+| helpers/consts imported from the app's own plain modules (`import { f } from "./util"`) | ✅ (mirrored as one shared JS module; a module with JSX or a Solid import fails at compile time) |
 | destructuring (declarations, params, loop heads, defaults, array rest) | ✅ (object rest `{ a, ...rest }` is rejected: V4 has none) |
 | labelled/try/catch/finally/throw/switch statements | ✅ (`transpiler/test/statements.test.ts` executes the emitted code) |
 | block-bodied `onClick={() => { … }}` | ✅ |

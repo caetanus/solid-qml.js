@@ -6,7 +6,7 @@ import { emitComponentType } from "./emit/component.ts";
 import { STOCK_COMPONENTS } from "./emit/stock.ts";
 import { analyzeContexts, analyzeProps, analyzeProvider, analyzeSignals, analyzeUseContext, propSources } from "./model/symbols.ts";
 import { hParts, isComponentIdentifier, isHCall } from "./ast/h.ts";
-import { isBareSpecifier, isRuntimeOnlyImport, mirrorNodeImports, resolveNodeImport } from "./resolve/node.ts";
+import { checkPlainLocalModule, createMirror, isBareSpecifier, isRuntimeOnlyImport, mirrorNodeImports, resolveLocalModule, resolveNodeImport } from "./resolve/node.ts";
 import { emitStmt } from "./emit/stmt.ts";
 import { resetAttrWarnings } from "./emit/attrs.ts";
 import { BATCH_MODULE_PATH, BATCH_MODULE_SOURCE } from "./emit/runtime.ts";
@@ -159,6 +159,19 @@ export async function generate(source: string, filename: string, opts: GenerateO
   const seenCss = new Set<string>();
   const mirroredModules = new Map<string, string>();
 
+  const localMirror = createMirror(readFile);
+  const componentCache = new Map<string, Set<string>>();
+  /** The component names a module declares (normalized once; no import following). */
+  const componentNamesOf = async (absPath: string, src: string): Promise<Set<string>> => {
+    let hit = componentCache.get(absPath);
+    if (!hit) {
+      const { ast } = await normalize(src, absPath);
+      hit = new Set(findComponents(ast as t.File).keys());
+      componentCache.set(absPath, hit);
+    }
+    return hit;
+  };
+
   const load = async (absPath: string, src: string): Promise<Mod> => {
     const hit = modules.get(absPath);
     if (hit) return hit;
@@ -192,11 +205,11 @@ export async function generate(source: string, filename: string, opts: GenerateO
       if (imp.imported === "tabstop") jsImports[local] = "solidTabstop";
       if (imp.imported === "notifications") jsImports[local] = "solidNotifications";
     }
+    let importIndex = 0;
     const bareImports = [...imports.values()].filter((imp) => isBareSpecifier(imp.spec) && !isRuntimeOnlyImport(imp.spec));
     if (bareImports.length > 0) {
       const mirrored = await mirrorNodeImports(bareImports, path.dirname(absPath), readFile);
       for (const [outPath, mirroredSource] of mirrored.modules) mirroredModules.set(outPath, mirroredSource);
-      let importIndex = 0;
       for (const [local, imp] of imports) {
         if (!isBareSpecifier(imp.spec) || isRuntimeOnlyImport(imp.spec)) continue;
         const resolved = await resolveNodeImport(path.dirname(absPath), imp.spec, readFile);
@@ -214,6 +227,31 @@ export async function generate(source: string, filename: string, opts: GenerateO
             : `${alias}.${imp.imported}`;
       }
     }
+    // A non-component binding imported from one of the app's own modules (`import { fmt } from
+    // "./util"`): the module is plain JS/TS (checked), so it runs as a JS module — mirrored next to
+    // the QML like an npm package, one shared instance per engine. A component import is followed by
+    // the component graph instead (visit, below).
+    for (const [local, imp] of imports) {
+      if (!imp.spec.startsWith(".") || imp.spec.endsWith(".css") || imp.spec.endsWith(".qml") || isRuntimeOnlyImport(imp.spec)) continue;
+      const target = await resolveModule(path.dirname(absPath), imp.spec, readFile);
+      if (target && imp.imported !== "*") {
+        const comps = await componentNamesOf(target.path, target.source);
+        if (imp.imported === "default" ? comps.size > 0 : comps.has(imp.imported)) continue;
+      }
+      const what = `import { ${imp.imported === "default" ? `default as ${local}` : imp.imported} } from "${imp.spec}"`;
+      let abs: string;
+      try { abs = await resolveLocalModule(path.dirname(absPath), imp.spec, readFile); }
+      catch { throw new Error(`${what}: cannot resolve ${imp.spec} from ${absPath}`); }
+      await checkPlainLocalModule(abs, readFile, what);
+      const outPath = await localMirror.mirror(abs);
+      let alias = qmlImports.get(outPath);
+      if (!alias) {
+        alias = `Js${importIndex++}`;
+        qmlImports.set(outPath, alias);
+      }
+      jsImports[local] = imp.imported === "*" ? alias : imp.imported === "default" ? `${alias}.Default` : `${alias}.${imp.imported}`;
+    }
+    for (const [outPath, src] of localMirror.modules) mirroredModules.set(outPath, src);
     // Module-level writes to a runtime-config import (`tabstop.enabled = false` at top level):
     // emitted here, with THIS module's import scope, and hoisted to the entry's onCompleted.
     const moduleInit: string[] = [];
