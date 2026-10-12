@@ -44,8 +44,10 @@ This is a **developer preview**. See the [release notes](docs/release-notes/0.3.
 - Only part of Solid is covered. Check the [support matrix](docs/support-matrix.md) before you
   port an app: what is not supported fails at compile time with a message, and the few semantic
   differences that remain are listed in [known issues](docs/known-issues.md).
-- Performance: the methodology and numbers have not been published yet (release-plan M10). Until
-  they are, this project makes no performance claims.
+- Performance ([methodology and raw data](docs/performance.md)): in our 1,000-row scrolling-list
+  benchmark the automatically virtualized native list beats the same Solid app in headless Chromium
+  on all six js-framework-benchmark operations. Non-scrolling (eager) lists and per-row memory are
+  still behind Chromium. Footprint and startup versus Electron are not measured yet.
 
 ## Documentation
 

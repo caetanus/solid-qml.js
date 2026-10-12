@@ -21,6 +21,7 @@ support-matrix
 known-issues
 keyboard-accessibility
 document-editor
+performance
 release-policy
 roadmap
 ```
