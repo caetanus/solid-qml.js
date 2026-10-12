@@ -38,14 +38,20 @@ if host_machine.system() == 'darwin'
   else
     # For each module's .framework, find wherever its "private" headers subdirectory actually
     # landed (no assumption about the version-number nesting above it — that's exactly the part
-    # that's Qt-packaging-dependent) and use ITS PARENT as the -I root, so `#include
-    # <private/foo_p.h>` resolves. Never fails the configure: a module simply missing from the
-    # output (rather than `check: true` aborting meson.build) is handled by the empty-result
-    # warning below.
+    # that's Qt-packaging-dependent — confirmed by the first real CI run, which found
+    # "<Module>.framework/Versions/A/Headers/<ver>/<Module>/private/", i.e. inside the ordinary
+    # Headers tree, NOT a separate PrivateHeaders/ one as this comment originally assumed).
+    # Emit BOTH its parent (so `#include <private/foo_p.h>` resolves, the form Qt's own module
+    # sources use) and its grandparent (so `#include <QtQuick/private/foo_p.h>` resolves, the
+    # form this project's own sources use — see vendor/qml-css-engine/src/qmlcss/cssbox.cpp) —
+    # exactly the two directories meson's own _qt_get_private_includes() would hand back on a
+    # platform where its framework detection finds them itself. Never fails the configure: a
+    # module simply missing from the output (rather than `check: true` aborting meson.build) is
+    # handled by the empty-result warning below.
     mac_private_find = run_command('sh', '-c',
       'for m in QtCore QtGui QtQml QtQmlModels QtQuick QtQuickTemplates2; do ' +
       'p=$(find "$1/$m.framework" -type d -name private 2>/dev/null | head -1); ' +
-      'if [ -n "$p" ]; then dirname "$p"; fi; done; exit 0',
+      'if [ -n "$p" ]; then d=$(dirname "$p"); printf "%s\n" "$d"; dirname "$d"; fi; done; exit 0',
       '--', mac_fw_dir, check: true)
     mac_private_dirs = mac_private_find.stdout().strip().split('\n')
     mac_private_args = []
