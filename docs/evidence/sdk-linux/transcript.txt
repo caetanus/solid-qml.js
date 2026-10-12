@@ -1,0 +1,146 @@
+== e2e: pack (host) ==
+sdk:pack: .scratch/e2e/pack/create-solid-qml-0.3.0-preview.1.tgz (0.0 MB packed, 13 files)
+sdk:pack: .scratch/e2e/pack/solid-qml-0.3.0-preview.1.tgz (0.1 MB packed, 21 files)
+sdk:pack: .scratch/e2e/pack/solid-qml-runtime-linux-x64-0.3.0-preview.1.tgz (47.7 MB packed, 226 files)
+
+-- the clean machine (fresh docker.io/library/node:26-bookworm-slim, --memory 1g, host RAM 73%) --
+$ node --version; npm --version; ldd --version | head -1
+$ command -v qmake6 gcc g++ cc || echo "(no qmake6 / gcc / g++ / cc)"
+$ ls /usr/share/fonts 2>/dev/null || echo "(no fonts)"; ls /usr/lib/x86_64-linux-gnu/libGL.so.1 2>/dev/null || echo "(no libGL)"
+v26.11.1
+11.20.0
+ldd (Debian GLIBC 2.36-9+deb12u14) 2.36
+(no qmake6 / gcc / g++ / cc)
+(no fonts)
+(no libGL)
+
+-- npm create solid-qml@latest my-app (tarball form) (fresh docker.io/library/node:26-bookworm-slim, --memory 1g, host RAM 73%) --
+$ npx --yes --package=/pack/create-solid-qml-0.3.0-preview.1.tgz create-solid-qml my-app
+
+Scaffolded My App in /work/my-app
+
+Next steps:
+  cd my-app
+  npm install
+  npm run dev                       # browser preview (Vite)
+  npx solid-qml dev                 # native window, hot reload
+  npx solid-qml build --target linux  # dist/linux/*.AppImage + .tar.gz
+
+
+-- npm install (the SDK tarballs, then the template's dependencies from npm) (fresh docker.io/library/node:26-bookworm-slim, --memory 1500m, host RAM 73%) --
+$ cd my-app
+$ npm install --no-audit -D /pack/solid-qml-0.3.0-preview.1.tgz /pack/create-solid-qml-0.3.0-preview.1.tgz /pack/solid-qml-runtime-linux-x64-0.3.0-preview.1.tgz 2>&1 | tail -2
+$ ls node_modules/@solid-qml/ node_modules/.bin | grep -E 'runtime|solid-qml|vite$'
+$ du -sh node_modules/@solid-qml/runtime-linux-x64
+npm warn install-scripts
+npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+create-solid-qml
+solid-qml
+vite
+node_modules/@solid-qml/:
+runtime-linux-x64
+126M	node_modules/@solid-qml/runtime-linux-x64
+
+-- npm run dev (Vite browser preview) (fresh docker.io/library/node:26-bookworm-slim, --memory 1g, host RAM 73%) --
+$ cd my-app
+$ (npm run dev -- --port 5173 --strictPort > vite.log 2>&1 &)
+$ for i in $(seq 1 60); do grep -q "Local:" vite.log 2>/dev/null && break; sleep 1; done
+$ grep -E "VITE|Local:" vite.log
+$ node --input-type=module -e "
+$   const page = await (await fetch(\"http://localhost:5173/\")).text();
+$   const main = await (await fetch(\"http://localhost:5173/src/main.tsx\")).text();
+$   if (!page.includes(\"/src/main.tsx\")) throw new Error(\"index.html not served\");
+$   if (!main.includes(\"solid-qml\") || main.includes(\"<text\")) throw new Error(\"entry not transformed\");
+$   console.log(\"vite: / served; src/main.tsx compiled by vite-plugin-solid + solid-qml/vite (\" + main.length + \" bytes, <text> mapped to <span>)\");"
+  VITE v7.3.7  ready in 395 ms
+  ➜  Local:   http://localhost:5173/
+vite: / served; src/main.tsx compiled by vite-plugin-solid + solid-qml/vite (5827 bytes, <text> mapped to <span>)
+
+-- npx solid-qml doctor (fresh docker.io/library/node:26-bookworm-slim, --memory 1g, host RAM 73%) --
+$ cd my-app && npx solid-qml doctor
+solid-qml 0.3.0-preview.1 — doctor
+
+host
+  ok    node v26.11.1 on linux-x64
+  ok    glibc 2.36
+
+project
+  ok    my-app@0.1.0 — entry src/main.tsx, appId my-app
+
+native runtime
+  ok    @solid-qml/runtime-linux-x64@0.3.0-preview.1 at /work/my-app/node_modules/@solid-qml/runtime-linux-x64
+  ok    Qt 6.11.2, built on manylinux_2_34_x86_64 (AlmaLinux 9.8 (Olive Jaguar)) (gcc (GCC) 14.2.1 20250110 (Red Hat 14.2.1-13)), solid-qml 0.3.0-preview.1 @ 519c2e7eca78
+  ok    glibc floor 2.34 satisfied
+  ok    host lacks 51 desktop libs — using the runtime's bundled copies: libEGL.so.1 libGL.so.1 libGLX.so.0 libGLdispatch.so.0 libOpenGL.so.0 libX11-xcb.so.1 libX11.so.6 libXau.so.6 libXext.so.6 libbrotlicommon.so.1 libbrotlidec.so.1 libcrypto.so.3 libdbus-1.so.3 libfontconfig.so.1 libfreetype.so.6 libgio-2.0.so.0 libglib-2.0.so.0 libgmodule-2.0.so.0 libgobject-2.0.so.0 libgraphite2.so.3 libgssapi_krb5.so.2 libgthread-2.0.so.0 libharfbuzz.so.0 libk5crypto.so.3 libkeyutils.so.1 libkrb5.so.3 libkrb5support.so.0 libpcre.so.1 libpng16.so.16 libssl.so.3 libwayland-client.so.0 libwayland-cursor.so.0 libwayland-egl.so.1 libxcb-cursor.so.0 libxcb-glx.so.0 libxcb-icccm.so.4 libxcb-image.so.0 libxcb-keysyms.so.1 libxcb-randr.so.0 libxcb-render-util.so.0 libxcb-render.so.0 libxcb-shape.so.0 libxcb-shm.so.0 libxcb-sync.so.1 libxcb-util.so.1 libxcb-xfixes.so.0 libxcb-xkb.so.1 libxcb.so.1 libxkbcommon-x11.so.0 libxkbcommon.so.0 libxml2.so.2
+  ok    ldd: every shared library of the loader and platform plugins resolves
+  warn  no fonts installed on the host — the runtime falls back to its bundled font
+
+packaging (build --target linux)
+  ok    tar
+  ok    file(1) not installed — build uses its built-in stand-in for appimagetool
+  ok    appimagetool will be downloaded on first build (https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage, sha256-pinned)
+  ok    appimageRuntime will be downloaded on first build (https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64, sha256-pinned)
+
+all good.
+
+-- npx solid-qml dev (offscreen: one native frame, then hot reload of an edit) (fresh docker.io/library/node:26-bookworm-slim, --memory 1g, host RAM 73%) --
+$ cd my-app
+$ npx solid-qml dev --grab dev.png
+$ (npx solid-qml dev > native-dev.log 2>&1 &)
+$ for i in $(seq 1 60); do grep -q "watching" native-dev.log && break; sleep 1; done; sleep 3
+$ sed -i "s/Solid.js, rendered natively with Qt Quick/Hot reloaded!/" src/main.tsx
+$ for i in $(seq 1 30); do grep -q "solid-qml-loader: reloading" native-dev.log && break; sleep 1; done; sleep 2
+$ grep -E "\[solid-qml\]|solid-qml-loader: (reloading|wrote)|reload failed" native-dev.log
+$ grep -q "solid-qml-loader: reloading" native-dev.log && ! grep -q "reload failed" native-dev.log
+$ grep -q "Hot reloaded!" .solid-qml/dev/App.generated.qml && echo "hot reload: OK (edit regenerated + live window reloaded)"
+$ sed -i "s/Hot reloaded!/Solid.js, rendered natively with Qt Quick/" src/main.tsx
+[solid-qml] generated .solid-qml/dev/App.generated.qml + 1 components + 0 modules + css (2434b)
+Detected locale "C" with character encoding "ANSI_X3.4-1968", which is not UTF-8.
+Qt depends on a UTF-8 locale, and has switched to "C.UTF-8" instead.
+If this causes problems, reconfigure your locale. See the locale(1) manual
+for more information.
+solid-qml-loader: wrote /work/my-app/dev.png
+[solid-qml] generated .solid-qml/dev/App.generated.qml + 1 components + 0 modules + css (2434b)
+[solid-qml] watching src, public — edits hot-reload the native window
+[solid-qml] src/main.tsx changed → regenerate
+[solid-qml] generated .solid-qml/dev/App.generated.qml + 1 components + 0 modules + css (2434b)
+solid-qml-loader: reloading /work/my-app/.solid-qml/dev/App.generated.qml
+hot reload: OK (edit regenerated + live window reloaded)
+
+-- npx solid-qml build --target linux (fresh docker.io/library/node:26-bookworm-slim, --memory 1500m, host RAM 73%) --
+$ cd my-app && npx solid-qml build --target linux && ls -la dist/linux
+[solid-qml] transpiled src/main.tsx → 1 components + 0 modules + css (2434b)
+[solid-qml] runtime @solid-qml/runtime-linux-x64@0.3.0-preview.1 (Qt 6.11.2, glibc >= 2.34)
+[solid-qml] wrote dist/linux/My-App-0.1.0-linux-x86_64.tar.gz (48.0 MB)
+[solid-qml] downloading https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+[solid-qml] downloading https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+[solid-qml] wrote dist/linux/My-App-x86_64.AppImage (44.6 MB)
+total 94844
+drwxr-xr-x 2 root root     4096 Oct 12 16:40 .
+drwxr-xr-x 3 root root     4096 Oct 12 16:39 ..
+-rw-r--r-- 1 root root 50309386 Oct 12 16:40 My-App-0.1.0-linux-x86_64.tar.gz
+-rwxr-xr-x 1 root root 46799352 Oct 12 16:40 My-App-x86_64.AppImage
+
+-- run the AppImage and the tarball (fresh container, offscreen, no FUSE) (fresh docker.io/library/node:26-bookworm-slim, --memory 1g, host RAM 74%) --
+$ mkdir -p /run-app && cp my-app/dist/linux/* /run-app/ && cd /run-app
+$ APP=$(ls *.AppImage); TGZ=$(ls *.tar.gz)
+$ SQ_GRAB_MS=1200 ./$APP --click 242,220,400 --grab /work/appimage.png
+$ tar -xzf $TGZ && cd ${TGZ%.tar.gz} && ./AppRun --grab /work/tarball.png
+$ ls -la /work/appimage.png /work/tarball.png
+Detected locale "C" with character encoding "ANSI_X3.4-1968", which is not UTF-8.
+Qt depends on a UTF-8 locale, and has switched to "C.UTF-8" instead.
+If this causes problems, reconfigure your locale. See the locale(1) manual
+for more information.
+solid-qml-loader: clicked QPointF(242,220)
+solid-qml-loader: wrote /work/appimage.png
+Detected locale "C" with character encoding "ANSI_X3.4-1968", which is not UTF-8.
+Qt depends on a UTF-8 locale, and has switched to "C.UTF-8" instead.
+If this causes problems, reconfigure your locale. See the locale(1) manual
+for more information.
+solid-qml-loader: wrote /work/tarball.png
+-rw-r--r-- 1 root root 8733 Oct 12 16:40 /work/appimage.png
+-rw-r--r-- 1 root root 9353 Oct 12 16:40 /work/tarball.png
+48M	./My-App-0.1.0-linux-x86_64.tar.gz
+45M	./My-App-x86_64.AppImage
+
+== e2e: PASSED — evidence in docs/evidence/sdk-linux/ ==

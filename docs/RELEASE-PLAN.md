@@ -44,9 +44,24 @@ gate. Recommended preview scope:
 
 ## LATER (explicitly outside the preview)
 
-npm package, AppImage/AUR/SDK bundles, Windows/macOS/Android/iOS, production AOT (needs C7 — shared reconciler —
+~~npm package, AppImage~~ (moved into the preview scope — owner decision 2026-10-11, see
+[SDK (npm package) — phase 1, Linux](#sdk-npm-package--phase-1-linux)), AUR/other bundles, Windows/macOS/Android/iOS, production AOT (needs C7 — shared reconciler —
 and the QML/C++ handler-dialect unification from CRITICS §A), flattened rows, full CSS coverage, broad npm
 compatibility claims, virtualization while a screen reader is active, a11y-complete widget set.
+
+## SDK (npm package) — phase 1, Linux
+
+**Owner decision 2026-10-11:** the npm SDK moves from LATER into the preview scope — "instalar via npx o SDK do
+solid-qml em conjunto com o Vite e Solid e poder fazer deploys pras plataformas". Names: `solid-qml` +
+`@solid-qml/runtime-<platform>` (npm org `solid-qml`, created by the owner); first cut = TSX/CSS/assets apps; platform
+order Linux → Android → Windows → macOS; unsigned artifacts. Developer flow: [sdk.md](sdk.md).
+
+| Phase | Status |
+|---|---|
+| 1. Linux end to end | ✅ 2026-10-12 — packages `solid-qml` (CLI create/dev/build/doctor, `solid-qml/vite`, bundled transpiler, authoring module + JSX types), `create-solid-qml` (template), `@solid-qml/runtime-linux-x64` (126 MB / 48 MB packed; Qt 6.11.2 official binaries; built on manylinux_2_34 → **glibc ≥ 2.34, GLIBCXX ≥ 3.4.29**; host-missing desktop libs as per-soname fallbacks). `build --target linux` → AppImage (appimagetool 1.9.1 + type-2 runtime 20251108, sha256-pinned, no FUSE) + tar.gz. Gate `scripts/sdk/e2e-linux.sh` PASSED on clean `node:26-bookworm-slim` (no Qt/compiler/fonts/GL): create → install → `npm run dev` → `doctor` → `solid-qml dev` (frame + hot reload) → `build --target linux` → AppImage clicked + grabbed offscreen; evidence `docs/evidence/sdk-linux/`. Tested from `npm pack` tarballs (not yet on npm). Open: publish (phase 5), runtime add-ons for QtGraphs/Quick3D/WebEngine/Multimedia, CI job building the runtime from the manylinux workflow |
+| 2. Android (runtime cross-build, template APK, `build --target android`, emulator smoke) | not started |
+| 3. Windows, 4. macOS (from the ci-windows / ci-macos ports) | not started (CI ports in progress) |
+| 5. Publish (npm org + token, provenance, `0.3.0-preview.N`, release workflow with approval) | needs the owner |
 
 ## Dependency-ordered phases
 

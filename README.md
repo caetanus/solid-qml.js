@@ -38,9 +38,9 @@ result is a real Qt Quick scene graph, not a webview and not an emulated DOM.
 
 This is a **developer preview**. See the [release notes](docs/release-notes/0.3.0-preview.1.md).
 
-- Supported environment: **Linux x86_64 with Qt 6.11**, built from source. Arch/Manjaro is
-  verified. Other distros are untested. There is no npm package, binary SDK, Windows, macOS or
-  mobile build yet.
+- Supported environment: **Linux x86_64 (glibc ≥ 2.34), Qt 6.11** — via the npm SDK (runtime
+  bundled, nothing else to install) or built from source (Arch/Manjaro verified). Windows and macOS
+  ports are in progress on CI branches (not in this release); Android is the next SDK target.
 - Only part of Solid is covered. Check the [support matrix](docs/support-matrix.md) before you
   port an app: what is not supported fails at compile time with a message, and the few semantic
   differences that remain are listed in [known issues](docs/known-issues.md).
@@ -63,10 +63,28 @@ This is a **developer preview**. See the [release notes](docs/release-notes/0.3.
 | [Release policy](docs/release-policy.md) | Versioning and the SONAME/ABI policy |
 | [Roadmap](ROADMAP.md), [release plan](docs/RELEASE-PLAN.md) | What comes next |
 
-## Quickstart (inside the checkout)
+> **Preview — not yet published to npm.** Until the owner publishes the packages, install them
+> from tarballs built from this repo: see [docs/sdk.md](docs/sdk.md#installing-from-tarballs-before-the-npm-release).
 
-The verified steps, including the package list and an app built outside the checkout, are in
-[docs/getting-started.md](docs/getting-started.md).
+Only **Node.js** is needed — no Qt, no C++ toolchain (the native runtime arrives as an npm
+package). Linux x86_64 (glibc ≥ 2.34) in this preview:
+
+```sh
+npm create solid-qml@latest my-app
+cd my-app && npm install
+npm run dev                            # browser preview (Vite + Solid)
+npx solid-qml dev                      # native Qt Quick window, hot reload
+npx solid-qml build --target linux     # dist/linux/<App>-x86_64.AppImage + .tar.gz
+```
+
+The same `src/main.tsx` and CSS drive both targets. Full developer flow: [docs/sdk.md](docs/sdk.md).
+
+## Working on the framework (from source)
+
+Requirements: Node.js + npm, **Qt 6** (Core, Gui, Qml, Quick, Test, + private headers for Qml/Quick/
+QuickTemplates2), **CMake**, **Meson** (≥1.1) and **Ninja**, plus a system font (e.g. `noto-fonts`
+on Arch) — see [docs/getting-started.md](docs/getting-started.md) for the full, verified dependency
+list (clean-room tested on 2026-10-11).
 
 ```sh
 git clone --recurse-submodules https://github.com/caetanus/solid-qml.js.git

@@ -106,10 +106,16 @@ meson install -C build --destdir /opt/solidqml   # or --prefix /opt/solidqml, yo
 This installs: `libsolidqml.so` + the `qmlcss`/`solidqml` headers + `.pc` pkg-config files +
 `SolidQmlConfig.cmake` (for `find_package(SolidQml)`), the `solid-qml-loader` executable, and (if
 `-Dsolidterm` built) the `solidterm` executable plus its desktop entry/icon/generated UI under
-`share/solidterm`. There is **no npm package published yet** (release-plan: LATER) — the JS/TSX
-side of a new app is authored and transpiled against the cloned checkout, as below.
+`share/solidterm`. For writing apps you don't need any of this: the npm SDK (`npm create solid-qml`,
+[sdk.md](sdk.md)) ships the transpiler and a prebuilt runtime. The recipe below is the from-source
+path — a new app authored and transpiled against a cloned checkout and an installed build.
 
 ## Your first app outside the checkout
+
+> **Use the SDK for new apps:** `npm create solid-qml@latest my-app` gives you a project that
+> imports `Window` from the `solid-qml` npm package — no checkout paths, no Qt install — see
+> [sdk.md](sdk.md) (preview: install from tarballs until the packages are published). This section
+> is the from-source equivalent, kept for framework development and the installed-artifact CI smoke.
 
 This is the part that was previously impossible without `cd`-ing into the framework checkout — a
 clean-room run on 2026-10-11 hit two real bugs on the way to making it work, both fixed upstream in
