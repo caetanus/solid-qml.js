@@ -185,7 +185,21 @@ int main(int argc, char **argv)
                        "child_process). Overridable via SOLIDQML_CAPABILITIES."),
         QStringLiteral("profile"),
     });
+    parser.addOption({
+        QStringLiteral("app-name"),
+        QStringLiteral("Identity of a packaged app (the SDK's AppImage passes it): sets the "
+                       "application name — so localStorage/background data live in the app's "
+                       "own data dir instead of solid-qml-loader's — and the desktop file name "
+                       "(Wayland app_id / X11 WM class)."),
+        QStringLiteral("name"),
+    });
     parser.process(app);
+
+    const QString appName = parser.value(QStringLiteral("app-name"));
+    if (!appName.isEmpty()) {
+        QApplication::setApplicationName(appName);
+        QGuiApplication::setDesktopFileName(appName);
+    }
 
     // Resolve the capability profile: --capabilities wins, then $SOLIDQML_CAPABILITIES, else desktop.
     QString capsArg = parser.value(QStringLiteral("capabilities"));
