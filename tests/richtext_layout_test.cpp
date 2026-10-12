@@ -99,11 +99,18 @@ struct QuickView {
         component.setData("import QtQuick\nTextEdit { width: 300; height: 1200; textFormat: TextEdit.RichText; wrapMode: TextEdit.Wrap; color: 'black'; focus: true }",QUrl());
         edit=qobject_cast<QQuickTextEdit *>(component.create()); Q_ASSERT(edit);
         edit->setParentItem(window.contentItem()); window.resize(320,240); window.setColor(Qt::white); window.show();
-        edit->forceActiveFocus(); edit->setCursorVisible(false); QTest::qWait(30);
+        edit->forceActiveFocus(); edit->setCursorVisible(false);
+        if (!QTest::qWaitForWindowExposed(&window))
+            QTest::qFail("Test window was not exposed", __FILE__, __LINE__);
     }
     ~QuickView() { delete edit; }
     QTextDocument *doc() const { return edit->textDocument()->textDocument(); }
-    QImage frame() { QTest::qWait(30); return window.grabWindow(); }
+    QImage frame() {
+        // Deliver queued layout adapters before the synchronous polish/sync/render grab.
+        QCoreApplication::sendPostedEvents();
+        QCoreApplication::processEvents();
+        return window.grabWindow();
+    }
 };
 
 class RichTextLayoutTests : public QObject {
