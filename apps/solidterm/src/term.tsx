@@ -233,6 +233,10 @@ export function Term(props: { onTitle: (t: string) => void }) {
 
       <Show when={searchOpen()}>
         <div class="searchbar">
+          {/* GtkSearchEntry puts the glass INSIDE the field (a leading `image.left`, gtk.css:1014);
+              our <input> has no leading-icon slot, so it rides just outside instead — same affordance,
+              honestly not pixel-identical. */}
+          <text class="search-icon">⌕</text>
           <input ref={searchInput} class="search-in" value={searchQuery()} placeholder="Find…"
                  onInput={(e) => { setSearchQuery(e.target.value); term.searchFocused(e.target.value); }} />
           <text class="search-count">{searchCount() > 0 ? (searchIdx() + " / " + searchCount()) : "0 / 0"}</text>

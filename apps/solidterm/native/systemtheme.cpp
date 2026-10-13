@@ -143,9 +143,15 @@ QString SystemTheme::styleSheet() const
 
     // Menu/MenuItem (solidterm's right-click menu + pane-header dropdown): a neutral row tint, NOT
     // accent — `currentColor` (our `text`) painted translucent over the card, per the real Adwaita
-    // values above.
+    // values above. The SAME `color-mix(in srgb, currentColor N%, transparent)` formula is also how
+    // real Adwaita paints an `entry`'s own background (gtk.css:988) and a flat button's hover/active
+    // state — reused below for the search bar's field fill and icon-button hover/press.
     const QString menuHover = rgba(p.text, 0.10);
     const QString menuActive = rgba(p.text, 0.19);
+    // Focus ring: `entry:focus-within { outline-color: color-mix(in srgb, var(--accent-color) 50%,
+    // transparent); outline-width: 2px; outline-offset: -2px }` (gtk.css:994) — an OUTLINE (hugging,
+    // slightly overlapping the edge), not a border colour swap.
+    const QString focusRing = rgba(p.accent, 0.5);
     // The popover's own drop shadow is scheme-INDEPENDENT in real Adwaita too (gtk.css:2107 —
     // `popover > arrow, popover > contents { border: 1px solid RGB(0 0 0/14%); box-shadow: 0 1px
     // 5px 1px RGB(0 0 0/9%), 0 2px 14px 3px RGB(0 0 0/5%); }`, same rule for light and dark — no
@@ -179,11 +185,13 @@ QString SystemTheme::styleSheet() const
 .tab-new { color: %7; }
 .tab-new:hover { background: %4; }
 .searchbar { background: %3; border-bottom: 1px solid %8; }
-.search-in { background: %2; color: %6; border: 1px solid %8; }
-.search-in:focus { border: 1px solid %9; }
+.search-icon { color: %7; }
+.search-in { background: %13; color: %6; border: none; }
+.search-in:focus { outline: 2px solid %15; outline-offset: -2px; }
 .search-count { color: %7; }
 .search-btn { color: %6; }
-.search-btn:hover { background: %4; }
+.search-btn:hover { background: %13; }
+.search-btn:active { background: %14; }
 .term-status { background: %3; border-top: 1px solid %8; }
 .term-status-t { color: %9; }
 .term-hint { color: %7; }
@@ -242,5 +250,6 @@ QString SystemTheme::styleSheet() const
         .arg(h(p.window), h(p.view), h(p.header), h(p.card), h(p.popover),
              h(p.text), h(p.dim), h(p.border), h(p.accent), h(p.accentText))
         .arg(rootBg)
-        .arg(menuShadow, menuHover, menuActive);
+        .arg(menuShadow, menuHover, menuActive)
+        .arg(focusRing);
 }

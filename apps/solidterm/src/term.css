@@ -26,11 +26,19 @@
 .tab-x { font-size: 11px; padding: 1px 5px; border: none; border-radius: 5px; background: transparent; margin-left: 6px; }
 .tab-new { font-size: 16px; padding: 2px 11px; height: 30px; border: none; border-radius: 7px; background: transparent; margin: 0 2px; }
 
-/* scrollback search bar (Solid; native does the find) */
-.searchbar { display: flex; flex-direction: row; align-items: center; padding: 6px 10px; }
-.search-in { flex: 1; border-radius: 7px; padding: 6px 10px; font-size: 13px; }
-.search-count { font-size: 12px; padding: 0 12px; }
-.search-btn { font-size: 15px; padding: 3px 10px; border: none; border-radius: 6px; background: transparent; margin-left: 2px; }
+/* scrollback search bar (Solid; native does the find) — real GtkSearchEntry/toolbar geometry,
+   measured from the installed theme (gresource extract /usr/lib/libadwaita-1.so.0
+   /org/gnome/Adwaita/styles/gtk.css): entry min-height 34px, padding-left/right 9px, border-radius
+   9px (gtk.css:988); its leading icon gets margin-right 6px (gtk.css:1014, `image.left`). The
+   small round icon buttons (prev/next/close) aren't a cited rule — no GtkSearchBar close/nav-button
+   geometry is in this stylesheet (GtkSearchBar assembles them per-app) — so 28px/7px follows the
+   closest analogous sizing in the sheet (`popover.menu box.inline-buttons button.image-button.model
+   { min-height/width: 32px }`, scaled down for this compact bar) rather than a literal citation. */
+.searchbar { display: flex; flex-direction: row; align-items: center; padding: 6px 10px; gap: 6px; }
+.search-icon { font-size: 14px; }
+.search-in { flex: 1; height: 34px; border-radius: 9px; padding: 0 9px; font-size: 13px; }
+.search-count { font-size: 12px; padding: 0 6px; }
+.search-btn { font-size: 14px; width: 28px; height: 28px; border: none; border-radius: 7px; background: transparent; }
 
 .term-status {
   display: flex; flex-direction: row; justify-content: space-between;
