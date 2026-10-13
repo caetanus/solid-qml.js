@@ -632,8 +632,19 @@ void realInputStart()
             finishTest();
             return;
         }
-        focusPane(v->tmuxPane()); // tmux made the other pane active (the last split): pick ours
-        check(v->hasActiveFocus(), QStringLiteral("real-input: the shell pane has keyboard focus"));
+        // tmux made the other pane active (the last split): pick ours. The window's own initial
+        // focus pass is queued and may still land after the attach, so insist until it holds.
+        auto *stable = new int(0);
+        waitFor([stable] {
+            TerminalView *v = realShell();
+            if (!v->hasActiveFocus()) {
+                *stable = 0;
+                focusPane(v->tmuxPane());
+                return false;
+            }
+            return ++*stable >= 4; // 100 ms in a row
+        }, 5000, QStringLiteral("real-input: the shell pane has keyboard focus"), [stable] {
+        delete stable;
         typeText(QStringLiteral("echo typed-$((6*7))"));
         key(Qt::Key_Return, Qt::NoModifier, QStringLiteral("\r"));
         waitFor([] { return realShell()->debugDump().contains(QStringLiteral("\ntyped-42\n")); }, 5000,
@@ -666,6 +677,7 @@ void realInputStart()
                     });
                 });
             });
+        });
         });
     });
 }
