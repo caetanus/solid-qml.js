@@ -313,6 +313,23 @@ static bool clampRect(VTermRect &r, int rows, int cols)
     return r.start_row < r.end_row && r.start_col < r.end_col;
 }
 
+// n copies of `cell`: the first by value, the rest by doubling memcpy (a few large copies). A plain
+// per-element loop / std::fill reloaded the template's bitfield word every cell (the compiler cannot
+// prove the destination does not alias it) and stalled on store forwarding: ~4.6 ns per cell, 69% of
+// a `seq` flood.
+static void fillCells(TermCell *dst, int n, const TermCell &cell)
+{
+    if (n <= 0)
+        return;
+    std::memcpy(dst, &cell, sizeof(TermCell));
+    int done = 1;
+    while (done < n) {
+        const int chunk = std::min(done, n - done);
+        std::memcpy(dst + done, dst, size_t(chunk) * sizeof(TermCell));
+        done += chunk;
+    }
+}
+
 // erase_internal
 void TermScreen::eraseInternal(VTermRect rect, bool selective)
 {
@@ -320,17 +337,23 @@ void TermScreen::eraseInternal(VTermRect rect, bool selective)
         return;
     for (int row = rect.start_row; row < m_rows && row < rect.end_row; row++) {
         const VTermLineInfo *info = vterm_state_get_lineinfo(m_state, row);
+        // The erased cell: chars[0] = 0, pen = only fg/bg (things like reverse stay reset) + the
+        // line's DWL/DHL. Written as one whole-cell copy (the hot path: every scrolled line erases
+        // its incoming row) — chars[1..] become 0 instead of keeping leftovers; nothing reads past
+        // chars[0] == 0, so the content is the same as libvterm's.
+        TermCell blank {};
+        blank.pen.fg = m_pen.fg;
+        blank.pen.bg = m_pen.bg;
+        blank.pen.dwl = info->doublewidth;
+        blank.pen.dhl = info->doubleheight;
         TermCell *cells = (*m_buf)[size_t(row)].cells;
+        if (!selective) {
+            fillCells(cells + rect.start_col, rect.end_col - rect.start_col, blank);
+            continue;
+        }
         for (int col = rect.start_col; col < rect.end_col; col++) {
-            TermCell &cell = cells[col];
-            if (selective && cell.pen.protected_cell)
-                continue;
-            cell.chars[0] = 0;
-            cell.pen = TermPen {};
-            cell.pen.fg = m_pen.fg; // only fg/bg: things like reverse stay reset
-            cell.pen.bg = m_pen.bg;
-            cell.pen.dwl = info->doublewidth;
-            cell.pen.dhl = info->doubleheight;
+            if (!cells[col].pen.protected_cell)
+                cells[col] = blank;
         }
     }
 }
