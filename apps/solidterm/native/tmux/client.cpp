@@ -164,6 +164,10 @@ void Client::stop(int graceMs)
             ::kill(m_pid, SIGKILL);
             ::waitpid(m_pid, &status, 0);
         }
+        if (WIFEXITED(status))
+            m_exitText = "exited with status " + std::to_string(WEXITSTATUS(status));
+        else if (WIFSIGNALED(status))
+            m_exitText = "killed by signal " + std::to_string(WTERMSIG(status));
         m_pid = -1;
     }
 }
@@ -678,7 +682,25 @@ void Client::handleReply(const Pending &p, bool error, bool dropped)
         }
         return;
     }
-    case KPauseRequest:
+    case KPauseRequest: {
+        // tmux 3.7c writes the "%pause %P" this causes INSIDE the command's %begin/%end block
+        // (recorded), where it reads as reply text — so the reply itself is what says the pane is
+        // paused. Waiting for the notification froze the pane for good: tmux stopped sending it
+        // and nothing ever asked it to continue.
+        Route *r = findRoute(p.pane);
+        if (!r)
+            return;
+        if (error || dropped) {
+            r->pauseRequested = false; // not paused: the cap may ask again
+            if (!dropped)
+                log("tmux: pausing %" + std::to_string(p.pane) + " failed: " + (m_blockLines.empty() ? std::string() : m_blockLines.front()));
+            return;
+        }
+        r->paused = true;
+        if (!r->overPending() && !r->fenced && !r->reseedQueued)
+            startReseed(*r, p.pane);
+        return;
+    }
     case KIgnore:
         if (error && !dropped)
             log("tmux: command failed: " + (m_blockLines.empty() ? std::string() : m_blockLines.front()));

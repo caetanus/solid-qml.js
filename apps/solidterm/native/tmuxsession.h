@@ -54,6 +54,7 @@ public:
     ~TmuxSession() override;
 
     std::shared_ptr<tmux::Client> client() const { return m_client; }
+    qint64 clientPid() const;               // tests: the `tmux -C` process
     QString name() const { return m_name; }
     QString paneCwd(int pane) const { return m_paneCwd.value(pane); }
     bool attached() const { return m_attached; }

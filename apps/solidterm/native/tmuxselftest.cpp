@@ -20,6 +20,7 @@
 #include <QTimer>
 #include <QtGui/qpa/qwindowsysteminterface.h>
 
+#include <csignal>
 #include <functional>
 #include <vterm.h>
 
@@ -1233,6 +1234,132 @@ void realLifeStart()
     });
 }
 
+// ─── flood + repeated selections (the owner's "o tmux travou", 2026-10-13) ────────────────────────
+
+TerminalView *floodView()
+{
+    const QList<int> ws = g->tabs ? g->tabs->tmuxWindows() : QList<int>();
+    TerminalPanes *p = ws.isEmpty() ? nullptr : g->tabs->tmuxTab(ws.first(), false);
+    return p && !p->views().isEmpty() ? p->views().first() : nullptr;
+}
+
+// Progress of the flood as the pane shows it: the last non-empty screen line.
+QString floodTail()
+{
+    TerminalView *v = floodView();
+    if (!v)
+        return QString();
+    const QStringList ls = v->debugDump().split(QLatin1Char('\n'));
+    for (int i = ls.size() - 1; i >= 0; --i)
+        if (!ls[i].isEmpty() && !ls[i].startsWith(QLatin1String("cursor ")) && !ls[i].startsWith(QLatin1String("alt "))
+            && !ls[i].startsWith(QLatin1String("sb ")))
+            return ls[i];
+    return QString();
+}
+
+void floodSelect(int k, std::function<void()> done)
+{
+    TerminalView *v = floodView();
+    if (k == 4 || !v) {
+        done();
+        return;
+    }
+    // A real drag: press, several moves, a hold (the view freezes; the flood piles up), release.
+    const QPointF a = v->mapToScene(v->debugCellCenter(2 + k, 3));
+    const QPointF b = v->mapToScene(v->debugCellCenter(8 + k, 25));
+    auto send = [](QPointF p, Qt::MouseButtons buttons, Qt::MouseButton button, QEvent::Type type) {
+        QWindowSystemInterface::handleMouseEvent(g->window, p, g->window->mapToGlobal(p.toPoint()), buttons, button, type);
+        QCoreApplication::processEvents();
+    };
+    send(a, Qt::LeftButton, Qt::LeftButton, QEvent::MouseButtonPress);
+    for (int i = 1; i <= 5; ++i)
+        send(a + (b - a) * (i / 5.0), Qt::LeftButton, Qt::NoButton, QEvent::MouseMove);
+    check(v->isOutputPaused(), QStringLiteral("selection %1: the view froze while dragging").arg(k + 1));
+    QTimer::singleShot(700, qApp, [k, b, send, done] {
+        send(b, Qt::NoButton, Qt::LeftButton, QEvent::MouseButtonRelease);
+        QTimer::singleShot(250, qApp, [k, done] { floodSelect(k + 1, done); });
+    });
+}
+
+void floodAfter()
+{
+    // After the selections: the pane must keep showing new output, and tmux must keep answering.
+    const QString before = floodTail();
+    QTimer::singleShot(400, qApp, [before] {
+        waitFor([before] { return !floodTail().isEmpty() && floodTail() != before; }, 6000,
+                QStringLiteral("after four selections the pane is live again (new output keeps arriving)"), [] {
+            const QString t1 = floodTail();
+            QTimer::singleShot(800, qApp, [t1] {
+                check(floodTail() != t1, QStringLiteral("…and keeps flowing: ") + t1.left(30) + QStringLiteral(" → ") + floodTail().left(30));
+                check(g->session && g->session->reseedsCompleted() >= 1,
+                      QStringLiteral("the hold cap overflowed and the pane was paused in tmux, then continued + reseeded (%1 reseeds)")
+                          .arg(g->session ? g->session->reseedsCompleted() : -1));
+                auto *replied = new bool(false);
+                auto *conn = new QMetaObject::Connection;
+                *conn = QObject::connect(g->session, &TmuxSession::stepReplied, qApp, [replied](const QString &) { *replied = true; });
+                g->session->sendTestStep(QStringLiteral("ping"));
+                waitFor([replied] { return *replied; }, 3000, QStringLiteral("tmux still answers commands during the flood"), [conn, replied] {
+                    QObject::disconnect(*conn);
+                    delete conn;
+                    delete replied;
+                    TmuxSession::config()->set(QStringLiteral("tmuxHoldCap"), 8); // the shared test config
+                    if (g->mode == QLatin1String("flood"))
+                        g->session->sendTestStep(QStringLiteral("step stopflood"));
+                    else
+                        tmuxCmd({ QStringLiteral("send-keys"), QStringLiteral("-t"), QStringLiteral("%0"), QStringLiteral("C-c") });
+                    QTimer::singleShot(300, qApp, [] { closeAndDetach(finishTest); });
+                });
+            });
+        });
+    });
+}
+
+void floodStart()
+{
+    waitFor([] { return g->tabs && g->tabs->count() >= 1 && g->session && g->session->seedsCompleted() >= 1 && floodView(); }, 10000,
+            QStringLiteral("flood: attached"), [] {
+        if (!floodView()) {
+            finishTest();
+            return;
+        }
+        // A small hold cap so the selections overflow it quickly: the cap → tmux pause → continue
+        // + reseed path is the one that froze.
+        TmuxSession::config()->set(QStringLiteral("tmuxHoldCap"), 1);
+        if (g->mode == QLatin1String("flood"))
+            g->session->sendTestStep(QStringLiteral("step flood"));
+        else
+            tmuxCmd({ QStringLiteral("send-keys"), QStringLiteral("-t"), QStringLiteral("%0"),
+                      QStringLiteral("hexdump /dev/urandom"), QStringLiteral("Enter") });
+        const QString t0 = floodTail();
+        QTimer::singleShot(600, qApp, [t0] {
+            waitFor([t0] { return floodTail() != t0; }, 5000, QStringLiteral("the flood is flowing"), [] {
+                floodSelect(0, floodAfter);
+            });
+        });
+    });
+}
+
+// ─── the tmux client dies (kill -9): banner + log (2026-10-13) ───────────────────────────────────
+
+void deathStart()
+{
+    waitFor([] { return g->tabs && g->tabs->count() >= 1 && g->session && g->session->seedsCompleted() >= 1; }, 10000,
+            QStringLiteral("death: attached"), [] {
+        if (!g->session) {
+            finishTest();
+            return;
+        }
+        const qint64 pid = g->session->clientPid();
+        check(pid > 0 && ::kill(pid_t(pid), SIGKILL) == 0, QStringLiteral("killed the tmux -C client (pid %1) with SIGKILL").arg(pid));
+        waitFor([] { return !g->banner.isEmpty(); }, 5000, QStringLiteral("a dead tmux client shows the banner"), [] {
+            check(g->banner.contains(QStringLiteral("killed by signal 9")) && g->bannerReattach,
+                  QStringLiteral("…naming the signal, with Reattach: ") + g->banner);
+            check(g->window && g->window->isVisible() && g->tabs->count() >= 1, QStringLiteral("the window and its tabs stay"));
+            closeAndDetach(finishTest);
+        });
+    });
+}
+
 } // namespace
 
 namespace TmuxSelfTest {
@@ -1274,6 +1401,10 @@ void start(QQuickWindow *window, const QString &mode)
         QTimer::singleShot(0, qApp, realStart);
     else if (mode == QLatin1String("input"))
         QTimer::singleShot(0, qApp, inputStart);
+    else if (mode == QLatin1String("death") || mode == QLatin1String("real-death"))
+        QTimer::singleShot(0, qApp, deathStart);
+    else if (mode == QLatin1String("flood") || mode == QLatin1String("real-flood"))
+        QTimer::singleShot(0, qApp, floodStart);
     else if (mode == QLatin1String("life"))
         QTimer::singleShot(0, qApp, lifeStart);
     else if (mode == QLatin1String("oldversion"))
@@ -1293,3 +1424,4 @@ void start(QQuickWindow *window, const QString &mode)
 }
 
 } // namespace TmuxSelfTest
+
