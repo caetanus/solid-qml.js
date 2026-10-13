@@ -5,6 +5,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <poll.h>
+#include <pthread.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
 
@@ -157,6 +158,7 @@ void TermWorker::postGui()
 
 void TermWorker::run()
 {
+    ::pthread_setname_np(::pthread_self(), "st-parser"); // top/perf/gdb tell it from the GUI thread
     for (;;) {
         if (m_stop.load(std::memory_order_acquire))
             return;
