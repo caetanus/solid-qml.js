@@ -48,7 +48,12 @@
 .search-icon { width: 16px; height: 16px; margin-right: 6px; }
 .search-in { flex: 1; height: 34px; padding: 0; font-size: 13px; }
 .search-count { font-size: 13px; padding: 0 6px; }
-.search-btn { width: 34px; height: 34px; border: none; border-radius: 9px; background: transparent; }
+/* The engine has no UA default centering a <button>'s content (unlike a real browser) — every
+   button-like class in this app opts in explicitly; `.search-in-wrap` above already does the same
+   for its icon+input row. Without it, a lone child (the <icon>) lands at the DEFAULT (non-flex)
+   top-left position instead of the button's centre — true for text labels too, just far less
+   visible there (glyph metrics + the small label already read close to centred by eye). */
+.search-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border: none; border-radius: 9px; background: transparent; }
 .search-btn-icon { width: 16px; height: 16px; }
 
 .term-status {
