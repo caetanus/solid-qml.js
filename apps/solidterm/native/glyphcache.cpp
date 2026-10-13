@@ -3,6 +3,8 @@
 #include <QFontMetricsF>
 #include <algorithm>
 #include <QPainter>
+#include <QVarLengthArray>
+#include <rhi/qrhi.h>
 
 size_t qHash(const GlyphCache::Key &k, size_t seed)
 {
@@ -235,8 +237,27 @@ void GlyphCache::reset()
     for (auto &style : m_ascii)
         for (Entry &e : style)
             e = Entry{};
-    m_dirty = true;
+    // A fresh atlas invalidates everything the GPU texture holds: report the whole thing dirty
+    // (one rect) rather than tracking "full rebuild" separately from "these sub-rects changed".
+    m_dirtyRects.clear();
+    markDirty(QRect(0, 0, m_atlas.width(), m_atlas.height()));
     m_overflow = false;
+}
+
+void GlyphCache::markDirty(const QRect &tile)
+{
+    // Coalesce with the previous rect when it sits on the same packer shelf and is adjacent (the
+    // shelf packer advances left-to-right with a 1px gap between tiles) — a whole burst of new
+    // glyphs on one shelf collapses into a single upload instead of one per glyph.
+    if (!m_dirtyRects.isEmpty()) {
+        QRect &last = m_dirtyRects.last();
+        if (last.y() == tile.y() && last.height() == tile.height() && tile.x() >= last.x()
+            && tile.x() <= last.x() + last.width() + 4) {
+            last.setRight(qMax(last.right(), tile.right()));
+            return;
+        }
+    }
+    m_dirtyRects.append(tile);
 }
 
 GlyphCache::Entry GlyphCache::glyph(const QString &cluster, bool bold, bool italic, int widthCells)
@@ -322,8 +343,75 @@ GlyphCache::Entry GlyphCache::rasterize(const Key &k)
     }
     e.valid = true;
 
+    markDirty(QRect(m_penX, m_penY, tileW, tileH));
     m_penX += tileW + 1;
     m_rowH = qMax(m_rowH, tileH);
-    m_dirty = true;
     return e;
+}
+
+// ─── GlyphAtlasTexture: partial-upload GPU atlas texture (P3) ──────────────────────────────────
+
+GlyphAtlasTexture::~GlyphAtlasTexture()
+{
+    delete m_texture;
+}
+
+void GlyphAtlasTexture::addDirtyRects(const QImage &atlas, const QList<QRect> &dirty)
+{
+    m_atlas = atlas; // implicitly shared: a refcount bump, not a copy
+    m_pendingDirty.append(dirty);
+}
+
+qint64 GlyphAtlasTexture::comparisonKey() const
+{
+    // Mirrors QSGPlainTexture: two not-yet-created textures must never compare equal.
+    return m_texture ? qint64(m_texture) : qint64(this);
+}
+
+void GlyphAtlasTexture::commitTextureOperations(QRhi *rhi, QRhiResourceUpdateBatch *resourceUpdates)
+{
+    if (m_pendingDirty.isEmpty())
+        return; // steady state: nothing rasterised since the last render pass
+
+    // m_atlas is QImage::Format_ARGB32_Premultiplied: on little-endian that is byte order
+    // B,G,R,A in memory — exactly QRhiTexture::BGRA8 — so every desktop backend (GL/Vulkan/Metal/
+    // D3D all support BGRA8) uploads it with NO conversion. This mirrors what
+    // QSGPlainTexture::commitTextureOperations does for the same QImage format, so switching to
+    // this texture does not change a single rendered pixel. Only a backend without BGRA8 (no
+    // desktop one; some GLES) pays for a per-rect conversion instead of a per-frame whole-atlas
+    // one.
+    const bool bgra = rhi->isTextureFormatSupported(QRhiTexture::BGRA8);
+    const QRhiTexture::Format format = bgra ? QRhiTexture::BGRA8 : QRhiTexture::RGBA8;
+
+    if (!m_texture) {
+        m_texture = rhi->newTexture(format, m_atlas.size());
+        if (!m_texture->create()) {
+            qWarning("GlyphAtlasTexture: failed to create the %dx%d glyph atlas texture",
+                      m_atlas.width(), m_atlas.height());
+            delete m_texture;
+            m_texture = nullptr;
+            m_pendingDirty.clear();
+            return;
+        }
+    }
+
+    QVarLengthArray<QRhiTextureUploadEntry, 8> entries;
+    for (const QRect &r : m_pendingDirty) {
+        QRhiTextureSubresourceUploadDescription sub;
+        if (bgra) {
+            // Upload straight out of the shared atlas image, just the changed sub-rect — no copy.
+            sub = QRhiTextureSubresourceUploadDescription(m_atlas);
+            sub.setSourceTopLeft(r.topLeft());
+            sub.setSourceSize(r.size());
+        } else {
+            sub = QRhiTextureSubresourceUploadDescription(
+                m_atlas.copy(r).convertToFormat(QImage::Format_RGBA8888_Premultiplied));
+        }
+        sub.setDestinationTopLeft(r.topLeft());
+        entries.append(QRhiTextureUploadEntry(0, 0, sub));
+    }
+    QRhiTextureUploadDescription desc;
+    desc.setEntries(entries.cbegin(), entries.cend());
+    resourceUpdates->uploadTexture(m_texture, desc);
+    m_pendingDirty.clear();
 }

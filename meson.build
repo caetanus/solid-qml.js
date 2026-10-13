@@ -378,7 +378,10 @@ if build_solidterm
     solidterm_moc,
     cpp_args: notify_args + blur_args + ['-DSOLIDTERM_DEV_DIR="' + meson.current_source_dir() + '/apps/solidterm/qml"'],
     include_directories: include_directories('src', 'apps/solidterm'),
-    dependencies: [solidqml_dep, qt6_widgets_dep, qt6_network_dep, vterm_dep, util_dep] + blur_deps, # Network: QLocalServer (single instance)
+    # qt6_templates_private_dep (declared above) already pulls Gui+Quick private headers, which is
+    # what glyphcache.cpp needs for <rhi/qrhi.h> (GlyphAtlasTexture's partial atlas upload, P3) —
+    # reused here rather than declaring another private-headers dependency() for the same modules.
+    dependencies: [solidqml_dep, qt6_widgets_dep, qt6_network_dep, vterm_dep, util_dep, qt6_templates_private_dep] + blur_deps, # Network: QLocalServer (single instance)
     install_rpath: '$ORIGIN/../' + get_option('libdir'),
     install: true,
   )
@@ -474,6 +477,20 @@ if build_solidterm
     env: ['SHELL=/bin/sh'],
     timeout: 180) # generous: it waits for the kernel pty buffer to actually fill, which depends on
                   # how much CPU its child gets — slower when the whole suite runs in parallel
+
+  # GlyphCache's dirty-rect tracking (P3, docs/evidence/solidterm/perf-2026-10-13.md finding 5):
+  # a burst of new glyphs reports bytes proportional to the glyph cells rasterised, not the whole
+  # 2048x2048 atlas, and cache hits / an idle frame report nothing. No scene graph or RHI needed —
+  # GlyphCache itself is QImage + QPainter + QFont — but font loading needs a QGuiApplication, so
+  # this links Core+Gui+Quick (glyphcache.h declares GlyphAtlasTexture, a QSGTexture) plus the
+  # Gui/Quick private headers glyphcache.cpp needs for <rhi/qrhi.h>, via qt6_templates_private_dep.
+  glyphcache_test_deps = [dependency('qt6', modules: ['Core', 'Gui', 'Quick']), qt6_templates_private_dep]
+  test('solidterm-glyphcache-dirty',
+    executable('test-solidterm-glyphcache-dirty',
+      files('apps/solidterm/tests/glyphcache_dirty_test.cpp', 'apps/solidterm/native/glyphcache.cpp'),
+      dependencies: glyphcache_test_deps),
+    env: ['QT_QPA_PLATFORM=offscreen'],
+    timeout: 20)
 endif
 
 # ── Tests ────────────────────────────────────────────────────────────────────────────────────

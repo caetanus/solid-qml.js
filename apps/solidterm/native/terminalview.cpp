@@ -691,7 +691,10 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
         m_bgNode->markDirty(QSGNode::DirtyGeometry);
     }
 
-    // Glyphs (atlas material). Rebuild the texture only when the atlas changed.
+    // Glyphs (atlas material). The texture (GlyphAtlasTexture, glyphcache.h) is created once and
+    // kept for the node's whole life; it re-uploads only the atlas sub-rectangles GlyphCache
+    // rasterised since the last frame (see its commitTextureOperations(), called every frame from
+    // GlyphShader::updateSampledImage() below) instead of the whole 2048x2048 atlas.
     if (!m_glyphNode) {
         m_glyphNode = new QSGGeometryNode;
         auto *geo = new QSGGeometry(kGlyphAttrSet, 0);
@@ -703,8 +706,10 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
         root->appendChildNode(m_glyphNode);
     }
     auto *glyphMat = static_cast<GlyphMaterial *>(m_glyphNode->material());
-    if (m_glyphs.takeDirty())
-        glyphMat->setTexture(window()->createTextureFromImage(m_glyphs.atlas()));
+    if (!glyphMat->texture)
+        glyphMat->setTexture(new GlyphAtlasTexture);
+    static_cast<GlyphAtlasTexture *>(glyphMat->texture)
+        ->addDirtyRects(m_glyphs.atlas(), m_glyphs.takeDirtyRects());
     {
         QSGGeometry *geo = m_glyphNode->geometry();
         geo->allocate(int(glyphs.size()));
