@@ -29,7 +29,7 @@ loop: the loop is two fds and a timeout, and owning it keeps the hot path free o
   selection/search/links ──┐       │       │ read(master, 64 KiB)  (no lock)
   resize (vterm_set_size) ─┤       │       ▼
                            ▼       ▼   ┌──────────── ScreenMutex ────────────┐
-                      [lock] VTerm + VTermState + TermScreen + out-queue ◄──┤ [lock] slice ≤ 16 KiB:
+                      [lock] VTerm + VTermState + TermScreen + out-queue ◄──┤ [lock] slice ≤ 4 KiB:
                            ▲                                                │ vterm_input_write
            applyNews() ◄───┼── guiWakeFd (eventfd, coalesced, ≤ 1 / 4 ms) ◄─┘ hooks record "news"
                            │
@@ -53,9 +53,11 @@ reads the fd instead.
 
 One `std::mutex` per session plus an atomic count of **waiting readers** (GUI/render):
 
-- The worker parses in **slices** (at most 16 KiB, about 0.2 to 1 ms of libvterm work depending on
-  the content): lock, `beginBatch` / `vterm_input_write(slice)` / `endBatch`, unlock. A 64 KiB read is
-  up to four slices, so a reader never waits for more than one slice.
+- The worker parses in **slices** (at most 4 KiB, about 0.05 to 0.3 ms of libvterm work depending
+  on the content): lock, `beginBatch` / `vterm_input_write(slice)` / `endBatch`, unlock. A 64 KiB read
+  is up to sixteen slices, so a reader never waits for more than one slice. (Measured: 4, 16 and
+  64 KiB slices give the same throughput; the renderer's mean lock wait in `seq` is 0.15, 0.37 and
+  0.48 ms.)
 - After every slice the worker checks the waiting count. If a reader is waiting it yields until that
   reader has *acquired* the mutex (microseconds) before locking again. Without this the worker would
   re-take the mutex in a tight loop (futex barging) and starve the renderer.

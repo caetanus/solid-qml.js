@@ -68,7 +68,9 @@ struct TermWorkerSink {
 class TermWorker {
 public:
     static constexpr size_t kReadSize = 64 * 1024;
-    static constexpr size_t kSlice = 16 * 1024;
+    // Measured (seq / mixed, 3 runs each): 4 / 16 / 64 KiB slices give the same throughput, while the
+    // renderer's average wait for the lock grows 0.15 → 0.37 → 0.48 ms in seq.
+    static constexpr size_t kSlice = 4 * 1024;
     static constexpr int64_t kGuiIntervalNs = 4'000'000;
 
     TermWorker() = default;
