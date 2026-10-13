@@ -92,11 +92,22 @@ void appendTail(std::string &out, const PaneSnapshot &s, const SeedCapture &c)
     decset(out, 1, s.keypadCursor);
     out += s.insert ? "\x1b[4h" : "\x1b[4l";
     decset(out, 7, s.wrap);
-    decset(out, 1000, s.mouseStandard);
-    decset(out, 1002, s.mouseButton);
-    decset(out, 1003, s.mouseAny);
-    decset(out, 1005, s.mouseUtf8);
-    decset(out, 1006, s.mouseSgr);
+    // Mouse: libvterm keeps ONE tracking mode, and resetting any of 1000/1002/1003 turns tracking
+    // off whatever was set — so reset first, then set only the widest mode that is on. The same for
+    // the 1005/1006 encodings: both off, then the one that is on.
+    decset(out, 1000, false);
+    if (s.mouseAny)
+        decset(out, 1003, true);
+    else if (s.mouseButton)
+        decset(out, 1002, true);
+    else if (s.mouseStandard)
+        decset(out, 1000, true);
+    decset(out, 1005, false);
+    decset(out, 1006, false);
+    if (s.mouseSgr)
+        decset(out, 1006, true);
+    else if (s.mouseUtf8)
+        decset(out, 1005, true);
     decset(out, 2004, s.bracketPaste);
     out += s.keypad ? "\x1b=" : "\x1b>";
     int scusr = 0;
