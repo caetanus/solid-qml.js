@@ -297,9 +297,11 @@ void TerminalView::itemChange(ItemChange change, const ItemChangeData &data)
 int TerminalView::cbSbPushLine(int cols, const VTermScreenCell *cells, void *user)
 {
     auto *self = static_cast<TerminalView *>(user);
-    SbLine line;
-    line.cells.resize(cols);
-    std::copy(cells, cells + cols, line.cells.begin());
+    // A full ring recycles the line it is about to drop: its buffer takes the new cells (no
+    // malloc/free, no zero-fill before the copy) — once the ring is full, every line pushes one out.
+    const bool full = !self->m_scrollback.isEmpty() && self->m_scrollback.size() >= self->m_scrollbackLimit;
+    SbLine line = full ? self->m_scrollback.takeFirst() : SbLine{};
+    line.cells.assign(cells, cells + cols);
     self->m_scrollback.append(std::move(line));
     if (self->m_scrollback.size() > self->m_scrollbackLimit)
         self->m_scrollback.removeFirst();
