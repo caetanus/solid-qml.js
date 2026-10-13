@@ -1,6 +1,7 @@
 #pragma once
 
 #include "glyphcache.h"
+#include "lineanchor.h"
 #include "ptysession.h"
 #include "termscreen.h"
 #include "termworker.h"
@@ -154,6 +155,14 @@ public:
     // Debug-only (SOLIDTERM_AUTOSCROLLTEST, like TerminalPanes::debugDragLeaf): the current
     // scrolled-back offset, so a headless probe can confirm autoscroll actually moved the view.
     Q_INVOKABLE int debugScrollOffset() const { return m_scrollOffset; }
+    // Debug-only (SOLIDTERM_SELANCHORTEST): the view row the selection starts on in the view as it
+    // is now (out of [0, viewportRows) when scrolled out of sight; -1000000 with no selection), the
+    // last view row whose text contains `needle` (-1: none), the selected text, and the scene-local
+    // centre of a cell — all read against the screen under the lock, like the renderer.
+    Q_INVOKABLE int debugSelectionRow() const;
+    Q_INVOKABLE int debugFindRow(const QString &needle) const;
+    Q_INVOKABLE QString debugSelectedText() const { return selectedText(); }
+    Q_INVOKABLE QPointF debugCellCenter(int row, int col) const { return QPointF((col + 0.5) * m_cellW, (row + 0.5) * m_cellH); }
 
     // True when a right-click (or any button, really) right now would be REPORTED to the program
     // instead of doing TerminalView's own local thing (selection / context menu) — i.e. the program
@@ -270,6 +279,10 @@ private:
     // GUI copies of the screen's scalars (QML and the input handlers read these, never m_term).
     int m_sbCount = 0;
     uint64_t m_seenPushed = 0;      // m_term.pushedTotal() as of the last applyNews()
+    uint64_t m_lineBase = 0;        // m_term.lineBase() as of the last applyNews() (lineanchor.h)
+    // Drops/clips what anchors to lines that have left the scrollback (applyNews, limit, clear).
+    void dropEvictedAnchors(uint64_t base);
+    LineNo topLineLocked() const;   // line on the view's top row now (lock held; same rule as the renderer)
     int effectiveOffset(int sbCount, uint64_t pushed) const; // m_scrollOffset + pushes since then
 
     void ensureSession();
@@ -279,10 +292,10 @@ private:
 
     void keyToVTerm(QKeyEvent *event);
 
-    // Auto-detected hyperlink (URL) under the mouse: absolute row + col span + the URL. Hovering
-    // underlines it; Ctrl+click opens it. Detected by regex over the row text.
+    // Auto-detected hyperlink (URL) under the mouse: line number (lineanchor.h) + col span + the URL.
+    // Hovering underlines it; Ctrl+click opens it. Detected by regex over the row text.
     struct LinkSpan {
-        int absRow = 0;
+        LineNo line = 0;
         int c0 = 0, c1 = -1;   // inclusive column range
         QString url;
         bool valid = false;
@@ -291,7 +304,7 @@ private:
     LinkSpan m_hoverLink;
 
     // Scrollback search.
-    struct Match { int absRow = 0; int c0 = 0; int len = 0; };
+    struct Match { LineNo line = 0; int c0 = 0; int len = 0; }; // line number (lineanchor.h)
     QString rowText(int absRow) const;      // col-indexed text of an absolute row (lock held)
     void scrollToMatch(int i);
     QString m_searchQuery;
@@ -344,7 +357,7 @@ private:
     int m_snapOffset = -1;                  // effective scroll offset of the copy
     bool m_snapReverse = false;
     bool m_snapValid = false;               // false → copy every row next frame
-    void copySnapshot(int &sbCount, int &offset, VTermPos &cursor, bool &cursorVisible, bool &reverse);
+    void copySnapshot(int &sbCount, int &offset, uint64_t &lineBase, VTermPos &cursor, bool &cursorVisible, bool &reverse);
     QString m_title;
     VTermPos m_cursor = { 0, 0 };
     bool m_cursorVisible = true;
@@ -356,13 +369,10 @@ private:
     int m_scrollOffset = 0;                 // lines scrolled back from live (0 = live)
     bool m_started = false;
 
-    // Selection in ABSOLUTE line space (scrollback index; live rows continue past the ring — see
-    // TermScreen::line), so
-    // it survives scrolling. Anchor = press point; end tracks the drag.
-    struct CellPos {
-        int absRow = 0;
-        int col = 0;
-    };
+    // Selection in LINE NUMBERS (lineanchor.h: TermScreen::lineBase() + absolute row), so it sticks
+    // to its text while output scrolls it — also at the scrollback limit — and survives the user's
+    // own scrolling. Anchor = press point; end tracks the drag.
+    using CellPos = LinePoint;
     CellPos cellAt(const QPointF &p) const;
     void selectedRange(CellPos &from, CellPos &to) const;
     QString selectedText() const;

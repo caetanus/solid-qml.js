@@ -1032,6 +1032,99 @@ int main(int argc, char **argv)
         });
     }
 
+    // Debug/CI: SOLIDTERM_SELANCHORTEST=1 — the selection sticks to its TEXT (lineanchor.h), owner
+    // report "seleção não rola com a tela". With a small scrollback limit (200) already FULL — where
+    // the old ring-index rows drifted — it prints a marker word, drag-selects it (real input via
+    // QWindowSystemInterface, see AUTOSCROLLTEST), lets the shell print 7 more lines and checks the
+    // selected text is unchanged and its highlight row moved up exactly as far as the marker did;
+    // scrolls back 5 lines (the highlight follows the view); then prints far more than the limit
+    // and checks the selection was cleared with its evicted text. Exits 0 on PASS, 1 on FAIL.
+    if (qEnvironmentVariableIsSet("SOLIDTERM_SELANCHORTEST") && window) {
+        QTimer::singleShot(1600, window, [&engine, window] {
+            TerminalView *view = nullptr;
+            for (QObject *o : engine.rootObjects()) {
+                if (auto *w = qobject_cast<QQuickWindow *>(o)) {
+                    QList<QQuickItem *> stack { w->contentItem() };
+                    while (!stack.isEmpty() && !view) {
+                        QQuickItem *it = stack.takeLast();
+                        view = qobject_cast<TerminalView *>(it);
+                        for (QQuickItem *k : it->childItems()) stack.append(k);
+                    }
+                }
+            }
+            if (!view) {
+                qWarning("solidterm: selanchortest found no TerminalView");
+                QCoreApplication::exit(1);
+                return;
+            }
+            view->setScrollbackLimit(200);
+            // 'sel%s' + anchormark: only the OUTPUT line holds "selanchormark", not the echoed command.
+            view->sendText(QStringLiteral("seq 1 300; printf 'sel%s\\n' anchormark; seq 1 3\n"));
+
+            QTimer::singleShot(2000, window, [view, window] {
+                const QString word = QStringLiteral("selanchormark");
+                const int markRow0 = view->debugFindRow(word);
+                const int sbAtStart = view->scrollbackCount();
+                if (markRow0 < 0) {
+                    qWarning("solidterm: selanchortest marker not on screen");
+                    QCoreApplication::exit(1);
+                    return;
+                }
+                // Drag-select the word: press on its first cell, move to its last, release.
+                const QPointF p0 = view->mapToScene(view->debugCellCenter(markRow0, 0));
+                const QPointF p1 = view->mapToScene(view->debugCellCenter(markRow0, int(word.size()) - 1));
+                const QPointF g0 = window->mapToGlobal(p0.toPoint()), g1 = window->mapToGlobal(p1.toPoint());
+                QWindowSystemInterface::handleMouseEvent(window, p0, g0, Qt::LeftButton, Qt::LeftButton,
+                    QEvent::MouseButtonPress, Qt::NoModifier);
+                QWindowSystemInterface::handleMouseEvent(window, p1, g1, Qt::LeftButton, Qt::NoButton,
+                    QEvent::MouseMove, Qt::NoModifier);
+                QWindowSystemInterface::handleMouseEvent(window, p1, g1, Qt::NoButton, Qt::LeftButton,
+                    QEvent::MouseButtonRelease, Qt::NoModifier);
+                QCoreApplication::processEvents();
+                const QString sel0 = view->debugSelectedText();
+                const int selRow0 = view->debugSelectionRow();
+                // SOLIDTERM_SELANCHORSHOT=<prefix>: grab the window before and after the output, to see it.
+                const QString shot = qEnvironmentVariable("SOLIDTERM_SELANCHORSHOT");
+                if (!shot.isEmpty())
+                    window->grabWindow().save(shot + QStringLiteral("-1-selected.png"));
+                view->sendText(QStringLiteral("seq 1 7\n"));
+
+                QTimer::singleShot(1500, window, [view, window, word, markRow0, sbAtStart, sel0, selRow0, shot] {
+                    if (!shot.isEmpty())
+                        window->grabWindow().save(shot + QStringLiteral("-2-after-output.png"));
+                    const QString sel1 = view->debugSelectedText();
+                    const int selRow1 = view->debugSelectionRow();
+                    const int markRow1 = view->debugFindRow(word);
+                    const bool moved = selRow1 == markRow1 && markRow1 < markRow0
+                        && selRow0 - selRow1 == markRow0 - markRow1;
+                    const bool phase1 = sel0 == word && selRow0 == markRow0 && sel1 == sel0 && moved
+                        && sbAtStart == 200;
+                    qInfo().noquote() << "solidterm: selanchortest scrollback=" << sbAtStart << "(limit 200, full)"
+                                       << "marker row" << markRow0 << "->" << markRow1
+                                       << "| highlight row" << selRow0 << "->" << selRow1
+                                       << "| text" << sel0 << "->" << sel1 << "| follows-text=" << phase1;
+
+                    view->scrollTo(5); // the user scrolls back: the highlight goes down with its text
+                    const int selRowScrolled = view->debugSelectionRow();
+                    const bool phase2 = selRowScrolled == selRow1 + 5 && view->debugSelectedText() == word;
+                    qInfo().noquote() << "solidterm: selanchortest scrolled back 5: highlight row" << selRowScrolled
+                                       << "follows-scroll=" << phase2;
+                    view->scrollTo(0);
+                    view->sendText(QStringLiteral("seq 1 400\n")); // > limit + rows: the marker is evicted
+
+                    QTimer::singleShot(2000, window, [view, phase1, phase2] {
+                        const bool phase3 = !view->hasSelection() && view->debugSelectedText().isEmpty();
+                        qInfo().noquote() << "solidterm: selanchortest after evicting the text: hasSelection="
+                                           << view->hasSelection() << "cleared=" << phase3;
+                        const bool ok = phase1 && phase2 && phase3;
+                        qInfo().noquote() << "solidterm: selanchortest" << (ok ? "PASS" : "FAIL");
+                        QCoreApplication::exit(ok ? 0 : 1);
+                    });
+                });
+            });
+        });
+    }
+
 // Debug: SOLIDTERM_FINDTEST="query" opens the search bar + runs a search after a settle.
     const QString findTest = qEnvironmentVariable("SOLIDTERM_FINDTEST");
     if (!findTest.isEmpty() && window) {

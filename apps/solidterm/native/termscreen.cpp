@@ -172,6 +172,7 @@ TermRow TermScreen::pushRow(TermRow row)
     TermRow out;
     if (m_sbLimit <= 0) {
         out = row; // no scrollback: the line is dropped at once, its buffer reused
+        ++m_lineBase;
     } else if (size_t(m_sbCount) < m_sb.size()) {
         size_t idx = m_sbHead + size_t(m_sbCount);
         if (idx >= m_sb.size())
@@ -186,7 +187,8 @@ TermRow TermScreen::pushRow(TermRow row)
         m_sb.push_back(row);
         ++m_sbCount;
     } else {
-        out = m_sb[m_sbHead];
+        out = m_sb[m_sbHead]; // the oldest line is evicted
+        ++m_lineBase;
         m_sb[m_sbHead] = row;
         if (++m_sbHead == m_sb.size())
             m_sbHead = 0;
@@ -245,6 +247,7 @@ void TermScreen::setScrollbackLimit(int limit)
     for (int i = 0; i < drop; ++i)
         std::free(lin[size_t(i)].cells);
     lin.erase(lin.begin(), lin.begin() + drop);
+    m_lineBase += uint64_t(drop);
     m_sb = std::move(lin);
     m_sbHead = 0;
     m_sbCount = int(m_sb.size());
@@ -259,6 +262,7 @@ void TermScreen::clearScrollback()
         std::free(r.cells);
     m_sb.clear();
     m_sbHead = 0;
+    m_lineBase += uint64_t(m_sbCount);
     m_sbCount = 0;
 }
 

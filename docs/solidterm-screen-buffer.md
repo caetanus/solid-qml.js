@@ -127,6 +127,14 @@ Every reader goes through `TermScreen`'s accessor API:
 | renderer (`buildPaintNode`) | `vterm_screen_get_cell` per cell (call + 40 B copy) / `m_scrollback[i].cells` | `TermScreen::line(absRow)` → contiguous `TermCell` row, read in place |
 | selection text, search (`rowText`), links, word/line select | `vterm_screen_get_cell` / `m_scrollback` | `line(absRow)` + `TermScreen::cell()` (a `VTermScreenCell` view, same values as `vterm_screen_get_cell`) |
 | scrollbar, autoscroll, anchor, pause, search scroll | `m_scrollback.size()` | `sbCount()` |
+
+Selection endpoints, search matches and the hover link are stored as **line numbers**,
+`lineBase() + absRow` (`native/lineanchor.h`). `lineBase()` counts the lines that have left the row
+space for good (evicted from the full ring, dropped with no scrollback, trimmed by a lower limit,
+cleared), so a line's number stays the same while output scrolls it, also at the scrollback limit,
+where a plain `absRow` shifts by one per push. Readers convert with the `lineBase`/`sbCount`/offset
+they read under the same lock. A selection whose text is evicted is clipped to the oldest line, or
+cleared once all of it is gone (VTE). Test: `tests/lineanchor_test.cpp`.
 | line continuation (link join) | `vterm_state_get_lineinfo` | unchanged |
 | colours | `vterm_screen_convert_color_to_rgb` | `vterm_state_convert_color_to_rgb` (what it called) |
 

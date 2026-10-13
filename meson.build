@@ -405,6 +405,15 @@ if build_solidterm
       dependencies: [vterm_dep]),
     timeout: 10)
 
+  # Text anchoring (lineanchor.h): selection / search matches / hover link stored as line numbers
+  # (TermScreen::lineBase() + absolute row) follow their text through pushes below AND at the
+  # scrollback limit, resizes, a lower limit and a clear, and read as evicted once the text is gone.
+  test('solidterm-lineanchor',
+    executable('test-solidterm-lineanchor',
+      files('apps/solidterm/tests/lineanchor_test.cpp', 'apps/solidterm/native/termscreen.cpp'),
+      dependencies: [vterm_dep]),
+    timeout: 10)
+
   # TermScreen (SolidTerm's own screen buffer over libvterm's state layer) vs the previous
   # VTermScreen path, kept here as the reference model: an escape-sequence corpus + seeded random
   # streams + resizes, cells/cursor/line info/scrollback compared after every step. A hang in the
@@ -449,6 +458,20 @@ if build_solidterm
       'SOLIDTERM_PIDLOG': meson.current_build_dir() / 'solidterm-xdrop-pid.log',
     },
     is_parallel: false,
+    timeout: 40)
+  # The selection sticks to its text (the app itself, offscreen, self-checking — SOLIDTERM_SELANCHORTEST
+  # in main.cpp): with the scrollback limit full, a drag-selected word keeps its text and its
+  # highlight row moves up with it as the shell prints more, follows a scroll back, and is cleared
+  # once the text is evicted. Exit code is the verdict.
+  test('solidterm-selanchor', solidterm_exe,
+    args: ['--standalone'],
+    env: {
+      'QT_QPA_PLATFORM': 'offscreen',
+      'QT_FORCE_STDERR_LOGGING': '1',
+      'SHELL': '/bin/sh',
+      'XDG_CONFIG_HOME': meson.current_build_dir() / 'solidterm-test-config',
+      'SOLIDTERM_SELANCHORTEST': '1',
+    },
     timeout: 40)
   # Selection autoscroll (drag past the top/bottom edge): the pure edge-distance → lines/tick mapping
   # and the offset clamp, plus a simulated multi-tick walk proving the selection's moving end keeps

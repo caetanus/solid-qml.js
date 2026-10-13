@@ -132,13 +132,19 @@ worker cannot observe a half-resized screen, and the renderer only ever sees the
 
 ### Selection, search, links, scrollbar, autoscroll
 
-Every GUI-thread reader takes the lock for the duration of its read: `cellAt` (it also applies
-pending news first, so its absolute row agrees with what was rendered), `selectedText`, `rowText` (word
+Every GUI-thread reader takes the lock for the duration of its read: `cellAt` (it maps the pointer
+with the renderer's own anchoring rule against the screen as it is now, so the line it names agrees
+with what is drawn), `selectedText`, `rowText` (word
 and line select, links, search), `linkAt` (also reads `vterm_state_get_lineinfo`, which the resize
 reallocates), `clearScrollback`, `setScrollbackLimit`, `resetTerminal`. These are short except
 `search`, which walks the whole scrollback (a few milliseconds at 8000 lines): the worker waits that
 long, once, when the user searches. The scrollbar and every QML-visible property read the GUI-side
 copies and never lock.
+
+Selection, search matches and the hover link hold line numbers (`TermScreen::lineBase()` + absolute
+row, `native/lineanchor.h`), so they move with their text as output scrolls it. The renderer places
+them with the `lineBase`/`sbCount`/offset of its own snapshot copy; `applyNews` drops or clips what
+refers to evicted lines.
 
 ### Pause on selection
 

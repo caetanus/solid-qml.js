@@ -281,12 +281,57 @@ int TerminalView::effectiveOffset(int sbCount, uint64_t pushed) const
     return int(std::min<uint64_t>(uint64_t(m_scrollOffset) + moved, uint64_t(std::max(sbCount, 0))));
 }
 
+// GUI thread, after lines left the scrollback for good (lineanchor.h): the selection is clipped to
+// the oldest retained line or cleared when wholly gone (VTE), evicted search matches are dropped
+// (the current one keeps pointing at the same match), and an evicted hover link is forgotten.
+void TerminalView::dropEvictedAnchors(uint64_t base)
+{
+    m_lineBase = base;
+    if (m_selValid) {
+        CellPos from, to;
+        selectedRange(from, to);
+        switch (clipEvicted(from, to, base)) {
+        case Eviction::Kept:
+            break;
+        case Eviction::Clipped: // only the earlier end is gone: it becomes the oldest line's start
+            (m_selAnchor.line < oldestLine(base) ? m_selAnchor : m_selEnd) = from;
+            break;
+        case Eviction::Gone:
+            if (!m_selecting) {
+                m_selValid = false;
+                emit selectionChanged();
+            }
+            break;
+        }
+    }
+    int gone = 0; // m_matches is in line order (search walks oldest → newest)
+    while (gone < m_matches.size() && m_matches[gone].line < oldestLine(base))
+        ++gone;
+    if (gone > 0) {
+        m_matches.remove(0, gone);
+        m_searchIndex = m_matches.isEmpty() ? -1 : qMax(0, m_searchIndex - gone);
+        emit searchChanged(m_searchIndex + 1, int(m_matches.size()));
+    }
+    if (m_hoverLink.valid && m_hoverLink.line < oldestLine(base)) {
+        m_hoverLink = {};
+        emit hoverLinkChanged(QString());
+    }
+}
+
+// Lock held: the line on the view's top row as the next frame will show it (the parser may be ahead
+// of the GUI's copies) — the renderer's own anchoring rule, so a click lands on what is drawn.
+LineNo TerminalView::topLineLocked() const
+{
+    const int sbSize = m_term.sbCount();
+    return viewTopLine(m_term.lineBase(), sbSize, clampOffset(effectiveOffset(sbSize, m_term.pushedTotal()), sbSize));
+}
+
 // GUI thread: take what libvterm reported (on whichever thread) and act on it.
 void TerminalView::applyNews()
 {
     News n;
     int sb;
-    uint64_t pushed;
+    uint64_t pushed, base;
     {
         ScreenLock lock(m_screenMutex);
         n = m_news;
@@ -295,8 +340,11 @@ void TerminalView::applyNews()
         m_news.bells = 0;
         sb = m_term.sbCount();
         pushed = m_term.pushedTotal();
+        base = m_term.lineBase();
     }
     bool scroll = n.scrollMoved || pushed != m_seenPushed || sb != m_sbCount;
+    if (base != m_lineBase)
+        dropEvictedAnchors(base); // text that left the scrollback takes its highlights with it
     if (scroll) {
         m_scrollOffset = clampOffset(effectiveOffset(sb, pushed), sb);
         m_seenPushed = pushed;
@@ -305,6 +353,12 @@ void TerminalView::applyNews()
     if (n.altScreen != m_altScreen) {
         m_altScreen = n.altScreen;
         scroll = true; // the scrollbar hides on the alt screen (vim/less), see altScreen()
+        // The live rows now show the other screen: a selection there would highlight unrelated text
+        // (the copy-on-select PRIMARY selection still holds what was selected).
+        if (m_selValid && !m_selecting) {
+            m_selValid = false;
+            emit selectionChanged();
+        }
     }
     m_mouseMode = n.mouseMode; // decideMouseAction() (mousereport.h) reads it on every mouse event
     const bool cursorChanged = n.cursor.row != m_cursor.row || n.cursor.col != m_cursor.col
@@ -613,7 +667,7 @@ inline void pushGlyphQuad(std::vector<GlyphVertex> &v, qreal x, qreal y, qreal w
 // screen under the lock. In the live view only rows the parser dirtied since the last frame are
 // copied; scrolled back, resized, after a DECSCNM flip or a window change, all of them (~212 KB at
 // 105x56, tens of microseconds).
-void TerminalView::copySnapshot(int &sbCount, int &offset, VTermPos &cursor, bool &cursorVisible, bool &reverse)
+void TerminalView::copySnapshot(int &sbCount, int &offset, uint64_t &lineBase, VTermPos &cursor, bool &cursorVisible, bool &reverse)
 {
     const int rows = m_rows, cols = m_cols;
     const size_t cells = size_t(rows) * size_t(cols);
@@ -630,6 +684,7 @@ void TerminalView::copySnapshot(int &sbCount, int &offset, VTermPos &cursor, boo
     const int64_t tl = Q_UNLIKELY(PerfTrace::on) ? PerfTrace::nowNs() : 0;
     sbCount = m_term.sbCount();
     offset = clampOffset(effectiveOffset(sbCount, m_term.pushedTotal()), sbCount);
+    lineBase = m_term.lineBase();
     reverse = m_term.globalReverse();
     cursor = m_news.cursor;
     cursorVisible = m_news.cursorVisible;
@@ -709,9 +764,13 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
     // The visible rows, copied out of the screen under the lock (the parser thread keeps writing it);
     // everything below reads the copy. Every row's geometry is rebuilt (per-row reuse is proposal P4).
     int sbCount = 0, sbShown = 0;
+    uint64_t lineBase = 0;
     VTermPos cursorPos;
     bool cursorVisible = true, globalReverse = false;
-    copySnapshot(sbCount, sbShown, cursorPos, cursorVisible, globalReverse);
+    copySnapshot(sbCount, sbShown, lineBase, cursorPos, cursorVisible, globalReverse);
+    // Selection, search matches and the hover link are line numbers (lineanchor.h): placed against
+    // the SAME base/sbCount/offset the rows were copied with, so they move with their text.
+    const LineNo topLine = viewTopLine(lineBase, sbCount, sbShown);
     // Past the end of a scrollback row narrower than the grid: a value-initialised cell, exactly what
     // the previous `VTermScreenCell cell {}` gave (zero colours = RGB black, not the default).
     static const TermCell kPastEnd {};
@@ -772,11 +831,11 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
         QColor sel = m_foreground;
         sel.setAlpha(64);
         for (int row = 0; row < m_rows; ++row) {
-            const int absRow = sbCount - sbShown + row;
-            if (absRow < from.absRow || absRow > to.absRow)
+            const LineNo line = topLine + row;
+            if (line < from.line || line > to.line || line < oldestLine(lineBase))
                 continue;
-            const int c0 = absRow == from.absRow ? from.col : 0;
-            const int c1 = absRow == to.absRow ? to.col : m_cols - 1;
+            const int c0 = line == from.line ? from.col : 0;
+            const int c1 = line == to.line ? to.col : m_cols - 1;
             pushBgQuad(bg, c0 * m_cellW, row * m_cellH, (c1 - c0 + 1) * m_cellW, m_cellH, sel);
         }
     }
@@ -813,10 +872,9 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 
     // Search highlights: every match on a visible row (current match brighter).
     if (!m_matches.isEmpty()) {
-        const int top = sbCount - sbShown;
         for (int mi = 0; mi < m_matches.size(); ++mi) {
             const Match &m = m_matches[mi];
-            const int row = m.absRow - top;
+            const int64_t row = viewRowOfLine(topLine, m.line);
             if (row < 0 || row >= m_rows)
                 continue;
             const QColor hl = mi == m_searchIndex ? QColor(255, 160, 0, 210) : QColor(230, 200, 0, 90);
@@ -826,7 +884,7 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 
     // Hovered hyperlink: underline it across its span (drawn in the bg layer, at the cell baseline).
     if (m_hoverLink.valid) {
-        const int row = m_hoverLink.absRow - (sbCount - sbShown);
+        const int64_t row = viewRowOfLine(topLine, m_hoverLink.line);
         if (row >= 0 && row < m_rows) {
             pushBgQuad(bg, m_hoverLink.c0 * m_cellW, row * m_cellH + m_cellH - 1,
                        (m_hoverLink.c1 - m_hoverLink.c0 + 1) * m_cellW, 1, m_foreground);
@@ -1104,15 +1162,17 @@ TerminalView::CellPos TerminalView::cellAt(const QPointF &p) const
 {
     CellPos c;
     const int row = qBound(0, int(p.y() / m_cellH), m_rows - 1);
-    c.absRow = m_sbCount - m_scrollOffset + row;
+    {
+        ScreenLock lock(m_screenMutex);
+        c.line = topLineLocked() + row;
+    }
     c.col = qBound(0, int(p.x() / m_cellW), m_cols - 1);
     return c;
 }
 
 void TerminalView::selectedRange(CellPos &from, CellPos &to) const
 {
-    const bool fwd = m_selAnchor.absRow < m_selEnd.absRow
-        || (m_selAnchor.absRow == m_selEnd.absRow && m_selAnchor.col <= m_selEnd.col);
+    const bool fwd = !lineBefore(m_selEnd, m_selAnchor);
     from = fwd ? m_selAnchor : m_selEnd;
     to = fwd ? m_selEnd : m_selAnchor;
 }
@@ -1125,11 +1185,12 @@ QString TerminalView::selectedText() const
     selectedRange(from, to);
     QString out;
     ScreenLock lock(m_screenMutex);
-    for (int absRow = from.absRow; absRow <= to.absRow; ++absRow) {
-        const int c0 = absRow == from.absRow ? from.col : 0;
-        const int c1 = absRow == to.absRow ? to.col : m_cols - 1;
+    const uint64_t base = m_term.lineBase();
+    for (LineNo ln = std::max(from.line, oldestLine(base)); ln <= to.line; ++ln) {
+        const int c0 = ln == from.line ? from.col : 0;
+        const int c1 = ln == to.line ? to.col : m_cols - 1;
         QString line;
-        const TermScreen::Line src = m_term.line(absRow);
+        const TermScreen::Line src = m_term.line(int(absRowOfLine(base, ln)));
         for (int col = c0; col <= c1; ++col) {
             if (!src.cells) // past the live screen
                 break;
@@ -1147,10 +1208,32 @@ QString TerminalView::selectedText() const
         while (line.endsWith(QLatin1Char(' ')))
             line.chop(1);
         out += line;
-        if (absRow != to.absRow)
+        if (ln != to.line)
             out += QLatin1Char('\n');
     }
     return out;
+}
+
+int TerminalView::debugSelectionRow() const
+{
+    if (!m_selValid)
+        return -1000000;
+    CellPos from, to;
+    selectedRange(from, to);
+    ScreenLock lock(m_screenMutex);
+    return int(viewRowOfLine(topLineLocked(), from.line));
+}
+
+int TerminalView::debugFindRow(const QString &needle) const
+{
+    ScreenLock lock(m_screenMutex);
+    const LineNo top = topLineLocked();
+    const uint64_t base = m_term.lineBase();
+    for (int row = m_rows - 1; row >= 0; --row) {
+        if (rowText(int(absRowOfLine(base, top + row))).contains(needle))
+            return row;
+    }
+    return -1;
 }
 
 void TerminalView::copySelection()
@@ -1207,6 +1290,7 @@ void TerminalView::clearScrollback()
     m_sbCount = 0;
     m_scrollOffset = 0;
     m_selValid = false;
+    dropEvictedAnchors(m_term.lineBase()); // search matches in the scrollback are gone too
     emit selectionChanged();
     emit scrollChanged();
     update();
@@ -1236,6 +1320,10 @@ void TerminalView::resetTerminal()
             m_term.reset(true); // hard reset: clears attrs, modes, cursor
         }
         applyNews();
+    }
+    if (m_selValid) { // the screen it pointed into was just erased
+        m_selValid = false;
+        emit selectionChanged();
     }
     m_scrollOffset = 0;
     emit scrollChanged();
@@ -1298,6 +1386,7 @@ void TerminalView::search(const QString &query)
     if (!query.isEmpty() && m_term.isAttached()) {
         ScreenLock lock(m_screenMutex); // the whole walk: the parser thread waits (user action, once)
         const int total = m_term.sbCount() + m_rows;
+        const uint64_t base = m_term.lineBase();
         for (int absRow = 0; absRow < total; ++absRow) {
             const QString line = rowText(absRow);
             int from = 0;
@@ -1305,7 +1394,7 @@ void TerminalView::search(const QString &query)
                 const int idx = line.indexOf(query, from, Qt::CaseInsensitive);
                 if (idx < 0)
                     break;
-                m_matches.append({ absRow, idx, int(query.length()) });
+                m_matches.append({ lineOfAbsRow(base, absRow), idx, int(query.length()) });
                 from = idx + query.length();
             }
         }
@@ -1323,8 +1412,8 @@ void TerminalView::scrollToMatch(int i)
     if (i < 0 || i >= m_matches.size())
         return;
     const int sbSize = m_sbCount;
-    const int desiredTop = m_matches[i].absRow - m_rows / 2; // centre the match
-    m_scrollOffset = qBound(0, sbSize - desiredTop, sbSize);
+    const int64_t desiredTop = absRowOfLine(m_lineBase, m_matches[i].line) - m_rows / 2; // centre the match
+    m_scrollOffset = int(std::clamp<int64_t>(sbSize - desiredTop, 0, sbSize));
     emit scrollChanged();
 }
 
@@ -1428,7 +1517,7 @@ TerminalView::LinkSpan TerminalView::linkAt(const QPointF &p) const
         const int rowStartIdx = (queriedAbsRow - startAbsRow) * m_cols;
         const int rowEndIdx = rowStartIdx + m_cols;
         LinkSpan s;
-        s.absRow = queriedAbsRow;
+        s.line = lineOfAbsRow(m_term.lineBase(), queriedAbsRow);
         s.c0 = qMax(mStart, rowStartIdx) - rowStartIdx;
         s.c1 = qMin(mEnd, rowEndIdx) - rowStartIdx - 1;
         s.url = joined.mid(mStart, mEnd - mStart);
@@ -1457,7 +1546,7 @@ void TerminalView::hoverMoveEvent(QHoverEvent *event)
     // Shift is held too — decideMouseAction already encodes that rule (Report wins unless Shift).
     const LinkSpan link = isReport ? LinkSpan{} : linkAt(event->position());
     setCursor(link.valid ? Qt::PointingHandCursor : Qt::IBeamCursor);
-    if (link.valid != m_hoverLink.valid || link.absRow != m_hoverLink.absRow
+    if (link.valid != m_hoverLink.valid || link.line != m_hoverLink.line
         || link.c0 != m_hoverLink.c0 || link.c1 != m_hoverLink.c1) {
         m_hoverLink = link;
         emit hoverLinkChanged(link.valid ? link.url : QString());
@@ -1604,7 +1693,7 @@ void TerminalView::selectWordAt(const CellPos &c)
     QString line;
     {
         ScreenLock lock(m_screenMutex);
-        line = rowText(c.absRow);
+        line = rowText(int(absRowOfLine(m_term.lineBase(), c.line)));
     }
     const auto isWord = [](QChar ch) {
         return ch.isLetterOrNumber() || QStringLiteral("._-~/:@%+=").contains(ch);
@@ -1614,8 +1703,8 @@ void TerminalView::selectWordAt(const CellPos &c)
     int a = c.col, b = c.col;
     while (a > 0 && isWord(line[a - 1])) --a;
     while (b + 1 < line.size() && isWord(line[b + 1])) ++b;
-    m_selAnchor = { c.absRow, a };
-    m_selEnd = { c.absRow, b };
+    m_selAnchor = { c.line, a };
+    m_selEnd = { c.line, b };
     m_selValid = true;
     emit selectionChanged();
     update();
@@ -1626,12 +1715,12 @@ void TerminalView::selectLineAt(const CellPos &c)
     QString line;
     {
         ScreenLock lock(m_screenMutex);
-        line = rowText(c.absRow);
+        line = rowText(int(absRowOfLine(m_term.lineBase(), c.line)));
     }
     int end = line.size() - 1;
     while (end > 0 && line[end] == QLatin1Char(' ')) --end;
-    m_selAnchor = { c.absRow, 0 };
-    m_selEnd = { c.absRow, qMax(0, end) };
+    m_selAnchor = { c.line, 0 };
+    m_selEnd = { c.line, qMax(0, end) };
     m_selValid = true;
     emit selectionChanged();
     update();
@@ -1649,8 +1738,8 @@ void TerminalView::mouseDoubleClickEvent(QMouseEvent *event)
         // The whole URL, not a "word" — VTE/GNOME Terminal convention: double-click on a link
         // selects it entirely, ignoring selectWordAt's narrower word-separator rules (/:.?&=# etc.
         // are all valid URL characters that a plain word-select would stop at).
-        m_selAnchor = { link.absRow, link.c0 };
-        m_selEnd = { link.absRow, link.c1 };
+        m_selAnchor = { link.line, link.c0 };
+        m_selEnd = { link.line, link.c1 };
         m_selValid = true;
         emit selectionChanged();
         update();
@@ -1737,9 +1826,9 @@ void TerminalView::mouseMoveEvent(QMouseEvent *event)
     // selection to the currently-visible edge row immediately; updateAutoscroll (below) is what then
     // keeps revealing MORE of the scrollback/live screen without further movement.
     const CellPos p = cellAt(event->position());
-    if (p.absRow != m_selEnd.absRow || p.col != m_selEnd.col) {
+    if (p != m_selEnd) {
         m_selEnd = p;
-        const bool valid = m_selEnd.absRow != m_selAnchor.absRow || m_selEnd.col != m_selAnchor.col;
+        const bool valid = m_selEnd != m_selAnchor;
         if (valid != m_selValid) {
             m_selValid = valid;
             emit selectionChanged();
@@ -1862,9 +1951,9 @@ void TerminalView::autoscrollTick()
 
     const int edgeRow = above ? 0 : m_rows - 1;
     const CellPos edge = cellAt(QPointF(m_autoscrollPos.x(), edgeRow * m_cellH));
-    if (edge.absRow != m_selEnd.absRow || edge.col != m_selEnd.col) {
+    if (edge != m_selEnd) {
         m_selEnd = edge;
-        const bool valid = m_selEnd.absRow != m_selAnchor.absRow || m_selEnd.col != m_selAnchor.col;
+        const bool valid = m_selEnd != m_selAnchor;
         if (valid != m_selValid) {
             m_selValid = valid;
             emit selectionChanged();

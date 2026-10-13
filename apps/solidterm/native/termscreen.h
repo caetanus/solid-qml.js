@@ -121,6 +121,11 @@ public:
     // evicted later). A scrolled-back view anchors against it across threads: the renderer and the
     // GUI each apply the pushes since the count the GUI last saw (docs/solidterm-parser-thread.md).
     uint64_t pushedTotal() const { return m_pushedTotal; }
+    // Lines that have left the absolute row space for good: evicted from a full ring, dropped at
+    // once with no scrollback, trimmed by a lower limit, or cleared. absRow 0 is line number
+    // lineBase(), so lineBase() + absRow names the same text for as long as it is retained —
+    // selection, search matches and the hover link anchor to it (lineanchor.h). Never decreases.
+    uint64_t lineBase() const { return m_lineBase; }
     Line line(int absRow) const
     {
         if (absRow < 0)
@@ -235,6 +240,7 @@ private:
     int m_sbCount = 0;
     int m_sbLimit = 8000;
     uint64_t m_pushedTotal = 0;
+    uint64_t m_lineBase = 0;      // see lineBase()
 
     std::vector<TermRow> m_scratchRows;        // handles leaving a scroll region
     std::vector<VTermScreenCell> m_sbCells;    // sb_popline scratch (resize only)
