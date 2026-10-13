@@ -28,17 +28,25 @@
 
 /* scrollback search bar (Solid; native does the find) — real GtkSearchEntry/toolbar geometry,
    measured from the installed theme (gresource extract /usr/lib/libadwaita-1.so.0
-   /org/gnome/Adwaita/styles/gtk.css): entry min-height 34px, padding-left/right 9px, border-radius
-   9px (gtk.css:988); its leading icon gets margin-right 6px (gtk.css:1014, `image.left`). The
-   small round icon buttons (prev/next/close) aren't a cited rule — no GtkSearchBar close/nav-button
-   geometry is in this stylesheet (GtkSearchBar assembles them per-app) — so 28px/7px follows the
-   closest analogous sizing in the sheet (`popover.menu box.inline-buttons button.image-button.model
-   { min-height/width: 32px }`, scaled down for this compact bar) rather than a literal citation. */
+   /org/gnome/Adwaita/styles/gtk.css): entry min-height 34px (gtk.css:988 — the actual cited
+   border-radius there is 9px, but the owner asked for a flatter 6px after seeing it live, so the
+   radius below is a deliberate deviation from the literal citation, not a copy error); its leading
+   icon at 16px (Adwaita's normal/entry icon size — gtk.css:124 `.normal-icons { -gtk-icon-size:
+   16px }`, the class entry images carry) with margin-right 6px (gtk.css:1014, `image.left`).
+   `.search-in-wrap` carries the field's chrome (tint/radius/padding — see systemtheme.cpp);
+   `.search-in` itself goes edge-to-edge borderless/transparent INSIDE it, so the icon and the
+   typed text sit in the same visual box, icon first (flex row, not absolute positioning: the
+   engine has no `position: absolute`). All three icon buttons (prev/next/close) and the field now
+   share ONE 34px box height, so align-items: center on `.searchbar` centres them all on the
+   field's exact midline with no per-button fudge factor — their own geometry isn't a cited
+   gtk.css rule (GtkSearchBar assembles nav/close buttons per-app, not styled by this sheet), so
+   34px square / 16px glyph just matches the field instead of guessing a smaller size. */
 .searchbar { display: flex; flex-direction: row; align-items: center; padding: 6px 10px; gap: 6px; }
-.search-icon { font-size: 14px; }
-.search-in { flex: 1; height: 34px; border-radius: 9px; padding: 0 9px; font-size: 13px; }
-.search-count { font-size: 12px; padding: 0 6px; }
-.search-btn { font-size: 14px; width: 28px; height: 28px; border: none; border-radius: 7px; background: transparent; }
+.search-in-wrap { flex: 1; display: flex; flex-direction: row; align-items: center; height: 34px; border-radius: 6px; padding: 0 9px; }
+.search-icon { font-size: 16px; margin-right: 6px; }
+.search-in { flex: 1; height: 34px; padding: 0; font-size: 13px; }
+.search-count { font-size: 13px; padding: 0 6px; }
+.search-btn { font-size: 16px; width: 34px; height: 34px; border: none; border-radius: 9px; background: transparent; }
 
 .term-status {
   display: flex; flex-direction: row; justify-content: space-between;

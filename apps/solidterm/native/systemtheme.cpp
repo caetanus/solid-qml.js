@@ -186,7 +186,12 @@ QString SystemTheme::styleSheet() const
 .tab-new:hover { background: %4; }
 .searchbar { background: %3; border-bottom: 1px solid %8; }
 .search-icon { color: %7; }
-.search-in { background: %13; color: %6; border: none; }
+/* The tint lives on the WRAPPER now (`.search-in-wrap`) — the <input> inside it goes transparent/
+   borderless, so icon + typed text read as one field. The focus ring stays on the input itself:
+   the engine has no `:focus-within` to put it on the wrapper instead, so it hugs the input's own
+   box (very slightly short of the icon's edge) rather than nothing. */
+.search-in-wrap { background: %13; }
+.search-in { background: transparent; color: %6; border: none; }
 .search-in:focus { outline: 2px solid %15; outline-offset: -2px; }
 .search-count { color: %7; }
 .search-btn { color: %6; }

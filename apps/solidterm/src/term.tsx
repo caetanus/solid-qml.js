@@ -233,12 +233,17 @@ export function Term(props: { onTitle: (t: string) => void }) {
 
       <Show when={searchOpen()}>
         <div class="searchbar">
-          {/* GtkSearchEntry puts the glass INSIDE the field (a leading `image.left`, gtk.css:1014);
-              our <input> has no leading-icon slot, so it rides just outside instead — same affordance,
-              honestly not pixel-identical. */}
-          <text class="search-icon">⌕</text>
-          <input ref={searchInput} class="search-in" value={searchQuery()} placeholder="Find…"
-                 onInput={(e) => { setSearchQuery(e.target.value); term.searchFocused(e.target.value); }} />
+          {/* GtkSearchEntry's glass is a leading `image.left` INSIDE the entry (gtk.css:1014); our
+              <input> has no leading-icon slot, so the field chrome (tint/radius/focus) moved to
+              THIS wrapper and the input itself went transparent/borderless — icon + input then sit
+              side by side inside the SAME visual box (flex, not absolute positioning: the engine
+              has no `position: absolute`), which reads as "icon inside the field, text indented
+              after it" without needing one. */}
+          <div class="search-in-wrap">
+            <text class="search-icon">⌕</text>
+            <input ref={searchInput} class="search-in" value={searchQuery()} placeholder="Find…"
+                   onInput={(e) => { setSearchQuery(e.target.value); term.searchFocused(e.target.value); }} />
+          </div>
           <text class="search-count">{searchCount() > 0 ? (searchIdx() + " / " + searchCount()) : "0 / 0"}</text>
           <button class="search-btn" onClick={() => term.searchPrev()}>‹</button>
           <button class="search-btn" onClick={() => term.searchNext()}>›</button>
