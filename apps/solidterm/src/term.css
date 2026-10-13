@@ -37,11 +37,29 @@
   padding: 5px 12px; border-top: 1px solid #1a1a1a; font-size: 11px;
 }
 
-/* right-click menu — tilix/Adwaita popover geometry (flat, rounded; colours from palette) */
-.tmenu .popup { border-radius: 9px; padding: 5px; }
-.tmenu .option { border-radius: 6px; }
-.tmenu .option-label { font-size: 13px; }
-.tmenu .sep { margin: 4px 6px; }
+/* right-click menu (+ pane-header dropdown, same <Menu>/<ContextMenu class="tmenu">) — real Adwaita
+   popover.menu geometry, measured from the installed theme (gresource extract
+   /usr/lib/libadwaita-1.so.0 /org/gnome/Adwaita/styles/gtk.css): outer card radius 15px
+   (gtk.css:2111, `popover > contents { border-radius: 15px }` — no `.menu`-specific override), row
+   radius 9px (gtk.css:1771/1795, `modelbutton`/`list > row`), separator margin 6px 0 (gtk.css:1747,
+   edge-to-edge — the 6px side gutter already comes from the Menu's own content padding, C++
+   menuwidgets.cpp). The card's own CSS `padding` was a no-op here (cssfill.cpp: `padding` only
+   insets a box's CHILDREN, and this background CssFill is a childless leaf — see menuwidgets.cpp's
+   kMenuBackground) — the real inner gutter is native `Menu` padding instead.
+   NOTE: the engine (cssrect.cpp) only renders a flat border + outset box-shadow for `<Menu>`'s
+   background (a CssFill); it never composites a half-transparent WINDOW over desktop content (no
+   actual pixels "behind" to blur) — the shadow's softness/opacity carries that "elevated card" read.
+   COMPOUND selectors (`.tmenu.popup`, no space) — NOT `.tmenu .popup`: Popup content reparents to
+   the window Overlay, severing the visual ancestor chain descendant selectors walk, and `cssAncestor`
+   only re-anchors the walk at the Menu's OWN background/content slots (it doesn't make "tmenu" a real
+   ancestor of anything). The transpiler instead merges the Menu's author class straight into each
+   node's own cssClass (menuwidgets.cpp's kMenuBackground already did this for the card; MenuItem/
+   MenuSeparator's new `menuClass` property does it for rows/separators) — so "tmenu" and "popup"/
+   "option"/"sep" sit on the SAME element, and the selector must ask for both on self, not ancestor+self. */
+.tmenu.popup { border-radius: 15px; }
+.tmenu.option { border-radius: 9px; }
+.tmenu.option-label { font-size: 13px; }
+.tmenu.sep { margin: 6px 0; }
 
 /* preferences window — GNOME Settings geometry (grouped cards of label→control rows).
    Fixed-height scroll body + pinned footer so the window stays a sane size and the list scrolls. */

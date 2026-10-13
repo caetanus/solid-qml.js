@@ -125,8 +125,10 @@ test("menus: the C++ Menu hosts the popup shell (implicit size, Popup.Window, cs
   // ref/trigger/context forms so the Wayland grab gets a fresh input serial).
   assert.match(src, /setPopupType\(QQuickPopup::Window\)/);
   // Width floor on the POPUP itself — a background CssFill's implicitWidth is clobbered by the engine.
-  assert.match(src, /setImplicitWidth\(qMax<qreal>\(180\.0, implicitContentWidth\(\) \+ leftPadding\(\) \+ rightPadding\(\)\)\)/);
-  assert.match(src, /setPadding\(1\)/);
+  assert.match(src, /setImplicitWidth\(qMax<qreal>\(180\.0, qMax\(implicitContentWidth\(\) \+ leftPadding\(\) \+ rightPadding\(\),/);
+  // Padding reserves BOTH the transparent shadow gutter and the real Adwaita row inset (see
+  // kMenuShadowMargin/kMenuContentGutter in menuwidgets.cpp) — no longer a bare `setPadding(1)`.
+  assert.match(src, /setPadding\(kMenuShadowMargin \+ kMenuContentGutter\)/);
   // background .popup CssFill (author class merged) + contentItem ListView over contentModel; BOTH
   // re-anchor the CSS walk (sibling slots covering every descendant).
   assert.match(src, /cssClass: \(root\.authorClass \|\| \[\]\)\.concat\(\["popup"\]\)/);
@@ -154,13 +156,17 @@ test("menus: the C++ MenuItem hosts the .option slots, cursor and mnemonic under
   const src = await readFile(fileURLToPath(new URL("../../src/widgets/menuwidgets.cpp", import.meta.url)), "utf8")
     + await readFile(fileURLToPath(new URL("../../src/widgets/menuwidgets.h", import.meta.url)), "utf8");
   assert.match(src, /class MenuItem : public QQuickMenuItem/);
-  assert.match(src, /cssClass: \["option"\]/);
-  assert.match(src, /cssState: root\.highlighted \? \["hover"\] : \[\]/);
-  assert.match(src, /cssClass: \["option-label"\]/);
+  // The row's cssClass merges in the OWNING Menu's author class (menuClass) — a descendant
+  // selector like `.tmenu .option` can't reach it after Popup content reparents to the Overlay.
+  assert.match(src, /cssClass: \(root\.menuClass \|\| \[\]\)\.concat\(\["option"\]\)/);
+  assert.match(src, /cssState: \(root\.pressed \? \["active"\] : \[\]\)\.concat\(root\.highlighted \? \["hover"\] : \[\]\)/);
+  assert.match(src, /cssClass: \(root\.menuClass \|\| \[\]\)\.concat\(\["option-label"\]\)/);
   // The mnemonic marker renders as a real underline: `&N` → <u>N</u> via StyledText, with the
   // author text entity-escaped and `&&` as a literal ampersand.
   assert.match(src, /styledText: true/);
-  assert.match(src, /text: root\.__mnemonicMarkup\(root\.text\)/);
+  // A checkmark column precedes the mnemonic-marked label for `checkable` rows (solidterm's "Read
+  // only" toggle, e.g.) — real Adwaita reserves the same column whether checked or not.
+  assert.match(src, /text: \(root\.checkable \? \(root\.checked \? "✓ " : "   "\) : ""\) \+ root\.__mnemonicMarkup\(root\.text\)/);
   assert.match(src, /QLatin1String\("<u>"\) \+ s\.at\(i\) \+ QLatin1String\("<\/u>"\)/);
   // Pointing-hand cursor (desktop affordance).
   assert.match(src, /setCursor\(QCursor\(Qt::PointingHandCursor\)\)/);
@@ -219,12 +225,12 @@ test("menus: <Menu trigger> that isn't a button throws a clear error", async () 
 
 test("menus: <MenuSeparator> emits a bare W.MenuSeparator (internals in MenuSeparator.qml)", async () => {
   const out = await qml(MENU_SRC);
-  assert.match(out, /W\.MenuSeparator \{ \}/);
+  assert.match(out, /W\.MenuSeparator \{ menuClass: __menu0\.authorClass \}/);
   assert.doesNotMatch(out, /T\.MenuSeparator/);
   const src = await readFile(fileURLToPath(new URL("../../src/widgets/menuwidgets.cpp", import.meta.url)), "utf8")
     + await readFile(fileURLToPath(new URL("../../src/widgets/menuwidgets.h", import.meta.url)), "utf8");
   assert.match(src, /class MenuSeparator : public QQuickMenuSeparator/);
-  assert.match(src, /cssClass: \["sep"\]/);
+  assert.match(src, /cssClass: \(root\.menuClass \|\| \[\]\)\.concat\(\["sep"\]\)/);
   assert.match(src, /implicitHeight: 1/);
 });
 
@@ -527,7 +533,7 @@ test("contextmenu: <ContextMenu> fills its parent and opens at the cursor on rig
   assert.match(out, /W\.Menu \{/);
   assert.match(out, /onMenuClosed: \{ last = "closed" \}/);
   assert.equal((out.match(/W\.MenuItem \{/g) ?? []).length, 2);
-  assert.match(out, /W\.MenuSeparator \{ \}/);
+  assert.match(out, /W\.MenuSeparator \{ menuClass: __menu0\.authorClass \}/);
 });
 
 test("contextmenu: suppressWhen declines the press instead of opening (solidterm mouse reporting)", async () => {
@@ -601,9 +607,9 @@ const SPELL_MENU_SRC = `
 test("menus <For>: an Instantiator whose delegate IS the row, wired to insertItem/removeItem (Qt's own documented dynamic-menu-items pattern — no C++ change needed)", async () => {
   const out = await qml(SPELL_MENU_SRC);
   assert.match(out,
-    /Instantiator \{\n\s*id: __menuDyn\d+\n\s*model: sugg\n\s*delegate: Component \{\n\s*W\.MenuItem \{\n\s*text: \(modelData\)\n\s*onTriggered: \{ replaceWith\(modelData\) \}\n\s*\}\n\s*\}\n\s*onObjectAdded: \(index, object\) => __menu0\.insertItem\(0 \+ index, object\)\n\s*onObjectRemoved: \(index, object\) => __menu0\.removeItem\(object\)\n\s*\}/);
+    /Instantiator \{\n\s*id: __menuDyn\d+\n\s*model: sugg\n\s*delegate: Component \{\n\s*W\.MenuItem \{\n\s*menuClass: __menu0\.authorClass\n\s*text: \(modelData\)\n\s*onTriggered: \{ replaceWith\(modelData\) \}\n\s*\}\n\s*\}\n\s*onObjectAdded: \(index, object\) => __menu0\.insertItem\(0 \+ index, object\)\n\s*onObjectRemoved: \(index, object\) => __menu0\.removeItem\(object\)\n\s*\}/);
   // The static items before/after the <For> are untouched, in source order.
-  assert.match(out, /\}\n\s*W\.MenuSeparator \{ \}\n\s*W\.MenuItem \{\n\s*text: "Add to dictionary"/);
+  assert.match(out, /\}\n\s*W\.MenuSeparator \{ menuClass: __menu0\.authorClass \}\n\s*W\.MenuItem \{\n\s*menuClass: __menu0\.authorClass\n\s*text: "Add to dictionary"/);
 });
 
 test("menus <For>: i() routes through the reserved __forIndex property, never the bare `index`", async () => {
@@ -611,7 +617,7 @@ test("menus <For>: i() routes through the reserved __forIndex property, never th
     let r; const [sugg] = createSignal(["a","b"]);
     return <Menu ref={r}><For each={sugg()}>{(w, i) => <MenuItem onClick={() => console.log(w, i())}>{w}</MenuItem>}</For></Menu>;
   }`);
-  assert.match(out, /delegate: Component \{\n\s*W\.MenuItem \{\n\s*property int __forIndex: index\n\s*text: \(modelData\)\n\s*onTriggered: \{ console\.log\(modelData, __forIndex\) \}/);
+  assert.match(out, /delegate: Component \{\n\s*W\.MenuItem \{\n\s*property int __forIndex: index\n\s*menuClass: __menu0\.authorClass\n\s*text: \(modelData\)\n\s*onTriggered: \{ console\.log\(modelData, __forIndex\) \}/);
   assert.doesNotMatch(out, /console\.log\(modelData, index\)/);
 });
 
@@ -640,7 +646,7 @@ test("menus <For>: a <MenuSeparator> row (no text/onTriggered)", async () => {
     let r; const [a] = createSignal([1,2]);
     return <Menu ref={r}><For each={a()}>{() => <MenuSeparator />}</For></Menu>;
   }`);
-  assert.match(out, /Instantiator \{\n\s*id: __menuDyn\d+\n\s*model: a\n\s*delegate: Component \{\n\s*W\.MenuSeparator \{ \}\n\s*\}/);
+  assert.match(out, /Instantiator \{\n\s*id: __menuDyn\d+\n\s*model: a\n\s*delegate: Component \{\n\s*W\.MenuSeparator \{ menuClass: __menu0\.authorClass \}\n\s*\}/);
 });
 
 test("menus <For>: row must be a single <MenuItem>/<MenuSeparator> — a <div> row fails loud", async () => {
@@ -661,12 +667,12 @@ test("menus <Show>: wraps one or more <MenuItem>/<MenuSeparator> — one Instant
       <MenuItem>Always</MenuItem>
     </Menu>;
   }`);
-  const m1 = /Instantiator \{\n\s*id: (__menuDyn\d+)\n\s*model: \(adv\) \? 1 : 0\n\s*delegate: Component \{\n\s*W\.MenuItem \{\n\s*text: "Advanced"\n\s*onTriggered: \{ adv = false \}\n\s*\}\n\s*\}\n\s*onObjectAdded: \(index, object\) => __menu0\.insertItem\((\d+) \+ index, object\)/.exec(out);
+  const m1 = /Instantiator \{\n\s*id: (__menuDyn\d+)\n\s*model: \(adv\) \? 1 : 0\n\s*delegate: Component \{\n\s*W\.MenuItem \{\n\s*menuClass: __menu0\.authorClass\n\s*text: "Advanced"\n\s*onTriggered: \{ adv = false \}\n\s*\}\n\s*\}\n\s*onObjectAdded: \(index, object\) => __menu0\.insertItem\((\d+) \+ index, object\)/.exec(out);
   assert.ok(m1, "first Show item (MenuItem): base has no .count term (nothing dynamic precedes it)");
   assert.equal(m1![2], "0");
-  const m2 = new RegExp(`Instantiator \\{\\n\\s*id: __menuDyn\\d+\\n\\s*model: \\(adv\\) \\? 1 : 0\\n\\s*delegate: Component \\{\\n\\s*W\\.MenuSeparator \\{ \\}\\n\\s*\\}\\n\\s*onObjectAdded: \\(index, object\\) => __menu0\\.insertItem\\(0 \\+ ${m1![1]}\\.count \\+ index, object\\)`).exec(out);
+  const m2 = new RegExp(`Instantiator \\{\\n\\s*id: __menuDyn\\d+\\n\\s*model: \\(adv\\) \\? 1 : 0\\n\\s*delegate: Component \\{\\n\\s*W\\.MenuSeparator \\{ menuClass: __menu0\\.authorClass \\}\\n\\s*\\}\\n\\s*onObjectAdded: \\(index, object\\) => __menu0\\.insertItem\\(0 \\+ ${m1![1]}\\.count \\+ index, object\\)`).exec(out);
   assert.ok(m2, "second Show item (separator): base folds in the first item's own Instantiator .count");
-  assert.match(out, /W\.MenuItem \{\n\s*text: "Always"/);
+  assert.match(out, /W\.MenuItem \{\n\s*menuClass: __menu0\.authorClass\n\s*text: "Always"/);
 });
 
 test("menus <Show>: nesting <For>/<Show> inside the gate is out of scope — fails loud", async () => {
@@ -685,7 +691,7 @@ test("menus: disabled/checked on a <MenuItem> (static) — new reactive props, z
     let r; const [wrap, setWrap] = createSignal(true);
     return <Menu ref={r}><MenuItem checked={wrap()} disabled={!wrap()}>Word wrap</MenuItem></Menu>;
   }`);
-  assert.match(out, /W\.MenuItem \{\n\s*text: "Word wrap"\n\s*checkable: true\n\s*checked: wrap\n\s*enabled: !\(!wrap\)\n\s*\}/);
+  assert.match(out, /W\.MenuItem \{\n\s*menuClass: __menu0\.authorClass\n\s*text: "Word wrap"\n\s*checkable: true\n\s*checked: wrap\n\s*enabled: !\(!wrap\)\n\s*\}/);
 });
 
 test("menus <For>: row items get disabled/checked too (reactive per row, via the row value)", async () => {
@@ -712,8 +718,8 @@ test("contextmenu <For>: the same dynamic-item support (shares emitMenuItemLines
       <MenuItem onClick={() => 0}>Add to dictionary</MenuItem>
     </ContextMenu></div>;
   }`);
-  assert.match(out, /Instantiator \{\n\s*id: __menuDyn\d+\n\s*model: sugg\n\s*delegate: Component \{\n\s*W\.MenuItem \{\n\s*text: \(modelData\)/);
-  assert.match(out, /W\.MenuItem \{\n\s*text: "Add to dictionary"/);
+  assert.match(out, /Instantiator \{\n\s*id: __menuDyn\d+\n\s*model: sugg\n\s*delegate: Component \{\n\s*W\.MenuItem \{\n\s*menuClass: __menu0\.authorClass\n\s*text: \(modelData\)/);
+  assert.match(out, /W\.MenuItem \{\n\s*menuClass: __menu0\.authorClass\n\s*text: "Add to dictionary"/);
 });
 
 test("menu trigger <For>: the self-managed trigger form shares the same dynamic-item path", async () => {
@@ -723,5 +729,5 @@ test("menu trigger <For>: the self-managed trigger form shares the same dynamic-
       <For each={sugg()}>{(w) => <MenuItem onClick={() => 0}>{w}</MenuItem>}</For>
     </Menu>;
   }`);
-  assert.match(out, /Instantiator \{\n\s*id: __menuDyn\d+\n\s*model: sugg\n\s*delegate: Component \{\n\s*W\.MenuItem \{\n\s*text: \(modelData\)/);
+  assert.match(out, /Instantiator \{\n\s*id: __menuDyn\d+\n\s*model: sugg\n\s*delegate: Component \{\n\s*W\.MenuItem \{\n\s*menuClass: __menu0\.authorClass\n\s*text: \(modelData\)/);
 });

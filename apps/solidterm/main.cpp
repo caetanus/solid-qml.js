@@ -476,6 +476,50 @@ int main(int argc, char **argv)
         });
     }
 
+    // Debug/CI: SOLIDTERM_CTXMENU=<prefix> right-clicks the centre of the first TerminalView after a
+    // settle — a real Qt::RightButton press+release through QCoreApplication::sendEvent (the same
+    // delivery path a user's right-click takes, so ContextMenu's own MouseArea + suppressWhen run
+    // for real), opening the terminal's right-click menu as its own Popup.Window, then grabs EVERY
+    // top-level window (main window + the popup) to <prefix>-<i>.png and quits — mirrors
+    // SOLIDTERM_PANEMENU (which opens the pane-header dropdown; combine it with SOLIDTERM_PLAINSHOT
+    // to grab THAT one, since it already calls openPaneMenu() directly instead of clicking).
+    const QString ctxMenuShot = qEnvironmentVariable("SOLIDTERM_CTXMENU");
+    if (!ctxMenuShot.isEmpty() && window) {
+        QTimer::singleShot(1600, window, [&engine, window, ctxMenuShot] {
+            TerminalView *view = nullptr;
+            for (QObject *o : engine.rootObjects()) {
+                if (auto *w = qobject_cast<QQuickWindow *>(o)) {
+                    QList<QQuickItem *> stack { w->contentItem() };
+                    while (!stack.isEmpty() && !view) {
+                        QQuickItem *it = stack.takeLast();
+                        view = qobject_cast<TerminalView *>(it);
+                        for (QQuickItem *k : it->childItems()) stack.append(k);
+                    }
+                }
+            }
+            if (!view) {
+                qWarning("solidterm: ctxmenu found no TerminalView");
+                QCoreApplication::quit();
+                return;
+            }
+            const QPointF p = view->mapToScene(QPointF(view->width() / 2, view->height() / 2));
+            const QPointF g = window->mapToGlobal(p.toPoint());
+            QMouseEvent press(QEvent::MouseButtonPress, p, g, Qt::RightButton, Qt::RightButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(window, &press);
+            QMouseEvent release(QEvent::MouseButtonRelease, p, g, Qt::RightButton, Qt::NoButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(window, &release);
+            // Settle for the popup window to be created and painted before grabbing.
+            QTimer::singleShot(400, qApp, [ctxMenuShot] {
+                int i = 0;
+                for (QWindow *w : QGuiApplication::topLevelWindows()) {
+                    if (auto *qw = qobject_cast<QQuickWindow *>(w))
+                        qw->grabWindow().save(QStringLiteral("%1-%2.png").arg(ctxMenuShot).arg(i++));
+                }
+                QCoreApplication::quit();
+            });
+        });
+    }
+
     // Debug: SOLIDTERM_MOUSETEST=1 (or "x,y", window-local, to override the point) synthesises a
     // real left-click press+release and a wheel-up notch after a settle — through
     // QCoreApplication::sendEvent(window, …) like SENDKEYS does for keys, so Qt Quick's own

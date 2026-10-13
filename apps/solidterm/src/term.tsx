@@ -200,7 +200,7 @@ export function Term(props: { onTitle: (t: string) => void }) {
     <div class="term-root">
       <Menu ref={paneMenu} class="tmenu">
         <MenuItem onClick={() => paneFind()}>&Find…</MenuItem>
-        <MenuItem onClick={() => paneToggleReadOnly()}>{paneReadOnly() ? "Read only ✓" : "Read only"}</MenuItem>
+        <MenuItem checked={paneReadOnly()} onClick={() => paneToggleReadOnly()}>Read only</MenuItem>
         <MenuSeparator />
         <MenuItem onClick={() => term.copyFocused()}>&Copy</MenuItem>
         <MenuItem onClick={() => term.pasteFocused()}>&Paste</MenuItem>

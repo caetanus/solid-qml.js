@@ -7,6 +7,25 @@
 
 namespace {
 
+// Transparent window margin reserved on every side of the popup so the outset `box-shadow` (a
+// MultiEffect blur that bleeds past the "popup" CssFill's own bounds — see cssrect.cpp's outset-
+// shadow Loader) has somewhere to paint without being clipped by the popup WINDOW's own surface.
+// This can't be the usual Popup recipe of NEGATIVE insets (qquickpopup.cpp doc comment, "Negative
+// insets can be used to make the background larger than the popup… to place a shadow outside the
+// popup's boundaries"): QQuickPopupPrivate::windowInsets() (qquickpopup.cpp:671-705) hard-codes
+// `{0,0,0,0}` on Wayland regardless of sign ("assume the compositor will draw window decorations"),
+// so a negative inset would never grow the window here. POSITIVE insets work instead: they shrink
+// the background WITHIN space the control's own implicit size (padding, below) already reserves —
+// Qt (via QQuickPopupWindow::implicit{Width,Height}Changed) sizes the Wayland popup window to
+// exactly that implicit size, insets or not. Qt itself already makes the window's surface
+// transparent for a `Qt::Popup`-flagged window (qquickpopupwindow.cpp:73-75), so nothing else is
+// needed to let the blur show through.
+constexpr qreal kMenuShadowMargin = 32.0;
+// Real Adwaita popover.menu content gutter: `popover.menu contents > list { padding: 6px 0 }`
+// (gtk.css:1809, extracted from /usr/lib/libadwaita-1.so.0's `/org/gnome/Adwaita/styles/gtk.css`
+// gresource) — rows sit this far inside the visible (inset) card, not inside the shadow margin.
+constexpr qreal kMenuContentGutter = 6.0;
+
 // Original Menu.qml slot internals — `root` = the C++ menu.
 const char *kMenuBackground = R"(import QtQuick
 import qmlcss 1.0 as Css
@@ -36,30 +55,37 @@ ListView {
 }
 )";
 
-// Original MenuItem.qml slot internals.
+// Original MenuItem.qml slot internals. `menuClass` (the owning Menu's author class, e.g.
+// "tmenu") is merged straight into this row's OWN cssClass — see the Q_PROPERTY doc comment in
+// menuwidgets.h for why a descendant selector can't reach it instead.
 const char *kItemBackground = R"(import qmlcss 1.0 as Css
 Css.CssFill {
     cssPrimitive: "div"
-    cssClass: ["option"]
-    cssState: root.highlighted ? ["hover"] : []
+    cssClass: (root.menuClass || []).concat(["option"])
+    cssState: (root.pressed ? ["active"] : []).concat(root.highlighted ? ["hover"] : [])
 }
 )";
 
+// A real checkmark for `checkable`/`checked` MenuItems (e.g. solidterm's "Read only" toggle),
+// instead of the item author splicing "✓" into its own label text. Adwaita reserves the check's
+// column whether checked or not (gtk.css:1757 `popover.menu check { min-width: 14px; padding: 2px }`
+// + margin-right 6px, gtk.css:1767) — approximated here with a fixed-width glyph column since we
+// draw the mark as text, not a separate indicator node.
 const char *kItemLabel = R"(import qmlcss 1.0 as Css
 Css.CssText {
     cssPrimitive: ""
-    cssClass: ["option-label"]
+    cssClass: (root.menuClass || []).concat(["option-label"])
     styledText: true
-    text: root.__mnemonicMarkup(root.text)
+    text: (root.checkable ? (root.checked ? "✓ " : "   ") : "") + root.__mnemonicMarkup(root.text)
 }
 )";
 
 // Original MenuSeparator.qml contentItem: a 1px `.sep` rule; padding ≥ the .sep height keeps the
-// rule off the popup's border.
+// rule off the popup's border. `menuClass` as above.
 const char *kSeparatorRule = R"(import qmlcss 1.0 as Css
 Css.CssRect {
     cssPrimitive: "div"
-    cssClass: ["sep"]
+    cssClass: (root.menuClass || []).concat(["sep"])
     implicitHeight: 1
 }
 )";
@@ -81,8 +107,15 @@ Menu::Menu(QObject *parent)
     // (`<Menu open={sig}>`) fails the grab ("Failed to create grabbing popup"). The emitter therefore
     // opens every menu imperatively: <Menu ref={r}> → r.open(x,y), <Menu trigger>, <ContextMenu>.
     setPopupType(QQuickPopup::Window);
-    // padding ≥ border-width keeps the popup CssFill border from clipping rows (G3).
-    setPadding(1);
+    // Reserve the shadow's transparent gutter (see kMenuShadowMargin above) by pulling the visible
+    // "popup" background IN from the control edge…
+    setTopInset(kMenuShadowMargin);
+    setLeftInset(kMenuShadowMargin);
+    setRightInset(kMenuShadowMargin);
+    setBottomInset(kMenuShadowMargin);
+    // …and pushing the content (the row ListView) in far enough to clear BOTH that margin and the
+    // real Adwaita row gutter on top of it (also ≥ the 1px border width, so it never clips — G3).
+    setPadding(kMenuShadowMargin + kMenuContentGutter);
     connect(this, &QQuickPopup::closed, this, [this] {
         m_closedAt = static_cast<double>(QDateTime::currentMSecsSinceEpoch());
         emit closedAtChanged();
@@ -91,6 +124,7 @@ Menu::Menu(QObject *parent)
     // Templates popups have NO implicit-size policy (that's the style's job, and we ARE the
     // style): without explicit sizes the menu opens 0x0. The width floor lives on the POPUP, not
     // the background — a background CssFill's implicitWidth is clobbered by the engine's content pass.
+    connect(this, &QQuickPopup::implicitBackgroundWidthChanged, this, &Menu::syncImplicit);
     connect(this, &QQuickPopup::implicitBackgroundHeightChanged, this, &Menu::syncImplicit);
     connect(this, &QQuickPopup::implicitContentWidthChanged, this, &Menu::syncImplicit);
     connect(this, &QQuickPopup::implicitContentHeightChanged, this, &Menu::syncImplicit);
@@ -133,7 +167,8 @@ void Menu::componentComplete()
 
 void Menu::syncImplicit()
 {
-    setImplicitWidth(qMax<qreal>(180.0, implicitContentWidth() + leftPadding() + rightPadding()));
+    setImplicitWidth(qMax<qreal>(180.0, qMax(implicitContentWidth() + leftPadding() + rightPadding(),
+                                              implicitBackgroundWidth() + leftInset() + rightInset())));
     setImplicitHeight(qMax(implicitBackgroundHeight() + topInset() + bottomInset(),
                            implicitContentHeight() + topPadding() + bottomPadding()));
 }
@@ -153,6 +188,14 @@ MenuItem::MenuItem(QQuickItem *parent)
     setCursor(QCursor(Qt::PointingHandCursor));
     connect(this, &QQuickControl::implicitContentWidthChanged, this, &MenuItem::syncImplicit);
     connect(this, &QQuickControl::paddingChanged, this, &MenuItem::syncImplicit);
+}
+
+void MenuItem::setMenuClass(const QVariant &v)
+{
+    if (m_menuClass == v)
+        return;
+    m_menuClass = v;
+    emit menuClassChanged();
 }
 
 QString MenuItem::__mnemonicMarkup(const QString &s) const
@@ -200,6 +243,14 @@ MenuSeparator::MenuSeparator(QQuickItem *parent)
     setPadding(4);
     setImplicitWidth(180);
     setImplicitHeight(9);
+}
+
+void MenuSeparator::setMenuClass(const QVariant &v)
+{
+    if (m_menuClass == v)
+        return;
+    m_menuClass = v;
+    emit menuClassChanged();
 }
 
 void MenuSeparator::componentComplete()
