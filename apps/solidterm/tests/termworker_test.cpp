@@ -8,7 +8,10 @@
 //  3. output never blocks: 4 MB queued for a child that is not reading returns at once, and all of
 //     it arrives once the child reads;
 //  4. stop() mid-flood joins promptly and nothing is fed afterwards;
-//  5. the child's exit is reported through the sink.
+//  5. the child's exit is reported through the sink;
+//  6. UTF-8: libvterm (0.3.3) turns a sequence split across two feeds into U+FFFD, so no feed may
+//     start or end inside one — whether the split comes from a 4 KiB slice or from a read boundary
+//     (a tmux %output line, or a program's write, can end anywhere).
 #include "../native/termworker.h"
 
 #include <atomic>
@@ -23,6 +26,7 @@
 #include <sys/wait.h>
 #include <termios.h>
 #include <thread>
+#include <vector>
 #include <unistd.h>
 
 namespace {
@@ -268,6 +272,66 @@ void testExit()
 
 } // namespace
 
+bool cont(unsigned char c) { return (c & 0xc0) == 0x80; }
+
+void testUtf8Boundaries()
+{
+    // 2-, 3- and 4-byte sequences, written in pieces that cut through them (separate reads), then a
+    // long run that crosses many 4 KiB slices.
+    Child ch("python3 -c \""
+             "import sys,time\n"
+             "o=sys.stdout.buffer\n"
+             "u='a\\u00e9\\u20ac\\U0001F680'.encode()\n"
+             "for k in range(1,len(u)):\n"
+             " o.write(u[:k]);o.flush();time.sleep(0.02);o.write(u[k:]);o.flush();time.sleep(0.02)\n"
+             "o.write(u*5000);o.write(b'UTF8-END');o.flush()\n"
+             "\"");
+    Ctx c;
+    std::vector<std::string> feeds;
+    struct Rec {
+        Ctx *c;
+        std::vector<std::string> *feeds;
+    } rec { &c, &feeds };
+    static const TermWorkerSink sink = {
+        [](void *u, const char *d, size_t n) {
+            auto *r = static_cast<Rec *>(u);
+            r->c->data.append(d, n);
+            r->c->fed += (long long)n;
+            r->feeds->emplace_back(d, n);
+            return true;
+        },
+        [](void *u) { static_cast<Rec *>(u)->c->exited = true; },
+        nullptr,
+    };
+    TermWorker w;
+    CHECK(w.start(ch.master, &c.mutex, &sink, &rec), "start");
+    pumpGui(w, c, 20000, [&] { return c.data.find("UTF8-END") != std::string::npos; });
+    w.stop();
+    const std::string u = "a\xc3\xa9\xe2\x82\xac\xf0\x9f\x9a\x80";
+    std::string want;
+    for (size_t k = 1; k < u.size(); ++k)
+        want += u;
+    for (int k = 0; k < 5000; ++k)
+        want += u;
+    want += "UTF8-END";
+    CHECK(c.data == want, "data intact (%zu bytes, want %zu)", c.data.size(), want.size());
+    int bad = 0;
+    for (const std::string &f : feeds) {
+        if (f.empty())
+            continue;
+        const unsigned char first = static_cast<unsigned char>(f.front());
+        size_t back = 0;
+        while (back < 3 && back < f.size() && cont(static_cast<unsigned char>(f[f.size() - 1 - back])))
+            ++back;
+        const unsigned char lead = back < f.size() ? static_cast<unsigned char>(f[f.size() - 1 - back]) : 0;
+        const size_t need = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
+        if (cont(first) || need > back + 1)
+            ++bad;
+    }
+    CHECK(bad == 0, "%d of %zu feeds start or end inside a UTF-8 sequence", bad, feeds.size());
+    std::printf("utf8: %zu feeds, %d split a sequence\n", feeds.size(), bad);
+}
+
 int main()
 {
     ::signal(SIGPIPE, SIG_IGN);
@@ -276,6 +340,7 @@ int main()
     testOutputNeverBlocks();
     testStopMidFlood();
     testExit();
+    testUtf8Boundaries();
     if (g_failures)
         std::fprintf(stderr, "%d failure(s)\n", g_failures);
     else

@@ -37,6 +37,9 @@ public:
     // Cell metrics in LOGICAL pixels (a whole number of PHYSICAL pixels, so cells stay pixel-aligned).
     qreal cellWidth() const { return m_cellW / m_dpr; }
     qreal cellHeight() const { return m_cellH / m_dpr; }
+    // The cell metrics setFont() would give (logical px), without building an atlas: the tmux mode
+    // sizes the session in cells before any view exists (docs/solidterm-tmux-control-mode.md 2.3).
+    static void cellMetrics(const QString &family, int pixelSize, qreal dpr, qreal *cellW, qreal *cellH);
 
     // Ensure a glyph is in the atlas; returns its atlas UV rect. `cluster` is the cell's text
     // (usually one char; combining marks / wide chars form a longer cluster).

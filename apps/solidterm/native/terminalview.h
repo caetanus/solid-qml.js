@@ -14,6 +14,9 @@
 
 #include <vterm.h>
 
+#include <memory>
+
+namespace tmux { class Client; }
 class QSGTexture;
 class QSGImageNode;
 class QSGGeometryNode;
@@ -47,13 +50,39 @@ public:
     // starts at completion). Wins over the window's/pending context: a split starts in the focused
     // pane's directory.
     void setStartContext(const SpawnContext &ctx) { m_start = ctx; m_hasStart = true; }
-    // The shell's current working directory (/proc/<pid>/cwd), or empty if unknown.
+    // The shell's current working directory (/proc/<pid>/cwd), or empty if unknown. A tmux pane
+    // reports #{pane_current_path} as last listed.
     QString currentDirectory() const;
+
+    // ── tmux mode (docs/solidterm-tmux-control-mode.md 3.1) ──────────────────────────────────────
+    // Set between beginCreate and completeCreate: this view shows tmux pane `pane` of `client`.
+    // Nothing forks — the parser thread reads the pane's feed pipe instead of a pty master, so the
+    // worker, TermScreen and the renderer are the same code. Branches on m_tmux live only at the cold
+    // sites (start, grid, write, exit, cwd); there is no per-byte cost.
+    void setTmuxPane(std::shared_ptr<tmux::Client> client, int pane);
+    int tmuxPane() const;
+    void setTmuxCwd(const QString &cwd);
+    // The layout decides the grid (2.3): applyGrid uses rows x cols instead of deriving them from
+    // the pixel size (which matches by construction, up to float error). 0 = derive as usual.
+    void setImposedGrid(int rows, int cols);
+    // Debug/tests: scrollback + screen as text, one line per row, then "cursor R,C", "alt 0|1",
+    // "sb N". dumpScreen does the same for any TermScreen (the oracle feeds a bare one).
+    Q_INVOKABLE QString debugDump() const;
+    static QString dumpScreen(const TermScreen &term);
+    QSize debugGrid() const { return QSize(m_cols, m_rows); }
+    // Tests (tmux mode): every grid this view's parser had, with the number of bytes it had parsed
+    // when the grid changed — the oracle replays the same resizes at the same stream points.
+    QList<QList<qint64>> debugGridLog() const;
 
 private:
     static inline const SpawnContext *s_pendingSpawn = nullptr;
     SpawnContext m_start;
     bool m_hasStart = false;
+    struct TmuxLink;
+    std::unique_ptr<TmuxLink> m_tmux;    // null for a local (pty) pane
+    int m_imposedRows = 0, m_imposedCols = 0;
+    uint64_t m_fedBytes = 0;             // bytes parsed (lock held; one add per slice)
+    QList<QList<qint64>> m_gridLog;      // tmux mode: {fedBytes, rows, cols} per grid change
 
     Q_PROPERTY(QString fontFamily READ fontFamily WRITE setFontFamily NOTIFY fontChanged)
     Q_PROPERTY(int fontSize READ fontSize WRITE setFontSize NOTIFY fontChanged)

@@ -1,0 +1,29 @@
+## Every notification tmux 3.7c sends a control client (control-notify.c, control.c, cfg.c,
+## cmd-display-message.c, client.c), in the shapes the code writes them, plus one unknown.
+%sessions-changed
+%session-changed $1 work space
+%session-renamed $1 renamed session
+%session-renamed bare-name
+%session-window-changed $1 @4
+%client-session-changed /dev/pts/7 $2 other
+%client-detached client-4242
+%window-add @4
+%window-renamed @4 vim main.cpp
+%window-pane-changed @4 %9
+%layout-change @4 b25d,80x24,0,0,0 b25d,80x24,0,0,0 *
+%layout-change @4 0678,100x30,0,0{50x30,0,0[50x15,0,0,0,50x14,0,16,4],49x30,51,0[49x15,51,0,1,49x14,51,16,2]} a87d,100x30,0,0,0 *Z
+%layout-change @5 b25d,80x24,0,0,0 b25d,80x24,0,0,0
+%window-close @4
+%unlinked-window-add @7
+%unlinked-window-renamed @7 elsewhere
+%unlinked-window-close @7
+%pane-mode-changed %9
+%pause %9
+%continue %9
+%paste-buffer-changed buffer0
+%paste-buffer-deleted buffer0
+%subscription-changed cmd $1 @4 0 %9 : vim
+%message hello from display-message
+%config-error /home/ada/.tmux.conf:3: unknown command: sett
+%some-future-notification with args
+%exit detached (from session work space)

@@ -32,6 +32,30 @@ void drainFd(int fd)
     while (::read(fd, &v, sizeof v) > 0) {}
 }
 
+inline bool isContinuation(unsigned char c) { return (c & 0xc0) == 0x80; }
+
+// Bytes at the end of p[0, len) that start a UTF-8 sequence the buffer does not complete (0-3).
+size_t incompleteUtf8Tail(const char *p, size_t len)
+{
+    size_t back = 0;
+    while (back < 3 && back < len && isContinuation(static_cast<unsigned char>(p[len - 1 - back])))
+        ++back;
+    if (back == len)
+        return 0;
+    const unsigned char lead = static_cast<unsigned char>(p[len - 1 - back]);
+    const size_t need = lead >= 0xf0 && lead < 0xf8 ? 4 : lead >= 0xe0 && lead < 0xf0 ? 3 : lead >= 0xc0 ? 2 : 1;
+    return need > back + 1 ? back + 1 : 0;
+}
+
+// A slice of n < len bytes of p: moved back (at most 3 bytes) so it does not end inside a sequence.
+size_t sliceAtBoundary(const char *p, size_t n)
+{
+    size_t k = n;
+    while (k > n - 3 && k > 1 && isContinuation(static_cast<unsigned char>(p[k])))
+        --k;
+    return isContinuation(static_cast<unsigned char>(p[k])) ? n : k; // not UTF-8 there: cut anywhere
+}
+
 } // namespace
 
 TermWorker::~TermWorker()
@@ -137,7 +161,7 @@ bool TermWorker::parseCarry()
             m_mutex->unlock();
             break;
         }
-        const size_t n = m_carryLen < kSlice ? m_carryLen : kSlice;
+        const size_t n = m_carryLen <= kSlice ? m_carryLen : sliceAtBoundary(m_buf.data() + m_carryOff, kSlice);
         news |= m_sink->feed(m_user, m_buf.data() + m_carryOff, n);
         m_mutex->unlock();
         m_carryOff += n;
@@ -204,18 +228,30 @@ void TermWorker::run()
             m_mutex->unlock();
         }
         if ((fds[1].revents & (POLLIN | POLLHUP | POLLERR)) && !m_eof && m_carryLen == 0) {
-            const ssize_t n = ::read(m_master, m_buf.data(), m_buf.size());
+            // An incomplete UTF-8 sequence left by the last read goes first, completed by this one.
+            if (m_tailLen && m_tailOff)
+                std::memmove(m_buf.data(), m_buf.data() + m_tailOff, m_tailLen);
+            const size_t held = m_tailLen;
+            m_tailOff = m_tailLen = 0;
+            const ssize_t n = ::read(m_master, m_buf.data() + held, m_buf.size() - held);
             if (n > 0) {
                 if (m_sink->readProbe)
                     m_sink->readProbe(m_user, size_t(n));
+                const size_t have = held + size_t(n);
+                m_tailLen = incompleteUtf8Tail(m_buf.data(), have);
+                m_tailOff = have - m_tailLen;
                 m_carryOff = 0;
-                m_carryLen = size_t(n);
+                m_carryLen = have - m_tailLen;
             } else if (n == 0 || (errno != EAGAIN && errno != EINTR)) {
                 m_eof = true; // EOF/EIO: the shell exited
                 m_mutex->lockWriter();
+                if (held) // nothing will complete it now
+                    m_sink->feed(m_user, m_buf.data(), held);
                 m_sink->exited(m_user);
                 m_mutex->unlock();
                 m_newsPending = true;
+            } else {
+                m_tailLen = held; // EAGAIN/EINTR: keep it where it now is (the front)
             }
         }
     }

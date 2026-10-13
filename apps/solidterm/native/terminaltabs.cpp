@@ -2,6 +2,8 @@
 
 #include "terminalpanes.h"
 #include "terminalview.h"
+#include "tmuxsession.h"
+#include "glyphcache.h"
 
 #include <QClipboard>
 #include <QCoreApplication>
@@ -30,6 +32,9 @@ TerminalTabs::TerminalTabs(QQuickItem *parent)
 
 TerminalTabs::~TerminalTabs()
 {
+    // Closing a tmux window detaches: the session and its programs live on in tmux (5.1).
+    if (m_tmux)
+        m_tmux->detach();
     s_allTabs.removeAll(this);
     if (m_filteredWindow)
         m_filteredWindow->removeEventFilter(this);
@@ -48,6 +53,14 @@ void TerminalTabs::emitModel()
     titles.reserve(m_tabs.size());
     for (const Tab &t : m_tabs)
         titles.append(t.effective());
+    // Only real changes: the TSX tab bar's Repeater binds its model to these titles, and an identical
+    // re-emission from inside its own (re)layout — the bar appearing shrinks this item, whose first
+    // geometry selects the active tab again — reads as a binding loop.
+    if (m_modelEmitted && titles == m_lastTitles && m_active == m_lastActive)
+        return;
+    m_modelEmitted = true;
+    m_lastTitles = titles;
+    m_lastActive = m_active;
     emit tabsChanged(titles, m_active);
 }
 
@@ -58,7 +71,7 @@ void TerminalTabs::setTabTitle(int index, const QString &title)
     m_tabs[index].customTitle = title;
     emitModel();
     if (index == m_active)
-        emit titleChanged(m_tabs[index].effective());
+        emit titleChanged(windowTitleFor(index));
 }
 
 QString TerminalTabs::tabTitle(int index) const
@@ -99,12 +112,15 @@ TerminalPanes *TerminalTabs::makePanes()
     QQmlEngine *eng = qmlEngine(this);
     if (!eng)
         return nullptr;
+    if (m_isTmux)
+        TerminalPanes::setPendingTmux(m_tmux); // the container starts empty and follows a layout
     if (!m_panesComponent) {
         m_panesComponent = new QQmlComponent(eng, this);
         m_panesComponent->setData(QByteArrayLiteral("import SolidTerm 1.0\nTerminalPanes {}"),
                                   QUrl(QStringLiteral("qrc:/solidterm/TabPanes.qml")));
     }
     auto *panes = qobject_cast<TerminalPanes *>(m_panesComponent->create(qmlContext(this)));
+    TerminalPanes::setPendingTmux(nullptr);
     if (!panes) {
         qWarning("solidterm: tab panes failed: %s", qPrintable(m_panesComponent->errorString()));
         return nullptr;
@@ -137,7 +153,7 @@ TerminalPanes *TerminalTabs::makePanes()
         m_tabs[i].title = t;
         emitModel();
         if (i == m_active)
-            emit titleChanged(m_tabs[i].effective());
+            emit titleChanged(windowTitleFor(i));
     });
     connect(panes, &TerminalPanes::allClosed, this, [this, panes] {
         for (int k = 0; k < m_tabs.size(); ++k)
@@ -149,21 +165,32 @@ TerminalPanes *TerminalTabs::makePanes()
 void TerminalTabs::componentComplete()
 {
     QQuickItem::componentComplete();
+    if (!s_pendingTmux.isNull()) {
+        // `--tmux <name>`: the tabs are the session's windows, built as tmux reports them.
+        m_isTmux = true;
+        m_tmux = new TmuxSession(s_pendingTmux, this);
+        s_pendingTmux = QString();
+        return;
+    }
     newTab(); // the first tab
 }
 
 void TerminalTabs::newTab()
 {
+    if (m_isTmux)
+        return; // tmux: new-window (phase 3)
     TerminalPanes *panes = makePanes();
     if (!panes)
         return;
-    m_tabs.append({ panes, QString() });
+    Tab t;
+    t.panes = panes;
+    m_tabs.append(t);
     selectTab(m_tabs.size() - 1);
 }
 
 void TerminalTabs::closeTab(int index)
 {
-    if (index < 0 || index >= m_tabs.size())
+    if (index < 0 || index >= m_tabs.size() || m_isTmux) // tmux: hide/kill (owner decision 2, phase 4)
         return;
     TerminalPanes *panes = m_tabs[index].panes;
     m_tabs.removeAt(index);
@@ -200,7 +227,7 @@ void TerminalTabs::selectTab(int index)
     emitModel();
     if (auto *p = active()) {
         QMetaObject::invokeMethod(p, "refocus", Qt::QueuedConnection); // keyboard focus → its pane
-        emit titleChanged(m_tabs[index].effective());
+        emit titleChanged(windowTitleFor(index));
     }
 }
 
@@ -218,6 +245,11 @@ void TerminalTabs::geometryChange(const QRectF &n, const QRectF &o)
     if (!isComponentComplete())
         return;
     relayout();
+    if (m_tmux && width() > 0 && height() > 0) {
+        qreal cw, ch;
+        GlyphCache::cellMetrics(m_fontFamily, m_fontSize, window() ? window()->effectiveDevicePixelRatio() : 1.0, &cw, &ch);
+        m_tmux->setArea(width(), height(), cw, ch);
+    }
     if (!m_didInitialFocus && width() > 0 && height() > 0 && active()) {
         m_didInitialFocus = true;
         selectTab(m_active);
@@ -232,7 +264,7 @@ void TerminalTabs::focusInEvent(QFocusEvent *)
 
 // ─── proxied pane ops ───────────────────────────────────────────────────────────────────────────
 
-void TerminalTabs::split(int orient) { if (auto *p = active()) p->split(orient); }
+void TerminalTabs::split(int orient) { if (auto *p = active()) p->split(orient); } // no-op on a tmux tab (phase 3)
 void TerminalTabs::closeFocused() { if (auto *p = active()) p->closeFocused(); }
 void TerminalTabs::focusNext() { if (auto *p = active()) p->focusNext(); }
 void TerminalTabs::focusPrev() { if (auto *p = active()) p->focusPrev(); }
@@ -369,6 +401,13 @@ bool TerminalTabs::routeDrag(QDropEvent *event, bool drop)
     TerminalView *src = TerminalPanes::dragSource(event->mimeData());
     if (!src)
         return false; // not ours (or another process's pane: a pty cannot cross processes)
+    if (m_isTmux) { // tmux ↔ local is refused; tmux moves are commands (phase 3)
+        if (drop)
+            TerminalPanes::recordNoopDrop();
+        event->setDropAction(Qt::IgnoreAction);
+        event->accept();
+        return true;
+    }
     const QPointF scene = event->position();
     TerminalPanes *panes = active();
     const QPointF local = panes ? panes->mapFromScene(scene) : QPointF();
@@ -449,6 +488,114 @@ void TerminalTabs::adoptViewAsTab(TerminalView *v)
     TerminalPanes::adoptOnNextCreate(nullptr);
     if (!panes)
         return;
-    m_tabs.append({ panes, v->title(), QString() });
+    Tab t;
+    t.panes = panes;
+    t.title = v->title();
+    m_tabs.append(t);
     selectTab(m_tabs.size() - 1);
+}
+
+// ─── tmux mode ──────────────────────────────────────────────────────────────────────────────────
+
+TmuxSession *TerminalTabs::tmuxSession() const
+{
+    return m_tmux;
+}
+
+QString TerminalTabs::windowTitleFor(int index) const
+{
+    const QString t = (index >= 0 && index < m_tabs.size()) ? m_tabs[index].effective() : QString();
+    return m_tmux ? m_tmux->windowTitle(t) : t;
+}
+
+int TerminalTabs::tmuxTabIndex(int window) const
+{
+    for (int k = 0; k < m_tabs.size(); ++k)
+        if (m_tabs[k].tmuxWindow == window)
+            return k;
+    return -1;
+}
+
+TerminalPanes *TerminalTabs::tmuxTab(int window, bool create)
+{
+    const int i = tmuxTabIndex(window);
+    if (i >= 0)
+        return m_tabs[i].panes;
+    if (!create || !m_isTmux)
+        return nullptr;
+    TerminalPanes *panes = makePanes();
+    if (!panes)
+        return nullptr;
+    Tab t;
+    t.panes = panes;
+    t.tmuxWindow = window;
+    m_tabs.append(t);
+    if (m_tabs.size() == 1)
+        selectTab(0);
+    else {
+        panes->setVisible(false);
+        relayout();
+        emitModel();
+    }
+    return panes;
+}
+
+void TerminalTabs::tmuxRemoveTab(int window)
+{
+    const int index = tmuxTabIndex(window);
+    if (index < 0)
+        return;
+    TerminalPanes *panes = m_tabs[index].panes;
+    m_tabs.removeAt(index);
+    if (panes)
+        panes->deleteLater();
+    if (m_tabs.isEmpty()) {
+        m_active = 0;
+        emitModel();
+        return; // the session ends with its last window (detach-on-destroy): %exit closes us
+    }
+    if (m_active >= m_tabs.size())
+        m_active = m_tabs.size() - 1;
+    else if (index < m_active)
+        --m_active;
+    selectTab(m_active);
+}
+
+void TerminalTabs::tmuxRenameTab(int window, const QString &name)
+{
+    const int i = tmuxTabIndex(window);
+    if (i < 0)
+        return;
+    m_tabs[i].tmuxName = name;
+    emitModel();
+    if (i == m_active)
+        emit titleChanged(windowTitleFor(i));
+}
+
+void TerminalTabs::tmuxSelectTab(int window)
+{
+    const int i = tmuxTabIndex(window);
+    if (i >= 0 && i != m_active)
+        selectTab(i);
+}
+
+QList<int> TerminalTabs::tmuxWindows() const
+{
+    QList<int> out;
+    for (const Tab &t : m_tabs)
+        out.append(t.tmuxWindow);
+    return out;
+}
+
+QString TerminalTabs::tmuxTabName(int window) const
+{
+    const int i = tmuxTabIndex(window);
+    return i >= 0 ? m_tabs[i].effective() : QString();
+}
+
+void TerminalTabs::tmuxSessionEnded()
+{
+    m_tmux = nullptr; // nothing to detach any more
+    if (QQuickWindow *w = window())
+        w->close();
 }
