@@ -363,6 +363,7 @@ if build_solidterm
       'apps/solidterm/main.cpp',
       'apps/solidterm/native/ptysession.cpp',
       'apps/solidterm/native/terminalview.cpp',
+      'apps/solidterm/native/termscreen.cpp',
       'apps/solidterm/native/glyphcache.cpp',
       'apps/solidterm/native/terminalpanes.cpp',
       'apps/solidterm/native/terminaltabs.cpp',

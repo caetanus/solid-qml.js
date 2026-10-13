@@ -5,7 +5,6 @@
 #include "perftrace.h"
 #include "mousereport.h"
 #include "scrollanchor.h"
-#include "scrollbackcells.h"
 
 #include "qmlcss/componentcache.h"
 
@@ -181,8 +180,10 @@ TerminalView::TerminalView(QQuickItem *parent)
         // restarted the blink QTimer (3.5%). Nothing renders mid-batch, so the observable state is
         // the same.
         m_inInput = true;
+        m_term.beginBatch();
         vterm_input_write(m_vt, bytes.constData(), size_t(bytes.size()));
-        vterm_screen_flush_damage(m_screen);
+        if (m_term.endBatch() && Q_UNLIKELY(PerfTrace::on))
+            PerfTrace::stage(PerfTrace::Damage);
         m_inInput = false;
         if (m_scrollPending) {
             m_scrollPending = false;
@@ -208,14 +209,15 @@ TerminalView::~TerminalView()
 
 // ─── libvterm plumbing ──────────────────────────────────────────────────────────────────────────
 
-int TerminalView::cbDamage(VTermRect, void *user)
+// Content changed outside a pty batch (resize, reset): repaint. Inside a batch TermScreen makes no
+// call at all — the bytesRead handler update()s once at its end.
+void TerminalView::cbDamage(void *user)
 {
     if (Q_UNLIKELY(PerfTrace::on))
         PerfTrace::stage(PerfTrace::Damage);
     auto *self = static_cast<TerminalView *>(user);
-    if (!self->m_inInput) // a pty batch update()s once at its end
+    if (!self->m_inInput)
         self->update();
-    return 1;
 }
 
 int TerminalView::cbMoveCursor(VTermPos pos, VTermPos, int visible, void *user)
@@ -294,50 +296,31 @@ void TerminalView::itemChange(ItemChange change, const ItemChangeData &data)
     }
 }
 
-int TerminalView::cbSbPushLine(int cols, const VTermScreenCell *cells, void *user)
+// A line entered the scrollback (TermScreen MOVED the row there; a full ring recycled its oldest).
+void TerminalView::cbSbPushed(int sbCount, void *user)
 {
     auto *self = static_cast<TerminalView *>(user);
-    // A full ring recycles the line it is about to drop: its buffer takes the new cells (no
-    // malloc/free, no zero-fill before the copy) — once the ring is full, every line pushes one out.
-    const bool full = !self->m_scrollback.isEmpty() && self->m_scrollback.size() >= self->m_scrollbackLimit;
-    SbLine line = full ? self->m_scrollback.takeFirst() : SbLine{};
-    line.cells.assign(cells, cells + cols);
-    self->m_scrollback.append(std::move(line));
-    if (self->m_scrollback.size() > self->m_scrollbackLimit)
-        self->m_scrollback.removeFirst();
-    self->m_scrollOffset = offsetAfterPush(self->m_scrollOffset, int(self->m_scrollback.size()));
+    self->m_scrollOffset = offsetAfterPush(self->m_scrollOffset, sbCount);
     self->notifyScrollChanged(); // scrollbackCount (and maybe scrollOffset) moved — the scrollbar listens
-    return 1;
 }
 
-int TerminalView::cbSbPopLine(int cols, VTermScreenCell *cells, void *user)
+// A line left the scrollback (popped back onto the screen when the terminal grew taller, or trimmed
+// by a lower limit). TermScreen pads a line pushed while narrower with REAL blanks — a zeroed cell
+// has width 0 and hangs libvterm's backfill loop forever (see scrollbackcells.h).
+void TerminalView::cbSbPopped(int sbCount, void *user)
 {
     auto *self = static_cast<TerminalView *>(user);
-    if (self->m_scrollback.isEmpty())
-        return 0;
-    const SbLine line = self->m_scrollback.takeLast();
-    self->m_scrollOffset = clampOffset(self->m_scrollOffset, int(self->m_scrollback.size()));
+    self->m_scrollOffset = clampOffset(self->m_scrollOffset, sbCount);
     self->notifyScrollChanged();
-    const int n = qMin(cols, int(line.cells.size()));
-    std::copy(line.cells.begin(), line.cells.begin() + n, cells);
-    // A line pushed while the terminal was narrower is padded with REAL blanks — a zeroed cell has
-    // width 0 and hangs libvterm's backfill loop forever (see scrollbackcells.h).
-    VTermColor fg, bg;
-    vterm_state_get_default_colors(vterm_obtain_state(self->m_vt), &fg, &bg);
-    fillBlankCells(cells, n, cols, fg, bg);
-    return 1;
 }
 
-static const VTermScreenCallbacks kScreenCallbacks = {
-    /*damage*/ TerminalView::cbDamage,
-    /*moverect*/ nullptr,
+static const TermScreenHooks kTermHooks = {
     /*movecursor*/ TerminalView::cbMoveCursor,
     /*settermprop*/ TerminalView::cbSetTermProp,
     /*bell*/ TerminalView::cbBell,
-    /*resize*/ nullptr,
-    /*sb_pushline*/ TerminalView::cbSbPushLine,
-    /*sb_popline*/ TerminalView::cbSbPopLine,
-    /*sb_clear*/ nullptr,
+    /*damage*/ TerminalView::cbDamage,
+    /*sbPushed*/ TerminalView::cbSbPushed,
+    /*sbPopped*/ TerminalView::cbSbPopped,
 };
 
 void TerminalView::ensureSession()
@@ -346,7 +329,7 @@ void TerminalView::ensureSession()
         return;
     m_started = true;
 
-    m_vt = vterm_new(m_rows, m_cols);
+    m_vt = TermScreen::newVTerm(m_rows, m_cols);
     vterm_set_utf8(m_vt, 1);
     vterm_output_set_callback(m_vt, [](const char *s, size_t len, void *user) {
         if (Q_UNLIKELY(PerfTrace::on))
@@ -354,10 +337,9 @@ void TerminalView::ensureSession()
         static_cast<TerminalView *>(user)->m_pty.writeBytes(QByteArray(s, int(len)));
     }, this);
 
-    m_screen = vterm_obtain_screen(m_vt);
-    vterm_screen_set_callbacks(m_screen, &kScreenCallbacks, this);
-    vterm_screen_enable_altscreen(m_screen, 1);
-    vterm_screen_set_damage_merge(m_screen, VTERM_DAMAGE_SCROLL);
+    // Our own screen over libvterm's state layer (primary + alt screen + scrollback ring).
+    m_term.setScrollbackLimit(m_scrollbackLimit);
+    m_term.attach(m_vt, &kTermHooks, this);
 
     // Default colours feed SGR-reset cells. ANSI 0–15 come from the scheme palette at draw time
     // (toQColor); without one they stay vterm's xterm-256 standard.
@@ -366,7 +348,7 @@ void TerminalView::ensureSession()
     vterm_color_rgb(&fg, uint8_t(m_foreground.red()), uint8_t(m_foreground.green()), uint8_t(m_foreground.blue()));
     vterm_color_rgb(&bg, uint8_t(m_background.red()), uint8_t(m_background.green()), uint8_t(m_background.blue()));
     vterm_state_set_default_colors(state, &fg, &bg);
-    vterm_screen_reset(m_screen, 1);
+    m_term.reset(true);
 
     QString cwd;
     QStringList env;
@@ -413,8 +395,7 @@ void TerminalView::applyGrid()
     m_rows = rows;
     m_cols = cols;
     if (m_vt) {
-        vterm_set_size(m_vt, rows, cols);
-        vterm_screen_flush_damage(m_screen);
+        vterm_set_size(m_vt, rows, cols); // TermScreen resizes (and damages) inside
         m_pty.resize(rows, cols);
     }
     emit scrollChanged(); // viewportRows moved — the scrollbar's thumb size depends on it
@@ -438,7 +419,7 @@ QColor TerminalView::toQColor(VTermColor c, bool isFg) const
         return m_background;
     if (m_hasPalette && VTERM_COLOR_IS_INDEXED(&c) && c.indexed.idx < 16)
         return m_palette[c.indexed.idx];
-    vterm_screen_convert_color_to_rgb(m_screen, &c);
+    vterm_state_convert_color_to_rgb(m_term.state(), &c);
     return QColor(c.rgb.red, c.rgb.green, c.rgb.blue);
     Q_UNUSED(isFg);
 }
@@ -502,7 +483,7 @@ QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *da
 
 QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 {
-    if (!m_screen || width() <= 0 || height() <= 0) {
+    if (!m_term.isAttached() || width() <= 0 || height() <= 0) {
         delete oldNode;
         m_imageNode = nullptr;
         m_bgNode = m_glyphNode = m_cursorNode = nullptr;
@@ -525,35 +506,37 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
     pushBgQuad(bg, 0, 0, width(), height(), baseBg);
 
     const int sbShown = m_scrollOffset;
+    const int sbCount = m_term.sbCount();
+    m_term.clearDirty(); // every row is rebuilt below (per-row geometry reuse is proposal P4)
+    // Past the end of a scrollback row narrower than the grid: a value-initialised cell, exactly what
+    // the previous `VTermScreenCell cell {}` gave (zero colours = RGB black, not the default).
+    static const TermCell kPastEnd {};
     for (int row = 0; row < m_rows; ++row) {
         const int liveRow = row - sbShown;
-        const VTermScreenCell *sbCells = nullptr;
-        int sbCols = 0;
+        TermScreen::Line line;
         if (liveRow < 0) {
-            const int idx = m_scrollback.size() + liveRow;
+            const int idx = sbCount + liveRow;
             if (idx < 0)
                 continue;
-            sbCells = m_scrollback.at(idx).cells.constData();
-            sbCols = int(m_scrollback.at(idx).cells.size());
+            line = m_term.line(idx);
+        } else {
+            line = m_term.liveLine(liveRow);
         }
+        // DECSCNM applies to live rows at read time (scrollback rows have it baked in).
+        const bool flipReverse = line.live && m_term.globalReverse();
         const qreal y = row * m_cellH;
 
         int col = 0;
         while (col < m_cols) {
-            VTermScreenCell cell {};
-            if (sbCells) {
-                if (col < sbCols)
-                    cell = sbCells[col];
-            } else {
-                vterm_screen_get_cell(m_screen, VTermPos{ liveRow, col }, &cell);
-            }
-            const int cw = cell.width > 0 ? cell.width : 1;
+            const bool inLine = col < line.cols;
+            const TermCell &cell = inLine ? line.cells[col] : kPastEnd;
+            const int cw = inLine ? TermScreen::widthAt(line.cells, line.cols, col) : 1;
             const qreal x = col * m_cellW;
             const qreal w = cw * m_cellW;
 
-            QColor fg = toQColor(cell.fg, true);
-            QColor bgc = toQColor(cell.bg, false);
-            if (cell.attrs.reverse)
+            QColor fg = toQColor(cell.pen.fg, true);
+            QColor bgc = toQColor(cell.pen.bg, false);
+            if (cell.pen.reverse ^ flipReverse)
                 std::swap(fg, bgc);
             if (bgc != m_background)
                 pushBgQuad(bg, x, y, w, m_cellH, bgc);
@@ -566,17 +549,17 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
             if (c0 && !(c0 == U' ' && !cell.chars[1])) {
                 GlyphCache::Entry e;
                 if (!cell.chars[1]) {
-                    e = m_glyphs.glyph(c0, cell.attrs.bold, cell.attrs.italic, cw);
+                    e = m_glyphs.glyph(c0, cell.pen.bold, cell.pen.italic, cw);
                 } else {
                     QString cluster;
                     for (int ci = 0; ci < VTERM_MAX_CHARS_PER_CELL && cell.chars[ci]; ++ci)
                         cluster.append(QString::fromUcs4(&cell.chars[ci], 1));
-                    e = m_glyphs.glyph(cluster, cell.attrs.bold, cell.attrs.italic, cw);
+                    e = m_glyphs.glyph(cluster, cell.pen.bold, cell.pen.italic, cw);
                 }
                 if (e.valid)
                     pushGlyphQuad(glyphs, x, y, w, m_cellH, e.uv, fg, e.color);
             }
-            if (cell.attrs.underline)
+            if (cell.pen.underline)
                 pushBgQuad(bg, x, y + m_cellH - 1, w, 1, fg);
 
             col += cw;
@@ -591,7 +574,7 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
         QColor sel = m_foreground;
         sel.setAlpha(64);
         for (int row = 0; row < m_rows; ++row) {
-            const int absRow = int(m_scrollback.size()) - sbShown + row;
+            const int absRow = sbCount - sbShown + row;
             if (absRow < from.absRow || absRow > to.absRow)
                 continue;
             const int c0 = absRow == from.absRow ? from.col : 0;
@@ -632,7 +615,7 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 
     // Search highlights: every match on a visible row (current match brighter).
     if (!m_matches.isEmpty()) {
-        const int top = int(m_scrollback.size()) - sbShown;
+        const int top = sbCount - sbShown;
         for (int mi = 0; mi < m_matches.size(); ++mi) {
             const Match &m = m_matches[mi];
             const int row = m.absRow - top;
@@ -645,7 +628,7 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 
     // Hovered hyperlink: underline it across its span (drawn in the bg layer, at the cell baseline).
     if (m_hoverLink.valid) {
-        const int row = m_hoverLink.absRow - (int(m_scrollback.size()) - sbShown);
+        const int row = m_hoverLink.absRow - (sbCount - sbShown);
         if (row >= 0 && row < m_rows) {
             pushBgQuad(bg, m_hoverLink.c0 * m_cellW, row * m_cellH + m_cellH - 1,
                        (m_hoverLink.c1 - m_hoverLink.c0 + 1) * m_cellW, 1, m_foreground);
@@ -910,7 +893,7 @@ TerminalView::CellPos TerminalView::cellAt(const QPointF &p) const
 {
     CellPos c;
     const int row = qBound(0, int(p.y() / m_cellH), m_rows - 1);
-    c.absRow = m_scrollback.size() - m_scrollOffset + row;
+    c.absRow = m_term.sbCount() - m_scrollOffset + row;
     c.col = qBound(0, int(p.x() / m_cellW), m_cols - 1);
     return c;
 }
@@ -934,18 +917,12 @@ QString TerminalView::selectedText() const
         const int c0 = absRow == from.absRow ? from.col : 0;
         const int c1 = absRow == to.absRow ? to.col : m_cols - 1;
         QString line;
+        const TermScreen::Line src = m_term.line(absRow);
         for (int col = c0; col <= c1; ++col) {
-            VTermScreenCell cell {};
-            if (absRow < m_scrollback.size()) {
-                const auto &cells = m_scrollback.at(absRow).cells;
-                if (col < cells.size())
-                    cell = cells.at(col);
-            } else {
-                const int liveRow = absRow - int(m_scrollback.size());
-                if (liveRow >= m_rows)
-                    break;
-                vterm_screen_get_cell(m_screen, VTermPos{ liveRow, col }, &cell);
-            }
+            if (!src.cells) // past the live screen
+                break;
+            VTermScreenCell cell;
+            m_term.cell(src, col, &cell);
             if (cell.chars[0] == 0) {
                 line.append(QLatin1Char(' '));
             } else {
@@ -1010,7 +987,7 @@ void TerminalView::pasteText(const QString &text)
 
 void TerminalView::clearScrollback()
 {
-    m_scrollback.clear();
+    m_term.clearScrollback();
     m_scrollOffset = 0;
     m_selValid = false;
     emit selectionChanged();
@@ -1036,8 +1013,8 @@ void TerminalView::setReadOnly(bool v)
 
 void TerminalView::resetTerminal()
 {
-    if (m_screen)
-        vterm_screen_reset(m_screen, 1); // hard reset: clears attrs, modes, cursor, alt-screen
+    if (m_term.isAttached())
+        m_term.reset(true); // hard reset: clears attrs, modes, cursor
     m_scrollOffset = 0;
     emit scrollChanged();
     update();
@@ -1075,25 +1052,12 @@ void TerminalView::updateFocusReport()
 QString TerminalView::rowText(int absRow) const
 {
     QString line(m_cols, QLatin1Char(' '));
-    if (!m_screen || absRow < 0)
+    if (!m_term.isAttached() || absRow < 0)
         return line;
-    const int sbSize = m_scrollback.size();
-    if (absRow < sbSize) {
-        const auto &cells = m_scrollback.at(absRow).cells;
-        for (int c = 0; c < m_cols && c < cells.size(); ++c)
-            if (cells[c].chars[0])
-                line[c] = QChar(char32_t(cells[c].chars[0]));
-    } else {
-        const int liveRow = absRow - sbSize;
-        if (liveRow >= m_rows)
-            return line;
-        for (int c = 0; c < m_cols; ++c) {
-            VTermScreenCell cell {};
-            vterm_screen_get_cell(m_screen, VTermPos{ liveRow, c }, &cell);
-            if (cell.chars[0])
-                line[c] = QChar(char32_t(cell.chars[0]));
-        }
-    }
+    const TermScreen::Line src = m_term.line(absRow); // empty past the live screen
+    for (int c = 0; c < m_cols && c < src.cols; ++c)
+        if (src.cells[c].chars[0])
+            line[c] = QChar(char32_t(src.cells[c].chars[0]));
     return line;
 }
 
@@ -1102,8 +1066,8 @@ void TerminalView::search(const QString &query)
     m_searchQuery = query;
     m_matches.clear();
     m_searchIndex = -1;
-    if (!query.isEmpty() && m_screen) {
-        const int total = m_scrollback.size() + m_rows;
+    if (!query.isEmpty() && m_term.isAttached()) {
+        const int total = m_term.sbCount() + m_rows;
         for (int absRow = 0; absRow < total; ++absRow) {
             const QString line = rowText(absRow);
             int from = 0;
@@ -1128,7 +1092,7 @@ void TerminalView::scrollToMatch(int i)
 {
     if (i < 0 || i >= m_matches.size())
         return;
-    const int sbSize = m_scrollback.size();
+    const int sbSize = m_term.sbCount();
     const int desiredTop = m_matches[i].absRow - m_rows / 2; // centre the match
     m_scrollOffset = qBound(0, sbSize - desiredTop, sbSize);
     emit scrollChanged();
@@ -1174,14 +1138,14 @@ namespace { constexpr int kLinkJoinRowCap = 6; }
 
 TerminalView::LinkSpan TerminalView::linkAt(const QPointF &p) const
 {
-    if (!m_screen)
+    if (!m_term.isAttached())
         return {};
     const int row = int(p.y() / m_cellH);
     const int col = int(p.x() / m_cellW);
     if (row < 0 || row >= m_rows || col < 0 || col >= m_cols)
         return {};
 
-    const int sbSize = int(m_scrollback.size());
+    const int sbSize = m_term.sbCount();
     const int queriedAbsRow = sbSize - m_scrollOffset + row;
     const int liveRow = queriedAbsRow - sbSize; // >= 0 while this row is the live screen, not scrollback
 
@@ -1633,7 +1597,7 @@ void TerminalView::autoscrollTick()
     if (lines <= 0)
         return;
     const bool above = overshoot < 0;
-    m_scrollOffset = autoscrollOffsetAfterTick(m_scrollOffset, int(m_scrollback.size()), lines, above);
+    m_scrollOffset = autoscrollOffsetAfterTick(m_scrollOffset, m_term.sbCount(), lines, above);
     emit scrollChanged();
 
     const int edgeRow = above ? 0 : m_rows - 1;
@@ -1676,7 +1640,7 @@ void TerminalView::wheelEvent(QWheelEvent *event)
 
     // Local (today's behaviour): scroll SolidTerm's own scrollback.
     const int lines = event->angleDelta().y() / 40; // 3 lines per notch
-    m_scrollOffset = qBound(0, m_scrollOffset + lines, int(m_scrollback.size()));
+    m_scrollOffset = qBound(0, m_scrollOffset + lines, m_term.sbCount());
     emit scrollChanged();
     update();
     event->accept();
@@ -1796,7 +1760,7 @@ void TerminalView::setScrollbarMode(const QString &v)
 
 void TerminalView::scrollTo(int offset)
 {
-    const int clamped = clampOffset(offset, int(m_scrollback.size()));
+    const int clamped = clampOffset(offset, m_term.sbCount());
     if (clamped == m_scrollOffset)
         return;
     m_scrollOffset = clamped;
@@ -1990,6 +1954,7 @@ void TerminalView::setScrollbackLimit(int v)
     if (m_scrollbackLimit == v)
         return;
     m_scrollbackLimit = qMax(0, v);
+    m_term.setScrollbackLimit(m_scrollbackLimit); // a lower limit trims at once (cbSbPopped clamps the offset)
     emit scrollbackLimitChanged();
 }
 

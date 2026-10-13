@@ -2,6 +2,7 @@
 
 #include "glyphcache.h"
 #include "ptysession.h"
+#include "termscreen.h"
 
 #include <QColor>
 #include <QFont>
@@ -15,9 +16,10 @@ class QSGTexture;
 class QSGImageNode;
 class QSGGeometryNode;
 
-// The terminal pane: a QQuickItem hosting one shell session. libvterm does the VT/xterm
-// interpretation (escape parsing, screen model, damage) — the same core neovim embeds; this
-// item feeds it pty bytes and renders its screen straight on the scene graph (GPU): each glyph is
+// The terminal pane: a QQuickItem hosting one shell session. libvterm's STATE layer does the
+// VT/xterm interpretation (escape parsing, modes, pen) — the same core neovim embeds; the screen
+// cells, scrollback and damage live in our own TermScreen (termscreen.h: scrolling moves row handles,
+// never cells). This item feeds it pty bytes and renders it straight on the scene graph (GPU): each glyph is
 // rasterised ONCE into a coverage atlas (GlyphCache) and the whole grid is drawn as textured quads
 // through a custom RHI material — no per-frame QPainter, "as fast as alacritty" (owner). Keeps a
 // scrollback ring, forwards keys, tracks selection.
@@ -116,7 +118,7 @@ public:
     int blur() const { return m_blur; }
     void setBlur(int v);
     int scrollOffset() const { return m_scrollOffset; }
-    int scrollbackCount() const { return int(m_scrollback.size()); }
+    int scrollbackCount() const { return m_term.sbCount(); }
     int viewportRows() const { return m_rows; }
     bool isAltScreen() const { return m_altScreen; }
     QString scrollbarMode() const { return m_scrollbarMode; }
@@ -217,18 +219,15 @@ protected:
     void hoverLeaveEvent(QHoverEvent *event) override;
 
 public:
-    // libvterm callbacks (static thunks → the view; public for the file-static callback table).
-    static int cbDamage(VTermRect rect, void *user);
+    // TermScreen hooks (static thunks → the view; public for the file-static hook table).
+    static void cbDamage(void *user);
     static int cbMoveCursor(VTermPos pos, VTermPos oldPos, int visible, void *user);
     static int cbSetTermProp(VTermProp prop, VTermValue *val, void *user);
     static int cbBell(void *user);
-    static int cbSbPushLine(int cols, const VTermScreenCell *cells, void *user);
-    static int cbSbPopLine(int cols, VTermScreenCell *cells, void *user);
+    static void cbSbPushed(int sbCount, void *user);
+    static void cbSbPopped(int sbCount, void *user);
 
 private:
-    struct SbLine {
-        QVector<VTermScreenCell> cells;
-    };
 
     // Inside a pty batch (vterm_input_write in the bytesRead handler) the vterm callbacks defer
     // scrollChanged()/resetBlink()/update() to ONE call at the batch's end.
@@ -268,7 +267,7 @@ private:
     int m_searchIndex = -1;                 // index into m_matches, -1 = none
 
     VTerm *m_vt = nullptr;
-    VTermScreen *m_screen = nullptr;
+    TermScreen m_term;                      // screen + alt screen + scrollback ring (termscreen.h)
     PtySession m_pty;
     QFont m_font;
     GlyphCache m_glyphs;
@@ -310,13 +309,13 @@ private:
     class QTimer *m_blinkTimer = nullptr;   // blinks the focused cursor
     bool m_blinkOn = true;
     void resetBlink();                      // solid cursor on activity, restart the blink phase
-    QVector<SbLine> m_scrollback;           // ring, newest at the back
-    int m_scrollbackLimit = 8000;
+    int m_scrollbackLimit = 8000;           // the scrollback ring itself lives in m_term
     QStringList m_reserved;
     int m_scrollOffset = 0;                 // lines scrolled back from live (0 = live)
     bool m_started = false;
 
-    // Selection in ABSOLUTE line space (scrollback index; live rows continue past the ring), so
+    // Selection in ABSOLUTE line space (scrollback index; live rows continue past the ring — see
+    // TermScreen::line), so
     // it survives scrolling. Anchor = press point; end tracks the drag.
     struct CellPos {
         int absRow = 0;
