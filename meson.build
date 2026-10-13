@@ -445,6 +445,25 @@ if build_solidterm
       cpp_args: ['-DTMUX_TRANSCRIPTS="' + meson.current_source_dir() / 'apps/solidterm/tests/tmux' + '"']),
     timeout: 20)
 
+  # tmux control client (phase 1, Qt-free): the real reader thread and per-pane feed pipes against a
+  # scripted FAKE tmux (tests/tmux/fake-tmux.py playing scenario-basic.py), each pipe parsed by a bare
+  # TermScreen — seeding rules, tricky %output, held output of new panes, the resize fence, %pause →
+  # reseed, detach. The second test attaches the same client to a REAL tmux on a private socket
+  # (-S under the build dir, -f /dev/null; never the user's server), skipped when tmux is absent.
+  solidterm_tmux_client = solidterm_tmux_proto + files('apps/solidterm/native/tmux/client.cpp', 'apps/solidterm/native/tmux/seed.cpp')
+  tmux_client_test = executable('test-solidterm-tmux-client',
+    files('apps/solidterm/tests/tmux_client_test.cpp', 'apps/solidterm/native/termscreen.cpp') + solidterm_tmux_client,
+    cpp_args: ['-DTMUX_TESTS_DIR="' + meson.current_source_dir() / 'apps/solidterm/tests/tmux' + '"'],
+    dependencies: [vterm_dep, dependency('threads')])
+  test('solidterm-tmux-client', tmux_client_test,
+    args: [meson.current_build_dir() / 'tmux-test'],
+    timeout: 60)
+  tmux_prog = find_program('tmux', required: false)
+  test('solidterm-tmux-client-real', tmux_client_test,
+    args: ['--real', tmux_prog.found() ? tmux_prog.full_path() : '/nonexistent/tmux', meson.current_build_dir() / 'tmux-real'],
+    is_parallel: false,
+    timeout: 60)
+
   # Mouse reporting (xterm/VTE protocol): the decision table (mode/altscreen/shift →
   # report|altscroll|local) plus libvterm's own SGR/X10/DRAG/wheel/DECCKM encoding, driven the same
   # way TerminalView drives it. No Qt — see mousereport_test.cpp.
