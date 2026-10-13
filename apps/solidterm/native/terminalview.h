@@ -168,6 +168,9 @@ public:
     Q_INVOKABLE void openHoverLink();
 
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) override;
+private:
+    QSGNode *buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *); // updatePaintNode minus the env-gated probes
+public:
 
 signals:
     void fontChanged();

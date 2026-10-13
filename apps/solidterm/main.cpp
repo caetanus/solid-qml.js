@@ -19,6 +19,7 @@
 #include "native/terminalpanes.h"
 #include "native/terminaltabs.h"
 #include "native/terminalview.h"
+#include "native/perftrace.h"
 
 #include <QApplication>
 #include <QDir>
@@ -75,6 +76,10 @@ static void wireWindow(QQuickWindow *window)
     // panes go with it and each PtySession hangs up its shell. (The engine drops a destroyed root
     // from rootObjects() by itself; the app still quits when the last window goes.)
     QObject::connect(window, &QQuickWindow::closing, window, [window] { window->deleteLater(); });
+    // Bench probe (SOLIDTERM_PERF): stamp every presented frame, on the render thread.
+    if (PerfTrace::on)
+        QObject::connect(window, &QQuickWindow::frameSwapped, window, [] { PerfTrace::frameSwapped(); },
+                         Qt::DirectConnection);
     SystemTheme *sysTheme = g_app.sysTheme;
     // Clear to transparent only when translucent (uiOpacity < 1) so the desktop shows through the
     // transparent app root; otherwise clear to the solid window colour. Tracks live changes.
@@ -148,6 +153,12 @@ int main(int argc, char **argv)
         QSurfaceFormat::setDefaultFormat(fmt);
     }
     QApplication app(argc, argv);
+    // Bench probes (scripts/solidterm-bench.sh): off — and free — unless SOLIDTERM_PERF is set.
+    PerfTrace::init(qEnvironmentVariableIsSet("SOLIDTERM_PERF"));
+    if (PerfTrace::on)
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, [] {
+            PerfTrace::dump(qgetenv("SOLIDTERM_PERF_OUT").constData());
+        });
     app.setApplicationName(QStringLiteral("solidterm"));
     app.setOrganizationName(QStringLiteral("solid-qml"));
 
@@ -506,6 +517,73 @@ int main(int argc, char **argv)
             QCoreApplication::sendEvent(window, &wheel);
             qInfo().noquote() << "solidterm: mousetest sent click+wheel at" << p;
         });
+    }
+
+    // Bench: SOLIDTERM_LATENCYTEST=<n> (with SOLIDTERM_PERF) types n keys into the first TerminalView,
+    // one in flight at a time (150ms apart: letters, every other one erased again with Backspace so the
+    // line stays short), through QWindowSystemInterface — the platform-input entry point a real key
+    // takes — then quits. PerfTrace records each key's stages (see perftrace.h).
+    if (const int nKeys = qEnvironmentVariableIntValue("SOLIDTERM_LATENCYTEST"); nKeys > 0 && window) {
+        QTimer::singleShot(2500, window, [window, nKeys] {
+            auto *timer = new QTimer(window);
+            auto *sent = new int(0);
+            timer->setInterval(150);
+            QObject::connect(timer, &QTimer::timeout, window, [window, timer, sent, nKeys] {
+                if (*sent >= nKeys) {
+                    timer->stop();
+                    QTimer::singleShot(400, qApp, &QCoreApplication::quit);
+                    return;
+                }
+                const bool erase = (*sent & 1) != 0;
+                const int key = erase ? int(Qt::Key_Backspace) : int(Qt::Key_A) + (*sent / 2) % 26;
+                const QString text = erase ? QString(QChar(8)) : QString(QChar('a' + (*sent / 2) % 26));
+                QWindowSystemInterface::handleKeyEvent(window, QEvent::KeyPress, key, Qt::NoModifier, text);
+                QWindowSystemInterface::handleKeyEvent(window, QEvent::KeyRelease, key, Qt::NoModifier, text);
+                ++*sent;
+            });
+            timer->start();
+        });
+    }
+
+    // Bench: SOLIDTERM_WHEELTEST=<n> waits until the first TerminalView holds >= 10000 scrollback lines
+    // (the bench's shell prints them), then sends n wheel-up notches followed by n wheel-down notches at
+    // 125 Hz through QWindowSystemInterface (a fast continuous scroll), then quits. The frame log
+    // (SOLIDTERM_PERF) gives the frame-time histogram for it.
+    if (const int nWheel = qEnvironmentVariableIntValue("SOLIDTERM_WHEELTEST"); nWheel > 0 && window) {
+        auto *poll = new QTimer(window);
+        poll->setInterval(100);
+        QObject::connect(poll, &QTimer::timeout, window, [window, poll, nWheel] {
+            TerminalView *view = nullptr;
+            QList<QQuickItem *> stack { window->contentItem() };
+            while (!stack.isEmpty() && !view) {
+                QQuickItem *it = stack.takeLast();
+                view = qobject_cast<TerminalView *>(it);
+                for (QQuickItem *k : it->childItems()) stack.append(k);
+            }
+            if (view && view->scrollbackLimit() < 20000)
+                view->setScrollbackLimit(20000); // room for the 10k lines (the user's config may cap lower)
+            if (!view || view->scrollbackCount() < 10000)
+                return;
+            poll->stop();
+            const QPointF c = view->mapToScene(QPointF(view->width() / 2, view->height() / 2));
+            const QPointF g = window->mapToGlobal(c.toPoint());
+            auto *timer = new QTimer(window);
+            auto *sent = new int(0);
+            timer->setInterval(8);
+            timer->setTimerType(Qt::PreciseTimer);
+            QObject::connect(timer, &QTimer::timeout, window, [window, timer, sent, nWheel, c, g] {
+                if (*sent >= 2 * nWheel) {
+                    timer->stop();
+                    QTimer::singleShot(300, qApp, &QCoreApplication::quit);
+                    return;
+                }
+                const int dy = *sent < nWheel ? 120 : -120;
+                QWindowSystemInterface::handleWheelEvent(window, c, g, QPoint(0, 0), QPoint(0, dy));
+                ++*sent;
+            });
+            QTimer::singleShot(500, window, [timer] { timer->start(); }); // let the fill settle
+        });
+        poll->start();
     }
 
     // Debug: SOLIDTERM_AUTOSCROLLTEST=1 fills the scrollback, presses near the middle of the first

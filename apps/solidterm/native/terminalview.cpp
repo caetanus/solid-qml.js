@@ -2,6 +2,7 @@
 
 #include "autoscroll.h"
 #include "linkscan.h"
+#include "perftrace.h"
 #include "mousereport.h"
 #include "scrollanchor.h"
 #include "scrollbackcells.h"
@@ -168,6 +169,11 @@ TerminalView::TerminalView(QQuickItem *parent)
     connect(&m_pty, &PtySession::bytesRead, this, [this](const QByteArray &bytes) {
         if (!m_vt)
             return;
+        if (Q_UNLIKELY(PerfTrace::on)) {
+            PerfTrace::stage(PerfTrace::PtyRead);
+            ++PerfTrace::ptyReads;
+            PerfTrace::ptyBytes += bytes.size();
+        }
         vterm_input_write(m_vt, bytes.constData(), size_t(bytes.size()));
         vterm_screen_flush_damage(m_screen);
         // Output never moves a scrolled-back view (VTE/Tilix default): a TUI that redraws a spinner
@@ -188,6 +194,8 @@ TerminalView::~TerminalView()
 
 int TerminalView::cbDamage(VTermRect, void *user)
 {
+    if (Q_UNLIKELY(PerfTrace::on))
+        PerfTrace::stage(PerfTrace::Damage);
     static_cast<TerminalView *>(user)->update();
     return 1;
 }
@@ -318,6 +326,8 @@ void TerminalView::ensureSession()
     m_vt = vterm_new(m_rows, m_cols);
     vterm_set_utf8(m_vt, 1);
     vterm_output_set_callback(m_vt, [](const char *s, size_t len, void *user) {
+        if (Q_UNLIKELY(PerfTrace::on))
+            PerfTrace::stage(PerfTrace::PtyWrite);
         static_cast<TerminalView *>(user)->m_pty.writeBytes(QByteArray(s, int(len)));
     }, this);
 
@@ -454,7 +464,20 @@ inline void pushGlyphQuad(std::vector<GlyphVertex> &v, qreal x, qreal y, qreal w
 
 } // namespace
 
-QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
+QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *data)
+{
+    if (Q_UNLIKELY(PerfTrace::on)) {
+        PerfTrace::stage(PerfTrace::PaintBegin);
+        const int64_t t0 = PerfTrace::nowNs();
+        QSGNode *n = buildPaintNode(oldNode, data);
+        PerfTrace::paint(PerfTrace::nowNs() - t0);
+        PerfTrace::stage(PerfTrace::PaintEnd);
+        return n;
+    }
+    return buildPaintNode(oldNode, data);
+}
+
+QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 {
     if (!m_screen || width() <= 0 || height() <= 0) {
         delete oldNode;
@@ -781,6 +804,8 @@ QVariant TerminalView::inputMethodQuery(Qt::InputMethodQuery query) const
 
 void TerminalView::keyPressEvent(QKeyEvent *event)
 {
+    if (Q_UNLIKELY(PerfTrace::on))
+        PerfTrace::stage(PerfTrace::Key);
     if (!m_vt) {
         QQuickItem::keyPressEvent(event);
         return;
