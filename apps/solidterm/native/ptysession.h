@@ -5,6 +5,7 @@
 #include <QStringList>
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 
 // The pty leg of a terminal session: opens a pseudo-terminal, forks the user's shell on the
@@ -48,6 +49,8 @@ signals:
 
 private:
     void onReadable();
+    // How long one notifier activation may keep reading (see onReadable()).
+    static constexpr std::chrono::nanoseconds kDrainBudget { 8'000'000 };
     friend struct StallWatchAccess; // stallwatch.h diagnostics (env-gated)
 
     int m_master = -1;

@@ -343,20 +343,42 @@ void PtySession::resume()
         m_notifier->setEnabled(true); // level-triggered: re-fires immediately if the kernel buffer has data
 }
 
+// One activation drains the master until the kernel has nothing more queued (FIONREAD == 0) or
+// kDrainBudgetNs is spent, not just one read. A pty hands out at most ~4 KiB per read(2) under a
+// flood, so one read per event-loop turn made throughput hostage to how often the GUI loop turns.
+// On Wayland that rate can collapse to one turn per vsync: when a frame callback arrives while the
+// GUI thread is blocked in Qt Quick's polishAndSync, QtWayland's queued doHandleFrameCallback runs
+// after the sync and delivers the update request our next read left pending, so polishAndSync blocks
+// again until the following vsync — every turn, a self-sustaining phase lock. Reading 4 KiB per
+// 16.7 ms is 250 KB/s: the "terminal stopped consuming" stall of the 2026-10-13 bench
+// (docs/evidence/solidterm/parser-thread-2026-10-13.md). The budget keeps one turn short enough for
+// frames and input to stay on time.
 void PtySession::onReadable()
 {
     char buf[65536];
-    const ssize_t n = ::read(m_master, buf, sizeof(buf));
-    if (n <= 0) {
-        // EOF/EIO: the shell exited. Reap and report.
-        m_notifier->setEnabled(false);
-        int status = 0;
-        ::waitpid(pid_t(m_pid), &status, WNOHANG);
-        m_pid = -1;
-        emit finished();
-        return;
+    const auto t0 = std::chrono::steady_clock::now();
+    for (;;) {
+        const ssize_t n = ::read(m_master, buf, sizeof(buf));
+        if (n < 0 && (errno == EINTR || errno == EAGAIN))
+            return; // not EOF: the notifier fires again when there is data
+        if (n <= 0) {
+            // EOF/EIO: the shell exited. Reap and report.
+            m_notifier->setEnabled(false);
+            int status = 0;
+            ::waitpid(pid_t(m_pid), &status, WNOHANG);
+            m_pid = -1;
+            emit finished();
+            return;
+        }
+        if (Q_UNLIKELY(StallWatch::on))
+            noteRead(size_t(n));
+        emit bytesRead(QByteArray(buf, int(n)));
+        if (m_paused || m_master < 0) // a handler paused reads (selection drag) — honour it at once
+            return;
+        int pending = 0;
+        if (::ioctl(m_master, FIONREAD, &pending) != 0 || pending <= 0)
+            return;
+        if (std::chrono::steady_clock::now() - t0 >= kDrainBudget)
+            return; // level-triggered: the notifier fires again on the next loop turn
     }
-    if (Q_UNLIKELY(StallWatch::on))
-        noteRead(size_t(n));
-    emit bytesRead(QByteArray(buf, int(n)));
 }

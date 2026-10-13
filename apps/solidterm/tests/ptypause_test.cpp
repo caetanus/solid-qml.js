@@ -35,7 +35,10 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QRegularExpression>
+#include <QElapsedTimer>
 #include <QTest>
+#include <QSocketNotifier>
+#include <QThread>
 
 namespace {
 
@@ -82,6 +85,7 @@ class PtyPauseTest : public QObject {
 private slots:
     void backpressureBlocksChild();
     void resumeDrainsWithoutDataLoss();
+    void drainKeepsUpWithBlockedLoopTurns();
 };
 
 // ── 1. pause() stops OUR reads AND blocks the child's forward progress (kernel backpressure) ────
@@ -210,6 +214,53 @@ void PtyPauseTest::resumeDrainsWithoutDataLoss()
                 .arg(i).arg(nums[i]).arg(i + 1)));
         }
     }
+}
+
+// ── 3. One notifier activation drains more than one pty read ────────────────────────────────────
+// Regression for the 2026-10-13 bench stall (docs/evidence/solidterm/parser-thread-2026-10-13.md):
+// on Wayland the GUI loop can phase-lock into ONE turn per vsync (each turn then blocks ~16 ms in Qt
+// Quick's polishAndSync). A pty hands out ~4 KiB per read(2), so with one read per notifier
+// activation a flood drained at ~250 KB/s and a 100 MB `cat` "stopped". The activation is fired by
+// hand here (the notifier itself is disabled, so the event loop plays no part) while a writer keeps
+// the pty full: the pre-fix PtySession read 4095 bytes per activation (measured), the drain reads
+// until its time budget is spent.
+void PtyPauseTest::drainKeepsUpWithBlockedLoopTurns()
+{
+    PtySession pty;
+    qint64 got = 0;
+    connect(&pty, &PtySession::bytesRead, this, [&](const QByteArray &b) {
+        got += b.size();
+        // What TerminalView does with a chunk costs time (libvterm parses a mixed flood at ~27 MB/s,
+        // ~150 us per 4 KiB); meanwhile the writer refills the pty, so the drain finds more queued.
+        QElapsedTimer busy;
+        busy.start();
+        while (busy.nsecsElapsed() < 150000 * (qint64(b.size()) + 4095) / 4096) {}
+    });
+    QVERIFY(pty.start(24, 80, QStringLiteral("/bin/sh")));
+    // Type only once the login shell sits at its prompt (its startup files run first and may
+    // discard typeahead): output arrived, then 300 ms of quiet.
+    QTRY_VERIFY_WITH_TIMEOUT(got > 0, 10000);
+    for (qint64 seen = -1; seen != got;) {
+        seen = got;
+        QTest::qWait(300);
+    }
+    auto *notifier = pty.findChild<QSocketNotifier *>();
+    QVERIFY(notifier);
+    notifier->setEnabled(false);
+    pty.writeBytes(QByteArrayLiteral("yes 0123456789abcdefghijklmnopqrstuvwxyz\n"));
+    QThread::msleep(300); // the writer fills the pty and blocks
+
+    constexpr int kActivations = 5;
+    const qint64 before = got;
+    for (int i = 0; i < kActivations; ++i) {
+        QVERIFY(QMetaObject::invokeMethod(notifier, "activated", Qt::DirectConnection,
+                                          Q_ARG(QSocketDescriptor, QSocketDescriptor(notifier->socket())),
+                                          Q_ARG(QSocketNotifier::Type, QSocketNotifier::Read)));
+    }
+    const qint64 perActivation = (got - before) / kActivations;
+    qInfo("bytes drained per notifier activation: %lld", perActivation);
+    pty.writeBytes(QByteArrayLiteral("\x03")); // ^C the writer
+    QVERIFY2(perActivation > 64 * 1024, "one activation reads one pty chunk again (the bench stall)");
 }
 
 QTEST_GUILESS_MAIN(PtyPauseTest)
