@@ -1,7 +1,8 @@
 # SolidTerm screen buffer: our own cells on top of libvterm's state layer
 
-Status: design, branch `st-buffer` (owner-approved proposal P1 of
-`docs/evidence/solidterm/perf-2026-10-13.md`). The implementation follows in the next commits.
+Status: implemented on branch `st-buffer` (owner-approved proposal P1 of
+`docs/evidence/solidterm/perf-2026-10-13.md`; measured results in that file, section
+"P1: own screen buffer").
 
 ## Why
 
@@ -83,6 +84,29 @@ contents are identical. That includes the quirks:
   rows into the scrollback (libvterm reads `screen->buffer` there), and a hard reset (`RIS`) during
   the alternate screen keeps showing it. Both are candidates for a later fix;
 - `ED 3` (`CSI 3 J`, clear scrollback) stays a no-op, as before (`sb_clear` was not wired).
+
+Two deviations, both where libvterm reads garbage or crashes, so there is nothing to stay
+identical to:
+
+- every rect `TermScreen` receives is clamped to the screen. libvterm 0.3.3's state can produce
+  rects past the edge after a resize (a DECRC restoring a cursor saved at the larger size, then an
+  erase), and `screen.c` then dereferences `getcell() == NULL`;
+- the right half of a wide glyph (`chars[0] == -1`) has `chars[1] = 0`. libvterm writes only
+  `chars[0]`, so that cell keeps leftovers of whatever occupied the memory before, which show up
+  when an orphaned right half is drawn or selected.
+
+### libvterm bugs found by the oracle that both paths share
+
+These are in libvterm's state layer, so moving off `VTermScreen` does not fix them:
+
+1. `on_resize` clamps the scroll region's bottom but not its top. With DECSTBM `20;40` and then
+   a shrink to 10 rows, the next linefeed calls `scroll()` with `end_row < start_row`, and the
+   line-info `memmove` gets a negative size (a crash).
+2. The saved cursor (DECSC, and mode 1049) is not clamped on resize. DECRC then puts the cursor
+   outside the screen. `TermScreen` survives this through the clamp above; `VTermScreen` crashed.
+
+The random stream in the oracle steers clear of both (it resets DECSTBM and re-saves the cursor
+around a resize). A fix belongs in libvterm (or a vendored patch) and is not part of this change.
 
 ### Damage
 

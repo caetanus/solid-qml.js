@@ -521,6 +521,33 @@ int main(int argc, char **argv)
     const int steps = argc > 1 ? std::atoi(argv[1]) : 6000;
     bool ok = true;
     // Default limit, a tiny limit (eviction + recycling on every push), and no scrollback at all.
+    if (const char *file = std::getenv("ORACLE_FILE")) { // replay a file (e.g. the bench's mixed.txt)
+        FILE *f = std::fopen(file, "rb");
+        if (!f)
+            return 2;
+        std::mt19937 chunkRng { unsigned(steps) };
+        Pair p(56, 105, 8000);
+        std::vector<char> buf(65536);
+        long chunks = 0;
+        while (p.ok) {
+            const size_t want = 1 + chunkRng() % buf.size(); // random chunk boundaries (pty reads vary)
+            const size_t got = std::fread(buf.data(), 1, want, f);
+            if (got == 0)
+                break;
+            // compare only every 64 chunks (a full compare per chunk would take hours on 100 MB)
+            vterm_input_write(p.o.vt, buf.data(), got);
+            vterm_screen_flush_damage(p.o.screen);
+            p.n.screen.beginBatch();
+            vterm_input_write(p.n.vt, buf.data(), got);
+            p.n.screen.endBatch();
+            if (++chunks % 64 == 0)
+                p.ok = compare(p.o, p.n, "file chunk " + std::to_string(chunks), p.st);
+        }
+        std::fclose(f);
+        p.ok = p.ok && compare(p.o, p.n, "file end", p.st);
+        std::printf("file %s: %ld chunks, %ld compares, %s\n", file, chunks, p.st.steps, p.ok ? "ok" : "FAILED");
+        return p.ok ? 0 : 1;
+    }
     if (const char *only = std::getenv("ORACLE_ONLY")) { // "seed:limit" — rerun one stream (debugging)
         unsigned seed = 0;
         int limit = 0;
