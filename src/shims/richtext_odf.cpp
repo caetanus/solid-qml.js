@@ -43,6 +43,7 @@ struct RawStyle {
     QString display;      // style:display-name
     QString parent;       // style:parent-style-name (ODF name)
     QString next;         // style:next-style-name (ODF name)
+    int cellAlignment = -1; // Absent until a table-cell style specifies it.
     int outline = 0;      // style:default-outline-level
     QVariantMap props;    // canonical; fontSize may still be a "N%" string (relative to the parent)
 };
@@ -197,6 +198,11 @@ void readStyles(QXmlStreamReader &xml, QLatin1String section, OdfStyles &out)
             const auto level = a.value(QLatin1String("text:level"));
             if ((level.isEmpty() || level == QLatin1String("1")) && !out.lists.contains(currentList))
                 out.lists.insert(currentList, listKind(xml));
+        } else if (name == QLatin1String("table-cell-properties") && !current.isEmpty()) {
+            const auto alignment=a.value(QLatin1String("style:vertical-align"));
+            if (alignment==QLatin1String("middle")) out.styles[current].cellAlignment=QTextCharFormat::AlignMiddle;
+            else if (alignment==QLatin1String("bottom")) out.styles[current].cellAlignment=QTextCharFormat::AlignBottom;
+            else if (alignment==QLatin1String("top")) out.styles[current].cellAlignment=QTextCharFormat::AlignTop;
         } else if (name == QLatin1String("text-properties") && (inDefault || !current.isEmpty())) {
             readTextProps(a, out.fonts, inDefault ? out.defaultParagraph.props : out.styles[current].props);
         } else if (name == QLatin1String("paragraph-properties") && (inDefault || !current.isEmpty())) {
@@ -477,6 +483,7 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     bool inCell = false;
     int nestedTables = 0;
     bool cellFirstBlock = false;
+    int cellAlignment = -1;
     struct Merge { int row, col, rows, cols; };
     QList<Merge> merges;
 
@@ -605,6 +612,18 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                 const QTextTableCell cell = curTable && tRow >= 0 && tRow < curTable->rows()
                     ? curTable->cellAt(tRow, qMin(++tCol, curTable->columns() - 1)) : QTextTableCell();
                 if (cell.isValid()) {
+                    cellAlignment=-1;
+                    QString styleName=attrs.value(QLatin1String("table:style-name")).toString();
+                    for (int depth=0;!styleName.isEmpty() && depth<32;++depth) {
+                        auto it=autos.styles.constFind(styleName);
+                        const RawStyle *style=it==autos.styles.cend() ? nullptr : &*it;
+                        if (!style) { auto namedStyle=named.styles.constFind(styleName); if(namedStyle!=named.styles.cend()) style=&*namedStyle; }
+                        if (!style || style->family!=QLatin1String("table-cell")) break;
+                        if (style->cellAlignment>=0) {
+                            cellAlignment=style->cellAlignment; break;
+                        }
+                        styleName=style->parent;
+                    }
                     cellCursor = cell.firstCursorPosition();
                     inCell = true;
                     cellFirstBlock = true;
@@ -640,6 +659,12 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
             } else if (nestedTables > 0 && name.startsWith(QLatin1String("table-"))) {
                 // a nested table's row/cell end: the outer cell stays open
             } else if (name == QLatin1String("table-cell")) {
+                if (inCell && curTable && cellAlignment>=0) {
+                    auto cell=curTable->cellAt(tRow,tCol);
+                    auto format=cell.format().toTableCellFormat();
+                    format.setVerticalAlignment(static_cast<QTextCharFormat::VerticalAlignment>(cellAlignment));
+                    cell.setFormat(format);
+                }
                 inCell = false;
             } else if (name == QLatin1String("table")) {
                 if (curTable) {
@@ -1129,7 +1154,9 @@ private:
                     continue;
                 }
                 m_x.writeStartElement(QStringLiteral("table:table-cell"));
-                m_x.writeAttribute(QStringLiteral("table:style-name"), name + QStringLiteral(".A1"));
+                const int alignment=cell.format().verticalAlignment();
+                m_tables.last().alignments |= 1u << alignment;
+                m_x.writeAttribute(QStringLiteral("table:style-name"), name + QStringLiteral(".A1-%1").arg(alignment));
                 if (cell.columnSpan() > 1)
                     m_x.writeAttribute(QStringLiteral("table:number-columns-spanned"), QString::number(cell.columnSpan()));
                 if (cell.rowSpan() > 1)
@@ -1183,14 +1210,20 @@ private:
                 x.writeEmptyElement(QStringLiteral("style:table-properties"));
                 x.writeAttribute(QStringLiteral("table:align"), QStringLiteral("margins"));
                 x.writeEndElement();
+                for (int alignment=0;alignment<=QTextCharFormat::AlignBaseline;++alignment) {
+                    if (!(t.alignments & (1u<<alignment))) continue;
                 x.writeStartElement(QStringLiteral("style:style"));
-                x.writeAttribute(QStringLiteral("style:name"), t.name + QStringLiteral(".A1"));
+                x.writeAttribute(QStringLiteral("style:name"), t.name + QStringLiteral(".A1-%1").arg(alignment));
                 x.writeAttribute(QStringLiteral("style:family"), QStringLiteral("table-cell"));
                 x.writeEmptyElement(QStringLiteral("style:table-cell-properties"));
+                if (alignment==QTextCharFormat::AlignMiddle) x.writeAttribute(QStringLiteral("style:vertical-align"),QStringLiteral("middle"));
+                else if (alignment==QTextCharFormat::AlignBottom) x.writeAttribute(QStringLiteral("style:vertical-align"),QStringLiteral("bottom"));
+                else if (alignment==QTextCharFormat::AlignTop) x.writeAttribute(QStringLiteral("style:vertical-align"),QStringLiteral("top"));
                 x.writeAttribute(QStringLiteral("fo:padding"), inches(t.padding));
                 x.writeAttribute(QStringLiteral("fo:border"), t.border > 0
                     ? points(t.border * 0.75) + QStringLiteral(" solid #000000") : QStringLiteral("none"));
                 x.writeEndElement();
+                }
             }
             for (int kind : std::as_const(m_listOrder)) {
                 x.writeStartElement(QStringLiteral("text:list-style"));
@@ -1297,7 +1330,7 @@ private:
         return m + QByteArrayLiteral("</manifest:manifest>");
     }
 
-    struct TableStyle { QString name; qreal border; qreal padding; };
+    struct TableStyle { QString name; qreal border; qreal padding; unsigned alignments = 0; };
 
     const QTextDocument *m_doc;
     const StyleSheet &m_sheet;

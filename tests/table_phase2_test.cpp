@@ -1,4 +1,6 @@
 // Black-box evidence for the phase-2 acceptance conflict; no custom engine here.
+#include "shims/richtext_odf.h"
+#include <QTemporaryDir>
 #include <QTest>
 #include <QTextDocument>
 #include <QTextTable>
@@ -56,6 +58,21 @@ private slots:
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
         QFile load("/proc/loadavg"); QVERIFY(load.open(QIODevice::ReadOnly));
         qInfo().noquote()<<"LOAD"<<load.readAll().trimmed();
+    }
+    void odfCellAlignmentRoundTrip() {
+        QTemporaryDir dir; QVERIFY(dir.isValid());
+        QTextDocument doc; auto *table=makeFixture(doc,8);
+        auto left=table->cellAt(0,0); auto format=left.format().toTableCellFormat();
+        format.setVerticalAlignment(QTextCharFormat::AlignBottom); left.setFormat(format);
+        rt::StyleSheet styles; QString error; const auto path=dir.filePath("alignment.odt");
+        QVERIFY2(rt::writeOdt(path,&doc,styles,1,&error),qPrintable(error));
+        if(qEnvironmentVariableIsSet("TABLE_DUMP")) QFile::copy(path,".scratch/8-alignment.odt");
+        QTextDocument loaded;
+        QVERIFY2(rt::readOdt(path,&loaded,&styles,&error),qPrintable(error));
+        const auto frames=loaded.rootFrame()->childFrames(); QCOMPARE(frames.size(),1);
+        auto *copy=qobject_cast<QTextTable *>(frames.first()); QVERIFY(copy);
+        QCOMPARE(copy->cellAt(0,0).format().verticalAlignment(),QTextCharFormat::AlignBottom);
+        QCOMPARE(copy->cellAt(0,1).format().verticalAlignment(),QTextCharFormat::AlignMiddle);
     }
     void qtMiddleAlignmentGapWitness() {
         for(int lines=1;lines<=8;++lines) {

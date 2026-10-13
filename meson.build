@@ -487,7 +487,7 @@ if build_richtext
   test('table-phase2',
     executable('test-table-phase2', files('tests/table_phase2_test.cpp'),
       qt6.preprocess(moc_sources: files('tests/table_phase2_test.cpp'), dependencies: table_probe_deps),
-      dependencies: table_probe_deps),
+      include_directories: include_directories('src'), dependencies: richtext_test_deps),
     env: ['QT_QPA_PLATFORM=offscreen'], timeout: 120)
   test('richtext-layout',
     executable('test-richtext-layout', files('tests/richtext_layout_test.cpp'),
