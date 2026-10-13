@@ -908,3 +908,14 @@ does).
   windows opened with `--tmux`/the menu? Should SolidTerm reattach its tmux windows on start?
 - **Q7 Floating panes (tmux 3.7).** Show them as overlays, or ignore with a notice?
 - **Q8 Minimum version.** 3.5 (as proposed) or require 3.7c exactly, which the owner is installing?
+
+## Owner decisions (2026-10-13)
+1. Pause-on-select: freeze only the VIEW — the program keeps running, output is buffered per pane (capped) and
+   shown on release; on cap overflow fall back to tmux pause + recapture.
+2. Closing a tab/pane of a tmux session only HIDES it (iTerm2 "buried"): the pane stays alive in tmux and
+   reappears on reattach; a "Hidden panes" menu brings it back. (Kill stays available as an explicit action.)
+3. Default mode: opt-in (`--tmux`, "New tmux session…") + on start SolidTerm reattaches the tmux sessions IT
+   created.
+4. Pane borders: tmux's one-row border becomes the lower pane's native header (exact fit).
+Defaults taken for the minor questions (owner may revisit): output skipped while paused → marker row first,
+history re-fetch later; floating panes (3.7) ignored with a notice; minimum tmux 3.5.
