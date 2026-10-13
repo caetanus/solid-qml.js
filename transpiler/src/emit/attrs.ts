@@ -61,6 +61,11 @@ export const ELEMENT_ATTRS: Record<string, Attrs> = {
   // controls". `role` stays WARN-ONLY on these (a Templates control already carries its own role).
   button: { ...DYN, onClick: "handler", type: { kind: "lit", values: ["submit", "button"] }, "aria-label": "expr", "aria-description": "lit", "aria-describedby": "lit" },
   img: { ...DYN, src: "expr", alt: "expr" },
+  // A symbolic icon from the system icon theme (e.g. "edit-find-symbolic") — src/widgets/icon.cpp.
+  // `class` is LITERAL only (CSS, not DYN): emitIcon goes through the native-tag dispatch path
+  // (readBaseProps/buildCssClassLine, shared with progress/dialog/fieldset/…), which — like every
+  // other tag on that path — only captures a static `class="…"` string, not a reactive expression.
+  icon: { ...CSS, name: "expr" },
   "input:text": {
     ...DYN, ref: "ident", type: { kind: "lit", values: INPUT_TYPES }, value: "expr", placeholder: "expr",
     onInput: "fn", onChange: "fn", onKeyDown: "fn", onKeydown: "fn", disabled: "bool", readOnly: "bool",

@@ -238,16 +238,20 @@ export function Term(props: { onTitle: (t: string) => void }) {
               THIS wrapper and the input itself went transparent/borderless — icon + input then sit
               side by side inside the SAME visual box (flex, not absolute positioning: the engine
               has no `position: absolute`), which reads as "icon inside the field, text indented
-              after it" without needing one. */}
+              after it" without needing one. Real symbolic icons (<icon name="…">), not font
+              punctuation (⌕/‹/›/✕ rendered tiny and off the midline in every font tried) — the
+              same freedesktop names GtkSearchBar itself uses: edit-find/go-up/go-down/
+              window-close-symbolic, resolved through the system icon theme and recoloured to the
+              CSS `color` (see src/widgets/icon.cpp + vendor/qml-css-engine's CssIcon). */}
           <div class="search-in-wrap">
-            <text class="search-icon">⌕</text>
+            <icon name="edit-find-symbolic" class="search-icon" />
             <input ref={searchInput} class="search-in" value={searchQuery()} placeholder="Find…"
                    onInput={(e) => { setSearchQuery(e.target.value); term.searchFocused(e.target.value); }} />
           </div>
           <text class="search-count">{searchCount() > 0 ? (searchIdx() + " / " + searchCount()) : "0 / 0"}</text>
-          <button class="search-btn" onClick={() => term.searchPrev()}>‹</button>
-          <button class="search-btn" onClick={() => term.searchNext()}>›</button>
-          <button class="search-btn" onClick={() => closeSearch()}>✕</button>
+          <button class="search-btn" onClick={() => term.searchPrev()}><icon name="go-up-symbolic" class="search-btn-icon" /></button>
+          <button class="search-btn" onClick={() => term.searchNext()}><icon name="go-down-symbolic" class="search-btn-icon" /></button>
+          <button class="search-btn" onClick={() => closeSearch()}><icon name="window-close-symbolic" class="search-btn-icon" /></button>
         </div>
       </Show>
 

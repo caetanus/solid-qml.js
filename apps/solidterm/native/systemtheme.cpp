@@ -2,6 +2,7 @@
 
 #include <QEvent>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QPalette>
 #include <QProcess>
 #include <QStyleHints>
@@ -93,6 +94,17 @@ SystemTheme::SystemTheme(QObject *parent)
     // Live re-theme when the desktop toggles dark/light (portal → styleHints).
     if (auto *hints = qApp ? qApp->styleHints() : nullptr)
         connect(hints, &QStyleHints::colorSchemeChanged, this, [this] { refresh(); emit changed(); });
+
+    // Icon theme NAME, for <icon> (QmlCss::ThemeIconProvider, vendor/qml-css-engine): same
+    // reasoning as the accent/dark-mode reads above — QIcon::themeName()'s own platform-theme
+    // detection isn't trustworthy here (qt5ct.conf on this box names a DIFFERENT theme,
+    // "Papirus-Adapta-Nokto-Maia", than gsettings' real "Papirus-Dark"; qt5ct doesn't theme Qt6
+    // at all per the file comment above), so read the GNOME setting directly and set it
+    // explicitly, once (unlike accent/dark-mode, an icon theme change mid-session is rare enough
+    // that it doesn't need a live portal/gsettings watch — a fresh launch picks up a change).
+    const QString iconTheme = gsetting(QStringLiteral("org.gnome.desktop.interface"), QStringLiteral("icon-theme"));
+    if (!iconTheme.isEmpty())
+        QIcon::setThemeName(iconTheme);
 }
 
 void SystemTheme::refresh()

@@ -277,6 +277,7 @@ int main(int argc, char **argv)
     SolidNotifications solidNotifications; // D-Bus worker thread starts now; `available` flips async
 
     QQmlApplicationEngine engine;
+    QmlCss::registerImageProviders(&engine); // an image provider belongs to ONE engine
     // The generated app does `import solidqml.Widgets 1.0 as W`; the module lives in a `Widgets/`
     // dir beside the app (qml/solidqml/Widgets). Add the app root (parent of the app dir) so the
     // dotted module `solidqml.Widgets` resolves to <root>/solidqml/Widgets.

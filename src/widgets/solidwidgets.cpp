@@ -15,6 +15,7 @@
 #include "swipe.h"
 #include "dialog.h"
 #include "drawer.h"
+#include "icon.h"
 #include "spindial.h"
 #include "splitview.h"
 #include "swipeview.h"
@@ -46,6 +47,7 @@ void registerTypes()
     qmlRegisterType<Div>("solidqml.Widgets", 1, 0, "Div");
     qmlRegisterType<Text>("solidqml.Widgets", 1, 0, "Text");
     qmlRegisterType<Image>("solidqml.Widgets", 1, 0, "Image");
+    qmlRegisterType<Icon>("solidqml.Widgets", 1, 0, "Icon");
     qmlRegisterType<Button>("solidqml.Widgets", 1, 0, "Button");
     qmlRegisterType<RoundButton>("solidqml.Widgets", 1, 0, "RoundButton");
     qmlRegisterType<Fieldset>("solidqml.Widgets", 1, 0, "Fieldset");

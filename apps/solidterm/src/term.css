@@ -43,10 +43,13 @@
    34px square / 16px glyph just matches the field instead of guessing a smaller size. */
 .searchbar { display: flex; flex-direction: row; align-items: center; padding: 6px 10px; gap: 6px; }
 .search-in-wrap { flex: 1; display: flex; flex-direction: row; align-items: center; height: 34px; border-radius: 6px; padding: 0 9px; }
-.search-icon { font-size: 16px; margin-right: 6px; }
+/* Real symbolic icons (<icon>, src/widgets/icon.cpp) — 16px square is both Adwaita's own entry-
+   icon size (gtk.css:124, cited above) and CssIcon's auto `iconSize: min(width, height)`. */
+.search-icon { width: 16px; height: 16px; margin-right: 6px; }
 .search-in { flex: 1; height: 34px; padding: 0; font-size: 13px; }
 .search-count { font-size: 13px; padding: 0 6px; }
-.search-btn { font-size: 16px; width: 34px; height: 34px; border: none; border-radius: 9px; background: transparent; }
+.search-btn { width: 34px; height: 34px; border: none; border-radius: 9px; background: transparent; }
+.search-btn-icon { width: 16px; height: 16px; }
 
 .term-status {
   display: flex; flex-direction: row; justify-content: space-between;
