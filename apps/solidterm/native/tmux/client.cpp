@@ -351,7 +351,7 @@ void Client::write(Route &r, int pane, const char *data, size_t len)
         r.overHead = 0;
     }
     r.over.append(data, len);
-    if (r.over.size() - r.overHead > kOverflowCap && !r.pauseRequested && !r.paused) {
+    if (r.over.size() - r.overHead > m_overflowCap.load(std::memory_order_relaxed) && !r.pauseRequested && !r.paused) {
         // A view that stays paused (selection) or a pane nobody shows: stop tmux sending it; it is
         // reseeded once what we hold has drained.
         r.pauseRequested = true;

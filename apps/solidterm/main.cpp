@@ -21,9 +21,11 @@
 #include "native/terminaltabs.h"
 #include "native/terminalview.h"
 #include "native/perftrace.h"
+#include "native/tmuxsession.h"
 
 #include <QApplication>
 #include <QDir>
+#include <QProcess>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQmlContext>
@@ -72,6 +74,7 @@ struct AppCtx {
     SystemTheme *sysTheme = nullptr;
     TermConfig *config = nullptr;
     QQmlComponent *windowComponent = nullptr; // compiled once; every further window instantiates it
+    QUrl windowUrl;
 };
 static AppCtx g_app;
 
@@ -117,32 +120,111 @@ static void wireWindow(QQuickWindow *window)
 #endif
 }
 
-// A window for another `solidterm` invocation: its shells start in THAT caller's directory with
-// its environment (kept on the window, so later splits/tabs inherit them too).
-static void openForwardedWindow(const SingleInstance::Request &request, void *)
+// `--tmux [session]` / `--tmux-attach <session>` in an argument list (docs/solidterm-tmux-control-mode.md 8).
+static bool tmuxArgs(const QStringList &args, QString *name, bool *attachOnly)
 {
+    for (qsizetype i = 0; i < args.size(); ++i) {
+        const bool attach = args[i] == QLatin1String("--tmux-attach");
+        if (args[i] != QLatin1String("--tmux") && !attach)
+            continue;
+        const bool hasName = i + 1 < args.size() && !args[i + 1].startsWith(QLatin1Char('-'));
+        if (attach && !hasName)
+            return false;
+        *name = hasName ? args[i + 1] : QStringLiteral("main");
+        *attachOnly = attach;
+        return true;
+    }
+    return false;
+}
+
+// A new top-level window: its shells start in `cwd` with `env` (kept on the window, so later splits
+// and tabs inherit them too); with `tmuxName` it shows that tmux session instead.
+static QQuickWindow *openWindow(const QString &cwd, const QStringList &env, const QString &tmuxName, bool attachOnly)
+{
+    if (!g_app.windowComponent)
+        g_app.windowComponent = new QQmlComponent(g_app.engine, g_app.windowUrl, g_app.engine);
     QQmlComponent *comp = g_app.windowComponent;
-    const TerminalView::SpawnContext spawn { request.cwd, request.env };
+    const TerminalView::SpawnContext spawn { cwd, env };
     QObject *o = nullptr;
     {
         SolidQmlEmbed::MountBatch mount(g_app.engine);
         TerminalView::setPendingSpawn(&spawn);
+        if (!tmuxName.isEmpty())
+            TerminalTabs::setPendingTmuxSession(tmuxName, attachOnly);
         o = comp->beginCreate(g_app.engine->rootContext());
         if (o) {
-            o->setProperty("solidtermCwd", request.cwd);
-            o->setProperty("solidtermEnv", request.env);
+            o->setProperty("solidtermCwd", cwd);
+            o->setProperty("solidtermEnv", env);
             comp->completeCreate();
         }
         TerminalView::setPendingSpawn(nullptr);
+        TerminalTabs::setPendingTmuxSession(QString());
     }
     auto *window = qobject_cast<QQuickWindow *>(o);
     if (!window) {
         qWarning("solidterm: new window failed: %s", qPrintable(comp->errorString()));
         delete o;
-        return;
+        return nullptr;
     }
     o->setParent(g_app.engine); // keep the top-level window alive
     wireWindow(window);
+    return window;
+}
+
+// A window on tmux session `name` — or the window already showing it, raised (5.2).
+static void openTmuxWindow(const QString &name, bool attachOnly)
+{
+    if (TmuxSession *s = TmuxSession::find(name)) {
+        if (QQuickWindow *w = s->window()) {
+            w->show();
+            w->raise();
+            w->requestActivate();
+            return;
+        }
+    }
+    openWindow(QString(), QStringList(), name, attachOnly);
+}
+
+// A window for another `solidterm` invocation (single instance): its directory and environment,
+// and `--tmux` / `--tmux-attach` from its arguments.
+static void openForwardedWindow(const SingleInstance::Request &request, void *)
+{
+    QString name;
+    bool attachOnly = false;
+    if (tmuxArgs(request.args, &name, &attachOnly)) {
+        if (TmuxSession *s = TmuxSession::find(name); s && s->window()) {
+            openTmuxWindow(name, attachOnly); // raises it
+            return;
+        }
+        openWindow(request.cwd, request.env, name, attachOnly);
+        return;
+    }
+    openWindow(request.cwd, request.env, QString(), false);
+}
+
+// Decision 3: on start, SolidTerm reattaches the tmux sessions IT created (marked @solidterm when
+// it created them) that nothing is attached to. One window each. Off with tmuxReattach = 0.
+static void reattachOwnTmuxSessions()
+{
+    auto *p = new QProcess(qApp);
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.remove(QStringLiteral("TMUX"));
+    p->setProcessEnvironment(env);
+    QObject::connect(p, &QProcess::finished, p, [p] {
+        const QStringList lines = QString::fromLocal8Bit(p->readAllStandardOutput()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        for (const QString &l : lines) {
+            const QStringList f = l.split(QLatin1Char('\t'));
+            if (f.size() >= 3 && f[1] == QLatin1String("1") && f[2] == QLatin1String("0"))
+                openTmuxWindow(f[0], true);
+        }
+        p->deleteLater();
+    });
+    QObject::connect(p, &QProcess::errorOccurred, p, [p](QProcess::ProcessError e) {
+        if (e == QProcess::FailedToStart) // no tmux: nothing to reattach
+            p->deleteLater();
+    });
+    p->start(TmuxSession::binary(), { QStringLiteral("list-sessions"), QStringLiteral("-F"),
+                                      QStringLiteral("#{session_name}\t#{@solidterm}\t#{session_attached}") });
 }
 
 static const char kUsage[] =
@@ -154,13 +236,19 @@ static const char kUsage[] =
     "Options:\n"
     "  --tmux [session]  attach to tmux session <session> (default \"main\"), creating it if needed,\n"
     "                    in tmux control mode: tmux windows are tabs, panes are splits; closing the\n"
-    "                    window detaches and the session keeps running. Runs as its own process.\n"
+    "                    window detaches and the session keeps running. A window already showing\n"
+    "                    that session is raised instead.\n"
+    "  --tmux-attach <session>\n"
+    "                    the same, but only attach (an error if there is no such session)\n"
     "  --standalone      do not share a process with other SolidTerm windows\n"
     "  -h, --help        show this help and exit\n"
     "\n"
     "Environment:\n"
     "  SOLIDTERM_DIR      the UI directory (default: <bindir>/../share/solidterm)\n"
-    "  SOLIDTERM_TMUX_BIN the tmux binary for --tmux (default: tmux in PATH)\n";
+    "  SOLIDTERM_TMUX_BIN the tmux binary for --tmux (default: Preferences, else tmux in PATH)\n"
+    "\n"
+    "On start, SolidTerm reattaches the tmux sessions it created that nothing is attached to\n"
+    "(Preferences: tmux → Reattach my sessions on start). Requires tmux 3.5 or newer.\n";
 
 int main(int argc, char **argv)
 {
@@ -240,16 +328,15 @@ int main(int argc, char **argv)
     // `solidterm --tmux [session]` (docs/solidterm-tmux-control-mode.md, phase 1: a read-only viewer):
     // the first window attaches to that tmux session — or creates it — instead of a local shell.
     // SOLIDTERM_TMUX_BIN replaces the tmux binary (the tests' fake server).
-    {
-        const QStringList args = QCoreApplication::arguments();
-        const qsizetype at = args.indexOf(QStringLiteral("--tmux"));
-        if (at >= 0) {
-            const QString name = at + 1 < args.size() && !args[at + 1].startsWith(QLatin1Char('-')) ? args[at + 1] : QStringLiteral("main");
-            TerminalTabs::setPendingTmuxSession(name);
-        }
-    }
+    TmuxSession::setConfig(config);
+    TerminalTabs::setOpenTmuxWindowHook(openTmuxWindow);
+    QString firstTmux;
+    bool firstAttachOnly = false;
+    if (tmuxArgs(QCoreApplication::arguments(), &firstTmux, &firstAttachOnly))
+        TerminalTabs::setPendingTmuxSession(firstTmux, firstAttachOnly);
 
     const QUrl windowUrl = appDir.resolved(QUrl(QStringLiteral("App.generated.qml")));
+    g_app.windowUrl = windowUrl;
     TerminalPanes::setWindowUrl(windowUrl); // so a pane detach can spawn a full new solidterm window
     {
         SolidQmlEmbed::MountBatch mount(&engine); // one layout for the whole UI, not one per element
@@ -281,9 +368,13 @@ int main(int argc, char **argv)
 #endif
     });
 
+    TerminalTabs::setPendingTmuxSession(QString());
     if (role == SingleInstance::Role::Server) {
         g_app.windowComponent = new QQmlComponent(&engine, windowUrl, &engine); // already compiled: cached
         SingleInstance::listen(openForwardedWindow, nullptr);
+        // Only the instance (never a standalone/test run: those must not touch a tmux server).
+        if (config->getInt(QStringLiteral("tmuxReattach"), 1) != 0)
+            QTimer::singleShot(0, qApp, reattachOwnTmuxSessions);
     }
 
     // Debug/CI: SOLIDTERM_TMUXTEST=fake|real — self-checking tmux-mode run (see tmuxselftest.h).

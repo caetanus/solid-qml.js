@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include <fcntl.h>
 #include <poll.h>
@@ -32,6 +33,7 @@ constexpr char kMagic[] = "SOLIDTERM1";
 constexpr int kAckTimeoutMs = 5000;
 
 std::string g_socketPath;
+std::vector<std::string> g_args; // forwarded to the instance (negotiate)
 int g_lockFd = -1; // held for the server's lifetime: "an instance owns this socket path"
 
 uint64_t fnv1a(const std::string &s)
@@ -53,10 +55,7 @@ std::string env(const char *name)
 bool standaloneRequested(int argc, char **argv)
 {
     for (int i = 1; i < argc; ++i)
-        if (std::strcmp(argv[i], "--standalone") == 0
-            // `--tmux` cannot travel over the single-instance socket yet (Request carries cwd + env
-            // only; adding `args` is phase 4 of docs/solidterm-tmux-control-mode.md): its own process.
-            || std::strcmp(argv[i], "--tmux") == 0)
+        if (std::strcmp(argv[i], "--standalone") == 0)
             return true;
     for (char **e = environ; *e; ++e) {
         if (std::strncmp(*e, "SOLIDTERM_", 10) != 0)
@@ -160,6 +159,11 @@ bool tryForward()
         payload += *e;
         payload += '\0';
     }
+    for (const std::string &a : g_args) {
+        payload += '\x01';
+        payload += a;
+        payload += '\0';
+    }
     const uint32_t len = uint32_t(payload.size());
     const unsigned char header[4] = { uint8_t(len >> 24), uint8_t(len >> 16), uint8_t(len >> 8), uint8_t(len) };
     bool ok = writeAll(fd, reinterpret_cast<const char *>(header), 4) && writeAll(fd, payload.data(), payload.size());
@@ -192,9 +196,14 @@ bool parseRequest(const QByteArray &payload, Request &out)
     if (parts.size() < 2 || parts[0] != kMagic)
         return false;
     out.cwd = QString::fromLocal8Bit(parts[1]);
-    for (qsizetype i = 2; i < parts.size(); ++i)
-        if (!parts[i].isEmpty())
+    for (qsizetype i = 2; i < parts.size(); ++i) {
+        if (parts[i].isEmpty())
+            continue;
+        if (parts[i].startsWith('\x01'))
+            out.args << QString::fromLocal8Bit(parts[i].mid(1));
+        else
             out.env << QString::fromLocal8Bit(parts[i]);
+    }
     return true;
 }
 
@@ -204,6 +213,8 @@ Role negotiate(int argc, char **argv)
 {
     if (standaloneRequested(argc, argv))
         return Role::Standalone;
+    for (int i = 1; i < argc; ++i)
+        g_args.emplace_back(argv[i]);
     g_socketPath = socketPath();
     if (tryForward())
         return Role::Forwarded;

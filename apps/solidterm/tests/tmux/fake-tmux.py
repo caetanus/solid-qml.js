@@ -98,9 +98,8 @@ class Server:
         self.extended = False
         self.reactions = []        # (regex, fn, before, once)
         self.log_path = os.environ.get("FAKE_TMUX_LOG")
-        if self.log_path:
-            open(self.log_path, "w").close()  # one run per log
         self.exiting = False
+        self.exiting_reason = ""
         self.fixed = {}            # pane id -> ("x"|"y", cells) from resize-pane
         self.active_pane = {}      # window id -> pane id (default: its first pane)
         self.capture_groups = 0
@@ -605,6 +604,12 @@ class Server:
                 p.modes["pane_in_mode"], p.modes["pane_mode"] = "0", ""
                 self.after_block.append(lambda: emit(b"%%pane-mode-changed %%%d" % p.id))
             return [], False
+        if name in ("set-option", "set"):
+            return [], False
+        if name in ("kill-session", "kill-ses"):
+            self.exiting_reason = "server exited"
+            self.exiting = True
+            return [], False
         if name == "detach-client":
             self.exiting = True
             return [], False
@@ -637,10 +642,13 @@ class Server:
             fn()
         self.react(line, False)
         if self.exiting:
-            emit(b"%exit")
+            emit(b"%exit" + ((" " + self.exiting_reason).encode() if self.exiting_reason else b""))
             sys.exit(0)
 
     def serve(self):
+        if self.log_path:
+            with open(self.log_path, "a") as f:
+                f.write("# argv: " + " ".join(sys.argv[1:]) + "\n")
         t = int(time.time())
         emit(b"%%begin %d 1 0" % t)
         emit(b"%%end %d 1 0" % t)
@@ -651,7 +659,40 @@ class Server:
         sys.exit(0)
 
 
+def sessions_env():
+    """FAKE_TMUX_SESSIONS="name:ours:attached;…" — the sessions one-shot commands see."""
+    out = []
+    for item in filter(None, os.environ.get("FAKE_TMUX_SESSIONS", "").split(";")):
+        name, ours, attached = (item.split(":") + ["", "", "0"])[:3]
+        out.append((name, ours, attached))
+    return out
+
+
+def one_shot(argv):
+    """tmux without -C: -V, has-session, list-sessions (what SolidTerm runs before attaching and
+    for its session picker). Logged like the control commands."""
+    log = os.environ.get("FAKE_TMUX_LOG")
+    if log:
+        with open(log, "a") as f:
+            f.write("# oneshot: " + " ".join(argv) + "\n")
+    if argv[:1] == ["-V"]:
+        print(os.environ.get("FAKE_TMUX_VERSION", "tmux 3.7c"))
+        return 0
+    if argv[:1] == ["has-session"]:
+        target = argv[argv.index("-t") + 1].lstrip("=") if "-t" in argv else ""
+        return 0 if any(n == target for n, _, _ in sessions_env()) else 1
+    if argv[:1] == ["list-sessions"]:
+        fmt = argv[argv.index("-F") + 1] if "-F" in argv else "#{session_name}"
+        for n, ours, attached in sessions_env():
+            f = {"session_name": n, "@solidterm": ours, "session_attached": attached}
+            print(re.sub(r"#\{([@a-z_]+)\}", lambda m: f.get(m.group(1), ""), fmt))
+        return 0
+    return 1
+
+
 def main():
+    if "-C" not in sys.argv[1:]:
+        sys.exit(one_shot(sys.argv[1:]))
     srv = Server()
     scenario = os.environ.get("FAKE_TMUX_SCENARIO")
     if scenario:

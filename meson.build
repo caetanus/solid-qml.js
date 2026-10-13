@@ -593,6 +593,44 @@ if build_solidterm
     depends: solidterm_exe,
     is_parallel: false,
     timeout: 120)
+  # tmux LIFECYCLE (phase 4) through the real UI against the fake: a session SolidTerm creates is
+  # marked @solidterm; the picker lists sessions and opens/raises windows; preferences apply live;
+  # the server exiting leaves the panes read-only under a banner with Reattach, which works; the
+  # "kill the session on close" preference. Then the version gate and a missing tmux.
+  life_env = {
+    'QT_QPA_PLATFORM': 'offscreen',
+    'QT_FORCE_STDERR_LOGGING': '1',
+    'XDG_CONFIG_HOME': meson.current_build_dir() / 'solidterm-test-config',
+    'SOLIDTERM_TMUX_BIN': meson.current_source_dir() / 'apps/solidterm/tests/tmux/fake-tmux.py',
+    'FAKE_TMUX_SCENARIO': meson.current_source_dir() / 'apps/solidterm/tests/tmux/scenario-life.py',
+    'FAKE_TMUX_SESSIONS': 'other:1:0;third::0',
+  }
+  test('solidterm-tmux-life', solidterm_exe, args: ['--standalone', '--tmux', 'fresh'],
+    env: life_env + { 'SOLIDTERM_TMUXTEST': 'life', 'FAKE_TMUX_LOG': meson.current_build_dir() / 'solidterm-tmux-life.log' },
+    is_parallel: false, # the shared test config is changed (and restored) by the run
+    timeout: 60)
+  test('solidterm-tmux-oldversion', solidterm_exe, args: ['--standalone', '--tmux', 'old'],
+    env: life_env + { 'SOLIDTERM_TMUXTEST': 'oldversion', 'FAKE_TMUX_VERSION': 'tmux 3.4',
+                      'FAKE_TMUX_LOG': meson.current_build_dir() / 'solidterm-tmux-oldversion.log' },
+    timeout: 30)
+  test('solidterm-tmux-nobinary', solidterm_exe, args: ['--standalone', '--tmux', 'none'],
+    env: life_env + { 'SOLIDTERM_TMUXTEST': 'nobinary', 'SOLIDTERM_TMUX_BIN': '/nonexistent/tmux',
+                      'FAKE_TMUX_LOG': meson.current_build_dir() / 'solidterm-tmux-nobinary.log' },
+    timeout: 30)
+  # `--tmux` through the single-instance socket + reattach-on-start, two real processes (fake tmux).
+  test('solidterm-tmux-forward', find_program('bash'),
+    args: [meson.current_source_dir() / 'apps/solidterm/tests/tmux/run-forward.sh', solidterm_exe.full_path(),
+           meson.current_build_dir() / 'tmux-forward'],
+    depends: solidterm_exe,
+    timeout: 90)
+  test('solidterm-tmux-life-real', find_program('bash'),
+    args: [meson.current_source_dir() / 'apps/solidterm/tests/tmux/run-real-ui.sh', solidterm_exe.full_path(),
+           tmux_prog.found() ? tmux_prog.full_path() : '', meson.current_build_dir() / 'tmux-real-ui', 'real-life'],
+    env: { 'XDG_CONFIG_HOME': meson.current_build_dir() / 'solidterm-test-config' },
+    depends: solidterm_exe,
+    is_parallel: false,
+    timeout: 120)
+
   # tmux passthrough unwrapping (native/tmux/passthrough.h): every split of the stream.
   test('solidterm-tmux-passthrough',
     executable('test-solidterm-tmux-passthrough', files('apps/solidterm/tests/tmux_passthrough_test.cpp')),

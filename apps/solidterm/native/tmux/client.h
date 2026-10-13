@@ -18,7 +18,7 @@
 //   - %pause (1.6, pause-after): once the pane's held output has drained, one group resumes the pane
 //     and re-snapshots it (refresh-client -A '%P:continue' ; display-message ; capture-pane);
 //   - overflow: a full feed pipe (paused or slow view) never blocks the reader — the rest waits in a
-//     per-pane buffer; past kOverflowCap the pane is paused in tmux and reseeded once it drains.
+//     per-pane buffer; past the overflow cap the pane is paused in tmux and reseeded once it drains.
 // Everything else (notifications, replies the GUI asked for, exit) is queued for the GUI thread,
 // signalled through an eventfd it watches (coalesced, like TermWorker's news).
 //
@@ -76,7 +76,8 @@ public:
         KPauseRequest,      // refresh-client -A '%P:pause' after an overflow
     };
 
-    static constexpr size_t kOverflowCap = 8u << 20; // per pane (owner decision 1: capped buffer)
+    static constexpr size_t kOverflowCap = 8u << 20; // default, per pane (owner decision 1: capped buffer)
+    void setOverflowCap(size_t bytes) { m_overflowCap.store(bytes ? bytes : kOverflowCap, std::memory_order_relaxed); }
 
     Client();
     ~Client();
@@ -169,6 +170,7 @@ private:
     std::thread m_thread;
     std::atomic<bool> m_stop { false };
     std::atomic<int> m_historyLimit { 8000 };
+    std::atomic<size_t> m_overflowCap { kOverflowCap };
     std::atomic<bool> m_teeOn { false };
     std::atomic<int> m_seedsDone { 0 }, m_reseedsDone { 0 };
 

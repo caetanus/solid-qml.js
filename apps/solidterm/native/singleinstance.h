@@ -12,6 +12,8 @@
 // display variables, so a dev build never forwards to the installed one and a nested compositor gets
 // its own instance. A flock decides who becomes the server when two launch at once.
 //
+// Arguments travel too (each as a "\x01"-prefixed entry after the environment; no environment
+// entry starts with \x01).
 // Standalone (the old one-process-per-window behaviour): `--standalone`, SOLIDTERM_STANDALONE=1, or
 // any SOLIDTERM_* debug variable (those drive a single scripted window and must not be forwarded).
 namespace SingleInstance {
@@ -24,7 +26,9 @@ enum class Role {
 
 struct Request {
     QString cwd;
-    QStringList env; // "KEY=VALUE"
+    QStringList env;  // "KEY=VALUE"
+    QStringList args; // the caller's arguments (--tmux <session> opens a tmux window: phase 4 of
+                      // docs/solidterm-tmux-control-mode.md)
 };
 
 // Decide the role. Plain POSIX — call BEFORE constructing QApplication.

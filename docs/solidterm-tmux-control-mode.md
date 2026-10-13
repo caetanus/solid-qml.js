@@ -1,6 +1,6 @@
 # SolidTerm × tmux control mode (design)
 
-Status: **phases 0 to 3 implemented** (input, structural sync, hidden panes); see "Implementation status" at the
+Status: **phases 0 to 4 implemented** (input, structural sync, hidden panes, lifecycle); see "Implementation status" at the
 end for what real tmux 3.7c corrected. Owner decision
 (2026-10-13): SolidTerm integrates with tmux **control mode** the way iTerm2 does with `tmux -CC`.
 tmux windows become native SolidTerm tabs, tmux panes become native splits, and each pane is a
@@ -1057,5 +1057,43 @@ is visible. `solidterm-tmux-struct-real` does the same against a real tmux (outs
 a real program's passthrough). `solidterm-tmux-passthrough` tests the unwrapper with every cut
 of the stream.
 
-Still open (phase 4+): single-instance `--tmux` forwarding, session picker, banners for a server
-that exits, the version gate, preferences, and pause-on-select with cap and reseed polish.
+
+## Implementation status: phase 4, lifecycle (2026-10-13)
+
+- **`--tmux [session]` / `--tmux-attach <session>` go through the single-instance socket** (6.7). The
+  arguments travel as `\x01`-prefixed entries after the environment; no environment entry starts
+  with `\x01`. The instance opens a tmux window, or raises the window already showing that session
+  (5.2; the same applies inside one process, e.g. from the picker).
+- **Version gate (7):** `tmux -V` runs before the control client. `master` and `next-X.Y` with
+  X.Y ≥ 3.5 pass; anything older, unparsable or missing shows a banner instead (no tabs, no
+  Reattach).
+- **Sessions SolidTerm created (decision 3):** `tmux has-session -t =<name>` runs before
+  `new-session -A`. If the session did not exist, it is marked with `set-option -t $S @solidterm 1`
+  once attached. On start, the single instance (never a `--standalone` or test run) lists sessions
+  and opens a window, attach only, for each marked session nothing is attached to (preference
+  "Reattach my sessions on start", on by default).
+- **Session picker (8):** the context menu shows "New tmux session…" (a dialog asks for a name) and
+  "Attach tmux: <name>" for each session from `tmux list-sessions`, refreshed on every right-click.
+  SolidTerm's own sessions are marked ★. In tmux mode it also shows "Detach from tmux" and "Kill
+  tmux session".
+- **Banner when the session is lost (7):** the window, its tabs and the panes' content stay; panes
+  go read-only, and a banner names the reason and offers Reattach and Close. Reattach starts a new
+  control client: tabs are rebuilt and reseeded. Recorded from 3.7c: kill-server and a detach by
+  another client both give a bare `%exit`. A `has-session` probe tells them apart ("the tmux server
+  is gone" vs "detached (by another client or a command)"). If the session ends with its last
+  window, the OS window closes as before.
+- **Preferences (6.5):** tmux binary (`SOLIDTERM_TMUX_BIN` still wins), "Closing a tmux window"
+  (detach | kill the session; the doc's "ask" is not implemented), reattach on start, history
+  restored on attach (0 = the scrollback limit), pause-after seconds, and the held-output cap per
+  pane. Pause-after and the cap apply live to every session.
+
+Tests:
+- `solidterm-tmux-life` (UI against the fake): the @solidterm marker, the picker listing and
+  opening or raising a window, a live preference change, server exit (banner, read-only content,
+  then Reattach), and closing with kill-session.
+- `solidterm-tmux-oldversion` / `-nobinary`: the version gate.
+- `solidterm-tmux-forward`: two real processes on a private runtime dir. Reattach-on-start of only
+  the right session, `--tmux` forwarded with the client exiting at once, and a repeated request
+  raising the window instead of attaching again.
+- `solidterm-tmux-life-real`: a real tmux; the created session is marked, kill-server gives
+  "the tmux server is gone".

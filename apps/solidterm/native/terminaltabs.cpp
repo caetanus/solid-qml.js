@@ -16,6 +16,7 @@
 #include <QQmlEngine>
 #include <QQuickWindow>
 #include <QTimer>
+#include <QProcess>
 
 #include <utility>
 
@@ -177,9 +178,9 @@ void TerminalTabs::componentComplete()
     if (!s_pendingTmux.isNull()) {
         // `--tmux <name>`: the tabs are the session's windows, built as tmux reports them.
         m_isTmux = true;
-        m_tmux = new TmuxSession(s_pendingTmux, this);
+        const QString name = s_pendingTmux;
         s_pendingTmux = QString();
-        connect(m_tmux, &TmuxSession::hiddenChanged, this, &TerminalTabs::emitTmuxState);
+        startTmux(name, s_pendingTmuxAttachOnly);
         QMetaObject::invokeMethod(this, &TerminalTabs::emitTmuxState, Qt::QueuedConnection);
         return;
     }
@@ -758,4 +759,111 @@ void TerminalTabs::leaveTmuxModeFocused()
 {
     if (auto *p = active())
         p->leaveTmuxModeFocused();
+}
+
+// ─── lifecycle (phase 4) ─────────────────────────────────────────────────────────────────────────
+
+void TerminalTabs::startTmux(const QString &name, bool attachOnly)
+{
+    m_tmux = new TmuxSession(name, this, attachOnly);
+    m_tmuxName = m_tmux->name();
+    connect(m_tmux, &TmuxSession::hiddenChanged, this, &TerminalTabs::emitTmuxState);
+    if (width() > 0 && height() > 0) {
+        qreal cw, ch;
+        GlyphCache::cellMetrics(m_fontFamily, m_fontSize, window() ? window()->effectiveDevicePixelRatio() : 1.0, &cw, &ch);
+        m_tmux->setArea(width(), height(), cw, ch);
+    }
+    if (QQuickWindow *w = window())
+        w->setProperty("solidtermTmuxSession", m_tmuxName);
+}
+
+void TerminalTabs::tmuxSessionLost(const QString &text, bool canReattach)
+{
+    m_tmux = nullptr;
+    for (const Tab &t : std::as_const(m_tabs))
+        for (TerminalView *v : t.panes->views())
+        {
+            v->setReadOnly(true); // the pane's program is out of reach; its output stays readable
+            v->setTmuxInputHook(nullptr, nullptr); // the session object goes away
+        }
+    emit tmuxBanner(text, canReattach);
+}
+
+void TerminalTabs::tmuxReattach()
+{
+    if (!m_isTmux || m_tmux)
+        return;
+    for (const Tab &t : std::as_const(m_tabs))
+        if (t.panes)
+            t.panes->deleteLater();
+    m_tabs.clear();
+    m_active = 0;
+    emitModel();
+    emit tmuxBanner(QString(), false);
+    startTmux(m_tmuxName, false);
+    emitTmuxState();
+}
+
+void TerminalTabs::tmuxDetach()
+{
+    closeWindow(); // ~TerminalTabs detaches
+}
+
+void TerminalTabs::tmuxKillSession()
+{
+    if (m_tmux)
+        m_tmux->killSession();
+}
+
+void TerminalTabs::closeWindow()
+{
+    if (QQuickWindow *w = window())
+        w->close();
+}
+
+void TerminalTabs::openTmuxSession(const QString &name)
+{
+    if (s_openTmuxWindow && !name.isEmpty())
+        s_openTmuxWindow(name, true);
+}
+
+void TerminalTabs::newTmuxSession(const QString &name)
+{
+    if (s_openTmuxWindow)
+        s_openTmuxWindow(name.trimmed().isEmpty() ? QStringLiteral("main") : name.trimmed(), false);
+}
+
+void TerminalTabs::refreshTmuxSessions()
+{
+    // One-shot `tmux list-sessions` (8): the picker's list. #{@solidterm} marks the sessions
+    // SolidTerm created (decision 3).
+    auto *p = new QProcess(this);
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.remove(QStringLiteral("TMUX"));
+    p->setProcessEnvironment(env);
+    connect(p, &QProcess::finished, this, [this, p] {
+        QVariantList out;
+        const QStringList lines = QString::fromLocal8Bit(p->readAllStandardOutput()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        for (const QString &l : lines) {
+            const QStringList f = l.split(QLatin1Char('\t'));
+            if (f.size() < 3)
+                continue;
+            QVariantMap m;
+            m[QStringLiteral("name")] = f[0];
+            m[QStringLiteral("attached")] = f[1].toInt();
+            m[QStringLiteral("ours")] = f[2] == QLatin1String("1");
+            m[QStringLiteral("current")] = f[0] == m_tmuxName && m_isTmux;
+            out.append(m);
+        }
+        emit tmuxSessionsChanged(out);
+        p->deleteLater();
+    });
+    connect(p, &QProcess::errorOccurred, p, [this, p](QProcess::ProcessError e) {
+        if (e == QProcess::FailedToStart) {
+            emit tmuxSessionsChanged({});
+            p->deleteLater();
+        }
+    });
+    p->start(TmuxSession::binary(), { QStringLiteral("list-sessions"), QStringLiteral("-F"),
+                                      QStringLiteral("#{session_name}\t#{session_attached}\t#{@solidterm}") });
 }

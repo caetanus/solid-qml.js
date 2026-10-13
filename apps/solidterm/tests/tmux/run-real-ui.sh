@@ -3,7 +3,9 @@
 # (-S under <scratch>, -f /dev/null): never the user's server, which is not touched; ours is killed
 # at the end. Skipped (77) without tmux. After the app detached (window closed), the session must
 # still be alive in tmux (docs/solidterm-tmux-control-mode.md 5.1).
-# Usage: run-real-ui.sh <solidterm binary> <tmux binary or ""> <scratch dir> [real|real-input|real-struct]
+# Usage: run-real-ui.sh <solidterm binary> <tmux binary or ""> <scratch dir> [real|real-input|real-struct|real-life]
+# real-life (phase 4): attach to a session that does not exist yet (SolidTerm creates and marks it),
+# then kill-server — the banner; the session cannot survive that, so it is not checked after.
 # real-input (phase 2): keys typed in SolidTerm run in the tmux shell; mouse-echo.py (alternate
 # screen, SGR mouse, bracketed paste — like vim/less) receives clicks, wheel and a paste.
 set -u
@@ -32,8 +34,11 @@ sleep 0.5
 
 QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 SOLIDTERM_TMUX_BIN="$wrapper" SOLIDTERM_TMUXTEST=$mode \
   SOLIDTERM_TMUXTEST_MOUSEECHO="$here/mouse-echo.py" \
-  timeout 90 "$app" --standalone --tmux real
+  timeout 90 "$app" --standalone --tmux "$([[ $mode == real-life ]] && echo created || echo real)"
 rc=$?
+if [[ $mode == real-life ]]; then
+  exit $rc
+fi
 if T has-session -t real 2>/dev/null; then
   echo "solidterm: tmuxtest ok: the session is still alive in tmux after the window closed"
 else
