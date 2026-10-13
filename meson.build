@@ -470,6 +470,12 @@ if build_solidterm
     is_parallel: false,
     timeout: 60)
 
+  # tmux key table (phase 2): Qt key events → send-keys key names / literals (native/tmux/keys.h).
+  test('solidterm-tmux-keys',
+    executable('test-solidterm-tmux-keys', files('apps/solidterm/tests/tmux_keys_test.cpp'),
+      dependencies: [dependency('qt6', modules: ['Core'])]),
+    timeout: 10)
+
   # Mouse reporting (xterm/VTE protocol): the decision table (mode/altscreen/shift →
   # report|altscroll|local) plus libvterm's own SGR/X10/DRAG/wheel/DECCKM encoding, driven the same
   # way TerminalView drives it. No Qt — see mousereport_test.cpp.
@@ -533,6 +539,37 @@ if build_solidterm
     depends: solidterm_exe,
     is_parallel: false,
     timeout: 120)
+
+  # tmux INPUT through the real UI against the fake tmux (phase 2, SOLIDTERM_TMUXTEST=input): the
+  # exact send-keys command lines for a key corpus (names × modifiers, coalesced -l literals, quoting,
+  # IME commit), a 100 KB bracketed paste in <= 1 KiB -H chunks, SGR mouse click + wheel, focus
+  # reports, OSC 10/11 colours via refresh-client -r, and no answers to queries in the output.
+  test('solidterm-tmux-input', solidterm_exe,
+    args: ['--standalone', '--tmux', 'keys'],
+    env: {
+      'QT_QPA_PLATFORM': 'offscreen',
+      'QT_FORCE_STDERR_LOGGING': '1',
+      'XDG_CONFIG_HOME': meson.current_build_dir() / 'solidterm-test-config',
+      'SOLIDTERM_TMUXTEST': 'input',
+      'SOLIDTERM_TMUX_BIN': meson.current_source_dir() / 'apps/solidterm/tests/tmux/fake-tmux.py',
+      'FAKE_TMUX_SCENARIO': meson.current_source_dir() / 'apps/solidterm/tests/tmux/scenario-input.py',
+      'FAKE_TMUX_LOG': meson.current_build_dir() / 'solidterm-tmux-input-fake.log',
+    },
+    timeout: 60)
+  # The same against a REAL tmux (private socket): typing runs in the shell, and a vim/less-style
+  # program gets SGR clicks, wheel and a bracketed paste. Skipped without tmux.
+  test('solidterm-tmux-input-real', find_program('bash'),
+    args: [meson.current_source_dir() / 'apps/solidterm/tests/tmux/run-real-ui.sh', solidterm_exe.full_path(),
+           tmux_prog.found() ? tmux_prog.full_path() : '', meson.current_build_dir() / 'tmux-real-ui', 'real-input'],
+    env: { 'XDG_CONFIG_HOME': meson.current_build_dir() / 'solidterm-test-config' },
+    depends: solidterm_exe,
+    is_parallel: false,
+    timeout: 120)
+  # `solidterm --help` prints usage (with --tmux) and exits before any window or instance code.
+  test('solidterm-help', find_program('sh'),
+    args: ['-c', 'out=$(DISPLAY= WAYLAND_DISPLAY= QT_QPA_PLATFORM=none "$0" --help) && echo "$out" | grep -q -- "--tmux" && echo "$out" | grep -q "^Usage: solidterm"', solidterm_exe.full_path()],
+    depends: solidterm_exe,
+    timeout: 10)
 
   # Selection autoscroll (drag past the top/bottom edge): the pure edge-distance → lines/tick mapping
   # and the offset clamp, plus a simulated multi-tick walk proving the selection's moving end keeps

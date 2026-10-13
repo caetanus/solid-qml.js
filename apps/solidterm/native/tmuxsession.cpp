@@ -136,7 +136,7 @@ QString TmuxSession::windowTitle(const QString &paneTitle) const
     QString t = m_name;
     if (!paneTitle.isEmpty())
         t += QStringLiteral(" — ") + paneTitle;
-    return t + QStringLiteral(" — read-only (phase 1)");
+    return t;
 }
 
 int TmuxSession::seedsCompleted() const { return m_client->seedsCompleted(); }
@@ -253,7 +253,7 @@ void TmuxSession::handle(tmux::Event &e)
         break;
     case Note::LayoutChange:
         if (m_built)
-            applyLayout(e.window, text, QString::fromStdString(e.text2), QString::fromStdString(e.text3));
+            applyLayout(e.window, text, QString::fromStdString(e.text2), QString::fromStdString(e.text3), false);
         break;
     case Note::WindowAdd:
         // 3.7c sends no layout with it: ask (the reconcile is idempotent).
@@ -274,6 +274,8 @@ void TmuxSession::handle(tmux::Event &e)
             m_tabs->tmuxSelectTab(e.window);
         break;
     case Note::WindowPaneChanged:
+        if (m_activePane.value(e.window, -1) == e.pane)
+            break; // the echo of our own select-pane (or nothing new)
         m_activePane.insert(e.window, e.pane);
         if (m_tabs)
             if (TerminalPanes *p = m_tabs->tmuxTab(e.window, false))
@@ -313,13 +315,25 @@ void TmuxSession::applyWindowList(const QStringList &lines, bool initial)
         m_tabs->tmuxTab(window, true);
         if (isNew || initial)
             m_tabs->tmuxRenameTab(window, name.toString());
-        applyLayout(window, f[4].toString(), f[5].toString(), f[3].toString());
+        applyLayout(window, f[4].toString(), f[5].toString(), f[3].toString(), isNew);
     }
     if (initial && activeWindow >= 0)
         m_tabs->tmuxSelectTab(activeWindow);
 }
 
-void TmuxSession::applyLayout(int window, const QString &layout, const QString &visible, const QString &flags)
+void TmuxSession::beforeInput(void *session, int pane)
+{
+    auto *self = static_cast<TmuxSession *>(session);
+    const int window = self->m_paneWindow.value(pane, -1);
+    if (window < 0 || self->m_activePane.value(window, -1) == pane)
+        return;
+    self->m_activePane.insert(window, pane); // the %window-pane-changed echo then matches: no refocus
+    tmux::CommandLine l;
+    l.cmd("select-pane").pane("-t", pane);
+    self->m_client->send(l, tmux::Client::KIgnore);
+}
+
+void TmuxSession::applyLayout(int window, const QString &layout, const QString &visible, const QString &flags, bool focusActive)
 {
     if (!m_tabs)
         return;
@@ -348,7 +362,15 @@ void TmuxSession::applyLayout(int window, const QString &layout, const QString &
     if (!panes)
         return;
     panes->tmuxApplyLayout(l.root, zoomPane, zoomCols, zoomRows);
-    if (m_activePane.contains(window))
+    {
+        std::vector<const tmux::LayoutCell *> leaves;
+        tmux::layoutLeaves(l.root, leaves);
+        for (const tmux::LayoutCell *c : leaves)
+            m_paneWindow.insert(c->pane, window);
+    }
+    // Only a new tab follows tmux's active pane here; later layouts keep the user's local focus
+    // (tmux learns it lazily, beforeInput). %window-pane-changed still moves it.
+    if (focusActive && m_activePane.contains(window))
         panes->tmuxFocusPane(m_activePane.value(window));
 }
 

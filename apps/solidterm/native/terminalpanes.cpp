@@ -167,12 +167,12 @@ TerminalPanes::Node *TerminalPanes::makeLeaf(TerminalView *adopt, const QString 
         QObject *o = m_viewComponent->beginCreate(qmlContext(this));
         view = qobject_cast<TerminalView *>(o);
         if (view && tmuxPane >= 0 && m_tmux) {
-            // A tmux pane: no shell here — the view reads the pane's feed pipe, at the layout's grid.
-            // Read-only until input lands (phase 2).
+            // A tmux pane: no shell here — the view reads the pane's feed pipe, at the layout's grid;
+            // keys, mouse and paste go back as send-keys.
             view->setTmuxPane(m_tmux->client(), tmuxPane);
             view->setImposedGrid(rows, cols);
             view->setTmuxCwd(m_tmux->paneCwd(tmuxPane));
-            view->setReadOnly(true);
+            view->setTmuxInputHook(&TmuxSession::beforeInput, m_tmux.data());
         } else if (view) {
             TerminalView::SpawnContext ctx;
             if (QQuickWindow *w = window()) {

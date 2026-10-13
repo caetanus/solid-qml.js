@@ -62,6 +62,8 @@ public:
     void setTmuxPane(std::shared_ptr<tmux::Client> client, int pane);
     int tmuxPane() const;
     void setTmuxCwd(const QString &cwd);
+    // Called (GUI thread) before this view sends input to its pane; see TmuxSession::beforeInput.
+    void setTmuxInputHook(void (*hook)(void *ctx, int pane), void *ctx);
     // The layout decides the grid (2.3): applyGrid uses rows x cols instead of deriving them from
     // the pixel size (which matches by construction, up to float error). 0 = derive as usual.
     void setImposedGrid(int rows, int cols);
@@ -80,6 +82,16 @@ private:
     bool m_hasStart = false;
     struct TmuxLink;
     std::unique_ptr<TmuxLink> m_tmux;    // null for a local (pty) pane
+    bool m_inFeed = false;               // lock held: libvterm is parsing (its output = query replies)
+    // tmux mode input (3.3), GUI thread: key names go at once, text and raw bytes are coalesced and
+    // flushed on the next event-loop turn, always in the order they were produced.
+    void tmuxKeyEvent(class QKeyEvent *event);
+    void tmuxSendKeyName(const std::string &name);
+    void tmuxQueueLiteral(const std::string &utf8);
+    void tmuxQueueBytes(const char *data, size_t len);
+    void tmuxFlush();
+    void tmuxReportColors();             // OSC 10/11 answers for programs in the pane (1.8)
+    void pasteBracketed(const QString &text);
     int m_imposedRows = 0, m_imposedCols = 0;
     uint64_t m_fedBytes = 0;             // bytes parsed (lock held; one add per slice)
     QList<QList<qint64>> m_gridLog;      // tmux mode: {fedBytes, rows, cols} per grid change

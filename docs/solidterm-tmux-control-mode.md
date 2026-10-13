@@ -1,7 +1,7 @@
 # SolidTerm × tmux control mode (design)
 
-Status: **phases 0 and 1 implemented** (read-only viewer); see "Implementation status" at the end
-for what real tmux 3.7c corrected. Owner decision
+Status: **phases 0, 1 and 2 implemented** (viewer with input); see "Implementation status" at the
+end for what real tmux 3.7c corrected. Owner decision
 (2026-10-13): SolidTerm integrates with tmux **control mode** the way iTerm2 does with `tmux -CC`.
 tmux windows become native SolidTerm tabs, tmux panes become native splits, and each pane is a
 native `TerminalView` fed by tmux's `%output`. Scrolling, selection, search, links, mouse
@@ -966,3 +966,42 @@ Phase 2 (input) needs: the key-name table (`keyToVTerm` tmux branch); `send-keys
 reports; `writeToPty` in tmux mode routes only those. Query replies produced inside `wkFeed` stay
 dropped (`m_inFeed`, 3.2). `refresh-client -r` for OSC 10/11. `readOnly` false by default. A
 fake-server corpus test of the exact command lines (the fake already logs every line it receives).
+
+## Implementation status: phase 2, input (2026-10-13)
+
+- Keys (`native/tmux/keys.h`): special keys and chords go as tmux key names with `C-`/`M-`/`S-`
+  prefixes; plain text and IME commits go as `send-keys -l --`. Consecutive text is coalesced
+  until the next event-loop turn, and a key name flushes pending text first, so the order is kept.
+  Every name was checked against a real 3.7c with `cat -v`. **3.7c has no `C-BSpace` or
+  `C-Escape`: an unknown name is typed as text.** So Ctrl+Backspace is sent as `C-h` (xterm's ^H)
+  and Ctrl+Escape drops the Ctrl.
+- Mouse reports, focus reports (1004), alternate-screen wheel arrows and paste: libvterm encodes
+  them from its own modes (the raw stream gives it the same modes tmux has), and `writeToPty`
+  sends the bytes as `send-keys -H`, at most 1 KiB of payload per command. In tmux mode a paste
+  goes through `vterm_keyboard_start/end_paste`, so it is bracketed when the program enabled 2004.
+  (A local pane's paste is unchanged: still not bracketed.)
+- Query replies: `m_inFeed` is set around `vterm_input_write` in `wkFeed`. Output libvterm produces
+  while it is set is dropped.
+- OSC 10/11: every pane sends `refresh-client -r '%P:ESC]10;rgb:…ESC\'` (and 11) on start and on
+  a colour change, without repeats. Checked: a program's OSC 10/11 query then gets SolidTerm's
+  colours from tmux.
+- `select-pane` goes out lazily, once, before the first input to a pane tmux does not have active.
+  The `%window-pane-changed` echo is ignored. A later `%layout-change` no longer moves the local
+  focus back to tmux's active pane (only a new tab follows it).
+- Panes are writable by default. `readOnly` still blocks input locally.
+- Phase-1 bug fixed: the seed reset mouse modes 1002/1003 after setting 1000, and libvterm turns
+  tracking off on ANY of those resets. The seed now resets first and then sets only the mode that
+  is on (likewise for the 1005/1006 encodings). Before the fix, a reattached vim/less lost mouse
+  reporting until it set it again.
+- `solidterm --help` prints usage (including `--tmux`) and exits before any Qt, window or
+  single-instance code.
+- `SOLIDTERM_TMUX_TRACE=1` prints every command line sent to tmux on stderr.
+
+Tests: `solidterm-tmux-keys` checks the key table. `solidterm-tmux-input` runs the real UI against
+the fake and checks the exact command lines for a key corpus (names × modifiers, coalesced
+literals, quoting, an IME commit), a 100 KB bracketed paste in ≤ 1 KiB `-H` chunks, SGR click and
+wheel, focus out/in reports, OSC 10/11 reports, no answers to DA/DSR/DECRQM/OSC queries in the
+output, and lazy `select-pane`. `solidterm-tmux-input-real` uses a real tmux on a private socket:
+typed `echo typed-$((6*7))` comes back as `typed-42`; `tests/tmux/mouse-echo.py`, a program like
+vim or less (alternate screen, SGR mouse, bracketed paste), receives the click, the wheel and a
+bracketed paste. `solidterm-help` covers `--help`.

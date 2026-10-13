@@ -5,6 +5,8 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <poll.h>
@@ -190,6 +192,9 @@ void Client::takeEvents(std::vector<Event> &out)
 
 bool Client::send(const CommandLine &line, uint16_t kind, uint64_t tag)
 {
+    static const bool trace = std::getenv("SOLIDTERM_TMUX_TRACE") != nullptr; // debugging aid
+    if (trace)
+        std::fprintf(stderr, "tmux> %s%s\n", line.str().c_str(), line.ok() ? "" : "  [NOT SENT: newline/NUL]");
     if (!line.ok() || line.commands() == 0)
         return false;
     std::vector<Pending> entries(line.commands());

@@ -7,6 +7,7 @@
 #include "mousereport.h"
 #include "scrollanchor.h"
 #include "tmux/client.h"
+#include "tmux/keys.h"
 
 #include "qmlcss/componentcache.h"
 
@@ -124,7 +125,143 @@ struct TerminalView::TmuxLink {
     std::shared_ptr<tmux::Client> client;
     int pane = -1;
     QString cwd;
+    std::string literal;      // text for one send-keys -l (coalesced keystrokes / IME commits)
+    std::string bytes;        // raw bytes for send-keys -H (mouse, focus, paste, alt-screen scroll)
+    bool flushQueued = false;
+    QString colors;           // the OSC 10/11 colours last reported
+    void (*beforeInput)(void *, int) = nullptr;
+    void *inputCtx = nullptr;
+    void willSend() { if (beforeInput) beforeInput(inputCtx, pane); }
 };
+
+void TerminalView::setTmuxInputHook(void (*hook)(void *ctx, int pane), void *ctx)
+{
+    if (!m_tmux)
+        return;
+    m_tmux->beforeInput = hook;
+    m_tmux->inputCtx = ctx;
+}
+
+// ─── tmux mode input (docs/solidterm-tmux-control-mode.md 3.3) ────────────────────────────────────
+
+void TerminalView::tmuxKeyEvent(QKeyEvent *event)
+{
+    const auto ucs4 = event->text().toUcs4();
+    const tmux::KeyInput in = tmux::keyInput(event->key(), event->modifiers(), reinterpret_cast<const char32_t *>(ucs4.constData()), int(ucs4.size()));
+    if (in.kind == tmux::KeyInput::Name)
+        tmuxSendKeyName(in.text);
+    else if (in.kind == tmux::KeyInput::Literal)
+        tmuxQueueLiteral(in.text);
+}
+
+void TerminalView::tmuxSendKeyName(const std::string &name)
+{
+    tmuxFlush(); // what was typed before goes first
+    m_tmux->willSend();
+    tmux::CommandLine l;
+    l.cmd("send-keys").pane("-t", m_tmux->pane).arg(name);
+    m_tmux->client->send(l, tmux::Client::KIgnore);
+}
+
+void TerminalView::tmuxQueueLiteral(const std::string &utf8)
+{
+    if (utf8.empty())
+        return;
+    if (!m_tmux->bytes.empty())
+        tmuxFlush();
+    m_tmux->literal += utf8;
+    if (!m_tmux->flushQueued) {
+        m_tmux->flushQueued = true;
+        QMetaObject::invokeMethod(this, [this] { if (m_tmux) tmuxFlush(); }, Qt::QueuedConnection);
+    }
+}
+
+void TerminalView::tmuxQueueBytes(const char *data, size_t len)
+{
+    if (!len)
+        return;
+    if (!m_tmux->literal.empty())
+        tmuxFlush();
+    m_tmux->bytes.append(data, len);
+    if (!m_tmux->flushQueued) {
+        m_tmux->flushQueued = true;
+        QMetaObject::invokeMethod(this, [this] { if (m_tmux) tmuxFlush(); }, Qt::QueuedConnection);
+    }
+}
+
+void TerminalView::tmuxFlush()
+{
+    TmuxLink &t = *m_tmux;
+    t.flushQueued = false;
+    if (!t.literal.empty() || !t.bytes.empty())
+        t.willSend();
+    constexpr size_t kChunk = 1024; // payload bytes per command (a -H byte costs 3 on the line)
+    // Text: send-keys -l (literal; "--" so text starting with '-' is not read as a flag). Cut on
+    // UTF-8 boundaries.
+    size_t at = 0;
+    while (at < t.literal.size()) {
+        size_t n = std::min(kChunk, t.literal.size() - at);
+        while (at + n < t.literal.size() && n > 1 && (static_cast<unsigned char>(t.literal[at + n]) & 0xc0) == 0x80)
+            --n;
+        tmux::CommandLine l;
+        l.cmd("send-keys").pane("-t", t.pane).flag("-l").flag("--").arg(std::string_view(t.literal).substr(at, n));
+        t.client->send(l, tmux::Client::KIgnore);
+        at += n;
+    }
+    t.literal.clear();
+    // Bytes: send-keys -H, written raw to the pane (cmd-send-keys.c → input-keys.c).
+    static const char hex[] = "0123456789abcdef";
+    for (at = 0; at < t.bytes.size(); at += kChunk) {
+        const size_t n = std::min(kChunk, t.bytes.size() - at);
+        tmux::CommandLine l;
+        l.cmd("send-keys").pane("-t", t.pane).flag("-H");
+        for (size_t k = 0; k < n; ++k) {
+            const unsigned char b = static_cast<unsigned char>(t.bytes[at + k]);
+            const char h[3] = { hex[b >> 4], hex[b & 15], 0 };
+            l.flag(h);
+        }
+        t.client->send(l, tmux::Client::KIgnore);
+    }
+    t.bytes.clear();
+}
+
+void TerminalView::tmuxReportColors()
+{
+    if (!m_tmux)
+        return;
+    auto rgb = [](const QColor &c) {
+        return QStringLiteral("rgb:%1/%2/%3")
+            .arg(c.red() * 257, 4, 16, QLatin1Char('0'))
+            .arg(c.green() * 257, 4, 16, QLatin1Char('0'))
+            .arg(c.blue() * 257, 4, 16, QLatin1Char('0'));
+    };
+    const QString fg = rgb(m_foreground), bg = rgb(m_background);
+    if (m_tmux->colors == fg + bg)
+        return;
+    m_tmux->colors = fg + bg;
+    // refresh-client -r '%P:<report>' (tmux 3.5+): what tmux answers a program's OSC 10/11 query
+    // with, so programs that adapt to a light or dark background see SolidTerm's colours.
+    const std::string pane = "%" + std::to_string(m_tmux->pane) + ":";
+    for (const auto &[osc, value] : { std::pair<const char *, QString>("10", fg), std::pair<const char *, QString>("11", bg) }) {
+        tmux::CommandLine l;
+        l.cmd("refresh-client").flag("-r").arg(pane + "\x1b]" + osc + ";" + value.toStdString() + "\x1b\\");
+        m_tmux->client->send(l, tmux::Client::KIgnore);
+    }
+}
+
+void TerminalView::pasteBracketed(const QString &text)
+{
+    if (!m_vt || m_readOnly)
+        return;
+    // tmux mode: libvterm wraps the paste in ESC[200~ … ESC[201~ when the program turned bracketed
+    // paste on (its mode comes from the same raw stream tmux parsed); the bytes go as send-keys -H.
+    const auto ucs4 = text.toUcs4();
+    ScreenLock lock(m_screenMutex);
+    vterm_keyboard_start_paste(m_vt);
+    for (const char32_t c : ucs4)
+        vterm_keyboard_unichar(m_vt, c, VTERM_MOD_NONE);
+    vterm_keyboard_end_paste(m_vt);
+}
 
 void TerminalView::setTmuxPane(std::shared_ptr<tmux::Client> client, int pane)
 {
@@ -296,7 +433,9 @@ bool TerminalView::wkFeed(void *user, const char *data, size_t len)
         PerfTrace::stage(PerfTrace::PtyRead); // this slice carries the injected key's echo
     self->m_term.beginBatch();
     self->m_fedBytes += len;
+    self->m_inFeed = true; // libvterm's output now = replies to queries in the stream
     vterm_input_write(self->m_vt, data, len);
+    self->m_inFeed = false;
     if (self->m_term.endBatch()) {
         self->m_news.damaged = true;
         if (Q_UNLIKELY(PerfTrace::on))
@@ -349,11 +488,15 @@ void TerminalView::parseOnGuiThread(const QByteArray &bytes)
 // with the lock held: from a slice on the parser thread or from a GUI input handler.
 void TerminalView::writeToPty(const char *s, size_t len)
 {
-    // tmux mode, phase 1 (read-only): nothing goes to the pane. Query replies produced while
-    // parsing must never go (tmux answered them itself, 3.2); keys/mouse/paste become send-keys in
-    // phase 2.
-    if (m_tmux)
+    // tmux mode: replies libvterm produces WHILE PARSING (DA, DSR, DECRQM…) never go — tmux answered
+    // those queries itself (3.2). What it produces from the GUI (mouse and focus reports, paste,
+    // alternate-screen wheel arrows) goes to the pane as raw bytes (send-keys -H). Keys never get
+    // here in tmux mode: they go as key names / literals (tmuxKeyEvent).
+    if (m_tmux) {
+        if (!m_inFeed)
+            tmuxQueueBytes(s, len);
         return;
+    }
     if (Q_UNLIKELY(PerfTrace::on))
         PerfTrace::stage(PerfTrace::PtyWrite);
     if (m_threaded)
@@ -658,6 +801,7 @@ void TerminalView::ensureSession()
     if (m_tmux) { // the grid the view starts with: lifts a resize fence waiting for it
         m_gridLog.append({ 0, m_rows, m_cols });
         m_tmux->client->ackPaneSize(m_tmux->pane, m_cols, m_rows);
+        tmuxReportColors();
     }
     updateFocusReport(); // sync the program's focus state with whatever we're starting with
 }
@@ -1109,6 +1253,10 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 
 void TerminalView::keyToVTerm(QKeyEvent *event)
 {
+    if (m_tmux) { // tmux encodes keys for the pane's modes and its TERM (3.3)
+        tmuxKeyEvent(event);
+        return;
+    }
     VTermModifier mod = VTERM_MOD_NONE;
     if (event->modifiers() & Qt::ShiftModifier)
         mod = VTermModifier(mod | VTERM_MOD_SHIFT);
@@ -1170,9 +1318,17 @@ void TerminalView::inputMethodEvent(QInputMethodEvent *event)
             update();
         }
         resetBlink();
-        ScreenLock lock(m_screenMutex);
-        for (const char32_t c : commit.toUcs4())
-            vterm_keyboard_unichar(m_vt, c, VTERM_MOD_NONE);
+        if (m_tmux) {
+            std::string utf8;
+            for (const char32_t c : commit.toUcs4())
+                if (c >= 0x20 && c != 0x7f)
+                    tmux::appendUtf8(utf8, c);
+            tmuxQueueLiteral(utf8);
+        } else {
+            ScreenLock lock(m_screenMutex);
+            for (const char32_t c : commit.toUcs4())
+                vterm_keyboard_unichar(m_vt, c, VTERM_MOD_NONE);
+        }
     }
     event->accept();
 }
@@ -1381,12 +1537,15 @@ void TerminalView::pasteClipboard()
     if (text.contains(QLatin1Char('\n')) || text.contains(QLatin1Char('\r')))
         emit unsafePasteRequested(text);
     else
-        sendText(text);
+        pasteText(text);
 }
 
 void TerminalView::pasteText(const QString &text)
 {
-    sendText(text); // confirmed (or explicitly-chosen) paste — no re-prompt
+    if (m_tmux)
+        pasteBracketed(text);
+    else
+        sendText(text); // confirmed (or explicitly-chosen) paste — no re-prompt
 }
 
 void TerminalView::clearScrollback()
@@ -2362,6 +2521,8 @@ void TerminalView::setBackground(const QColor &c)
     if (m_background == c)
         return;
     m_background = c;
+    if (m_tmux && m_started)
+        tmuxReportColors();
     emit colorsChanged();
     update();
 }
@@ -2371,6 +2532,8 @@ void TerminalView::setForeground(const QColor &c)
     if (m_foreground == c)
         return;
     m_foreground = c;
+    if (m_tmux && m_started)
+        tmuxReportColors();
     emit colorsChanged();
     update();
 }
