@@ -4,6 +4,9 @@
 #include <QSocketNotifier>
 #include <QStringList>
 
+#include <atomic>
+#include <cstdint>
+
 // The pty leg of a terminal session: opens a pseudo-terminal, forks the user's shell on the
 // slave side (login-shell semantics, TERM=xterm-256color), and streams master-side bytes both
 // ways. Pure POSIX + Qt; the VT interpretation lives in TerminalView (libvterm).
@@ -19,6 +22,8 @@ public:
     // `solidterm` invocation passes THAT caller's, so the shell starts where it was asked for.
     bool start(int rows, int cols, const QString &program = QString(), const QString &cwd = QString(),
                const QStringList &env = QStringList());
+    // Stall-watchdog accounting (stallwatch.h).
+    void noteRead(size_t n);
     void resize(int rows, int cols);
     void writeBytes(const QByteArray &bytes);
     bool running() const { return m_pid > 0; }
@@ -43,9 +48,14 @@ signals:
 
 private:
     void onReadable();
+    friend struct StallWatchAccess; // stallwatch.h diagnostics (env-gated)
 
     int m_master = -1;
     qint64 m_pid = -1;
     QSocketNotifier *m_notifier = nullptr;
     bool m_paused = false;
+    // Stall watchdog counters (written only while StallWatch::on).
+    std::atomic<int64_t> m_swLastReadNs { 0 };
+    std::atomic<int64_t> m_swBytes { 0 };
+    std::atomic<int64_t> m_swReads { 0 };
 };
