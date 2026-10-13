@@ -314,10 +314,43 @@ function emitListLiteral(name: string, children: t.Node[], scope: Scope, level: 
   return [`${pad}${name}: [`, ...block, `${pad}]`];
 }
 
+// ─────────────────────────────────────────────────────────────────────────────────────────
+// <icon name="edit-find-symbolic">
+// ─────────────────────────────────────────────────────────────────────────────────────────
+
+/** <icon name="edit-find-symbolic" class="…" /> → W.Icon (a CssFill wrapper — so `class`/the
+ *  cascade's inherited `color` reach it, same composition TextField/TextArea use for their own
+ *  inner control — composing a REAL Css.CssIcon: vendor/qml-css-engine resolves the NAME through
+ *  the system icon theme (QIcon::fromTheme, via a `themeicon` image provider) and recolours the
+ *  result with a QtQuick.Effects MultiEffect tracking CSS `color` — so it relights for light/dark
+ *  and any `:hover`/`:active` colour change, never a baked-in tint). `name` is a symbolic icon
+ *  name (e.g. "edit-find-symbolic"), required — an icon with no identity is an authoring error,
+ *  not a silently-blank box. */
+function emitIcon(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard: string | undefined): string[] {
+  const pad = INDENT.repeat(level);
+  const i = (n: number) => INDENT.repeat(level + n);
+  const props = readBaseProps(propsArg);
+  const classLine = buildCssClassLine(props, scope, i(1));
+  if (scope.usedWidgets) scope.usedWidgets.widgetLib = true;
+
+  const nameNode = findProp(propsArg, "name");
+  if (!nameNode) throw new Error("<icon> requires a `name` prop (a symbolic icon name, e.g. \"edit-find-symbolic\")");
+  const nameExpr = emitExpr(nameNode, { ...scope, mode: "binding" });
+
+  return [
+    `${pad}W.Icon {`,
+    ...classLine,
+    ...guardLine(guard, level),
+    `${i(1)}name: ${nameExpr}`,
+    `${pad}}`,
+  ];
+}
+
 registerNativeTags({
   progress: emitProgress,
   fieldset: emitFieldset,
   legend: emitLegend,
   dialog: emitDialog,
   details: emitDetails,
+  icon: emitIcon,
 });

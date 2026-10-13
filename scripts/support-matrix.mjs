@@ -60,6 +60,7 @@ const ELEMENT_FIXTURES = {
   text: [[...TEXT_TAGS].map((t) => `\`${t}\``).join(", "), el("text")],
   button: ["`button`", el("button")],
   img: ["`img`", `<img src="a.png" />`],
+  icon: ["`icon`", `<icon name="edit-find-symbolic" />`],
   "input:text": ["`input` (type text/password/email/search/tel/url)", el("input", "")],
   "input:checkbox": ["`input type=checkbox`", el(`input type="checkbox"`, "")],
   "input:radio": ["`input type=radio`", el(`input type="radio"`, "")],

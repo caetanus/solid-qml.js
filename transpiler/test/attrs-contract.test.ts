@@ -42,6 +42,10 @@ const FIXTURES: Fx[] = [
   { key: "box", el: el("div") }, { key: "box", el: el("section") }, { key: "box", el: el("a") },
   { key: "text", el: el("text") }, { key: "text", el: el("span") }, { key: "text", el: el("h1") },
   { key: "button", el: el("button") }, { key: "img", el: el("img", "") },
+  // `name` is required (a nameless icon is an authoring error, not a silent blank box) — the base
+  // supplies it for every OTHER attribute under test, the same way the Menu fixture below supplies
+  // trigger=/ref=.
+  { key: "icon", el: el("icon", ""), base: (a) => /^name=/.test(a) ? a : `name="x" ${a}` },
   { key: "input:text", el: el("input", "") }, { key: "input:text", el: el(`input type="password"`, "") },
   ...["checkbox", "radio", "range", "number", "date"].map((ty) => ({ key: `input:${ty}`, el: el(`input type="${ty}"`, "") })),
   { key: "textarea", el: el("textarea", "") },

@@ -72,6 +72,10 @@ void init(QQmlEngine *engine, const QUrl &appDir, const QString &capabilities)
     // Type registrations are process-wide and idempotent by URI/version.
     QmlCss::registerTypes();
     SolidWidgets::registerTypes();
+    // An image provider belongs to ONE engine (unlike the type registrations above) — this
+    // function already guards against being called twice for the same engine (the runtimeFor()
+    // check above), so this runs exactly once per engine too.
+    QmlCss::registerImageProviders(engine);
     static const int islandType = qmlRegisterType<SolidIsland>("solidqml.Embed", 1, 0, "SolidIsland");
     Q_UNUSED(islandType);
     // The loader's helper types for the opt-in widget modules (loader.cpp registers the same ones):
