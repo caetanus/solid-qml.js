@@ -236,6 +236,7 @@ W.Div {
                     cssClass: ["search-in"]
                     placeholder: "Find…"
                     onTextEdited: { searchQuery = text; _ref_term.searchFocused(text); }
+                    onKeyPressed: (event) => { if ((event.key === Qt.Key_Escape)) { closeSearch(); } else { if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) { _ref_term.searchNext(); } } }
                     Binding {
                         target: _ref_searchInput__lazy
                         property: "text"

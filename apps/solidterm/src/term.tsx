@@ -255,7 +255,8 @@ export function Term(props: { onTitle: (t: string) => void }) {
           <div class="search-in-wrap">
             <icon name="edit-find-symbolic" class="search-icon" />
             <input ref={searchInput} class="search-in" value={searchQuery()} placeholder="Find…"
-                   onInput={(e) => { setSearchQuery(e.target.value); term.searchFocused(e.target.value); }} />
+                   onInput={(e) => { setSearchQuery(e.target.value); term.searchFocused(e.target.value); }}
+                   onKeyDown={(e) => { if (e.key === "Escape") closeSearch(); else if (e.key === "Enter") term.searchNext(); }} />
           </div>
           <text class="search-count">{searchCount() > 0 ? (searchIdx() + " / " + searchCount()) : "0 / 0"}</text>
           <button class="search-btn" onClick={() => term.searchPrev()}><icon name="go-up-symbolic" class="search-btn-icon" /></button>

@@ -368,8 +368,14 @@ int main(int argc, char **argv)
             QQuickItem *f = window->activeFocusItem();
             const QString cls = f ? QString::fromLatin1(f->metaObject()->className()) : QStringLiteral("null");
             const QString text = f ? f->property("text").toString() : QString();
-            const bool ok = f && !cls.contains(QLatin1String("TerminalView")) && text == QLatin1String("x");
-            qInfo().noquote() << (ok ? "FOCUSTEST PASS" : "FOCUSTEST FAIL") << "focusItem=" << cls << "text=" << text;
+            bool ok = f && !cls.contains(QLatin1String("TerminalView")) && text == QLatin1String("x");
+            // Esc in the field closes the bar and hands the keyboard back to the terminal.
+            sendSeq(QKeySequence(), Qt::Key_Escape, Qt::NoModifier, QString());
+            QQuickItem *after = window->activeFocusItem();
+            const QString afterCls = after ? QString::fromLatin1(after->metaObject()->className()) : QStringLiteral("null");
+            ok = ok && after && after->inherits("TerminalView");
+            qInfo().noquote() << (ok ? "FOCUSTEST PASS" : "FOCUSTEST FAIL") << "focusItem=" << cls << "text=" << text
+                              << "afterEsc=" << afterCls;
             QCoreApplication::exit(ok ? 0 : 1);
         });
     }
