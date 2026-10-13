@@ -33,6 +33,26 @@ public:
     // Ensure a glyph is in the atlas; returns its atlas UV rect. `cluster` is the cell's text
     // (usually one char; combining marks / wide chars form a longer cluster).
     Entry glyph(const QString &cluster, bool bold, bool italic, int widthCells);
+    // Same, for a cell holding ONE codepoint (nearly every cell): no QString is built unless the
+    // glyph is not cached yet. Printable ASCII hits a flat array; the rest a 64-bit-keyed hash.
+    Entry glyph(char32_t cp, bool bold, bool italic, int widthCells)
+    {
+        const quint8 style = quint8((bold ? 1 : 0) | (italic ? 2 : 0));
+        if (cp < 128 && widthCells <= 1) {
+            Entry &e = m_ascii[style][cp];
+            if (!e.valid)
+                e = glyph(QString(QChar(char16_t(cp))), bold, italic, 1);
+            return e;
+        }
+        const quint64 key = quint64(cp) | (quint64(style) << 32) | (quint64(qMax(1, widthCells)) << 40);
+        const auto it = m_cpCache.constFind(key);
+        if (it != m_cpCache.constEnd())
+            return it.value();
+        const Entry e = glyph(QString::fromUcs4(&cp, 1), bold, italic, widthCells);
+        if (e.valid)
+            m_cpCache.insert(key, e);
+        return e;
+    }
 
     const QImage &atlas() const { return m_atlas; }
     bool takeDirty() { const bool d = m_dirty; m_dirty = false; return d; }
@@ -60,6 +80,8 @@ private:
     QImage m_atlas;
     int m_penX = 0, m_penY = 0, m_rowH = 0; // shelf packer
     QHash<Key, Entry> m_cache;
+    Entry m_ascii[4][128];             // single-codepoint fast path (style × ASCII), see glyph(char32_t)
+    QHash<quint64, Entry> m_cpCache;   // single non-ASCII codepoint: cp | style<<32 | width<<40
     bool m_dirty = false;
     bool m_overflow = false;
 };

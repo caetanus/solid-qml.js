@@ -231,6 +231,10 @@ void GlyphCache::reset()
     m_penY = 0;
     m_rowH = 0;
     m_cache.clear();
+    m_cpCache.clear();
+    for (auto &style : m_ascii)
+        for (Entry &e : style)
+            e = Entry{};
     m_dirty = true;
     m_overflow = false;
 }

@@ -509,9 +509,14 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
         return nullptr;
     }
 
-    std::vector<QSGGeometry::ColoredPoint2D> bg;
-    std::vector<GlyphVertex> glyphs;
-    std::vector<QSGGeometry::ColoredPoint2D> cursor;
+    // Scratch vertex arrays, reused frame to frame (per render thread: panes in other windows build
+    // concurrently) — a fresh vector per frame re-grew through ~11 reallocations of up to 1.2 MB.
+    static thread_local std::vector<QSGGeometry::ColoredPoint2D> bg;
+    static thread_local std::vector<GlyphVertex> glyphs;
+    static thread_local std::vector<QSGGeometry::ColoredPoint2D> cursor;
+    bg.clear();
+    glyphs.clear();
+    cursor.clear();
 
     // Base background fills the whole item. Its alpha = backgroundOpacity, so at <1 the layer behind
     // (a bg image, or — with transparent chrome — the desktop) shows through the terminal's colour.
@@ -555,14 +560,21 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 
             // One textured quad per non-blank cell — the atlas makes per-cell quads cheap, so the
             // old run-merge (a QPainter optimisation) is gone.
-            QString cluster;
-            for (int ci = 0; ci < VTERM_MAX_CHARS_PER_CELL && cell.chars[ci]; ++ci)
-                cluster.append(QString::fromUcs4(&cell.chars[ci], 1));
-            if (!cluster.isEmpty() && cluster != QLatin1String(" ")) {
-                const GlyphCache::Entry e = m_glyphs.glyph(cluster, cell.attrs.bold, cell.attrs.italic, cw);
-                if (e.valid) {
-                    pushGlyphQuad(glyphs, x, y, w, m_cellH, e.uv, fg, e.color);
+            // A single codepoint (nearly every cell) is looked up without building a QString; only
+            // a real cluster (base + combining marks) pays for one.
+            const char32_t c0 = cell.chars[0];
+            if (c0 && !(c0 == U' ' && !cell.chars[1])) {
+                GlyphCache::Entry e;
+                if (!cell.chars[1]) {
+                    e = m_glyphs.glyph(c0, cell.attrs.bold, cell.attrs.italic, cw);
+                } else {
+                    QString cluster;
+                    for (int ci = 0; ci < VTERM_MAX_CHARS_PER_CELL && cell.chars[ci]; ++ci)
+                        cluster.append(QString::fromUcs4(&cell.chars[ci], 1));
+                    e = m_glyphs.glyph(cluster, cell.attrs.bold, cell.attrs.italic, cw);
                 }
+                if (e.valid)
+                    pushGlyphQuad(glyphs, x, y, w, m_cellH, e.uv, fg, e.color);
             }
             if (cell.attrs.underline)
                 pushBgQuad(bg, x, y + m_cellH - 1, w, 1, fg);
