@@ -18,14 +18,17 @@ import os
 import re
 import runpy
 import sys
+import threading
 import time
 
 OUT = sys.stdout.buffer
+OUT_LOCK = threading.RLock()  # a flood thread writes too: whole lines only
 
 
 def emit(line: bytes):
-    OUT.write(line + b"\n")
-    OUT.flush()
+    with OUT_LOCK:
+        OUT.write(line + b"\n")
+        OUT.flush()
 
 
 def encode_output(data: bytes) -> bytes:
@@ -103,6 +106,7 @@ class Server:
         self.fixed = {}            # pane id -> ("x"|"y", cells) from resize-pane
         self.active_pane = {}      # window id -> pane id (default: its first pane)
         self.capture_groups = 0
+        self.flooding = False
         self.after_block = []
 
     # ── model ────────────────────────────────────────────────────────────────────────────────
@@ -370,12 +374,35 @@ class Server:
         return cmds
 
     def block(self, lines, error=False):
-        self.number += 1
-        t = int(time.time())
-        emit(b"%%begin %d %d 1" % (t, self.number))
-        for l in lines:
-            emit(l if isinstance(l, bytes) else l.encode())
-        emit(b"%%%s %d %d 1" % (b"error" if error else b"end", t, self.number))
+        with OUT_LOCK:  # a block is never interleaved with a flood's %output
+            self.number += 1
+            t = int(time.time())
+            emit(b"%%begin %d %d 1" % (t, self.number))
+            for l in lines:
+                emit(l if isinstance(l, bytes) else l.encode())
+            emit(b"%%%s %d %d 1" % (b"error" if error else b"end", t, self.number))
+
+    def flood(self, pid, on=True):
+        """A pane printing as fast as it can ("flood-<n> <hex…>" lines), like hexdump /dev/urandom;
+        nothing is sent while tmux has the pane paused (it would be discarded)."""
+        self.flooding = on
+        if not on:
+            return
+        p = self.pane(pid)
+
+        def run():
+            n = 0
+            pad = b" ".join(b"%04x" % ((n * 7 + k) & 0xFFFF) for k in range(160))
+            while self.flooding:
+                if p.paused:
+                    time.sleep(0.005)
+                    continue
+                chunk = b"".join(b"flood-%d %s\r\n" % (n + k, pad) for k in range(8))
+                n += 8
+                p.screen = [b"flood-%d" % (n - 1)]  # what a capture would show now
+                p.cursor = (0, 1)
+                self.output(pid, chunk)
+        threading.Thread(target=run, daemon=True).start()
 
     @staticmethod
     def opts(args, valued):
@@ -422,12 +449,13 @@ class Server:
             if "A" in vals:
                 pid, _, what = vals["A"].partition(":")
                 p = self.panes.get(int(pid[1:]))
+                # tmux 3.7c writes these INSIDE the command's block (recorded), not after it.
                 if p and what == "continue":
                     p.paused = False
-                    self.after_block.append(lambda pid=p.id: emit(b"%%continue %%%d" % pid))
+                    return [b"%%continue %%%d" % p.id], False
                 elif p and what == "pause":
                     p.paused = True
-                    self.after_block.append(lambda pid=p.id: emit(b"%%pause %%%d" % pid))
+                    return [b"%%pause %%%d" % p.id], False
             return [], False
         if name == "list-windows":
             flags, vals, pos = self.opts(args[1:], "Ft")

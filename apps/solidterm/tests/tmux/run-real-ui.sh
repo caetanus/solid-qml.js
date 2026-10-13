@@ -3,7 +3,7 @@
 # (-S under <scratch>, -f /dev/null): never the user's server, which is not touched; ours is killed
 # at the end. Skipped (77) without tmux. After the app detached (window closed), the session must
 # still be alive in tmux (docs/solidterm-tmux-control-mode.md 5.1).
-# Usage: run-real-ui.sh <solidterm binary> <tmux binary or ""> <scratch dir> [real|real-input|real-struct|real-life]
+# Usage: run-real-ui.sh <solidterm binary> <tmux binary or ""> <scratch dir> [real|real-input|real-struct|real-life|real-flood|real-death]
 # real-life (phase 4): attach to a session that does not exist yet (SolidTerm creates and marks it),
 # then kill-server — the banner; the session cannot survive that, so it is not checked after.
 # real-input (phase 2): keys typed in SolidTerm run in the tmux shell; mouse-echo.py (alternate

@@ -89,6 +89,9 @@ public:
     // Joins the reader; the child gets `graceMs` to exit (after a detach), then SIGTERM, then SIGKILL.
     void stop(int graceMs = 2000);
     bool started() const { return m_thread.joinable(); }
+    // After stop(): how the tmux client process ended ("exited with status 0", "killed by signal 9");
+    // empty while it has not been reaped.
+    std::string exitStatusText() const { return m_exitText; }
     pid_t pid() const { return m_pid; }
 
     // GUI side ────────────────────────────────────────────────────────────────────────────────────
@@ -165,6 +168,7 @@ private:
     void applyLayoutSizes(std::string_view layout, std::string_view visible);
 
     pid_t m_pid = -1;
+    std::string m_exitText;
     int m_in = -1, m_out = -1, m_err = -1; // child's stdin (we write), stdout, stderr (we read)
     int m_wakeFd = -1, m_guiFd = -1;
     std::thread m_thread;

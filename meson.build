@@ -631,6 +631,51 @@ if build_solidterm
     is_parallel: false,
     timeout: 120)
 
+  # Regression (the owner's first real use, "o tmux travou"): a pane flooding like `hexdump
+  # /dev/urandom` while four selections are made in a row. With a small hold cap each selection
+  # overflows it, the pane is paused in tmux, and must be continued and reseeded after the release;
+  # tmux 3.7c reports that pause INSIDE the refresh-client reply, which SolidTerm missed, so the pane
+  # stayed paused forever. Against the fake (which now does the same) and a real tmux.
+  test('solidterm-tmux-flood', solidterm_exe, args: ['--standalone', '--tmux', 'flood'],
+    env: {
+      'QT_QPA_PLATFORM': 'offscreen',
+      'QT_FORCE_STDERR_LOGGING': '1',
+      'XDG_CONFIG_HOME': meson.current_build_dir() / 'solidterm-test-config',
+      'SOLIDTERM_TMUXTEST': 'flood',
+      'SOLIDTERM_TMUX_BIN': meson.current_source_dir() / 'apps/solidterm/tests/tmux/fake-tmux.py',
+      'FAKE_TMUX_SCENARIO': meson.current_source_dir() / 'apps/solidterm/tests/tmux/scenario-flood.py',
+      'FAKE_TMUX_LOG': meson.current_build_dir() / 'solidterm-tmux-flood.log',
+    },
+    is_parallel: false, # changes (and restores) the shared test config's hold cap
+    timeout: 90)
+  # The tmux client dies (SIGKILL): the banner names it, the window stays, and stderr/journald get
+  # a line with the reason (TmuxSession::lost).
+  test('solidterm-tmux-death', solidterm_exe, args: ['--standalone', '--tmux', 'death'],
+    env: {
+      'QT_QPA_PLATFORM': 'offscreen',
+      'QT_FORCE_STDERR_LOGGING': '1',
+      'XDG_CONFIG_HOME': meson.current_build_dir() / 'solidterm-test-config',
+      'SOLIDTERM_TMUXTEST': 'death',
+      'SOLIDTERM_TMUX_BIN': meson.current_source_dir() / 'apps/solidterm/tests/tmux/fake-tmux.py',
+      'FAKE_TMUX_SCENARIO': meson.current_source_dir() / 'apps/solidterm/tests/tmux/scenario-flood.py',
+      'FAKE_TMUX_LOG': meson.current_build_dir() / 'solidterm-tmux-death.log',
+    },
+    timeout: 60)
+  test('solidterm-tmux-death-real', find_program('bash'),
+    args: [meson.current_source_dir() / 'apps/solidterm/tests/tmux/run-real-ui.sh', solidterm_exe.full_path(),
+           tmux_prog.found() ? tmux_prog.full_path() : '', meson.current_build_dir() / 'tmux-real-ui', 'real-death'],
+    env: { 'XDG_CONFIG_HOME': meson.current_build_dir() / 'solidterm-test-config' },
+    depends: solidterm_exe,
+    is_parallel: false,
+    timeout: 120)
+  test('solidterm-tmux-flood-real', find_program('bash'),
+    args: [meson.current_source_dir() / 'apps/solidterm/tests/tmux/run-real-ui.sh', solidterm_exe.full_path(),
+           tmux_prog.found() ? tmux_prog.full_path() : '', meson.current_build_dir() / 'tmux-real-ui', 'real-flood'],
+    env: { 'XDG_CONFIG_HOME': meson.current_build_dir() / 'solidterm-test-config' },
+    depends: solidterm_exe,
+    is_parallel: false,
+    timeout: 120)
+
   # tmux passthrough unwrapping (native/tmux/passthrough.h): every split of the stream.
   test('solidterm-tmux-passthrough',
     executable('test-solidterm-tmux-passthrough', files('apps/solidterm/tests/tmux_passthrough_test.cpp')),

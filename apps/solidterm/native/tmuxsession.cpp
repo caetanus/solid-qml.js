@@ -207,7 +207,7 @@ void TmuxSession::preflightDone()
 
 void TmuxSession::fail(const QString &why, bool reattach)
 {
-    qWarning("solidterm: tmux: %s", qPrintable(why));
+    qWarning("solidterm: tmux session \"%s\": %s", qPrintable(m_name), qPrintable(why));
     m_error = why;
     if (m_tabs)
         m_tabs->tmuxSessionLost(why, reattach);
@@ -378,6 +378,12 @@ void TmuxSession::handle(tmux::Event &e)
             reason = m_lastStderr;
         if (!reason.isEmpty()) {
             lost(reason);
+            return;
+        }
+        // The client process itself died (killed, crashed): say so.
+        m_client->stop(200);
+        if (const QString st = QString::fromStdString(m_client->exitStatusText()); st.startsWith(QLatin1String("killed"))) {
+            lost(QStringLiteral("the tmux client was %1").arg(st));
             return;
         }
         // tmux 3.7c says a bare "%exit" both for kill-server and for a detach by someone else
@@ -905,10 +911,23 @@ void TmuxSession::lost(const QString &reason)
 {
     if (m_finished)
         return;
-    const QString text = m_built ? QStringLiteral("tmux session \"%1\": %2 — the panes are read-only").arg(m_name, reason)
-                                 : QStringLiteral("tmux session \"%1\": %2").arg(m_name, reason);
+    // Always on stderr (journald when there is no tty): a lost session must leave a trace.
+    m_client->stop(500);
+    const QString status = QString::fromStdString(m_client->exitStatusText());
+    qWarning("solidterm: tmux session \"%s\": the control client ended: %s%s%s", qPrintable(m_name), qPrintable(reason),
+             status.isEmpty() ? "" : "; tmux client ", qPrintable(status));
+    QString why = reason;
+    if (!status.isEmpty() && status != QLatin1String("exited with status 0") && !reason.contains(status))
+        why += QStringLiteral(" (tmux client %1)").arg(status); // a crash or kill says so
+    const QString text = m_built ? QStringLiteral("tmux session \"%1\": %2 — the panes are read-only").arg(m_name, why)
+                                 : QStringLiteral("tmux session \"%1\": %2").arg(m_name, why);
     if (m_tabs)
         m_tabs->tmuxSessionLost(text, true);
     emit banner(text, true);
     finish();
+}
+
+qint64 TmuxSession::clientPid() const
+{
+    return m_client->pid();
 }
