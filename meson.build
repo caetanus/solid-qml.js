@@ -414,6 +414,16 @@ if build_solidterm
       dependencies: [vterm_dep]),
     timeout: 120)
 
+  # TermWorker, the per-pane parser thread (docs/solidterm-parser-thread.md), against a real pty and
+  # child, no Qt: a 20 MB flood arrives intact with throttled GUI wakes, pause stops parsing and
+  # resume delivers 1..N in order, queued output never blocks, stop() mid-flood joins promptly, the
+  # child's exit is reported. See termworker_test.cpp.
+  test('solidterm-termworker',
+    executable('test-solidterm-termworker',
+      files('apps/solidterm/tests/termworker_test.cpp', 'apps/solidterm/native/termworker.cpp'),
+      dependencies: [util_dep, dependency('threads')]),
+    timeout: 120)
+
   # Mouse reporting (xterm/VTE protocol): the decision table (mode/altscreen/shift →
   # report|altscroll|local) plus libvterm's own SGR/X10/DRAG/wheel/DECCKM encoding, driven the same
   # way TerminalView drives it. No Qt — see mousereport_test.cpp.

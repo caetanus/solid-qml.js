@@ -117,6 +117,10 @@ public:
         bool live = false;    // live rows apply DECSCNM at read time (scrollback rows have it baked in)
     };
     int sbCount() const { return m_sbCount; }
+    // Lines ever pushed into the scrollback (also those dropped at once with no scrollback, or
+    // evicted later). A scrolled-back view anchors against it across threads: the renderer and the
+    // GUI each apply the pushes since the count the GUI last saw (docs/solidterm-parser-thread.md).
+    uint64_t pushedTotal() const { return m_pushedTotal; }
     Line line(int absRow) const
     {
         if (absRow < 0)
@@ -230,6 +234,7 @@ private:
     size_t m_sbHead = 0;          // oldest row
     int m_sbCount = 0;
     int m_sbLimit = 8000;
+    uint64_t m_pushedTotal = 0;
 
     std::vector<TermRow> m_scratchRows;        // handles leaving a scroll region
     std::vector<VTermScreenCell> m_sbCells;    // sb_popline scratch (resize only)

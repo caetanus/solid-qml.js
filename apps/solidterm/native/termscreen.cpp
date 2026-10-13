@@ -168,6 +168,7 @@ void TermScreen::bakeReverse(TermRow &row) const
 TermRow TermScreen::pushRow(TermRow row)
 {
     bakeReverse(row);
+    ++m_pushedTotal;
     TermRow out;
     if (m_sbLimit <= 0) {
         out = row; // no scrollback: the line is dropped at once, its buffer reused
