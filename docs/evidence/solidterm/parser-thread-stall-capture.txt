@@ -1,0 +1,237 @@
+# One captured stall of the pre-fix soak (34032ec + watchdog), mixed run 0. Produced by scripts/solidterm-soak.py; see parser-thread-2026-10-13.md, Step 0.
+
+## watchdog report (apps/solidterm/native/stallwatch.h)
+window 5,0 s: 1265355 bytes in 309 reads while bytes were always pending
+STALL slow-drain pid 2246291 t 274380212089825 frames 554
+session 0x557190aa3d20 fd 21 pid 2246319 pending 4095 paused 0 notifier enabled bytes 2160454 reads 523 last_read_age_ms 15 gui_heartbeat_age_ms 79
+thread 2246291 comm solidterm-prefi  state S wchan futex_wait_queue
+thread 2246292 comm QDBusConnection  state S wchan do_sys_poll
+thread 2246294 comm WaylandEventThr  state S wchan do_sys_poll
+thread 2246295 comm WaylandEventThr  state S wchan do_sys_poll
+thread 2246296 comm QThread  state S wchan do_sys_poll
+thread 2246307 comm QQmlThread  state S wchan do_sys_poll
+thread 2246314 comm solidte:disk$0  state S wchan futex_wait_queue
+thread 2246315 comm solidterm-:sh0  state S wchan futex_wait_queue
+thread 2246320 comm solidterm-prefi  state R wchan 0
+thread 2246330 comm QSGRenderThread  state R wchan 0
+thread 2246331 comm solidt:traceq0  state S wchan futex_wait_queue
+thread 2246332 comm solidter:gdrv0  state S wchan futex_wait_queue
+thread 2246333 comm solidt:traceq0  state S wchan futex_wait_queue
+thread 2246334 comm solidter:gdrv0  state S wchan futex_wait_queue
+END
+
+## soak capture
+== context switches of each thread over 2 s (a thread that is not stuck keeps switching)
+tid 2246291 voluntary +124 nonvoluntary +0
+tid 2246292 voluntary +0 nonvoluntary +0
+tid 2246294 voluntary +353 nonvoluntary +0
+tid 2246295 voluntary +269 nonvoluntary +0
+tid 2246296 voluntary +0 nonvoluntary +0
+tid 2246307 voluntary +0 nonvoluntary +0
+tid 2246314 voluntary +0 nonvoluntary +0
+tid 2246315 voluntary +0 nonvoluntary +0
+tid 2246320 voluntary +4 nonvoluntary +0
+tid 2246330 voluntary +124 nonvoluntary +1
+tid 2246331 voluntary +0 nonvoluntary +0
+tid 2246332 voluntary +0 nonvoluntary +0
+tid 2246333 voluntary +0 nonvoluntary +0
+tid 2246334 voluntary +0 nonvoluntary +0
+== terminal threads
+tid 2246291 comm solidterm-prefi state S wchan futex_wait_queue
+tid 2246292 comm QDBusConnection state S wchan do_sys_poll
+tid 2246294 comm WaylandEventThr state S wchan do_sys_poll
+tid 2246295 comm WaylandEventThr state S wchan do_sys_poll
+tid 2246296 comm QThread state S wchan do_sys_poll
+tid 2246307 comm QQmlThread state S wchan do_sys_poll
+tid 2246314 comm solidte:disk$0 state S wchan futex_wait_queue
+tid 2246315 comm solidterm-:sh0 state S wchan futex_wait_queue
+tid 2246320 comm solidterm-prefi state S wchan hrtimer_nanosleep
+tid 2246330 comm QSGRenderThread state S wchan futex_wait_queue
+tid 2246331 comm solidt:traceq0 state S wchan futex_wait_queue
+tid 2246332 comm solidter:gdrv0 state S wchan futex_wait_queue
+tid 2246333 comm solidt:traceq0 state S wchan futex_wait_queue
+tid 2246334 comm solidter:gdrv0 state S wchan futex_wait_queue
+== descendants
+pid 2246319 state S wchan do_wait cmd /bin/bash <worktree>/.scratch/bench/runner.sh 
+pid 2246375 state S wchan wait_woken cmd cat <worktree>/.scratch/bench/mixed.txt 
+== gdb
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib/libthread_db.so.1".
+0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+  Id   Target Id                                             Frame 
+* 1    Thread 0x7f04cc795c00 (LWP 2246291) "solidterm-prefi" 0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+  2    Thread 0x7f049a7fc6c0 (LWP 2246334) "solidter:gdrv0"  0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+  3    Thread 0x7f049affd6c0 (LWP 2246333) "solidt:traceq0"  0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+  4    Thread 0x7f049b7fe6c0 (LWP 2246332) "solidter:gdrv0"  0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+  5    Thread 0x7f04a09fc6c0 (LWP 2246331) "solidt:traceq0"  0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+  6    Thread 0x7f04a11fd6c0 (LWP 2246330) "QSGRenderThread" 0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+  7    Thread 0x7f049bfff6c0 (LWP 2246320) "solidterm-prefi" 0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+  8    Thread 0x7f04a19fe6c0 (LWP 2246315) "solidterm-:sh0"  0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+  9    Thread 0x7f04a21ff6c0 (LWP 2246314) "solidte:disk$0"  0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+  10   Thread 0x7f04c56dd6c0 (LWP 2246307) "QQmlThread"      0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+  11   Thread 0x7f04c5ede6c0 (LWP 2246296) "QThread"         0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+  12   Thread 0x7f04c73646c0 (LWP 2246295) "WaylandEventThr" 0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+  13   Thread 0x7f04c7b656c0 (LWP 2246294) "WaylandEventThr" 0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+  14   Thread 0x7f04c85ff6c0 (LWP 2246292) "QDBusConnection" 0x00007f04ccca0952 in ?? () from /usr/lib/libc.so.6
+
+Thread 14 (Thread 0x7f04c85ff6c0 (LWP 2246292) "QDBusConnection"):
+#0  0x00007f04ccca0952 in ??? () at /usr/lib/libc.so.6
+#1  0x00007f04ccd11a57 in ppoll () at /usr/lib/libc.so.6
+#2  0x00007f04ccf00f59 in ??? () at /usr/lib/libglib-2.0.so.0
+#3  0x00007f04ccf01055 in g_main_context_iteration () at /usr/lib/libglib-2.0.so.0
+#4  0x00007f04cfa96f32 in QEventDispatcherGlib::processEvents(QFlags<QEventLoop::ProcessEventsFlag>) () at /usr/lib/libQt6Core.so.6
+#5  0x00007f04cf78f664 in QEventLoop::exec(QFlags<QEventLoop::ProcessEventsFlag>) () at /usr/lib/libQt6Core.so.6
+#6  0x00007f04cf8b7ce2 in QThread::exec() () at /usr/lib/libQt6Core.so.6
+#7  0x00007f04d013e951 in ??? () at /usr/lib/libQt6DBus.so.6
+#8  0x00007f04cf9721eb in ??? () at /usr/lib/libQt6Core.so.6
+#9  0x00007f04ccc980a2 in ??? () at /usr/lib/libc.so.6
+#10 0x00007f04ccd2080c in ??? () at /usr/lib/libc.so.6
+
+Thread 13 (Thread 0x7f04c7b656c0 (LWP 2246294) "WaylandEventThr"):
+#0  0x00007f04ccca0952 in ??? () at /usr/lib/libc.so.6
+#1  0x00007f04ccd11365 in poll () at /usr/lib/libc.so.6
+#2  0x00007f04c89e6728 in ??? () at /usr/lib/qt6/plugins/platforms/../../../libQt6WaylandClient.so.6
+#3  0x00007f04cf9721eb in ??? () at /usr/lib/libQt6Core.so.6
+#4  0x00007f04ccc980a2 in ??? () at /usr/lib/libc.so.6
+#5  0x00007f04ccd2080c in ??? () at /usr/lib/libc.so.6
+
+Thread 12 (Thread 0x7f04c73646c0 (LWP 2246295) "WaylandEventThr"):
+#0  0x00007f04ccca0952 in ??? () at /usr/lib/libc.so.6
+#1  0x00007f04ccd11365 in poll () at /usr/lib/libc.so.6
+#2  0x00007f04c89e6728 in ??? () at /usr/lib/qt6/plugins/platforms/../../../libQt6WaylandClient.so.6
+#3  0x00007f04cf9721eb in ??? () at /usr/lib/libQt6Core.so.6
+#4  0x00007f04ccc980a2 in ??? () at /usr/lib/libc.so.6
+#5  0x00007f04ccd2080c in ??? () at /usr/lib/libc.so.6
+
+Thread 11 (Thread 0x7f04c5ede6c0 (LWP 2246296) "QThread"):
+#0  0x00007f04ccca0952 in ??? () at /usr/lib/libc.so.6
+#1  0x00007f04ccd11a57 in ppoll () at /usr/lib/libc.so.6
+#2  0x00007f04ccf00f59 in ??? () at /usr/lib/libglib-2.0.so.0
+#3  0x00007f04ccf01055 in g_main_context_iteration () at /usr/lib/libglib-2.0.so.0
+#4  0x00007f04cfa96f32 in QEventDispatcherGlib::processEvents(QFlags<QEventLoop::ProcessEventsFlag>) () at /usr/lib/libQt6Core.so.6
+#5  0x00007f04cf78f664 in QEventLoop::exec(QFlags<QEventLoop::ProcessEventsFlag>) () at /usr/lib/libQt6Core.so.6
+#6  0x00007f04cf8b7ce2 in QThread::exec() () at /usr/lib/libQt6Core.so.6
+#7  0x00007f04cf972285 in ??? () at /usr/lib/libQt6Core.so.6
+#8  0x00007f04ccc980a2 in ??? () at /usr/lib/libc.so.6
+#9  0x00007f04ccd2080c in ??? () at /usr/lib/libc.so.6
+
+Thread 10 (Thread 0x7f04c56dd6c0 (LWP 2246307) "QQmlThread"):
+#0  0x00007f04ccca0952 in ??? () at /usr/lib/libc.so.6
+#1  0x00007f04ccd11a57 in ppoll () at /usr/lib/libc.so.6
+#2  0x00007f04ccf00f59 in ??? () at /usr/lib/libglib-2.0.so.0
+#3  0x00007f04ccf01055 in g_main_context_iteration () at /usr/lib/libglib-2.0.so.0
+#4  0x00007f04cfa96f32 in QEventDispatcherGlib::processEvents(QFlags<QEventLoop::ProcessEventsFlag>) () at /usr/lib/libQt6Core.so.6
+#5  0x00007f04cf78f664 in QEventLoop::exec(QFlags<QEventLoop::ProcessEventsFlag>) () at /usr/lib/libQt6Core.so.6
+#6  0x00007f04cf8b7ce2 in QThread::exec() () at /usr/lib/libQt6Core.so.6
+#7  0x00007f04cf972285 in ??? () at /usr/lib/libQt6Core.so.6
+#8  0x00007f04ccc980a2 in ??? () at /usr/lib/libc.so.6
+#9  0x00007f04ccd2080c in ??? () at /usr/lib/libc.so.6
+
+Thread 9 (Thread 0x7f04a21ff6c0 (LWP 2246314) "solidte:disk$0"):
+#0  0x00007f04ccca0952 in ??? () at /usr/lib/libc.so.6
+#1  0x00007f04ccc94cd9 in ??? () at /usr/lib/libc.so.6
+#2  0x00007f04ccc9754c in pthread_cond_wait () at /usr/lib/libc.so.6
+#3  0x00007f04ace2790e in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#4  0x00007f04acddcb4d in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#5  0x00007f04ace2784d in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#6  0x00007f04ccc980a2 in ??? () at /usr/lib/libc.so.6
+#7  0x00007f04ccd2080c in ??? () at /usr/lib/libc.so.6
+
+Thread 8 (Thread 0x7f04a19fe6c0 (LWP 2246315) "solidterm-:sh0"):
+#0  0x00007f04ccca0952 in ??? () at /usr/lib/libc.so.6
+#1  0x00007f04ccc94cd9 in ??? () at /usr/lib/libc.so.6
+#2  0x00007f04ccc9754c in pthread_cond_wait () at /usr/lib/libc.so.6
+#3  0x00007f04ace2790e in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#4  0x00007f04acddcb4d in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#5  0x00007f04ace2784d in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#6  0x00007f04ccc980a2 in ??? () at /usr/lib/libc.so.6
+#7  0x00007f04ccd2080c in ??? () at /usr/lib/libc.so.6
+
+Thread 7 (Thread 0x7f049bfff6c0 (LWP 2246320) "solidterm-prefi"):
+#0  0x00007f04ccca0952 in ??? () at /usr/lib/libc.so.6
+#1  0x00007f04ccce4aed in clock_nanosleep () at /usr/lib/libc.so.6
+#2  0x00007f04cccf0f27 in nanosleep () at /usr/lib/libc.so.6
+#3  0x000055718a075768 in StallWatch::(anonymous namespace)::loop() ()
+#4  0x00007f04cd0ea859 in ??? () at /usr/lib/libstdc++.so.6
+#5  0x00007f04ccc980a2 in ??? () at /usr/lib/libc.so.6
+#6  0x00007f04ccd2080c in ??? () at /usr/lib/libc.so.6
+
+Thread 6 (Thread 0x7f04a11fd6c0 (LWP 2246330) "QSGRenderThread"):
+#0  0x00007f04ccca0952 in ??? () at /usr/lib/libc.so.6
+#1  0x00007f04ccc94cd9 in ??? () at /usr/lib/libc.so.6
+#2  0x00007f04ccc97762 in pthread_cond_timedwait () at /usr/lib/libc.so.6
+#3  0x00007f04cf96b549 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /usr/lib/libQt6Core.so.6
+#4  0x00007f04c8a2153e in QtWaylandClient::QWaylandWindow::waitForFrameSync(int) () at /usr/lib/qt6/plugins/platforms/../../../libQt6WaylandClient.so.6
+#5  0x00007f04c4e6dd65 in QtWaylandClient::QWaylandGLContext::swapBuffers(QPlatformSurface*) () at /usr/lib/qt6/plugins/wayland-graphics-integration-client/libqt-plugin-wayland-egl.so
+#6  0x00007f04cf1dd43d in ??? () at /usr/lib/libQt6Gui.so.6
+#7  0x00007f04cf02d0a7 in QRhi::endFrame(QRhiSwapChain*, QFlags<QRhi::EndFrameFlag>) () at /usr/lib/libQt6Gui.so.6
+#8  0x00007f04ce0c2eb8 in ??? () at /usr/lib/libQt6Quick.so.6
+#9  0x00007f04cf9721eb in ??? () at /usr/lib/libQt6Core.so.6
+#10 0x00007f04ccc980a2 in ??? () at /usr/lib/libc.so.6
+#11 0x00007f04ccd2080c in ??? () at /usr/lib/libc.so.6
+
+Thread 5 (Thread 0x7f04a09fc6c0 (LWP 2246331) "solidt:traceq0"):
+#0  0x00007f04ccca0952 in ??? () at /usr/lib/libc.so.6
+#1  0x00007f04ccc94cd9 in ??? () at /usr/lib/libc.so.6
+#2  0x00007f04ccc9754c in pthread_cond_wait () at /usr/lib/libc.so.6
+#3  0x00007f04ace2790e in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#4  0x00007f04acddcb4d in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#5  0x00007f04ace2784d in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#6  0x00007f04ccc980a2 in ??? () at /usr/lib/libc.so.6
+#7  0x00007f04ccd2080c in ??? () at /usr/lib/libc.so.6
+
+Thread 4 (Thread 0x7f049b7fe6c0 (LWP 2246332) "solidter:gdrv0"):
+#0  0x00007f04ccca0952 in ??? () at /usr/lib/libc.so.6
+#1  0x00007f04ccc94cd9 in ??? () at /usr/lib/libc.so.6
+#2  0x00007f04ccc9754c in pthread_cond_wait () at /usr/lib/libc.so.6
+#3  0x00007f04ace2790e in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#4  0x00007f04acddcb4d in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#5  0x00007f04ace2784d in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#6  0x00007f04ccc980a2 in ??? () at /usr/lib/libc.so.6
+#7  0x00007f04ccd2080c in ??? () at /usr/lib/libc.so.6
+
+Thread 3 (Thread 0x7f049affd6c0 (LWP 2246333) "solidt:traceq0"):
+#0  0x00007f04ccca0952 in ??? () at /usr/lib/libc.so.6
+#1  0x00007f04ccc94cd9 in ??? () at /usr/lib/libc.so.6
+#2  0x00007f04ccc9754c in pthread_cond_wait () at /usr/lib/libc.so.6
+#3  0x00007f04ace2790e in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#4  0x00007f04acddcb4d in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#5  0x00007f04ace2784d in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#6  0x00007f04ccc980a2 in ??? () at /usr/lib/libc.so.6
+#7  0x00007f04ccd2080c in ??? () at /usr/lib/libc.so.6
+
+Thread 2 (Thread 0x7f049a7fc6c0 (LWP 2246334) "solidter:gdrv0"):
+#0  0x00007f04ccca0952 in ??? () at /usr/lib/libc.so.6
+#1  0x00007f04ccc94cd9 in ??? () at /usr/lib/libc.so.6
+#2  0x00007f04ccc9754c in pthread_cond_wait () at /usr/lib/libc.so.6
+#3  0x00007f04ace2790e in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#4  0x00007f04acddcb4d in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#5  0x00007f04ace2784d in ??? () at /usr/lib/libgallium-26.2.2-arch1.1.so
+#6  0x00007f04ccc980a2 in ??? () at /usr/lib/libc.so.6
+#7  0x00007f04ccd2080c in ??? () at /usr/lib/libc.so.6
+
+Thread 1 (Thread 0x7f04cc795c00 (LWP 2246291) "solidterm-prefi"):
+#0  0x00007f04ccca0952 in ??? () at /usr/lib/libc.so.6
+#1  0x00007f04ccc94cd9 in ??? () at /usr/lib/libc.so.6
+#2  0x00007f04ccc9754c in pthread_cond_wait () at /usr/lib/libc.so.6
+#3  0x00007f04cf96b5e1 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /usr/lib/libQt6Core.so.6
+#4  0x00007f04ce0caf6c in ??? () at /usr/lib/libQt6Quick.so.6
+#5  0x00007f04cde67584 in QQuickWindow::event(QEvent*) () at /usr/lib/libQt6Quick.so.6
+#6  0x00007f04cd50325f in QApplicationPrivate::notify_helper(QObject*, QEvent*) () at /usr/lib/libQt6Widgets.so.6
+#7  0x00007f04cf7822b8 in QCoreApplication::notifyInternal2(QObject*, QEvent*) () at /usr/lib/libQt6Core.so.6
+#8  0x00007f04cee017f6 in QPlatformWindow::deliverUpdateRequest() () at /usr/lib/libQt6Gui.so.6
+#9  0x00007f04cf7e6b96 in QObject::event(QEvent*) () at /usr/lib/libQt6Core.so.6
+#10 0x00007f04cd50325f in QApplicationPrivate::notify_helper(QObject*, QEvent*) () at /usr/lib/libQt6Widgets.so.6
+#11 0x00007f04cf7822b8 in QCoreApplication::notifyInternal2(QObject*, QEvent*) () at /usr/lib/libQt6Core.so.6
+#12 0x00007f04cf7826c1 in QCoreApplicationPrivate::sendPostedEvents(QObject*, int, QThreadData*) () at /usr/lib/libQt6Core.so.6
+#13 0x00007f04cfa9a4b8 in ??? () at /usr/lib/libQt6Core.so.6
+#14 0x00007f04ccefec76 in ??? () at /usr/lib/libglib-2.0.so.0
+#15 0x00007f04ccf00ed7 in ??? () at /usr/lib/libglib-2.0.so.0
+#16 0x00007f04ccf01055 in g_main_context_iteration () at /usr/lib/libglib-2.0.so.0
+#17 0x00007f04cfa96f32 in QEventDispatcherGlib::processEvents(QFlags<QEventLoop::ProcessEventsFlag>) () at /usr/lib/libQt6Core.so.6
+#18 0x00007f04cf78f664 in QEventLoop::exec(QFlags<QEventLoop::ProcessEventsFlag>) () at /usr/lib/libQt6Core.so.6
+#19 0x00007f04cf78685a in QCoreApplication::exec() () at /usr/lib/libQt6Core.so.6
+#20 0x000055718a0529e5 in main ()
+[Inferior 1 (process 2246291) detached]
