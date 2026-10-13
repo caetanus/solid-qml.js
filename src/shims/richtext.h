@@ -290,6 +290,7 @@ public:
     // a split gives the part AFTER the caret a new id; a merge keeps the surviving block's;
     // undo/redo put back the ids the step removed/created (m_idSteps). Saved as xml:id.
     Q_INVOKABLE QStringList blockIds() const;          // document order
+    Q_INVOKABLE QStringList blockIdsInRange(int from, int to) const; // inclusive; clipped to the document
     Q_INVOKABLE QString blockIdAt(int position) const; // "" outside the document
     // Plain text of the block, UTF-16 — the coordinate space of mark offsets (a soft line break
     // U+2028 reads as "\n", same length). "" for an unknown id.
@@ -301,6 +302,7 @@ public:
     // the block's text. Marks are never saved, copied, undone or counted as a modification.
     Q_INVOKABLE QString addMark(const QString &kind, const QString &blockId, int start, int end,
                                 const QString &id = QString());
+    Q_INVOKABLE bool removeMark(const QString &id); // one matching mark, false when unknown
     // Every mark of `kind` (blockId "") or only those in one block. Other kinds/blocks untouched.
     Q_INVOKABLE void clearMarks(const QString &kind, const QString &blockId = QString());
     // { underline: "wave"|"single"|"none"|null, color: "#rrggbb"|null, background: color|null }:

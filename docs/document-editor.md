@@ -98,6 +98,8 @@ State — reactive: reading `doc.bold` in a binding (a `classList`, a text) foll
 | `canPaste` | boolean | The SYSTEM clipboard (not this document) currently carries pasteable content — tracks another app too. |
 | `wordCount`, `charCount` | number | Whole document, kept incrementally (see "Counts" below) and notified (`contentsChanged`) after `loadOdf`/`newDocument`/attaching a document, not just a keystroke. A word is a Unicode word-boundary segment starting with a letter or digit; chars excludes the paragraph separator between blocks. |
 | `selectionWordCount`, `selectionCharCount` | number | The current selection, by the same rules; `0` with none. |
+| `cursorPosition` | number | Caret position in UTF-16 document characters, using the same coordinates as `setCursorPosition` and `blockIdAt`. |
+| `selectionStart`, `selectionEnd` | number | Ordered endpoints of the selection (text in `[selectionStart, selectionEnd)`); both equal the caret when collapsed. Each property is reactive and emits its own `…Changed()` signal only when its value changes, including cursor movement, typing, and document replacement. Connect through e.g. `doc.selectionEndChanged.connect(callback)` on the ref. |
 | `selectedText` | string | `""` with no selection; paragraphs separated by `"\n"`, like `plainText()`. |
 | `currentHeadingIndex` | number | Index into `headings()` of the heading at/before the caret, `-1` if none. |
 
@@ -128,9 +130,11 @@ Methods:
 | `cut()`, `copy()`, `paste()` | | HTML (formatting kept, rescaled to canonical zoom-1 sizes — see "Clipboard" below) and plain text on the SYSTEM clipboard; `cut()`/`copy()` are no-ops without a selection, `paste()` when `!canPaste`. Ctrl+C/X/V are routed to these (not the editor's own built-in handling) — these are also there for an app's own toolbar/menu. |
 | `insertHtml(html)` | | At the caret (replacing a selection), rescaled to the zoom in effect — the same choke point `paste()` uses for its HTML branch. |
 | `blockIds()` | `string[]` | Every block's id, in document order (see "Blocks and marks"). |
+| `blockIdsInRange(from, to)` | `string[]` | Block ids intersecting inclusive `[from, to]`, in document order, including table-cell paragraphs. UTF-16 document positions, like `blockIdAt`; paragraph separators belong to the preceding block, and a collapsed range returns its containing block (including an empty paragraph). Clips to the document; reversed or wholly outside ranges return `[]`. Uses indexed lookup plus traversal of only the intersecting blocks, so small ranges stay cheap in large documents. |
 | `blockIdAt(pos)` | string | The id of the block holding document position `pos`; `""` outside the document. |
 | `blockText(blockId)` | string | The block's plain text, UTF-16 — the space mark offsets count in (a soft line break reads as `"\n"`, same length). `""` for an unknown id. |
 | `addMark(kind, blockId, start, end, id?)` | string | Marks `[start, end)` of the block's text; returns the mark's id (`id`, or a generated one), `""` for an unknown block or a range outside its text. Ids are the app's: not checked for uniqueness. |
+| `removeMark(id)` | boolean | Removes one mark with this id, regardless of kind; `false` when unknown. Leaves all other marks untouched and repaints the overlay. Never changes document content, undo/redo or `modified`. If caller-supplied ids are duplicated, removes only one match; use unique ids to identify a particular mark. |
 | `clearMarks(kind, blockId?)` | | Every mark of `kind`, or only those in `blockId`. Other kinds and blocks are untouched. |
 | `markStyle(kind, style)` | `{ ok, error }` | How `kind` is drawn: `{ underline: "wave" \| "single" \| "none", color, background }` — left out: kept; `null`: removed. An error (`underline: expected …`, `color: not a color …`, an unknown property) changes nothing. |
 | `markAt(pos)` | `{kind, id, blockId, start, end}` or `null` | The mark over the character at `pos`. |
@@ -370,6 +374,19 @@ const check = (id: string) => {
 
 `examples/document-editor.tsx` does exactly this with a toy rule (every "teh" is misspelled;
 right-click offers "the").
+
+For an app's “review the selection” action, read `selectedText` and the reactive endpoints
+from the handle. `blockIdsInRange` has an **inclusive** end, whereas selected text excludes
+`selectionEnd`. To get only blocks containing selected characters (or the caret's block when
+collapsed):
+
+```ts
+const from = doc.selectionStart;
+const to = Math.max(from, doc.selectionEnd - 1);
+const blocksToReview = doc.blockIdsInRange(from, to);
+// Dismiss one review annotation without touching other annotations or document history:
+doc.removeMark(reviewMarkId);
+```
 
 **Block ids.** Every block — paragraph, heading, list item, table-cell paragraph — has a string
 id, unique in the document. It stays the same while the block is typed in and while other blocks

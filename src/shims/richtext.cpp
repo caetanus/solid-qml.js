@@ -2286,6 +2286,19 @@ QStringList RichTextHandler::blockIds() const
     return out;
 }
 
+QStringList RichTextHandler::blockIdsInRange(int from, int to) const
+{
+    QStringList out;
+    if (!m_doc || from > to || to < 0 || from >= m_doc->characterCount())
+        return out;
+    to = qMin(to, m_doc->characterCount() - 1);
+    // QTextDocument's position index finds the first block; only traverse the requested range.
+    for (QTextBlock b = m_doc->findBlock(qMax(0, from)); b.isValid() && b.position() <= to; b = b.next())
+        if (const rt::BlockInfo *info = rt::blockInfo(b))
+            out.append(info->id);
+    return out;
+}
+
 QString RichTextHandler::blockIdAt(int position) const
 {
     if (!m_doc || position < 0 || position >= m_doc->characterCount())
@@ -2496,6 +2509,18 @@ QString RichTextHandler::addMark(const QString &kind, const QString &blockId, in
     m_marks.append(std::move(m));
     scheduleMarksRepaint();
     return m_marks.last().id;
+}
+
+bool RichTextHandler::removeMark(const QString &id)
+{
+    for (qsizetype i = 0; i < m_marks.size(); ++i) {
+        if (m_marks.at(i).id != id)
+            continue;
+        m_marks.removeAt(i);
+        scheduleMarksRepaint();
+        return true;
+    }
+    return false;
 }
 
 void RichTextHandler::clearMarks(const QString &kind, const QString &blockId)

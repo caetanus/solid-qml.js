@@ -21,6 +21,10 @@ RichText {
     _initialHtml: ""
 
     // ── state the app reads (reactive) ──────────────────────────────────────────────────────────
+    // Bind to the editor directly: each public property notifies only when its value changes.
+    readonly property int cursorPosition: _editor.cursorPosition
+    readonly property int selectionStart: _editor.selectionStart
+    readonly property int selectionEnd: _editor.selectionEnd
     readonly property bool modified: !!fmt && fmt.modified
     readonly property bool bold: !!fmt && fmt.bold
     readonly property bool italic: !!fmt && fmt.italic
@@ -314,10 +318,12 @@ RichText {
     signal markHovered(var mark) // null when the pointer leaves a mark
 
     function blockIds() { return fmt ? fmt.blockIds() : [] }
+    function blockIdsInRange(from, to) { return fmt ? fmt.blockIdsInRange(from, to) : [] }
     function blockIdAt(pos) { return fmt ? fmt.blockIdAt(pos) : "" }
     function blockText(blockId) { return fmt ? fmt.blockText(blockId) : "" }
     // Marks are an overlay, not content (not saved, copied, undone, nor `modified`).
     function addMark(kind, blockId, start, end, id) { return fmt ? fmt.addMark(kind, blockId, start, end, id || "") : "" }
+    function removeMark(id) { return fmt ? fmt.removeMark(id) : false }
     function clearMarks(kind, blockId) { if (fmt) fmt.clearMarks(kind, blockId || "") }
     function markStyle(kind, style) {
         if (!fmt) return _noEngine

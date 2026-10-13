@@ -256,6 +256,14 @@ declare global {
     scrollToPage(page: number): void;
     /** QML signal; use doc.pagesChanged.connect(callback) from the ref. */
     readonly pagesChanged: { connect(callback: () => void): void; disconnect(callback: () => void): void };
+    /** Reactive UTF-16 document positions; selection endpoints are ordered, equal at the caret
+     *  when collapsed. Each change signal fires only when that property's value changes. */
+    readonly cursorPosition: number;
+    readonly selectionStart: number;
+    readonly selectionEnd: number;
+    readonly cursorPositionChanged: { connect(callback: () => void): void; disconnect(callback: () => void): void };
+    readonly selectionStartChanged: { connect(callback: () => void): void; disconnect(callback: () => void): void };
+    readonly selectionEndChanged: { connect(callback: () => void): void; disconnect(callback: () => void): void };
     readonly modified: boolean;
     readonly bold: boolean;
     readonly italic: boolean;
@@ -385,6 +393,10 @@ declare global {
     /** Every block's stable id, in document order (kept through typing, other blocks' edits and
      *  undo/redo; a split gives the part after the caret a new id; saved as xml:id). */
     blockIds(): string[];
+    /** Blocks intersecting inclusive [from, to], in document order (including table cells).
+     *  Clips to the document; reversed/wholly outside ranges return []. Indexed lookup plus
+     *  traversal of the intersecting blocks only. */
+    blockIdsInRange(from: number, to: number): string[];
     /** The id of the block holding document position `pos` ("" outside the document). */
     blockIdAt(pos: number): string;
     /** The block's plain text (UTF-16 — mark offsets count in it; a soft line break reads "\n").
@@ -395,6 +407,9 @@ declare global {
      *  undone nor counted as a modification. Edits move it with the text; an edit inside it (or
      *  deleting any of it) removes it. */
     addMark(kind: string, blockId: string, start: number, end: number, id?: string): string;
+    /** Removes one mark with this id, regardless of kind; false if unknown. Other marks, undo,
+     *  redo and modified are untouched. Use unique ids to identify a particular mark. */
+    removeMark(id: string): boolean;
     /** Every mark of `kind`, or only those in `blockId`. Other kinds/blocks are untouched. */
     clearMarks(kind: string, blockId?: string): void;
     /** How `kind` is drawn (see DocumentMarkStyle). */

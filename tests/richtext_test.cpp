@@ -5,6 +5,7 @@
 // paragraph/character styles (define, apply, re-apply, next style on Enter, direct formatting)
 // and their styles.xml round-trip.
 #include "shims/richtext.h"
+#include "shims/richtext_layout.h"
 #include "shims/richtext_odf.h"
 #include "shims/richtext_qt_p.h"
 #include "qmlcss/QMLCss.h"
@@ -2753,6 +2754,205 @@ private slots:
         m_fmt->setCursorPosition(6);
         m_fmt->insertText(QStringLiteral("x"));
         QCOMPARE(doc()->pageSize(), QSizeF(794, 1147));
+    }
+
+    void removeMark_data()
+    {
+        QTest::addColumn<QString>("engine");
+        QTest::newRow("custom") << QStringLiteral("custom");
+        QTest::newRow("qt") << QStringLiteral("qt");
+    }
+
+    void removeMark()
+    {
+        QFETCH(QString, engine);
+        PageEditor w;
+        QVERIFY(w.root);
+        w.root->setProperty("layoutEngine", engine);
+        auto *fmt = w.fmt();
+        auto *d = fmt->document()->textDocument();
+        fmt->insertText(QStringLiteral("I saw teh cat\nAnother word"));
+        fmt->insertText(QStringLiteral("!"));
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "undo")); // retain redo as well as undo
+        w.view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        QCoreApplication::processEvents();
+        QCOMPARE(dynamic_cast<rt::RichTextLayout *>(d->documentLayout()) != nullptr, engine == "custom");
+        d->setModified(false);
+        const QString html = fmt->toHtml();
+        const int undo = d->availableUndoSteps(), redo = d->availableRedoSteps();
+        QVERIFY(d->isUndoAvailable());
+        QVERIFY(d->isRedoAvailable());
+        QSignalSpy content(d, &QTextDocument::contentsChanged);
+        QSignalSpy modified(d, &QTextDocument::modificationChanged);
+        const auto ids = fmt->blockIds();
+        // Out-of-order insertion exercises the unsorted mark list too.
+        const QString keep = fmt->addMark(QStringLiteral("grammar"), ids[1], 0, 7);
+        const QString remove = fmt->addMark(QStringLiteral("spelling"), ids[0], 6, 9);
+        QVERIFY(!fmt->removeMark(QStringLiteral("unknown")));
+        QCOMPARE(fmt->marks().size(), 2);
+        const auto keptMark = fmt->markAt(d->findBlockByNumber(1).position());
+        const auto segments = fmt->markSegments();
+        QVERIFY(!segments.isEmpty());
+        const auto redPixels = [&]() {
+            const QImage image = w.view.grabWindow();
+            int count = 0;
+            for (int y = 0; y < image.height(); ++y)
+                for (int x = 0; x < image.width(); ++x) {
+                    const QColor p = image.pixelColor(x, y);
+                    if (p.red() > p.green() + 60 && p.red() > p.blue() + 60) ++count;
+                }
+            return count;
+        };
+        QTRY_VERIFY(redPixels() > 6);
+        QVariant result;
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "removeMark", Q_RETURN_ARG(QVariant, result),
+                                          Q_ARG(QVariant, remove)));
+        QVERIFY(result.toBool());
+        QTRY_COMPARE(redPixels(), 0); // the overlay repaints, with either layout
+        QCOMPARE(fmt->marks().size(), 1);
+        QCOMPARE(fmt->marks()[0].id, keep);
+        QCOMPARE(fmt->markAt(d->findBlockByNumber(1).position()), keptMark);
+        QVERIFY(fmt->markAt(6).isNull());
+        QVERIFY(!fmt->removeMark(remove));
+        QVERIFY(fmt->removeMark(keep)); // another kind, last mark
+        QVERIFY(!fmt->hasMarks());
+        QVERIFY(fmt->markSegments().isEmpty());
+
+        // Caller-supplied ids need not be unique: remove ONE matching mark, not all of them.
+        fmt->addMark(QStringLiteral("custom-kind"), ids[1], 0, 2, QStringLiteral("duplicate"));
+        fmt->addMark(QStringLiteral("highlight"), ids[0], 0, 1, QStringLiteral("duplicate"));
+        QVERIFY(fmt->removeMark(QStringLiteral("duplicate")));
+        QCOMPARE(fmt->marks().size(), 1);
+        QCOMPARE(fmt->markAt(0).toMap().value("kind").toString(), QStringLiteral("highlight"));
+        QVERIFY(fmt->removeMark(QStringLiteral("duplicate")));
+        QVERIFY(!fmt->removeMark(QStringLiteral("duplicate")));
+        QCoreApplication::processEvents();
+        QCOMPARE(fmt->toHtml(), html);
+        QCOMPARE(d->availableUndoSteps(), undo);
+        QCOMPARE(d->availableRedoSteps(), redo);
+        QVERIFY(d->isUndoAvailable());
+        QVERIFY(d->isRedoAvailable());
+        QVERIFY(!fmt->isModified());
+        QCOMPARE(content.count(), 0);
+        QCOMPARE(modified.count(), 0);
+    }
+
+    void blockIdsInRangeBoundariesAndTables()
+    {
+        RichTextHandler detached;
+        QCOMPARE(detached.blockIdsInRange(0, 10), QStringList());
+        QCOMPARE(m_fmt->blockIdsInRange(0, 0), m_fmt->blockIds()); // empty paragraph
+        m_fmt->insertText(QString::fromUtf8("a😀b\n\nlast"));
+        auto ids = m_fmt->blockIds();
+        QCOMPARE(ids.size(), 3);
+        QCOMPARE(m_fmt->blockIdsInRange(1, 3), QStringList({ids[0]})); // UTF-16 positions
+        QCOMPARE(m_fmt->blockIdsInRange(4, 4), QStringList({ids[0]})); // separator belongs to first
+        QCOMPARE(m_fmt->blockIdsInRange(4, 5), QStringList({ids[0], ids[1]}));
+        QCOMPARE(m_fmt->blockIdsInRange(5, 5), QStringList({ids[1]})); // empty middle paragraph
+        QCOMPARE(m_fmt->blockIdsInRange(5, 6), QStringList({ids[1], ids[2]}));
+        const int last = doc()->characterCount() - 1;
+        QCOMPARE(m_fmt->blockIdsInRange(last, last), QStringList({ids[2]}));
+        QCOMPARE(m_fmt->blockIdsInRange(-100, last + 100), ids);
+        QCOMPARE(m_fmt->blockIdsInRange(-100, -1), QStringList());
+        QCOMPARE(m_fmt->blockIdsInRange(last + 1, last + 100), QStringList());
+        QCOMPARE(m_fmt->blockIdsInRange(6, 5), QStringList());
+
+        QTextCursor c(doc());
+        c.movePosition(QTextCursor::End);
+        auto *table = c.insertTable(2, 2);
+        for (int row = 0; row < 2; ++row)
+            for (int col = 0; col < 2; ++col)
+                table->cellAt(row, col).firstCursorPosition().insertText(QStringLiteral("cell\nsecond"));
+        // Independent full traversal includes multiple paragraphs in a cell and frame boundaries.
+        for (int from = 0; from < doc()->characterCount(); ++from) {
+            const int to = qMin(from + 12, doc()->characterCount() - 1);
+            QStringList expected;
+            for (auto b = doc()->begin(); b.isValid(); b = b.next())
+                if (b.position() <= to && b.position() + b.length() > from)
+                    expected.append(m_fmt->blockIdAt(b.position()));
+            QCOMPARE(m_fmt->blockIdsInRange(from, to), expected);
+        }
+        PageEditor w;
+        QVERIFY(w.root);
+        w.fmt()->insertText(QStringLiteral("one\ntwo"));
+        QVariant result;
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "blockIdsInRange", Q_RETURN_ARG(QVariant, result),
+                                          Q_ARG(QVariant, 0), Q_ARG(QVariant, 4)));
+        QCOMPARE(result.toStringList(), w.fmt()->blockIds());
+    }
+
+    void blockIdsInRangeBookCost()
+    {
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
+        if (book.isEmpty()) QSKIP("Set RICHTEXT_BOOK to the 300-page book");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(book)));
+        QVERIFY(doc()->blockCount() > 1000);
+        const int position = doc()->lastBlock().position();
+        const QStringList expected{m_fmt->blockIdAt(position)};
+        constexpr int repeats = 2000;
+        QElapsedTimer timer;
+        timer.start();
+        for (int i = 0; i < repeats; ++i) {
+            QStringList found;
+            for (auto b = doc()->begin(); b.isValid(); b = b.next())
+                if (b.position() <= position && b.position() + b.length() > position)
+                    found.append(m_fmt->blockIdAt(b.position()));
+            QCOMPARE(found, expected);
+        }
+        const qint64 walkNs = timer.nsecsElapsed();
+        timer.restart();
+        for (int i = 0; i < repeats; ++i)
+            QCOMPARE(m_fmt->blockIdsInRange(position, position), expected);
+        const qint64 indexedNs = timer.nsecsElapsed();
+        qInfo("range book: blocks=%d, full walk=%.3f us/query, indexed=%.3f us/query",
+              doc()->blockCount(), double(walkNs) / repeats / 1000, double(indexedNs) / repeats / 1000);
+        QVERIFY2(indexedNs * 10 < walkNs, "A tiny range must not walk the whole book");
+    }
+
+    void documentSelectionProperties()
+    {
+        PageEditor w;
+        QVERIFY(w.root);
+        for (const char *name : {"cursorPosition", "selectionStart", "selectionEnd"}) {
+            QVERIFY2(w.root->property(name).isValid(), name);
+            QCOMPARE(w.root->property(name).toInt(), 0);
+        }
+        QSignalSpy cursor(w.root.data(), SIGNAL(cursorPositionChanged()));
+        QSignalSpy start(w.root.data(), SIGNAL(selectionStartChanged()));
+        QSignalSpy end(w.root.data(), SIGNAL(selectionEndChanged()));
+        QVERIFY(cursor.isValid() && start.isValid() && end.isValid());
+        auto check = [&](int c, int a, int b, int nc, int na, int nb) {
+            QCOMPARE(w.root->property("cursorPosition").toInt(), c);
+            QCOMPARE(w.root->property("selectionStart").toInt(), a);
+            QCOMPARE(w.root->property("selectionEnd").toInt(), b);
+            QCOMPARE(cursor.count(), nc);
+            QCOMPARE(start.count(), na);
+            QCOMPARE(end.count(), nb);
+            cursor.clear(); start.clear(); end.clear();
+        };
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "insertText", Q_ARG(QVariant, "abc\ndef")));
+        check(7, 7, 7, 1, 1, 1);
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "setCursorPosition", Q_ARG(QVariant, 2)));
+        check(2, 2, 2, 1, 1, 1);
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "setCursorPosition", Q_ARG(QVariant, 2)));
+        check(2, 2, 2, 0, 0, 0);
+        QVERIFY(QMetaObject::invokeMethod(w.edit(), "select", Q_ARG(int, 2), Q_ARG(int, 6)));
+        check(6, 2, 6, 1, 0, 1);
+        QVERIFY(QMetaObject::invokeMethod(w.edit(), "select", Q_ARG(int, 6), Q_ARG(int, 2)));
+        check(2, 2, 6, 1, 0, 0); // reversed selection: only the caret moved
+        w.fmt()->setAlignment(QStringLiteral("right"));
+        QCoreApplication::processEvents();
+        check(2, 2, 6, 0, 0, 0); // formatting and relayout do not move the selection
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "setCursorPosition", Q_ARG(QVariant, 7)));
+        check(7, 7, 7, 1, 1, 1);
+        w.view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        w.edit()->forceActiveFocus();
+        QTest::keyClick(&w.view, Qt::Key_X);
+        check(8, 8, 8, 1, 1, 1);
+        w.fmt()->newDocument();
+        check(0, 0, 0, 1, 1, 1);
     }
 
     void documentScrollbar_data()
