@@ -36,6 +36,8 @@
 #include <QElapsedTimer>
 
 #include <atomic>
+#include <cstdio>
+#include <cstring>
 #include <chrono>
 #include <thread>
 #include <QGuiApplication>
@@ -143,8 +145,32 @@ static void openForwardedWindow(const SingleInstance::Request &request, void *)
     wireWindow(window);
 }
 
+static const char kUsage[] =
+    "Usage: solidterm [options]\n"
+    "\n"
+    "A terminal. One process serves every window: a second launch opens its window in the running\n"
+    "instance (with the caller's directory and environment).\n"
+    "\n"
+    "Options:\n"
+    "  --tmux [session]  attach to tmux session <session> (default \"main\"), creating it if needed,\n"
+    "                    in tmux control mode: tmux windows are tabs, panes are splits; closing the\n"
+    "                    window detaches and the session keeps running. Runs as its own process.\n"
+    "  --standalone      do not share a process with other SolidTerm windows\n"
+    "  -h, --help        show this help and exit\n"
+    "\n"
+    "Environment:\n"
+    "  SOLIDTERM_DIR      the UI directory (default: <bindir>/../share/solidterm)\n"
+    "  SOLIDTERM_TMUX_BIN the tmux binary for --tmux (default: tmux in PATH)\n";
+
 int main(int argc, char **argv)
 {
+    // --help before anything else: no window, no single-instance socket, no Qt.
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
+            std::fputs(kUsage, stdout);
+            return 0;
+        }
+    }
     // Single instance: a later launch hands its cwd + environment to the running process and exits
     // here, before any Qt/Wayland/GL start-up — only the first terminal pays the cold boot.
     const SingleInstance::Role role = SingleInstance::negotiate(argc, argv);

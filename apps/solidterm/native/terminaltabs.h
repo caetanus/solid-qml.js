@@ -174,7 +174,7 @@ private:
             return !customTitle.isEmpty() ? customTitle : !title.isEmpty() ? title : tmuxName;
         }
     };
-    QString windowTitleFor(int index) const; // tmux mode adds "<session> — … — read-only (phase 1)"
+    QString windowTitleFor(int index) const; // tmux mode: "<session> — …"
 
     TerminalPanes *makePanes();
     bool routeDrag(class QDropEvent *event, bool drop); // false = not a SolidTerm pane drag

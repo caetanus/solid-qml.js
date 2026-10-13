@@ -101,6 +101,7 @@ class Server:
         if self.log_path:
             open(self.log_path, "w").close()  # one run per log
         self.exiting = False
+        self.active_pane = {}      # window id -> pane id (default: its first pane)
         self.capture_groups = 0
 
     # ── model ────────────────────────────────────────────────────────────────────────────────
@@ -226,7 +227,7 @@ class Server:
         x, y = p.cursor
         f = {
             "pane_id": "%%%d" % p.id, "window_id": "@%d" % (w.id if w else 0),
-            "pane_active": "1" if w and self.leaves(w.tree)[0] == p.id else "0",
+            "pane_active": "1" if w and self.active_pane.get(w.id, self.leaves(w.tree)[0]) == p.id else "0",
             "pane_width": str(p.w), "pane_height": str(p.h),
             "pane_current_path": p.path, "history_size": str(len(p.history)),
             "cursor_x": str(x), "cursor_y": str(y), "cursor_flag": "1",
@@ -401,6 +402,21 @@ class Server:
                     hist = list(p.history)
                 rows = hist + ([] if e == "-1" else screen)
             return [encode_capture(r) for r in rows], False
+        if name == "select-pane":
+            flags, vals, pos = self.opts(args[1:], "tT")
+            t = vals.get("t", "")
+            if not t.startswith("%") or self.panes.get(int(t[1:])) is None:
+                return ["can't find pane: " + t], True
+            w = self.window_of(int(t[1:]))
+            if w:
+                self.active_pane[w.id] = int(t[1:])
+                self.after_block.append(lambda w=w, t=t: emit(("%%window-pane-changed @%d %s" % (w.id, t)).encode()))
+            return [], False
+        if name == "send-keys":
+            flags, vals, pos = self.opts(args[1:], "tNc")
+            if vals.get("t", "").startswith("%") and self.panes.get(int(vals["t"][1:])) is None:
+                return ["can't find pane: " + vals["t"]], True
+            return [], False
         if name == "detach-client":
             self.exiting = True
             return [], False
