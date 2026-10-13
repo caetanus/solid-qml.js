@@ -2,6 +2,7 @@
 #include "richtext_odf.h"
 #include "richtext_qt_p.h"
 #include "richtext_layout.h"
+#include "richtext_table_decoration.h"
 #include "qmlcss/cssscroll.h"
 
 #include <QClipboard>
@@ -253,6 +254,10 @@ void RichTextHandler::selectLayoutEngine(bool forceQt)
     m_pagesConn = connect(layout, &QAbstractTextDocumentLayout::documentSizeChanged, this, [this](const QSizeF &size) {
         queuePageCount(m_pageStride > 0 ? qMax(1, qCeil(size.height()/m_pageStride)) : 1);
     });
+    if (auto *customLayout=dynamic_cast<rt::RichTextLayout *>(layout)) {
+        auto *decoration=new rt::NodeTableDecoration(customLayout,qobject_cast<QQuickItem *>(editor));
+        decoration->setObjectName("tableDecoration");
+    }
     m_doc->markContentsDirty(0, m_doc->characterCount());
     m_doc->setLayoutEnabled(layoutWasEnabled);
     if (layoutWasEnabled) {
@@ -821,7 +826,8 @@ void RichTextHandler::insertHtml(const QString &html)
         QTextDocument probe;
         probe.setBaseUrl(m_doc->baseUrl());
         probe.setHtml(html);
-        if (!rt::RichTextLayout::supports(&probe)) {
+        if (!rt::RichTextLayout::supports(&probe)
+            || (!probe.rootFrame()->childFrames().isEmpty() && insertionCursor().currentTable())) {
             m_unsupportedHistory = true;
             selectLayoutEngine(true); // Before selection removal or any undoable edit.
         }
@@ -1283,8 +1289,10 @@ void RichTextHandler::insertTable(int rows, int cols)
     QTextCursor c = insertionCursor();
     if (c.isNull() || rows < 1 || cols < 1)
         return;
-    m_unsupportedHistory = true;
-    selectLayoutEngine(true);
+    if (c.currentTable()) {
+        m_unsupportedHistory = true;
+        selectLayoutEngine(true);
+    }
     // Our ODF writer closes a list before a table, so a table may follow a list item directly.
     c.insertTable(rows, cols, rt::wordLikeTableFormat());
     emit formatChanged();

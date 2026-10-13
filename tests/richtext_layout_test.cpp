@@ -131,7 +131,7 @@ private slots:
         connect(doc,&QTextDocument::contentsChange,&handler,[&] {
             editedOnQt=!dynamic_cast<rt::RichTextLayout *>(doc->documentLayout());
         });
-        handler.insertHtml("<table><tr><td>preserved table</td></tr></table><p><img src='image:retained'></p>");
+        handler.insertHtml("<table><tr><td><table><tr><td>preserved table</td></tr></table></td></tr></table><p><img src='image:retained'></p>");
         QVERIFY(editedOnQt); QVERIFY(!dynamic_cast<rt::RichTextLayout *>(doc->documentLayout()));
         QVERIFY(!doc->rootFrame()->childFrames().isEmpty());
         QCOMPARE(qvariant_cast<QImage>(doc->resource(QTextDocument::ImageResource,QUrl("image:retained"))),resource);
@@ -139,6 +139,23 @@ private slots:
         doc->redo(); QCOMPARE(doc->toHtml(),after);
         handler.setLayoutEngine("qt"); QCOMPARE(handler.layoutEngine(),QString("qt"));
         QVERIFY(!view.frame().isNull());
+    }
+    void insertSupportedTableAndFallbackBeforeNestedEdit() {
+        QuickView view; RichTextHandler handler; handler.setDocument(view.edit->textDocument());
+        handler.configurePages(300,140,0,{10,10,10,10}); handler.setLayoutEngine("custom");
+        auto *doc=view.doc(); handler.insertTable(2,2);
+        QVERIFY(dynamic_cast<rt::RichTextLayout *>(doc->documentLayout()));
+        QVERIFY(view.edit->findChild<QQuickItem *>("tableDecoration"));
+        auto *table=qobject_cast<QTextTable *>(doc->rootFrame()->childFrames().first()); QVERIFY(table);
+        view.edit->setCursorPosition(table->cellAt(0,0).firstPosition());
+        handler.setCursorPosition(table->cellAt(0,0).firstPosition());
+        bool editedOnQt=false;
+        connect(doc,&QTextDocument::contentsChange,&handler,[&] {
+            editedOnQt=!dynamic_cast<rt::RichTextLayout *>(doc->documentLayout());
+        });
+        handler.insertTable(1,1); QVERIFY(editedOnQt);
+        doc->undo(); handler.configurePages(300,140,0,{10,10,10,10});
+        QVERIFY(!dynamic_cast<rt::RichTextLayout *>(doc->documentLayout()));
     }
     void engineSwitchRetainsObjectHandler() {
         QuickView view; RichTextHandler handler; handler.setDocument(view.edit->textDocument());
@@ -538,7 +555,13 @@ private slots:
     }
     void unsupportedStructures() {
         QTextDocument d; QVERIFY(rt::RichTextLayout::supports(&d));
-        QTextCursor c(&d); c.insertTable(2,2);
+        QTextCursor c(&d); QTextTableFormat plain; plain.setBorderStyle(QTextFrameFormat::BorderStyle_Solid);
+        auto *table=c.insertTable(2,2,plain);
+        QVERIFY(rt::RichTextLayout::supports(&d));
+        auto format=table->format(); format.setHeaderRowCount(1); table->setFormat(format);
+        QVERIFY(!rt::RichTextLayout::supports(&d));
+        format.setHeaderRowCount(0); table->setFormat(format);
+        table->cellAt(0,0).firstCursorPosition().insertTable(1,1);
         QVERIFY(!rt::RichTextLayout::supports(&d));
         QTextDocument hidden; hidden.begin().setVisible(false);
         QVERIFY(!rt::RichTextLayout::supports(&hidden));
