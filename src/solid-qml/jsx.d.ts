@@ -393,6 +393,10 @@ declare global {
     /** Every block's stable id, in document order (kept through typing, other blocks' edits and
      *  undo/redo; a split gives the part after the caret a new id; saved as xml:id). */
     blockIds(): string[];
+    /** Blocks intersecting inclusive [from, to], in document order (including table cells).
+     *  Clips to the document; reversed/wholly outside ranges return []. Indexed lookup plus
+     *  traversal of the intersecting blocks only. */
+    blockIdsInRange(from: number, to: number): string[];
     /** The id of the block holding document position `pos` ("" outside the document). */
     blockIdAt(pos: number): string;
     /** The block's plain text (UTF-16 — mark offsets count in it; a soft line break reads "\n").

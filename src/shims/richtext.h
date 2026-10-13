@@ -290,6 +290,7 @@ public:
     // a split gives the part AFTER the caret a new id; a merge keeps the surviving block's;
     // undo/redo put back the ids the step removed/created (m_idSteps). Saved as xml:id.
     Q_INVOKABLE QStringList blockIds() const;          // document order
+    Q_INVOKABLE QStringList blockIdsInRange(int from, int to) const; // inclusive; clipped to the document
     Q_INVOKABLE QString blockIdAt(int position) const; // "" outside the document
     // Plain text of the block, UTF-16 — the coordinate space of mark offsets (a soft line break
     // U+2028 reads as "\n", same length). "" for an unknown id.

@@ -2755,6 +2755,78 @@ private slots:
         QCOMPARE(doc()->pageSize(), QSizeF(794, 1147));
     }
 
+    void blockIdsInRangeBoundariesAndTables()
+    {
+        RichTextHandler detached;
+        QCOMPARE(detached.blockIdsInRange(0, 10), QStringList());
+        QCOMPARE(m_fmt->blockIdsInRange(0, 0), m_fmt->blockIds()); // empty paragraph
+        m_fmt->insertText(QString::fromUtf8("a😀b\n\nlast"));
+        auto ids = m_fmt->blockIds();
+        QCOMPARE(ids.size(), 3);
+        QCOMPARE(m_fmt->blockIdsInRange(1, 3), QStringList({ids[0]})); // UTF-16 positions
+        QCOMPARE(m_fmt->blockIdsInRange(4, 4), QStringList({ids[0]})); // separator belongs to first
+        QCOMPARE(m_fmt->blockIdsInRange(4, 5), QStringList({ids[0], ids[1]}));
+        QCOMPARE(m_fmt->blockIdsInRange(5, 5), QStringList({ids[1]})); // empty middle paragraph
+        QCOMPARE(m_fmt->blockIdsInRange(5, 6), QStringList({ids[1], ids[2]}));
+        const int last = doc()->characterCount() - 1;
+        QCOMPARE(m_fmt->blockIdsInRange(last, last), QStringList({ids[2]}));
+        QCOMPARE(m_fmt->blockIdsInRange(-100, last + 100), ids);
+        QCOMPARE(m_fmt->blockIdsInRange(-100, -1), QStringList());
+        QCOMPARE(m_fmt->blockIdsInRange(last + 1, last + 100), QStringList());
+        QCOMPARE(m_fmt->blockIdsInRange(6, 5), QStringList());
+
+        QTextCursor c(doc());
+        c.movePosition(QTextCursor::End);
+        auto *table = c.insertTable(2, 2);
+        for (int row = 0; row < 2; ++row)
+            for (int col = 0; col < 2; ++col)
+                table->cellAt(row, col).firstCursorPosition().insertText(QStringLiteral("cell\nsecond"));
+        // Independent full traversal includes multiple paragraphs in a cell and frame boundaries.
+        for (int from = 0; from < doc()->characterCount(); ++from) {
+            const int to = qMin(from + 12, doc()->characterCount() - 1);
+            QStringList expected;
+            for (auto b = doc()->begin(); b.isValid(); b = b.next())
+                if (b.position() <= to && b.position() + b.length() > from)
+                    expected.append(m_fmt->blockIdAt(b.position()));
+            QCOMPARE(m_fmt->blockIdsInRange(from, to), expected);
+        }
+        PageEditor w;
+        QVERIFY(w.root);
+        w.fmt()->insertText(QStringLiteral("one\ntwo"));
+        QVariant result;
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "blockIdsInRange", Q_RETURN_ARG(QVariant, result),
+                                          Q_ARG(QVariant, 0), Q_ARG(QVariant, 4)));
+        QCOMPARE(result.toStringList(), w.fmt()->blockIds());
+    }
+
+    void blockIdsInRangeBookCost()
+    {
+        const QString book = qEnvironmentVariable("RICHTEXT_BOOK");
+        if (book.isEmpty()) QSKIP("Set RICHTEXT_BOOK to the 300-page book");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(book)));
+        QVERIFY(doc()->blockCount() > 1000);
+        const int position = doc()->lastBlock().position();
+        const QStringList expected{m_fmt->blockIdAt(position)};
+        constexpr int repeats = 2000;
+        QElapsedTimer timer;
+        timer.start();
+        for (int i = 0; i < repeats; ++i) {
+            QStringList found;
+            for (auto b = doc()->begin(); b.isValid(); b = b.next())
+                if (b.position() <= position && b.position() + b.length() > position)
+                    found.append(m_fmt->blockIdAt(b.position()));
+            QCOMPARE(found, expected);
+        }
+        const qint64 walkNs = timer.nsecsElapsed();
+        timer.restart();
+        for (int i = 0; i < repeats; ++i)
+            QCOMPARE(m_fmt->blockIdsInRange(position, position), expected);
+        const qint64 indexedNs = timer.nsecsElapsed();
+        qInfo("range book: blocks=%d, full walk=%.3f us/query, indexed=%.3f us/query",
+              doc()->blockCount(), double(walkNs) / repeats / 1000, double(indexedNs) / repeats / 1000);
+        QVERIFY2(indexedNs * 10 < walkNs, "A tiny range must not walk the whole book");
+    }
+
     void documentSelectionProperties()
     {
         PageEditor w;

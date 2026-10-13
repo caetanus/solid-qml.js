@@ -318,6 +318,7 @@ RichText {
     signal markHovered(var mark) // null when the pointer leaves a mark
 
     function blockIds() { return fmt ? fmt.blockIds() : [] }
+    function blockIdsInRange(from, to) { return fmt ? fmt.blockIdsInRange(from, to) : [] }
     function blockIdAt(pos) { return fmt ? fmt.blockIdAt(pos) : "" }
     function blockText(blockId) { return fmt ? fmt.blockText(blockId) : "" }
     // Marks are an overlay, not content (not saved, copied, undone, nor `modified`).
