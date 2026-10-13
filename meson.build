@@ -395,9 +395,20 @@ if build_solidterm
   # 100% CPU whenever the window grew wider AND taller (workspace move, resize). The bug is a hang,
   # so the short timeout is the assertion.
   test('solidterm-scrollback',
-    executable('test-solidterm-scrollback', files('apps/solidterm/tests/scrollback_test.cpp'),
+    executable('test-solidterm-scrollback',
+      files('apps/solidterm/tests/scrollback_test.cpp', 'apps/solidterm/native/termscreen.cpp'),
       dependencies: [vterm_dep]),
     timeout: 10)
+
+  # TermScreen (SolidTerm's own screen buffer over libvterm's state layer) vs the previous
+  # VTermScreen path, kept here as the reference model: an escape-sequence corpus + seeded random
+  # streams + resizes, cells/cursor/line info/scrollback compared after every step. A hang in the
+  # sb_popline round trip (width-0 padding) shows up as the timeout. See termscreen_oracle_test.cpp.
+  test('solidterm-termscreen-oracle',
+    executable('test-solidterm-termscreen-oracle',
+      files('apps/solidterm/tests/termscreen_oracle_test.cpp', 'apps/solidterm/native/termscreen.cpp'),
+      dependencies: [vterm_dep]),
+    timeout: 120)
 
   # Mouse reporting (xterm/VTE protocol): the decision table (mode/altscreen/shift →
   # report|altscroll|local) plus libvterm's own SGR/X10/DRAG/wheel/DECCKM encoding, driven the same

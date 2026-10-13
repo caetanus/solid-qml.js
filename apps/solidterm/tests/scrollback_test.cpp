@@ -7,8 +7,12 @@
 //    Registered with a short meson timeout: that bug shows up as a timeout.
 // 2. Anchor: while the user is scrolled back, output that pushes lines into the scrollback keeps the
 //    SAME line at the top of the view (a TUI redrawing a spinner must not drag the view around).
+//
+// Both run twice: against libvterm's VTermScreen (the callback shapes TerminalView used to have) and
+// against TermScreen, SolidTerm's own screen buffer that replaced it (termscreen.h).
 #include "../native/scrollanchor.h"
 #include "../native/scrollbackcells.h"
+#include "../native/termscreen.h"
 
 #include <vterm.h>
 
@@ -139,14 +143,102 @@ bool anchoredWhileScrolledBack()
     return true;
 }
 
+// ── the same two scenarios on TermScreen, with TerminalView's hook bookkeeping ──────────────────
+struct TermSb {
+    TermScreen screen;
+    int offset = 0;
+};
+
+void tsPushed(int count, void *user)
+{
+    auto *t = static_cast<TermSb *>(user);
+    t->offset = offsetAfterPush(t->offset, count);
+}
+
+void tsPopped(int count, void *user)
+{
+    auto *t = static_cast<TermSb *>(user);
+    t->offset = clampOffset(t->offset, count);
+}
+
+const TermScreenHooks kTsHooks = { nullptr, nullptr, nullptr, nullptr, tsPushed, tsPopped };
+
+VTerm *newTermScreen(TermSb &t, int rows, int cols)
+{
+    VTerm *vt = TermScreen::newVTerm(rows, cols);
+    vterm_set_utf8(vt, 1);
+    t.screen.attach(vt, &kTsHooks, &t);
+    t.screen.reset(true);
+    return vt;
+}
+
+std::string lineText(const TermScreen &s, int absRow)
+{
+    const TermScreen::Line l = s.line(absRow);
+    std::string out;
+    for (int c = 0; c < l.cols; ++c) {
+        const uint32_t ch = l.cells[c].chars[0];
+        out += (ch && ch < 0x80) ? char(ch) : ' ';
+    }
+    while (!out.empty() && out.back() == ' ')
+        out.pop_back();
+    return out;
+}
+
+bool roundTripTermScreen()
+{
+    TermSb t;
+    VTerm *vt = newTermScreen(t, 5, 10);
+    writeLines(vt, 0, 20);
+    if (t.screen.sbCount() == 0) {
+        std::fprintf(stderr, "roundTrip(TermScreen) setup: nothing reached the scrollback\n");
+        vterm_free(vt);
+        return false;
+    }
+    vterm_set_size(vt, 5, 30);
+    vterm_set_size(vt, 20, 30);
+    VTermScreenCell cell;
+    t.screen.cell(t.screen.liveLine(0), 25, &cell);
+    const std::string top = lineText(t.screen, t.screen.sbCount()); // first live row: a popped line
+    vterm_free(vt);
+    if (cell.width != 1 || !VTERM_COLOR_IS_DEFAULT_BG(&cell.bg)) {
+        std::fprintf(stderr, "roundTrip(TermScreen): padding cell is not a default blank (width %d)\n", int(cell.width));
+        return false;
+    }
+    if (top.rfind("line ", 0) != 0) {
+        std::fprintf(stderr, "roundTrip(TermScreen): the popped line reads '%s'\n", top.c_str());
+        return false;
+    }
+    return true;
+}
+
+bool anchoredTermScreen()
+{
+    TermSb t;
+    VTerm *vt = newTermScreen(t, 5, 20);
+    writeLines(vt, 0, 30);
+    t.offset = 3;
+    const std::string before = lineText(t.screen, t.screen.sbCount() - t.offset);
+    writeLines(vt, 30, 10);
+    const std::string after = lineText(t.screen, t.screen.sbCount() - t.offset);
+    vterm_free(vt);
+    if (before.empty() || before != after) {
+        std::fprintf(stderr, "anchor(TermScreen): view top was '%s', became '%s'\n", before.c_str(), after.c_str());
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main()
 {
-    // Both cases always run, so one failure does not hide the other.
+    // Every case always runs, so one failure does not hide another.
     const bool roundTripOk = roundTrip();
     const bool anchorOk = anchoredWhileScrolledBack();
-    const bool ok = roundTripOk && anchorOk;
+    const bool tsRoundTripOk = roundTripTermScreen();
+    const bool tsAnchorOk = anchoredTermScreen();
+    const bool ok = roundTripOk && anchorOk && tsRoundTripOk && tsAnchorOk;
     std::puts(ok ? "scrollback ok" : "scrollback FAILED");
     return ok ? 0 : 1;
 }
