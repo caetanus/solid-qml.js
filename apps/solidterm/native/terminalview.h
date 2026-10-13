@@ -312,6 +312,7 @@ private:
         bool any() const { return titleChanged || cursorMoved || scrollMoved || damaged || exited || bells; }
     };
     News m_news;
+    QByteArray m_titleAcc;          // an OSC title arriving in fragments (lock held, cbSetTermProp)
     // GUI thread: take the news (scroll anchoring, signals, update()). Must not hold the lock.
     void applyNews();
     void parseOnGuiThread(const QByteArray &bytes); // single-threaded mode

@@ -639,9 +639,20 @@ int TerminalView::cbMoveCursor(VTermPos pos, VTermPos, int visible, void *user)
 
 int TerminalView::cbSetTermProp(VTermProp prop, VTermValue *val, void *user)
 {
-    News &n = static_cast<TerminalView *>(user)->m_news;
+    auto *self = static_cast<TerminalView *>(user);
+    News &n = self->m_news;
     if (prop == VTERM_PROP_TITLE) {
-        n.title = QString::fromUtf8(val->string.str, qsizetype(val->string.len));
+        // libvterm hands a string over in FRAGMENTS when the OSC is split across input writes
+        // (a read boundary, a tmux %output line): collect from the initial one, commit on the final
+        // one. Taking each fragment as the whole title kept only its tail ("passthrough" for
+        // "from-passthrough").
+        if (val->string.initial)
+            self->m_titleAcc.clear();
+        self->m_titleAcc.append(val->string.str, qsizetype(val->string.len));
+        if (!val->string.final)
+            return 1;
+        n.title = QString::fromUtf8(self->m_titleAcc);
+        self->m_titleAcc.clear();
         n.titleChanged = true;
     } else if (prop == VTERM_PROP_CURSORVISIBLE) {
         n.cursorVisible = val->boolean;
