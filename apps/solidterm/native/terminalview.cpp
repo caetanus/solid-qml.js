@@ -1254,9 +1254,14 @@ QString TerminalView::rowText(int absRow) const
     if (!m_term.isAttached() || absRow < 0)
         return line;
     const TermScreen::Line src = m_term.line(absRow); // empty past the live screen
-    for (int c = 0; c < m_cols && c < src.cols; ++c)
-        if (src.cells[c].chars[0])
-            line[c] = QChar(char32_t(src.cells[c].chars[0]));
+    for (int c = 0; c < m_cols && c < src.cols; ++c) {
+        // One UTF-16 unit per column: a code point outside the BMP, and the right half of a wide
+        // glyph (kWideContinuation = 0xFFFFFFFF), become U+FFFD — QChar(char32_t) asserts on both in
+        // a debug build and truncates them to arbitrary BMP characters in a release one.
+        const char32_t ch = src.cells[c].chars[0];
+        if (ch)
+            line[c] = ch <= 0xffff ? QChar(char16_t(ch)) : QChar(QChar::ReplacementCharacter);
+    }
     return line;
 }
 
