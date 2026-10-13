@@ -6,17 +6,21 @@
 #include <QTextFrame>
 #include <QTextTable>
 #include <QPen>
+#include <QPointer>
 
 namespace rt {
 class RichTextLayout final : public QAbstractTextDocumentLayout {
 public:
     struct Counters { quint64 callbacks = 0, shapedBlocks = 0, shapedCharacters = 0,
-                     placements = 0, translations = 0, convergences = 0; } counters;
+                     placements = 0, translations = 0, convergences = 0, tableSolves = 0, cellReplays = 0, hitCandidates = 0; };
+    mutable Counters counters;
     struct TableFragment {
         QRectF rect;
         QBrush background;
         QPen border;
         bool top = true, bottom = true, collapsed = true;
+        QPointer<QTextTable> table;
+        int row = 0, column = 0;
     };
     const QList<TableFragment> &tableFragments() const { return m_fragments; }
     void drawTableDecorations(QPainter *, const QRectF &clip, bool quick = false) const;
@@ -50,6 +54,12 @@ private:
     QHash<QTextTable *, QRectF> m_tables;
     QHash<QTextTable *, QList<TableFragment>> m_tableFragments;
     QList<TableFragment> m_fragments;
+    struct HitLine { QRectF rect; int block, line, cell; };
+    QList<HitLine> m_hitLines;
+    QList<int> m_hitOrder, m_cellLineOrder, m_cellOrder;
+    QList<qreal> m_hitBottom, m_cellLineBottom, m_cellBottom;
+    QHash<int,QPair<int,int>> m_cellRanges;
+    void rebuildHitIndex();
     QHash<quint64, Cache> m_blocks;
     QSizeF m_size;
     QSizeF m_page;

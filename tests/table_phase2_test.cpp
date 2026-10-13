@@ -164,6 +164,54 @@ private slots:
         QCOMPARE(copy->cellAt(0,0).format().verticalAlignment(),QTextCharFormat::AlignBottom);
         QCOMPARE(copy->cellAt(0,1).format().verticalAlignment(),QTextCharFormat::AlignMiddle);
     }
+    void cellHitCursorSelection() {
+        QTextDocument source; makeFixture(source,80);
+        BookView view; QVERIFY(view.initialize(source,true,1,true));
+        auto *table=qobject_cast<QTextTable *>(view.doc->rootFrame()->childFrames().first()); QVERIFY(table);
+        auto left=table->cellAt(0,0),right=table->cellAt(0,1);
+        const auto lb=left.firstCursorPosition().block(),rb=right.firstCursorPosition().block();
+        const auto last=lb.layout()->lineAt(lb.layout()->lineCount()-1);
+        const QPointF emptyContinuation(rb.layout()->position().x()+1,lb.layout()->position().y()+last.y()+last.height()/2);
+        const int hit=view.layout->hitTest(emptyContinuation,Qt::FuzzyHit);
+        QVERIFY2(hit>=right.firstPosition() && hit<=right.lastPosition(),"Empty continuation must retain the clicked cell");
+        view.layout->counters={}; int queries=0;
+        for(int col=0;col<2;++col) {
+            const auto cell=table->cellAt(0,col);
+            for(auto it=cell.begin();it!=cell.end();++it) {
+                auto b=it.currentBlock(); if(!b.isValid()) continue;
+                for(int i=0;i<b.layout()->lineCount();++i) {
+                    const auto line=b.layout()->lineAt(i);
+                    const int position=b.position()+line.textStart();
+                    QRectF caret;
+                    QVERIFY(QMetaObject::invokeMethod(view.edit.data(),"positionToRectangle",Q_RETURN_ARG(QRectF,caret),Q_ARG(int,position)));
+                    int actual=-1;
+                    QVERIFY(QMetaObject::invokeMethod(view.edit.data(),"positionAt",Q_RETURN_ARG(int,actual),Q_ARG(qreal,caret.center().x()),Q_ARG(qreal,caret.center().y())));
+                    QCOMPARE(actual,position); ++queries;
+                    view.edit->setProperty("cursorPosition",position);
+                    QCOMPARE(view.edit->property("cursorRectangle").toRectF(),caret);
+                    const qreal page=qFloor(caret.y()/1150);
+                    QVERIFY(caret.y()>=page*1150+94 && caret.bottom()<=page*1150+1024);
+                }
+            }
+            QVERIFY(QMetaObject::invokeMethod(view.edit.data(),"select",Q_ARG(int,cell.firstPosition()),Q_ARG(int,cell.lastPosition())));
+            QCOMPARE(view.edit->property("selectionStart").toInt(),cell.firstPosition());
+            QCOMPARE(view.edit->property("selectionEnd").toInt(),cell.lastPosition());
+        }
+        qInfo()<<"HIT QUERIES/CANDIDATES"<<queries<<view.layout->counters.hitCandidates;
+        QVERIFY(view.layout->counters.hitCandidates>0);
+        QVERIFY(view.layout->counters.hitCandidates<=quint64(queries*16));
+        QCOMPARE(view.layout->counters.callbacks,quint64(0));
+        QAbstractTextDocumentLayout::PaintContext context;
+        QAbstractTextDocumentLayout::Selection selection;
+        selection.cursor=left.firstCursorPosition(); selection.cursor.setPosition(left.lastPosition(),QTextCursor::KeepAnchor);
+        selection.format.setBackground(Qt::blue); selection.format.setForeground(Qt::white); context.selections.append(selection);
+        QImage image(794,view.doc->pageCount()*1150,QImage::Format_RGB32); image.fill(Qt::white);
+        { QPainter painter(&image); view.layout->draw(&painter,context); }
+        for(int y=0;y<image.height();++y) if(y%1150<94 || y%1150>=1024) {
+            const auto *pixels=reinterpret_cast<const QRgb *>(image.constScanLine(y));
+            for(int x=0;x<image.width();++x) QVERIFY(pixels[x]!=qRgb(0,0,255));
+        }
+    }
     void bookPixels_data() {
         QTest::addColumn<qreal>("zoom"); QTest::newRow("zoom-1")<<qreal(1); QTest::newRow("zoom-1.5")<<qreal(1.5);
     }
@@ -192,6 +240,15 @@ private slots:
                 QCOMPARE(al.textStart(),bl.textStart()); QCOMPARE(al.textLength(),bl.textLength());
                 const auto ap=ar.topLeft()+al.position(),bp=br.topLeft()+bl.position();
                 QCOMPARE(qFloor(ap.y()/(1150*zoom)),qFloor(bp.y()/(1150*zoom)));
+                if(QTextCursor(b).currentTable()) {
+                    int local=bl.textStart()+bl.textLength()/2;
+                    while(local>bl.textStart() && !b.layout()->isValidCursorPosition(local)) --local;
+                    const int position=b.position()+local;
+                    QRectF caret; int hit=-1;
+                    QVERIFY(QMetaObject::invokeMethod(custom.edit.data(),"positionToRectangle",Q_RETURN_ARG(QRectF,caret),Q_ARG(int,position)));
+                    QVERIFY(QMetaObject::invokeMethod(custom.edit.data(),"positionAt",Q_RETURN_ARG(int,hit),Q_ARG(qreal,caret.center().x()),Q_ARG(qreal,caret.center().y())));
+                    QCOMPARE(hit,position);
+                }
                 QVERIFY2(qAbs(ap.x()-bp.x())<=.5 && qAbs(ap.y()-bp.y())<=.5 && qAbs(al.width()-bl.width())<=.5,
                          qPrintable(QString("zoom %1 block %2 line %3 Qt %4,%5 custom %6,%7").arg(zoom).arg(a.blockNumber()).arg(n).arg(ap.x()).arg(ap.y()).arg(bp.x()).arg(bp.y())));
             }
