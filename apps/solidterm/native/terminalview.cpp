@@ -176,6 +176,12 @@ TerminalView::TerminalView(QQuickItem *parent)
 
 TerminalView::~TerminalView()
 {
+    // ~QQuickItem runs after this body and after every member is gone, and it still emits signals
+    // of this item — activeFocusChanged when a focused pane closes — whose handlers here
+    // (resetBlink, updateFocusReport → vterm_state_focus_out) would touch the freed VTerm and the
+    // destroyed members. Cut this item's connections to itself first. (A use-after-free found by the
+    // ThreadSanitizer stress run closing focused panes; it predates the parser thread.)
+    QObject::disconnect(this, nullptr, this, nullptr);
     // The parser thread first: after stop() nothing but this thread touches m_vt/m_term. It never
     // waits on the GUI thread, so the join cannot deadlock (a slice in progress finishes first).
     delete m_newsNotifier;
@@ -183,6 +189,7 @@ TerminalView::~TerminalView()
     m_worker.stop();
     if (m_vt)
         vterm_free(m_vt);
+    m_vt = nullptr;
 }
 
 bool TerminalView::parserThreadEnabled()
