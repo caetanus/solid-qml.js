@@ -484,11 +484,14 @@ test('select-widget',
 if build_richtext
   richtext_test_deps = [solidqml_dep, qt6_templates_private_dep, dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'Test'])] + core_private_deps
   table_probe_deps = dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'Test'])
-  test('table-phase2',
-    executable('test-table-phase2', files('tests/table_phase2_test.cpp'),
-      qt6.preprocess(moc_sources: files('tests/table_phase2_test.cpp'), dependencies: table_probe_deps),
-      include_directories: include_directories('src'), dependencies: richtext_test_deps),
+  table_phase2_test = executable('test-table-phase2', files('tests/table_phase2_test.cpp'),
+    qt6.preprocess(moc_sources: files('tests/table_phase2_test.cpp'), dependencies: table_probe_deps),
+    include_directories: include_directories('src'), dependencies: richtext_test_deps)
+  test('table-phase2', table_phase2_test,
     env: ['QT_QPA_PLATFORM=offscreen'], timeout: 120)
+  test('table-phase2-clear-gaps', table_phase2_test,
+    args: ['qtMiddleAlignmentGapWitness', 'qtQuickMiddleAlignmentGapWitness'],
+    env: ['QT_QPA_PLATFORM=offscreen', 'TABLE_REQUIRE_CLEAR_GAPS=1'], timeout: 120)
   test('richtext-layout',
     executable('test-richtext-layout', files('tests/richtext_layout_test.cpp'),
       qt6.preprocess(moc_sources: files('tests/richtext_layout_test.cpp'), dependencies: richtext_test_deps),

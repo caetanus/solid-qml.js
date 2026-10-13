@@ -471,6 +471,21 @@ and decoration remain phase-2 work. Native code that edits the exposed
 `QTextDocument` with structural `QTextCursor` calls must select `"qt"` before
 those calls; `insertTable`, paste and load through the handler do this automatically.
 
+### Differences from Qt's layout
+
+The phase-2 acceptance policy top-aligns cells in **every fragment of a split
+row**. Middle/bottom alignment applies only when the row fits on one page.
+This makes placement deterministic when an edit changes where a row splits and
+prevents alignment from moving ordinary text into a page margin or gap. The
+stored cell vertical-alignment property must still survive ODF round trips.
+
+`tests/table_phase2_test.cpp` records the Qt bug motivating this policy: with
+eight ordinary lines in one cell, Qt places the middle-aligned `X` in the other
+cell at y=115, painting into the gap at y=120–140. Its
+`TABLE_REQUIRE_CLEAR_GAPS` mode exercises the custom engine on the same fixture.
+This policy does not waive Qt parity for non-split rows. Table activation remains
+subject to the phase-2 acceptance gates.
+
 ## Qt private API used
 
 The following compatibility boundaries rely on Qt internals and must be checked when

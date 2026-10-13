@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QTextBlock>
 #include <QTextFrame>
+#include <QTextTable>
 
 namespace rt {
 class RichTextLayout final : public QAbstractTextDocumentLayout {
@@ -30,9 +31,14 @@ private:
         QString id;
         Flow incoming, outgoing;
         QRectF rect;
-        qreal right = 0;
+        qreal right = 0, width = 0, minimum = 0, preferred = 0;
         int revision = -1;
     };
+    struct Pass { bool full; int from, added; QList<QTextBlock> &changed; };
+    struct Box { qreal left, width, top, bottom; };
+    bool layoutBlock(QTextBlock, Flow &, const Box &, Pass &, bool first = false);
+    void layoutTable(QTextTable *, Flow &, Pass &);
+    QHash<QTextTable *, QRectF> m_tables;
     QHash<quint64, Cache> m_blocks;
     QSizeF m_size;
     QSizeF m_page;
