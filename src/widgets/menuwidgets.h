@@ -70,6 +70,14 @@ private:
 
 class MenuItem : public QQuickMenuItem {
     Q_OBJECT
+    // The OWNING <Menu>/<ContextMenu>'s author `class` (e.g. "tmenu"), threaded down by the
+    // transpiler at emit time — see Menu::authorClass above. Descendant selectors like
+    // `.tmenu .option` can't reach this row: Popup content reparents to the window Overlay,
+    // severing the visual chain, and `cssAncestor` only re-anchors ONE declared subtree root (the
+    // Menu's own background/content slots), not every row the ListView instantiates. Merged
+    // straight into this row's OWN `cssClass` instead (self-compound: `.tmenu.option`, no space —
+    // the same trick the Menu's own background already uses for `.tmenu.popup`).
+    Q_PROPERTY(QVariant menuClass READ menuClass WRITE setMenuClass NOTIFY menuClassChanged)
 
 public:
     explicit MenuItem(QQuickItem *parent = nullptr);
@@ -79,21 +87,40 @@ public:
     // entity-escaped. Functional Alt+letter activation is the keyboard-model pass.
     Q_INVOKABLE QString __mnemonicMarkup(const QString &s) const;
 
+    QVariant menuClass() const { return m_menuClass; }
+    void setMenuClass(const QVariant &v);
+
+signals:
+    void menuClassChanged();
+
 protected:
     void componentComplete() override;
 
 private:
     Q_SLOT void syncImplicit();
+
+    QVariant m_menuClass = QVariantList();
 };
 
 class MenuSeparator : public QQuickMenuSeparator {
     Q_OBJECT
+    // Same as MenuItem::menuClass above (a separator needs it too — `.tmenu.sep`).
+    Q_PROPERTY(QVariant menuClass READ menuClass WRITE setMenuClass NOTIFY menuClassChanged)
 
 public:
     explicit MenuSeparator(QQuickItem *parent = nullptr);
 
+    QVariant menuClass() const { return m_menuClass; }
+    void setMenuClass(const QVariant &v);
+
+signals:
+    void menuClassChanged();
+
 protected:
     void componentComplete() override;
+
+private:
+    QVariant m_menuClass = QVariantList();
 };
 
 } // namespace SolidWidgets

@@ -200,7 +200,7 @@ export function Term(props: { onTitle: (t: string) => void }) {
     <div class="term-root">
       <Menu ref={paneMenu} class="tmenu">
         <MenuItem onClick={() => paneFind()}>&Find…</MenuItem>
-        <MenuItem onClick={() => paneToggleReadOnly()}>{paneReadOnly() ? "Read only ✓" : "Read only"}</MenuItem>
+        <MenuItem checked={paneReadOnly()} onClick={() => paneToggleReadOnly()}>Read only</MenuItem>
         <MenuSeparator />
         <MenuItem onClick={() => term.copyFocused()}>&Copy</MenuItem>
         <MenuItem onClick={() => term.pasteFocused()}>&Paste</MenuItem>
@@ -233,8 +233,17 @@ export function Term(props: { onTitle: (t: string) => void }) {
 
       <Show when={searchOpen()}>
         <div class="searchbar">
-          <input ref={searchInput} class="search-in" value={searchQuery()} placeholder="Find…"
-                 onInput={(e) => { setSearchQuery(e.target.value); term.searchFocused(e.target.value); }} />
+          {/* GtkSearchEntry's glass is a leading `image.left` INSIDE the entry (gtk.css:1014); our
+              <input> has no leading-icon slot, so the field chrome (tint/radius/focus) moved to
+              THIS wrapper and the input itself went transparent/borderless — icon + input then sit
+              side by side inside the SAME visual box (flex, not absolute positioning: the engine
+              has no `position: absolute`), which reads as "icon inside the field, text indented
+              after it" without needing one. */}
+          <div class="search-in-wrap">
+            <text class="search-icon">⌕</text>
+            <input ref={searchInput} class="search-in" value={searchQuery()} placeholder="Find…"
+                   onInput={(e) => { setSearchQuery(e.target.value); term.searchFocused(e.target.value); }} />
+          </div>
           <text class="search-count">{searchCount() > 0 ? (searchIdx() + " / " + searchCount()) : "0 / 0"}</text>
           <button class="search-btn" onClick={() => term.searchPrev()}>‹</button>
           <button class="search-btn" onClick={() => term.searchNext()}>›</button>

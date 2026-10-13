@@ -26,6 +26,19 @@ class TextInputBase : public QmlCss::CssFill {
 public:
     explicit TextInputBase(QQuickItem *parent = nullptr);
 
+    // Root cause of a focus bug (solidterm's Ctrl+Shift+F search field, and any other author ref
+    // calling `.forceActiveFocus()` on an `<input>`/`<textarea>`): `this` (the CssFill wrapper) is
+    // NOT the item that actually handles keys — `m_control` (the composed T.TextField/T.TextArea,
+    // componentComplete() below) is. QQuickItem::forceActiveFocus() is Q_INVOKABLE but NOT virtual;
+    // redeclaring it here (same name, invokable) makes QML/JS calls made through this class's own
+    // meta-object resolve to THIS override instead of the base QQuickItem one, which only focused
+    // the decorative wrapper — activeFocusItem() reported the wrapper as focused, but keystrokes
+    // never reached `m_control`'s TextInput, so nothing was typed (and, depending on what else was
+    // listening, a key could fall through to whatever held focus before). Also selects the
+    // control's existing text, matching every desktop "open find" convention (re-search replaces).
+    Q_INVOKABLE void forceActiveFocus();
+    Q_INVOKABLE void forceActiveFocus(Qt::FocusReason reason);
+
     QString text() const { return m_text; }
     void setText(const QString &v);
     QString placeholder() const { return m_placeholder; }

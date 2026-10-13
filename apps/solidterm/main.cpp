@@ -298,6 +298,39 @@ int main(int argc, char **argv)
         }
     }
 
+    // Debug/CI: SOLIDTERM_FOCUSTEST=1 sends the REAL Ctrl+Shift+F accelerator (a QKeyEvent through
+    // the same QCoreApplication::sendEvent(window, …) path SENDKEYS/MOUSETEST use — real Qt Quick
+    // focus delivery, not a property poke) and immediately types "x" with no extra delay, the way a
+    // fast typist would. It then asserts activeFocusItem() is NOT the terminal and that "x" landed
+    // in the search field's own text (not silently dropped, and not routed to whatever had focus
+    // before) — prints PASS/FAIL and quits. This is a regression test for a real bug: `forceActive
+    // Focus()` called on the <input> ref used to focus the decorative CssFill WRAPPER (TextField's
+    // root item, not the T.TextField that actually handles keys — see TextInputBase::
+    // forceActiveFocus(), textinputs.cpp) — Qt reported a focus item, so nothing here LOOKED wrong
+    // at a glance, but keystrokes never reached the field. No sleep/timer is part of the fix itself
+    // — only this test's own settle delay before the keys are sent.
+    if (qEnvironmentVariableIsSet("SOLIDTERM_FOCUSTEST") && window) {
+        QTimer::singleShot(1600, window, [window] {
+            auto sendSeq = [window](const QKeySequence &seq, Qt::Key key, Qt::KeyboardModifiers mods, const QString &text) {
+                QKeyEvent press(QEvent::KeyPress, key, mods, text);
+                QCoreApplication::sendEvent(window, &press);
+                QKeyEvent release(QEvent::KeyRelease, key, mods, text);
+                QCoreApplication::sendEvent(window, &release);
+                Q_UNUSED(seq);
+            };
+            const QKeyCombination accel = QKeySequence(QStringLiteral("Ctrl+Shift+F"))[0];
+            sendSeq(QKeySequence(accel), Qt::Key(accel.key()), accel.keyboardModifiers(), QString());
+            // Back-to-back, no settle: a real fast typist doesn't wait for the field to "catch up".
+            sendSeq(QKeySequence(), Qt::Key_X, Qt::NoModifier, QStringLiteral("x"));
+            QQuickItem *f = window->activeFocusItem();
+            const QString cls = f ? QString::fromLatin1(f->metaObject()->className()) : QStringLiteral("null");
+            const QString text = f ? f->property("text").toString() : QString();
+            const bool ok = f && !cls.contains(QLatin1String("TerminalView")) && text == QLatin1String("x");
+            qInfo().noquote() << (ok ? "FOCUSTEST PASS" : "FOCUSTEST FAIL") << "focusItem=" << cls << "text=" << text;
+            QCoreApplication::exit(ok ? 0 : 1);
+        });
+    }
+
     // Debug: SOLIDTERM_PLAINSHOT=<prefix> grabs every window after a settle WITHOUT poking anything
     // (so focus state is real) — to check the fresh terminal grabs keyboard focus on launch.
     const QString plainShot = qEnvironmentVariable("SOLIDTERM_PLAINSHOT");
@@ -473,6 +506,50 @@ int main(int argc, char **argv)
                         for (QQuickItem *k : it->childItems()) stack.append(k);
                     }
                 }
+        });
+    }
+
+    // Debug/CI: SOLIDTERM_CTXMENU=<prefix> right-clicks the centre of the first TerminalView after a
+    // settle — a real Qt::RightButton press+release through QCoreApplication::sendEvent (the same
+    // delivery path a user's right-click takes, so ContextMenu's own MouseArea + suppressWhen run
+    // for real), opening the terminal's right-click menu as its own Popup.Window, then grabs EVERY
+    // top-level window (main window + the popup) to <prefix>-<i>.png and quits — mirrors
+    // SOLIDTERM_PANEMENU (which opens the pane-header dropdown; combine it with SOLIDTERM_PLAINSHOT
+    // to grab THAT one, since it already calls openPaneMenu() directly instead of clicking).
+    const QString ctxMenuShot = qEnvironmentVariable("SOLIDTERM_CTXMENU");
+    if (!ctxMenuShot.isEmpty() && window) {
+        QTimer::singleShot(1600, window, [&engine, window, ctxMenuShot] {
+            TerminalView *view = nullptr;
+            for (QObject *o : engine.rootObjects()) {
+                if (auto *w = qobject_cast<QQuickWindow *>(o)) {
+                    QList<QQuickItem *> stack { w->contentItem() };
+                    while (!stack.isEmpty() && !view) {
+                        QQuickItem *it = stack.takeLast();
+                        view = qobject_cast<TerminalView *>(it);
+                        for (QQuickItem *k : it->childItems()) stack.append(k);
+                    }
+                }
+            }
+            if (!view) {
+                qWarning("solidterm: ctxmenu found no TerminalView");
+                QCoreApplication::quit();
+                return;
+            }
+            const QPointF p = view->mapToScene(QPointF(view->width() / 2, view->height() / 2));
+            const QPointF g = window->mapToGlobal(p.toPoint());
+            QMouseEvent press(QEvent::MouseButtonPress, p, g, Qt::RightButton, Qt::RightButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(window, &press);
+            QMouseEvent release(QEvent::MouseButtonRelease, p, g, Qt::RightButton, Qt::NoButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(window, &release);
+            // Settle for the popup window to be created and painted before grabbing.
+            QTimer::singleShot(400, qApp, [ctxMenuShot] {
+                int i = 0;
+                for (QWindow *w : QGuiApplication::topLevelWindows()) {
+                    if (auto *qw = qobject_cast<QQuickWindow *>(w))
+                        qw->grabWindow().save(QStringLiteral("%1-%2.png").arg(ctxMenuShot).arg(i++));
+                }
+                QCoreApplication::quit();
+            });
         });
     }
 

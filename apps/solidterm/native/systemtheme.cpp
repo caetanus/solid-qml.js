@@ -18,6 +18,18 @@ struct Palette {
     QColor window, view, header, card, popover, text, dim, border, accent, accentText;
 };
 
+// Neutral (non-accent) overlay tints for a popover row's hover/pressed state — GNOME's own popover
+// menus do NOT tint rows with the accent colour (verified against the real, installed stylesheet:
+// `gresource extract /usr/lib/libadwaita-1.so.0 /org/gnome/Adwaita/styles/gtk.css`, rule
+// `popover.menu modelbutton:hover, …:selected { background-color: color-mix(in srgb, currentColor
+// 10%, transparent); }` / `:active { … 19% …}`, gtk.css:1773/1775). `currentColor` there is the
+// popover's own foreground, i.e. our `text` — so these are `text` painted translucent over
+// whatever sits under the row, not a fixed grey.
+QString rgba(const QColor &c, qreal alpha)
+{
+    return QStringLiteral("rgba(%1, %2, %3, %4)").arg(c.red()).arg(c.green()).arg(c.blue()).arg(alpha);
+}
+
 // GNOME 47 / libadwaita standalone accent name → hex.
 QColor accentHex(const QString &name)
 {
@@ -129,6 +141,32 @@ QString SystemTheme::styleSheet() const
     // opacity the root is the solid window colour, so nothing shows through.
     const QString rootBg = m_uiOpacity < 1.0 ? QStringLiteral("transparent") : h(p.window);
 
+    // Menu/MenuItem (solidterm's right-click menu + pane-header dropdown): a neutral row tint, NOT
+    // accent — `currentColor` (our `text`) painted translucent over the card, per the real Adwaita
+    // values above. The SAME `color-mix(in srgb, currentColor N%, transparent)` formula is also how
+    // real Adwaita paints an `entry`'s own background (gtk.css:988) and a flat button's hover/active
+    // state — reused below for the search bar's field fill and icon-button hover/press.
+    const QString menuHover = rgba(p.text, 0.10);
+    const QString menuActive = rgba(p.text, 0.19);
+    // Focus ring: `entry:focus-within { outline-color: color-mix(in srgb, var(--accent-color) 50%,
+    // transparent); outline-width: 2px; outline-offset: -2px }` (gtk.css:994) — an OUTLINE (hugging,
+    // slightly overlapping the edge), not a border colour swap.
+    const QString focusRing = rgba(p.accent, 0.5);
+    // The popover's own drop shadow is scheme-INDEPENDENT in real Adwaita too (gtk.css:2107 —
+    // `popover > arrow, popover > contents { border: 1px solid RGB(0 0 0/14%); box-shadow: 0 1px
+    // 5px 1px RGB(0 0 0/9%), 0 2px 14px 3px RGB(0 0 0/5%); }`, same rule for light and dark — no
+    // `@media (prefers-color-scheme: dark)` override exists for it). Two problems stop us using
+    // those two values verbatim: (1) our CssRect only paints the FIRST non-inset shadow in a
+    // `box-shadow` list (cssrect.cpp:1053-1060 picks one and breaks — no layered shadows), and
+    // (2) each one ALONE is barely perceptible (measured: the 5%-alpha layer renders at ~1-3/255
+    // alpha over ~5px before the hard card edge) — together they read as "soft card shadow" to the
+    // eye, but a single 5%(or 9%)-alpha layer alone reads as "no shadow". So this is a deliberate
+    // single-shadow approximation of the pair's combined WEIGHT (not a literal gtk.css value),
+    // verified by pixel-sampling an actual grab (docs/evidence/solidterm/menu-*): soft blur, a
+    // little spread for body, offset down (elevated-card read), opacity strong enough to survive
+    // one layer instead of two stacked ones.
+    const QString menuShadow = QStringLiteral("0 3px 18px 2px rgba(0, 0, 0, 0.22)");
+
     // Semantic app classes → the desktop palette. Loaded OVER the structural term.css.
     return QStringLiteral(R"(
 .term-root { background: %11; color: %6; }
@@ -147,19 +185,35 @@ QString SystemTheme::styleSheet() const
 .tab-new { color: %7; }
 .tab-new:hover { background: %4; }
 .searchbar { background: %3; border-bottom: 1px solid %8; }
-.search-in { background: %2; color: %6; border: 1px solid %8; }
-.search-in:focus { border: 1px solid %9; }
+.search-icon { color: %7; }
+/* The tint lives on the WRAPPER now (`.search-in-wrap`) — the <input> inside it goes transparent/
+   borderless, so icon + typed text read as one field. The focus ring stays on the input itself:
+   the engine has no `:focus-within` to put it on the wrapper instead, so it hugs the input's own
+   box (very slightly short of the icon's edge) rather than nothing. */
+.search-in-wrap { background: %13; }
+.search-in { background: transparent; color: %6; border: none; }
+.search-in:focus { outline: 2px solid %15; outline-offset: -2px; }
 .search-count { color: %7; }
 .search-btn { color: %6; }
-.search-btn:hover { background: %4; }
+.search-btn:hover { background: %13; }
+.search-btn:active { background: %14; }
 .term-status { background: %3; border-top: 1px solid %8; }
 .term-status-t { color: %9; }
 .term-hint { color: %7; }
-.popup { background: %5; border: 1px solid %8; }
+.popup { background: %5; border: 1px solid %8; box-shadow: %12; }
 .option:hover { background: %9; }
 .option-label { color: %6; }
 .option-label:hover { color: %10; }
 .sep { background: %8; }
+/* solidterm's own menus (<Menu class="tmenu">/<ContextMenu class="tmenu">, src/term.tsx) — more
+   specific than the bare `.option`/`.option-label` rules above, so they win for THIS component only
+   and leave Select's accent-highlighted dropdown (which also carries the generic `.popup`/`.option`
+   classes, src/widgets/select.cpp) untouched. Real values: gtk.css:1773/1775 (hover/active tint).
+   COMPOUND (`.tmenu.option`, no space), not descendant — see term.css's `.tmenu.popup` comment for
+   why: "tmenu" rides on the row's OWN cssClass (MenuItem::menuClass), not a real ancestor. */
+.tmenu.option:hover { background: %13; }
+.tmenu.option:active { background: %14; }
+.tmenu.option-label:hover { color: %6; }
 .cfg { background: %1; color: %6; }
 .cfg-scroll { background: %1; }
 .cfg-group { color: %7; }
@@ -200,5 +254,7 @@ QString SystemTheme::styleSheet() const
 )")
         .arg(h(p.window), h(p.view), h(p.header), h(p.card), h(p.popover),
              h(p.text), h(p.dim), h(p.border), h(p.accent), h(p.accentText))
-        .arg(rootBg);
+        .arg(rootBg)
+        .arg(menuShadow, menuHover, menuActive)
+        .arg(focusRing);
 }

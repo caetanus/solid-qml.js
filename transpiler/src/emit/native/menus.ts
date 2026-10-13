@@ -168,11 +168,15 @@ function itemPropsOf(propsArg: t.Node | undefined): { onClick?: t.Node; disabled
 
 /** One W.MenuItem object, `level`-indented. `checked` implies `checkable: true`; `disabled` reuses
  *  the same HTML-attribute convention as every other native control (bare or reactive). Shared by
- *  static items and <For> rows — only `scope` (and the label/level) differ. */
+ *  static items and <For> rows — only `scope` (and the label/level) differ. `menuId` (the owning
+ *  <Menu>/<ContextMenu>'s id) feeds `menuClass` — the row's OWN cssClass merges in the Menu's
+ *  author class (e.g. "tmenu") because a descendant selector like `.tmenu .option` can't reach a
+ *  row after Popup content reparents to the window Overlay; see menuwidgets.h's doc comment on
+ *  MenuItem::menuClass. A live binding (not a literal snapshot), so it tracks `authorClass`. */
 function renderMenuItemLines(labelBinding: string, p: { onClick?: t.Node; disabled?: t.Node; checked?: t.Node },
-                              scope: Scope, level: number): string[] {
+                              scope: Scope, level: number, menuId: string): string[] {
   const i = (n: number) => INDENT.repeat(level + n);
-  const lines = [`${i(0)}W.MenuItem {`, `${i(1)}text: ${labelBinding}`];
+  const lines = [`${i(0)}W.MenuItem {`, `${i(1)}menuClass: ${menuId}.authorClass`, `${i(1)}text: ${labelBinding}`];
   if (p.checked) {
     lines.push(`${i(1)}checkable: true`);
     lines.push(`${i(1)}checked: ${emitExpr(p.checked as t.Expression, { ...scope, mode: "binding" })}`);
@@ -251,10 +255,10 @@ function renderForBlock(propsArg: t.Node | undefined, children: t.Node[], scope:
   let itemLines: string[];
   if (rowName === "MenuSeparator") {
     checkAttrs("MenuSeparator", rowProps);
-    itemLines = [`${INDENT.repeat(level + 2)}W.MenuSeparator { }`];
+    itemLines = [`${INDENT.repeat(level + 2)}W.MenuSeparator { menuClass: ${menuId}.authorClass }`];
   } else {
     const labelBinding = textBindingOf(rowKids as t.Node[], rowScope);
-    itemLines = renderMenuItemLines(labelBinding, itemPropsOf(rowProps), rowScope, level + 2);
+    itemLines = renderMenuItemLines(labelBinding, itemPropsOf(rowProps), rowScope, level + 2, menuId);
     // Declared whenever the row HAS an index param at all (not only when it's read inside a
     // further-nested loop) — same unconditional rule as qml.ts's rowDelegate.
     if (indexName) itemLines.splice(1, 0, `${INDENT.repeat(level + 3)}property int __forIndex: index`);
@@ -282,10 +286,10 @@ function renderShowBlock(propsArg: t.Node | undefined, children: t.Node[], scope
     let itemLines: string[];
     if (name === "MenuSeparator") {
       checkAttrs("MenuSeparator", itemProps);
-      itemLines = [`${INDENT.repeat(level + 2)}W.MenuSeparator { }`];
+      itemLines = [`${INDENT.repeat(level + 2)}W.MenuSeparator { menuClass: ${menuId}.authorClass }`];
     } else if (name === "MenuItem") {
       const labelBinding = textBindingOf(itemKids as t.Node[], scope);
-      itemLines = renderMenuItemLines(labelBinding, itemPropsOf(itemProps), scope, level + 2);
+      itemLines = renderMenuItemLines(labelBinding, itemPropsOf(itemProps), scope, level + 2, menuId);
     } else {
       throw new Error(`<${owner}><Show> only wraps <MenuItem>/<MenuSeparator>, got <${name}>`);
     }
@@ -320,13 +324,13 @@ function emitMenuItemLines(children: t.Node[], scope: Scope, owner: string, leve
     const name = t.isIdentifier(tag) ? tag.name : t.isStringLiteral(tag) ? tag.value : "?";
     if (name === "MenuSeparator") {
       checkAttrs("MenuSeparator", itemProps);
-      out.push(`${INDENT.repeat(level)}W.MenuSeparator { }`);
+      out.push(`${INDENT.repeat(level)}W.MenuSeparator { menuClass: ${menuId}.authorClass }`);
       staticPrefix++;
       continue;
     }
     if (name === "MenuItem") {
       const labelBinding = textBindingOf(itemKids as t.Node[], scope);
-      out.push(...renderMenuItemLines(labelBinding, itemPropsOf(itemProps), scope, level));
+      out.push(...renderMenuItemLines(labelBinding, itemPropsOf(itemProps), scope, level, menuId));
       staticPrefix++;
       continue;
     }
