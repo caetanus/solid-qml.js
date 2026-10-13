@@ -81,9 +81,9 @@ static QTextTable *fixture(QTextDocument &d, int kind) {
         if(kind==8 || kind==9 || kind==10 || kind==11) text=QString("cell words ").repeated(col && kind!=10 ? 3 : 55);
         if(kind==13) text.clear();
         cell.firstCursorPosition().insertText(text);
-        if(kind==9 || kind==11) {
+        if(kind==9 || kind==11 || kind==16 || kind==17) {
             auto format=cell.format().toTableCellFormat();
-            format.setVerticalAlignment(kind==9 ? QTextCharFormat::AlignMiddle : QTextCharFormat::AlignBottom);
+            format.setVerticalAlignment(kind==9 || kind==16 ? QTextCharFormat::AlignMiddle : QTextCharFormat::AlignBottom);
             auto writable=cell; writable.setFormat(format);
         }
         if(kind==14) {
@@ -119,15 +119,13 @@ struct BookView {
         quick->setTextDocument(doc); handler.setDocument(quick); handler.setLayoutEngine("qt");
         handler.setZoom(zoom); handler.configurePages(794*zoom,1118*zoom,32*zoom,{94*zoom,113*zoom,94*zoom,113*zoom});
         if(custom) {
-            auto *image=dynamic_cast<QObject *>(doc->documentLayout()->handlerForObject(QTextFormat::ImageObject));
-            if(image) image->setParent(doc);
-            doc->setLayoutEnabled(false); layout=new rt::RichTextLayout(doc); doc->setDocumentLayout(layout);
-            if(image) layout->registerHandler(QTextFormat::ImageObject,image);
-            if(!rt::attachCustomLayoutToTextEdit(edit.data(),doc)) return false;
-            doc->markContentsDirty(0,doc->characterCount()); doc->setLayoutEnabled(true);
-            qEnvironmentVariable("TABLE_DECORATION")=="painted"
-                ? static_cast<QQuickItem *>(new rt::TableDecoration(layout,edit.data()))
-                : static_cast<QQuickItem *>(new rt::NodeTableDecoration(layout,edit.data()));
+            handler.setLayoutEngine("custom");
+            layout=dynamic_cast<rt::RichTextLayout *>(doc->documentLayout());
+            if(!layout) return false;
+            if(qEnvironmentVariable("TABLE_DECORATION")=="painted") {
+                delete edit->findChild<QQuickItem *>("tableDecoration");
+                new rt::TableDecoration(layout,edit.data());
+            }
         }
         edit->setHeight(doc->documentLayout()->documentSize().height());
         edit->setFlag(QQuickItem::ItemObservesViewport,culled);
@@ -440,8 +438,8 @@ private slots:
     }
     void customTableMatrix_data() {
         QTest::addColumn<int>("kind");
-        const char *names[]={"unequal","fixed","percentage","separate","auto","unbreakable","colspan","rowspan","long-rowspan","middle","simultaneous-long","bottom","boundary","empty","padding","oversized"};
-        for(int k=0;k<16;++k) QTest::newRow(names[k])<<k;
+        const char *names[]={"unequal","fixed","percentage","separate","auto","unbreakable","colspan","rowspan","long-rowspan","middle","simultaneous-long","bottom","boundary","empty","padding","oversized","nonsplit-middle","nonsplit-bottom"};
+        for(int k=0;k<18;++k) QTest::newRow(names[k])<<k;
     }
     void customTableMatrix() {
         QFETCH(int,kind);
@@ -484,7 +482,7 @@ private slots:
                 QCOMPARE(bl.textStart(),al.textStart()); QCOMPARE(bl.textLength(),al.textLength());
                 const auto ap=ar.topLeft()+al.position(),bp=br.topLeft()+bl.position();
                 // Long middle/bottom rows use the maintainer's invariant oracle.
-                if(kind==9 || kind==11) {
+                if(kind==9 || kind==11 || kind==16 || kind==17) {
                     const auto page=qFloor(bp.y()/stride);
                     QVERIFY(bp.y()>=page*stride+10);
                     QVERIFY(bp.y()+bl.height()<=page*stride+110);

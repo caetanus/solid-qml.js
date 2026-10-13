@@ -23,7 +23,14 @@ RichTextLayout::~RichTextLayout()
 }
 bool RichTextLayout::supports(const QTextDocument *d)
 {
-    if (!d || !d->rootFrame()->childFrames().isEmpty()) return false;
+    if (!d) return false;
+    for (auto *frame : d->rootFrame()->childFrames()) {
+        auto *table=qobject_cast<QTextTable *>(frame);
+        if (!table || !table->childFrames().isEmpty()) return false;
+        const auto format=table->format();
+        if (format.headerRowCount() || format.position()!=QTextFrameFormat::InFlow) return false;
+        if (format.border()>0 && format.borderStyle()!=QTextFrameFormat::BorderStyle_Solid) return false;
+    }
     const auto root = d->rootFrame()->frameFormat();
     if (root.border() != 0 || root.padding() != 0 || root.background().style() != Qt::NoBrush) return false;
     for (auto b = d->begin(); b.isValid(); b = b.next())
@@ -337,7 +344,9 @@ void RichTextLayout::layoutTable(QTextTable *table, Flow &flow, Pass &pass)
     if (!m_tables.contains(table)) connect(table,&QObject::destroyed,this,[this,table] {
         m_tables.remove(table); m_tableFragments.remove(table);
     });
-    m_tables.insert(table,{m_root.leftMargin()+edge+cells.first().left,tableTop+cells.first().top,tableWidth,y-(tableTop-edge)});
+    // Qt exposes the first cell's aligned content origin, with the outer size.
+    const auto firstBlock=cells.first().cell.firstCursorPosition().block();
+    m_tables.insert(table,QRectF(firstBlock.layout()->position(),QSizeF(tableWidth,y-(tableTop-edge))));
     auto &fragments=m_tableFragments[table]; fragments.clear();
     QPen pen(format.borderBrush(),border);
     if (border<=0 || format.borderStyle()==QTextFrameFormat::BorderStyle_None) pen.setStyle(Qt::NoPen);

@@ -457,19 +457,22 @@ and selection behave exactly as without marks; the hit test takes the character 
 ## Page layout engine
 
 `layoutEngine` is a runtime QML/ref property: `"auto"` (default), `"qt"`, or
-`"custom"`. In page view, auto/custom select the paragraph layout for supported
-live documents. Continuous view and documents with tables, child frames, root
+`"custom"`. In page view, auto/custom select the custom layout for supported
+live documents, including flat, in-flow tables with solid borders. Continuous view,
+nested tables, repeated table headers, other child frames, root
 borders/padding/backgrounds, hidden blocks or horizontal rules use Qt. Forcing custom does not bypass that
 eligibility check. Changing engines preserves the document, resources and undo
 history; it does not round-trip through HTML.
 
 HTML insertion is inspected before the selection or document is edited. Unsupported
 content switches the whole document to Qt, retaining that engine through undo/redo
-so replay cannot restore an unsupported structure into the paragraph engine. A new
-or newly loaded supported document can use the custom engine again. Table layout
-and decoration remain phase-2 work. Native code that edits the exposed
+so replay cannot restore an unsupported structure into the custom engine. A new
+or newly loaded supported document can use the custom engine again. Table borders
+and backgrounds use a public Qt Quick decoration item behind the text, restricted
+to visible page fragments. Native code that edits the exposed
 `QTextDocument` with structural `QTextCursor` calls must select `"qt"` before
-those calls; `insertTable`, paste and load through the handler do this automatically.
+unsupported calls; `insertTable`, paste and load through the handler check eligibility
+before editing.
 
 ### Differences from Qt's layout
 
@@ -483,8 +486,7 @@ stored cell vertical-alignment property must still survive ODF round trips.
 eight ordinary lines in one cell, Qt places the middle-aligned `X` in the other
 cell at y=115, painting into the gap at y=120–140. Its
 `TABLE_REQUIRE_CLEAR_GAPS` mode exercises the custom engine on the same fixture.
-This policy does not waive Qt parity for non-split rows. Table activation remains
-subject to the phase-2 acceptance gates.
+This policy does not waive Qt parity for non-split rows.
 
 ## Qt private API used
 
