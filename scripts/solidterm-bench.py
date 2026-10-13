@@ -113,8 +113,9 @@ def pct(values, q):
 
 def parse_perf(path):
     frames, keys, meta = [], [], {}
+    meta_extra = {"KE": {}, "G": []}
     if not os.path.exists(path):
-        return frames, keys, meta
+        return frames, keys, meta, meta_extra
     with open(path) as f:
         for line in f:
             parts = line.split()
@@ -124,9 +125,24 @@ def parse_perf(path):
                 frames.append(int(parts[1]))
             elif parts[0] == "K":
                 keys.append([int(x) for x in parts[1:]])
+            elif parts[0] == "KE":
+                meta_extra["KE"][int(parts[1])] = int(parts[2])
+            elif parts[0] == "G":
+                meta_extra["G"].append(int(parts[1]))
             else:
                 meta[parts[0]] = int(parts[1])
-    return frames, keys, meta
+    return frames, keys, meta, meta_extra
+
+
+def tick_stats(ticks, lo_ns, hi_ns, period_ms=5.0):
+    """Lateness of a periodic GUI-thread timer inside [lo, hi]: interval - period, in ms."""
+    t = [x for x in ticks if lo_ns <= x <= hi_ns]
+    late = [max(0.0, (b - a) / 1e6 - period_ms) for a, b in zip(t, t[1:])]
+    if not late:
+        return {}
+    return {"ticks": len(t), "late_p50_ms": pct(late, 0.5), "late_p95_ms": pct(late, 0.95),
+            "late_p99_ms": pct(late, 0.99), "late_max_ms": max(late),
+            "over_10ms": sum(1 for x in late if x > 10), "over_16ms": sum(1 for x in late if x > 16.7)}
 
 
 def frame_stats(frames, lo_ns=None, hi_ns=None):
@@ -177,6 +193,9 @@ def main():
                 env["SOLIDTERM_LATENCYTEST"] = str(cfg.get("keys", 60))
             if case == "wheel":
                 env["SOLIDTERM_WHEELTEST"] = str(cfg.get("notches", 600))
+            if case == "flood":  # responsiveness during a seq flood: GUI timer + keys from a thread
+                env["SOLIDTERM_PERF_GUITICK"] = "1"
+                env["SOLIDTERM_FLOODKEYS"] = str(cfg.get("floodkeys", 60))
             argv = [cfg["bin"], "--standalone"]
         elif term == "tilix":
             argv = ["tilix", "--new-process", "--geometry=%s" % cfg["geometry"], "-e", runner]
@@ -197,7 +216,7 @@ def main():
             ta, tb = int(tl["t0"]) / 1e9, int(tl["t1"]) / 1e9
             rec["seconds"] = tb - ta
             rec["cpu"] = cpu_between(samples, ta, tb)
-        frames, keys, meta = parse_perf(perf_out)
+        frames, keys, meta, extra = parse_perf(perf_out)
         rec["meta"] = meta
         if frames:
             if "t0" in tl:  # the measured interval only (runner's wall clock → steady clock)
@@ -209,10 +228,17 @@ def main():
         if keys:
             names = ["key", "ptywrite", "ptyread", "damage", "paint0", "paint1", "swap"]
             lat = []
-            for k in keys:
+            for i, k in enumerate(keys):
                 if all(k):
-                    lat.append({n: (k[j] - k[0]) / 1e6 for j, n in enumerate(names)})
+                    d = {n: (k[j] - k[0]) / 1e6 for j, n in enumerate(names)}
+                    if i in extra["KE"]:
+                        d["keyevent"] = (extra["KE"][i] - k[0]) / 1e6
+                    lat.append(d)
             rec["latency"] = lat
+            rec["keys_sent"] = len(keys)
+        if extra["G"] and "t0" in tl and "t1" in tl:
+            off = meta.get("realtime_offset", 0)
+            rec["guitick"] = tick_stats(extra["G"], int(tl["t0"]) - off, int(tl["t1"]) - off)
         with open(env["BENCH_LOG"]) as f:
             log = f.read()
         for line in log.splitlines():

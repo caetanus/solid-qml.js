@@ -199,6 +199,8 @@ bool TerminalView::parserThreadEnabled()
 bool TerminalView::wkFeed(void *user, const char *data, size_t len)
 {
     auto *self = static_cast<TerminalView *>(user);
+    if (Q_UNLIKELY(PerfTrace::on) && PerfTrace::floodKeys && std::memchr(data, PerfTrace::echoChar, len))
+        PerfTrace::stage(PerfTrace::PtyRead); // this slice carries the injected key's echo
     self->m_term.beginBatch();
     vterm_input_write(self->m_vt, data, len);
     if (self->m_term.endBatch()) {
@@ -217,7 +219,8 @@ void TerminalView::wkExited(void *user)
 void TerminalView::wkReadProbe(void *user, size_t len)
 {
     if (Q_UNLIKELY(PerfTrace::on)) {
-        PerfTrace::stage(PerfTrace::PtyRead);
+        if (!PerfTrace::floodKeys)
+            PerfTrace::stage(PerfTrace::PtyRead);
         PerfTrace::ptyReads.fetch_add(1, std::memory_order_relaxed);
         PerfTrace::ptyBytes.fetch_add(int64_t(len), std::memory_order_relaxed);
     }
@@ -236,7 +239,8 @@ void TerminalView::parseOnGuiThread(const QByteArray &bytes)
     if (!m_vt)
         return;
     if (Q_UNLIKELY(PerfTrace::on)) {
-        PerfTrace::stage(PerfTrace::PtyRead);
+        if (!PerfTrace::floodKeys)
+            PerfTrace::stage(PerfTrace::PtyRead);
         PerfTrace::ptyReads.fetch_add(1, std::memory_order_relaxed);
         PerfTrace::ptyBytes.fetch_add(bytes.size(), std::memory_order_relaxed);
     }
@@ -614,7 +618,9 @@ void TerminalView::copySnapshot(int &sbCount, int &offset, VTermPos &cursor, boo
         m_snapCols = cols;
         m_snapValid = false;
     }
+    const int64_t tw = Q_UNLIKELY(PerfTrace::on) ? PerfTrace::nowNs() : 0;
     ScreenLock lock(m_screenMutex);
+    const int64_t tl = Q_UNLIKELY(PerfTrace::on) ? PerfTrace::nowNs() : 0;
     sbCount = m_term.sbCount();
     offset = clampOffset(effectiveOffset(sbCount, m_term.pushedTotal()), sbCount);
     reverse = m_term.globalReverse();
@@ -644,6 +650,13 @@ void TerminalView::copySnapshot(int &sbCount, int &offset, VTermPos &cursor, boo
         m_snapLive[size_t(row)] = line.live ? 1 : 0;
     }
     m_term.clearDirty();
+    if (Q_UNLIKELY(PerfTrace::on)) {
+        const int64_t te = PerfTrace::nowNs();
+        PerfTrace::lockWaitNsTotal.fetch_add(tl - tw, std::memory_order_relaxed);
+        PerfTrace::maxInto(PerfTrace::lockWaitNsMax, tl - tw);
+        PerfTrace::copyNsTotal.fetch_add(te - tl, std::memory_order_relaxed);
+        PerfTrace::maxInto(PerfTrace::copyNsMax, te - tl);
+    }
     m_snapOffset = offset;
     m_snapReverse = reverse;
     m_snapValid = true;
@@ -1006,8 +1019,12 @@ QVariant TerminalView::inputMethodQuery(Qt::InputMethodQuery query) const
 
 void TerminalView::keyPressEvent(QKeyEvent *event)
 {
-    if (Q_UNLIKELY(PerfTrace::on))
-        PerfTrace::stage(PerfTrace::Key);
+    if (Q_UNLIKELY(PerfTrace::on)) {
+        if (PerfTrace::floodKeys)
+            PerfTrace::keyEvent(); // Key was stamped at injection (main.cpp SOLIDTERM_FLOODKEYS)
+        else
+            PerfTrace::stage(PerfTrace::Key);
+    }
     if (!m_vt) {
         QQuickItem::keyPressEvent(event);
         return;

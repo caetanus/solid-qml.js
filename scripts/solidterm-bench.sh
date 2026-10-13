@@ -11,6 +11,8 @@
 #   region   vtebench-like scrolling in a DECSTBM region (50 MB)
 #   latency  60 synthetic keys into bash (SOLIDTERM_LATENCYTEST) → per-stage latency
 #   wheel    10k-line scrollback, 600 notches up + 600 down at 125 Hz (SOLIDTERM_WHEELTEST)
+#   flood    responsiveness during `seq 1 15000000`: a 5 ms GUI-thread timer's lateness
+#            (SOLIDTERM_PERF_GUITICK) + 60 keys injected from a helper thread (SOLIDTERM_FLOODKEYS)
 #   idle     10 s idle at a prompt-less sleep → CPU
 # Throughput cases time themselves INSIDE the terminal (date before/after the command; the
 # command returning = the terminal consumed its output). Results: JSON per case in
@@ -55,6 +57,7 @@ case "$BENCH_CASE" in
     dense)  f=$(gen dense) ;;
     region) f=$(gen region) ;;
     seq)    f="" ;;
+    flood)  f=""; BENCH_SEQ=${BENCH_FLOOD_SEQ:-15000000} ;;
     idle)   sleep 1; echo "t0 $(date +%s%N)" >> "$BENCH_OUT.tmp"; sleep 10
             echo "t1 $(date +%s%N)" >> "$BENCH_OUT.tmp"; mv "$BENCH_OUT.tmp" "$BENCH_OUT"; exit 0 ;;
     latency) mv "$BENCH_OUT.tmp" "$BENCH_OUT"; PS1='$ ' exec bash --norc --noprofile -i ;;

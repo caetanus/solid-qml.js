@@ -24,6 +24,7 @@ def main(d):
     rows = []
     lat_rows = []
     frame_rows = []
+    tick_rows = []
     gpu = set()
     sizes = set()
     for path in sorted(glob.glob(os.path.join(d, "*.json"))):
@@ -54,7 +55,16 @@ def main(d):
         lat = [k for r in recs for k in r.get("latency", [])]
         if lat:
             stages = ["ptywrite", "ptyread", "damage", "paint0", "paint1", "swap"]
-            lat_rows.append((term, case, len(lat), [(s, med([k[s] for k in lat]), pct([k[s] for k in lat], 0.95)) for s in stages]))
+            if all("keyevent" in k for k in lat):
+                stages = ["keyevent"] + stages
+            sent = sum(r.get("keys_sent", 0) for r in recs)
+            lat_rows.append((term, case, len(lat), sent,
+                             [(s, med([k[s] for k in lat]), pct([k[s] for k in lat], 0.95), max(k[s] for k in lat)) for s in stages]))
+        gt = [r["guitick"] for r in recs if r.get("guitick")]
+        if gt:
+            tick_rows.append((term, case, len(gt), med([g["late_p50_ms"] for g in gt]), med([g["late_p95_ms"] for g in gt]),
+                              med([g["late_p99_ms"] for g in gt]), max(g["late_max_ms"] for g in gt),
+                              sum(g["over_10ms"] for g in gt), sum(g["ticks"] for g in gt)))
     print("### Throughput / CPU (median of runs; CPU = % of one core over the measured interval)\n")
     print("| term | case | runs | median s | p95 s | CPU total % | main % | render % | max load |")
     print("|---|---|---|---|---|---|---|---|---|")
@@ -66,14 +76,20 @@ def main(d):
         print("|---|---|---|---|---|---|---|---|---|---|---|")
         for r in frame_rows:
             print("| %s | %s | %d | %.1f | %.2f | %.2f | %.2f | %.1f | %.1f | %.3f | %.2f |" % r)
+    if tick_rows:
+        print("\n### GUI-thread availability during the flood (5 ms timer: lateness per firing)\n")
+        print("| term | case | runs | p50 ms | p95 ms | p99 ms | max ms | firings > 10 ms late | firings |")
+        print("|---|---|---|---|---|---|---|---|---|")
+        for r in tick_rows:
+            print("| %s | %s | %d | %.2f | %.2f | %.2f | %.1f | %d | %d |" % r)
     if lat_rows:
-        print("\n### Input latency (ms since keyPressEvent; cumulative; median / p95)\n")
-        for term, case, n, st in lat_rows:
-            print("%s, %d keys:\n" % (term, n))
-            print("| stage | median | p95 |")
-            print("|---|---|---|")
-            for s, m, p in st:
-                print("| %s | %.2f | %.2f |" % (s, m, p))
+        print("\n### Input latency (ms since keyPressEvent, or since injection for `flood`; cumulative)\n")
+        for term, case, n, sent, st in lat_rows:
+            print("%s %s, %d keys with every stage (of %d sent):\n" % (term, case, n, sent))
+            print("| stage | median | p95 | max |")
+            print("|---|---|---|---|")
+            for s, m, p, x in st:
+                print("| %s | %.2f | %.2f | %.2f |" % (s, m, p, x))
     if sizes:
         print("\nGrid: " + ", ".join(sorted(sizes)))
     if gpu:

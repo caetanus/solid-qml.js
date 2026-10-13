@@ -39,6 +39,13 @@ inline std::atomic<int64_t> paintNsTotal { 0 }; // summed updatePaintNode time
 inline std::atomic<int> paintCount { 0 };
 inline std::atomic<int64_t> paintNsMax { 0 };
 inline std::atomic<int64_t> ptyReads { 0 }, ptyBytes { 0 }; // the reading thread (GUI or parser)
+// updatePaintNode's snapshot step: time waiting for the screen lock, and the copy under it.
+inline std::atomic<int64_t> lockWaitNsTotal { 0 }, lockWaitNsMax { 0 }, copyNsTotal { 0 }, copyNsMax { 0 };
+inline void maxInto(std::atomic<int64_t> &m, int64_t v)
+{
+    int64_t cur = m.load(std::memory_order_relaxed);
+    while (v > cur && !m.compare_exchange_weak(cur, v)) {}
+}
 
 // ── latency (one key in flight) ──────────────────────────────────────────────────────────────
 enum Stage { Key, PtyWrite, PtyRead, Damage, PaintBegin, PaintEnd, Swap, StageCount };
@@ -47,6 +54,19 @@ inline int64_t (*keys)[StageCount] = nullptr;
 inline std::atomic<int> keyCount { 0 };   // index of the key in flight = keyCount - 1
 inline std::atomic<int> keyStage { StageCount }; // next stage awaited for the in-flight key
 
+// ── responsiveness during a flood (SOLIDTERM_FLOODKEYS / SOLIDTERM_PERF_GUITICK) ──────────────────
+// floodKeys: keys are injected from a helper thread (Key = injection time, not keyPressEvent), the
+// time keyPressEvent runs is kept apart (keyEventNs), and PtyRead is the parse that carries the
+// key's ECHO (echoChar) rather than the first read after the write — under a flood every read
+// follows the write. guiTick: a 5 ms GUI-thread timer stamps every firing; its lateness is how long
+// the GUI thread was unavailable.
+inline bool floodKeys = false;
+inline char echoChar = 'x';
+inline int64_t *keyEventNs = nullptr;
+constexpr int kMaxTicks = 1 << 17;
+inline int64_t *ticks = nullptr;
+inline std::atomic<int> tickCount { 0 };
+
 inline void init(bool enable)
 {
     on = enable;
@@ -54,6 +74,22 @@ inline void init(bool enable)
         return;
     frames = new Frame[kMaxFrames];
     keys = new int64_t[kMaxKeys][StageCount]();
+    keyEventNs = new int64_t[kMaxKeys]();
+    ticks = new int64_t[kMaxTicks]();
+}
+
+inline void keyEvent() // keyPressEvent of the in-flight injected key
+{
+    const int k = keyCount.load(std::memory_order_acquire) - 1;
+    if (k >= 0 && k < kMaxKeys && !keyEventNs[k])
+        keyEventNs[k] = nowNs();
+}
+
+inline void guiTick()
+{
+    const int i = tickCount.fetch_add(1, std::memory_order_relaxed);
+    if (i < kMaxTicks)
+        ticks[i] = nowNs();
 }
 
 // Stage `s` happened now: recorded only if it is the stage the in-flight key is waiting for.
@@ -107,6 +143,9 @@ inline void dump(const char *path)
     std::fprintf(f, "realtime_offset %lld\n", static_cast<long long>(offset)); // steady → wall clock
     std::fprintf(f, "pty_reads %lld\npty_bytes %lld\n", static_cast<long long>(ptyReads.load()),
                  static_cast<long long>(ptyBytes.load()));
+    std::fprintf(f, "lock_wait_ns_total %lld\nlock_wait_ns_max %lld\ncopy_ns_total %lld\ncopy_ns_max %lld\n",
+                 static_cast<long long>(lockWaitNsTotal.load()), static_cast<long long>(lockWaitNsMax.load()),
+                 static_cast<long long>(copyNsTotal.load()), static_cast<long long>(copyNsMax.load()));
     std::fprintf(f, "paint_count %d\npaint_ns_total %lld\npaint_ns_max %lld\nframes %d\n", paintCount.load(),
                  static_cast<long long>(paintNsTotal.load()), static_cast<long long>(paintNsMax.load()), n);
     for (int i = 0; i < n; ++i)
@@ -117,7 +156,12 @@ inline void dump(const char *path)
         for (int s = 0; s < StageCount; ++s)
             std::fprintf(f, " %lld", static_cast<long long>(keys[k][s]));
         std::fprintf(f, "\n");
+        if (keyEventNs[k])
+            std::fprintf(f, "KE %d %lld\n", k, static_cast<long long>(keyEventNs[k]));
     }
+    const int tn = qMin(tickCount.load(), kMaxTicks);
+    for (int i = 0; i < tn; ++i)
+        std::fprintf(f, "G %lld\n", static_cast<long long>(ticks[i]));
     std::fclose(f);
 }
 

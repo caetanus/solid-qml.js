@@ -34,7 +34,9 @@
 #include <QTimer>
 #include <QElapsedTimer>
 
-#include <type_traits>
+#include <atomic>
+#include <chrono>
+#include <thread>
 #include <QGuiApplication>
 #include <QClipboard>
 #include <QSurfaceFormat>
@@ -546,6 +548,46 @@ int main(int argc, char **argv)
             });
             timer->start();
         });
+    }
+
+    // Bench: SOLIDTERM_FLOODKEYS=<n> (with SOLIDTERM_PERF) types n 'x' keys, 100 ms apart, from a
+    // HELPER THREAD through QWindowSystemInterface (asynchronous delivery: what the Wayland event
+    // thread does for a real key), so the injection time is not delayed by a busy GUI thread. Meant
+    // for a flood (the bench's `flood` case runs seq meanwhile): PerfTrace then records injection →
+    // keyPressEvent → the parse carrying the echo → updatePaintNode → frameSwapped.
+    if (const int nKeys = qEnvironmentVariableIntValue("SOLIDTERM_FLOODKEYS"); nKeys > 0 && window && PerfTrace::on) {
+        PerfTrace::floodKeys = true;
+        static std::atomic<bool> stopKeys { false };
+        static std::thread injector;
+        // The window can go away (the shell exits → last window closes) while the thread still
+        // types: stop at its destruction; keep nKeys well inside the flood's duration anyway.
+        QObject::connect(window, &QObject::destroyed, [] { stopKeys.store(true); });
+        injector = std::thread([window, nKeys] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+            for (int i = 0; i < nKeys && !stopKeys.load(); ++i) {
+                PerfTrace::stage(PerfTrace::Key);
+                QWindowSystemInterface::handleKeyEvent<QWindowSystemInterface::AsynchronousDelivery>(
+                    window, QEvent::KeyPress, Qt::Key_X, Qt::NoModifier, QStringLiteral("x"));
+                QWindowSystemInterface::handleKeyEvent<QWindowSystemInterface::AsynchronousDelivery>(
+                    window, QEvent::KeyRelease, Qt::Key_X, Qt::NoModifier, QStringLiteral("x"));
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        });
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, [] {
+            stopKeys.store(true);
+            if (injector.joinable())
+                injector.join();
+        });
+    }
+
+    // Bench: SOLIDTERM_PERF_GUITICK=1 (with SOLIDTERM_PERF): a 5 ms precise timer on the GUI thread
+    // stamps every firing (PerfTrace::guiTick); the bench reports how late it fired during a flood.
+    if (PerfTrace::on && qEnvironmentVariableIsSet("SOLIDTERM_PERF_GUITICK")) {
+        auto *tick = new QTimer(&app);
+        tick->setTimerType(Qt::PreciseTimer);
+        tick->setInterval(5);
+        QObject::connect(tick, &QTimer::timeout, [] { PerfTrace::guiTick(); });
+        tick->start();
     }
 
     // Bench: SOLIDTERM_WHEELTEST=<n> waits until the first TerminalView holds >= 10000 scrollback lines
