@@ -14,6 +14,7 @@
 #endif
 #include "native/keyrecorder.h"
 #include "native/panedropselftest.h"
+#include "native/tmuxselftest.h"
 #include "native/paneheader.h"
 #include "native/termconfig.h"
 #include "native/terminalpanes.h"
@@ -210,6 +211,18 @@ int main(int argc, char **argv)
         SolidQmlEmbed::loadCssString(&engine, sysTheme->styleSheet());
     });
 
+    // `solidterm --tmux [session]` (docs/solidterm-tmux-control-mode.md, phase 1: a read-only viewer):
+    // the first window attaches to that tmux session — or creates it — instead of a local shell.
+    // SOLIDTERM_TMUX_BIN replaces the tmux binary (the tests' fake server).
+    {
+        const QStringList args = QCoreApplication::arguments();
+        const qsizetype at = args.indexOf(QStringLiteral("--tmux"));
+        if (at >= 0) {
+            const QString name = at + 1 < args.size() && !args[at + 1].startsWith(QLatin1Char('-')) ? args[at + 1] : QStringLiteral("main");
+            TerminalTabs::setPendingTmuxSession(name);
+        }
+    }
+
     const QUrl windowUrl = appDir.resolved(QUrl(QStringLiteral("App.generated.qml")));
     TerminalPanes::setWindowUrl(windowUrl); // so a pane detach can spawn a full new solidterm window
     {
@@ -246,6 +259,10 @@ int main(int argc, char **argv)
         g_app.windowComponent = new QQmlComponent(&engine, windowUrl, &engine); // already compiled: cached
         SingleInstance::listen(openForwardedWindow, nullptr);
     }
+
+    // Debug/CI: SOLIDTERM_TMUXTEST=fake|real — self-checking tmux-mode run (see tmuxselftest.h).
+    if (qEnvironmentVariableIsSet("SOLIDTERM_TMUXTEST") && window)
+        TmuxSelfTest::start(window, qEnvironmentVariable("SOLIDTERM_TMUXTEST"));
 
     // Debug/CI screenshot: SOLIDTERM_SHOT=<prefix> opens preferences + the context menu after a
     // settle and grabs every top-level window (main + the modal dialog) to <prefix>-<i>.png.

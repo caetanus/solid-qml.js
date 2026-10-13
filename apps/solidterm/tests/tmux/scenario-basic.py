@@ -12,7 +12,7 @@ def setup(srv):
     srv.pane(2, screen=[b"two: caf\xc3\xa9 back\\slash"], cursor=(0, 1), title="two")
     srv.pane(3, alt=True, history=[b"h3-old"], saved=[b"normal-under-alt"],
              screen=[b"ALT-TOP", b"", b"ALT-3"], cursor=(5, 2), title="vim")
-    srv.pane(4, screen=[b"logs pane"], cursor=(0, 1), title="logs")
+    srv.pane(4, screen=[b"logs pane"], cursor=(0, 1), title="")  # no title: the tab shows the window name
 
     def grid_line(pid, text):
         # tmux parses output into its grid before queueing it for us: the next capture holds it.

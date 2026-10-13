@@ -3,6 +3,9 @@
 #include "paneheader.h"
 #include "terminaltabs.h"
 #include "terminalview.h"
+#include "tmux/client.h"
+#include "tmux/layout.h"
+#include "tmuxsession.h"
 
 #include <unistd.h>
 
@@ -134,7 +137,7 @@ TerminalPanes::~TerminalPanes()
 
 // ─── tree construction ──────────────────────────────────────────────────────────────────────────
 
-TerminalPanes::Node *TerminalPanes::makeLeaf(TerminalView *adopt, const QString &startCwd)
+TerminalPanes::Node *TerminalPanes::makeLeaf(TerminalView *adopt, const QString &startCwd, int tmuxPane, int cols, int rows)
 {
     QQmlEngine *eng = qmlEngine(this);
     if (!eng)
@@ -163,7 +166,14 @@ TerminalPanes::Node *TerminalPanes::makeLeaf(TerminalView *adopt, const QString 
         // the focused pane's current directory.
         QObject *o = m_viewComponent->beginCreate(qmlContext(this));
         view = qobject_cast<TerminalView *>(o);
-        if (view) {
+        if (view && tmuxPane >= 0 && m_tmux) {
+            // A tmux pane: no shell here — the view reads the pane's feed pipe, at the layout's grid.
+            // Read-only until input lands (phase 2).
+            view->setTmuxPane(m_tmux->client(), tmuxPane);
+            view->setImposedGrid(rows, cols);
+            view->setTmuxCwd(m_tmux->paneCwd(tmuxPane));
+            view->setReadOnly(true);
+        } else if (view) {
             TerminalView::SpawnContext ctx;
             if (QQuickWindow *w = window()) {
                 ctx.cwd = w->property("solidtermCwd").toString();
@@ -188,6 +198,9 @@ TerminalPanes::Node *TerminalPanes::makeLeaf(TerminalView *adopt, const QString 
     auto *node = new Node;
     node->cell = cell;
     node->view = view;
+    node->tmuxPane = tmuxPane;
+    if (tmuxPane >= 0) // tmux trees follow the server: no enter animation, the layout is already final
+        cell->setProperty("cssClass", QVariant::fromValue(QStringList{ QStringLiteral("pane") }));
     node->header = qobject_cast<PaneHeader *>(cell->property("header").value<QQuickItem *>());
     if (node->view && node->header)
         wirePane(node->view, node->header);
@@ -201,6 +214,7 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
     header->setForeground(m_foreground);
     header->setAccent(QColor("#3584e4"));
     header->setTitle(v->title());
+    header->setReadOnly(v->readOnly());
 
     connect(v, &TerminalView::titleChanged, this, [this, v, header] {
         header->setTitle(v->title());
@@ -261,6 +275,13 @@ void TerminalPanes::wirePane(TerminalView *v, PaneHeader *header)
 void TerminalPanes::componentComplete()
 {
     QQuickItem::componentComplete();
+    if (s_pendingTmux) {
+        // A tmux window: the tree comes from its layout (tmuxApplyLayout), not from a local shell.
+        m_tmux = s_pendingTmux;
+        m_isTmux = true;
+        s_pendingTmux = nullptr;
+        return;
+    }
     // A window spawned by a pane detach adopts that live view as its first pane (pty rides along)
     // instead of spawning a fresh shell. s_pendingAdopt is consumed by the first container to build.
     TerminalView *adopt = s_pendingAdopt;
@@ -389,7 +410,7 @@ void TerminalPanes::unlinkLeaf(Node *leaf)
 
 void TerminalPanes::split(int orient)
 {
-    if (!m_focused)
+    if (!m_focused || m_isTmux) // tmux: split-window (phase 3)
         return;
     m_zoomed = false; m_zoomLeaf = nullptr; // splitting exits zoom (tmux/tilix behaviour)
     Node *leaf = m_focused;
@@ -418,7 +439,7 @@ void TerminalPanes::split(int orient)
 
 void TerminalPanes::removeLeaf(Node *leaf)
 {
-    if (!leaf || !leaf->isLeaf())
+    if (!leaf || !leaf->isLeaf() || m_isTmux) // tmux: panes leave with the layout (hide/kill: phases 3-4)
         return;
     m_zoomed = false; m_zoomLeaf = nullptr; // closing a pane exits zoom
 
@@ -586,6 +607,10 @@ QQuickItem *TerminalPanes::ensureDropOverlay()
 
 int TerminalPanes::dragHover(TerminalView *src, const QPointF &local)
 {
+    if (m_isTmux) { // tmux <-> local and tmux-to-tmux moves are commands (phase 3)
+        dragClear();
+        return ZoneNone;
+    }
     Node *t = leafAtLocal(local);
     if (!t || !t->cell || !src) {
         dragClear();
@@ -690,7 +715,7 @@ QPixmap TerminalPanes::dragPreview(TerminalView *v, const QPointF &grabInCell, Q
 
 void TerminalPanes::beginPaneDrag(TerminalView *v, const QPointF &pressInCell)
 {
-    if (!leafOfView(v) || dragInProgress())
+    if (m_isTmux || !leafOfView(v) || dragInProgress())
         return;
     QPoint hot;
     const QPixmap preview = dragPreview(v, pressInCell, &hot);
@@ -920,7 +945,7 @@ void TerminalPanes::detachToNewWindow(TerminalView *v)
 
 void TerminalPanes::debugDetachFocused()
 {
-    if (m_focused && m_focused->view)
+    if (m_focused && m_focused->view && !m_isTmux)
         detachToNewWindow(m_focused->view);
 }
 
@@ -1009,6 +1034,8 @@ void TerminalPanes::rebuildDividers(Node *splitNode)
         Node *node = splitNode;
         const int leftIdx = i;
         div->onDrag = [this, node, leftIdx](qreal d) {
+            if (m_isTmux)
+                return; // tmux: resize-pane (phase 3)
             // Convert the pixel drag to a fraction of this split's main-axis extent, then move the
             // share from one neighbour to the other (clamped so neither collapses).
             const qreal delta = d / qMax<qreal>(1, node->lastAvail);
@@ -1085,6 +1112,10 @@ void TerminalPanes::relayout()
 {
     if (!m_root)
         return;
+    if (m_isTmux) {
+        tmuxRelayout();
+        return;
+    }
     // Zoom: only the zoomed leaf's cell is visible (fills the session); every other cell + all
     // dividers are hidden. Otherwise everything is visible and laid out by the tree.
     std::function<void(Node *)> setVis = [&](Node *n) {
@@ -1119,6 +1150,8 @@ void TerminalPanes::relayout()
 
 void TerminalPanes::toggleZoom()
 {
+    if (m_isTmux)
+        return; // tmux: resize-pane -Z (phase 3); tmux's own zoom is shown (tmuxApplyLayout)
     if (m_zoomed) {
         m_zoomed = false;
         m_zoomLeaf = nullptr;
@@ -1268,6 +1301,8 @@ int TerminalPanes::zoomFocused(int delta)
 {
     if (!m_focused || !m_focused->view)
         return 0;
+    if (m_isTmux)
+        return m_focused->view->fontSize(); // every pane of a tmux window shares its cell grid (2.5)
     // Per-pane: change ONLY the focused view's font size (delta 0 resets to the shared/pref size).
     // We deliberately don't touch m_fontSize, so the other panes and the saved pref are unaffected.
     TerminalView *v = m_focused->view;
@@ -1378,4 +1413,241 @@ void TerminalPanes::recolorHandles()
             walk(c);
     };
     walk(m_root);
+}
+
+// ─── tmux mode ──────────────────────────────────────────────────────────────────────────────────
+
+void TerminalPanes::tmuxCellSize(qreal &w, qreal &h) const
+{
+    GlyphCache::cellMetrics(m_fontFamily, m_fontSize, window() ? window()->effectiveDevicePixelRatio() : 1.0, &w, &h);
+}
+
+TerminalPanes::Node *TerminalPanes::buildTmuxNode(const tmux::LayoutCell &cell, Node *parent, QHash<int, Node *> &reuse)
+{
+    Node *n = nullptr;
+    if (cell.type == tmux::LayoutCell::Pane) {
+        n = reuse.take(cell.pane);
+        if (!n)
+            n = makeLeaf(nullptr, QString(), cell.pane, int(cell.sx), int(cell.sy));
+        if (!n)
+            return nullptr;
+    } else {
+        n = new Node;
+        n->orientation = cell.type == tmux::LayoutCell::LeftRight ? Qt::Horizontal : Qt::Vertical;
+        const bool lr = cell.type == tmux::LayoutCell::LeftRight;
+        const qreal total = qMax(1u, lr ? cell.sx : cell.sy);
+        for (const tmux::LayoutCell &c : cell.children) {
+            if (Node *k = buildTmuxNode(c, n, reuse)) {
+                n->children.append(k);
+                n->fractions.append((lr ? c.sx : c.sy) / total);
+            }
+        }
+        if (n->children.isEmpty()) {
+            delete n;
+            return nullptr;
+        }
+        if (n->children.size() == 1) { // a split left with one child (a pane failed): the child stands in
+            Node *only = n->children.first();
+            delete n;
+            only->parent = parent;
+            return only;
+        }
+    }
+    n->parent = parent;
+    n->cx = int(cell.xoff);
+    n->cy = int(cell.yoff);
+    n->cols = int(cell.sx);
+    n->rows = int(cell.sy);
+    return n;
+}
+
+void TerminalPanes::tmuxApplyLayout(const tmux::LayoutCell &root, int zoomPane, int zoomCols, int zoomRows)
+{
+    if (!m_isTmux)
+        return;
+    // Every current leaf is a candidate for reuse by pane id; split nodes are always rebuilt.
+    QHash<int, Node *> reuse;
+    QVector<Node *> splits;
+    std::function<void(Node *)> walk = [&](Node *n) {
+        if (!n)
+            return;
+        if (n->isLeaf()) {
+            reuse.insert(n->tmuxPane, n);
+            return;
+        }
+        splits.append(n);
+        for (Node *c : n->children)
+            walk(c);
+    };
+    walk(m_root);
+    for (Node *n : reuse) {
+        n->parent = nullptr;
+        n->children.clear();
+    }
+    Node *fresh = buildTmuxNode(root, nullptr, reuse);
+    for (Node *sp : std::as_const(splits)) {
+        for (DividerItem *d : sp->dividers)
+            if (d)
+                d->deleteLater();
+        delete sp;
+    }
+    // Panes no longer in the layout: gone from this window (their view stops reading; the client
+    // closes the feed pipe).
+    for (Node *gone : std::as_const(reuse)) {
+        if (m_focused == gone)
+            m_focused = nullptr;
+        if (gone->view)
+            gone->view->deleteLater();
+        if (gone->cell)
+            gone->cell->deleteLater();
+        delete gone;
+    }
+    m_root = fresh;
+    std::function<void(Node *)> dividers = [&](Node *n) {
+        if (!n || n->isLeaf())
+            return;
+        rebuildDividers(n);
+        for (Node *c : n->children)
+            dividers(c);
+    };
+    dividers(m_root);
+
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    m_zoomLeaf = nullptr;
+    for (Node *l : std::as_const(leaves))
+        if (l->tmuxPane == zoomPane)
+            m_zoomLeaf = l;
+    m_zoomed = m_zoomLeaf != nullptr;
+    m_zoomCols = zoomCols;
+    m_zoomRows = zoomRows;
+    if (!m_focused && !leaves.isEmpty())
+        m_focused = m_zoomLeaf ? m_zoomLeaf : leaves.first();
+    relayout();
+    refreshHeaderFocus();
+    if (m_focused && m_focused->view)
+        emit titleChanged(m_focused->view->title());
+    emit panesChanged();
+}
+
+void TerminalPanes::tmuxRelayout()
+{
+    // Cell-exact (2.3): a pane at cells (x, y, w, h) has its view at exactly those cells; the pane
+    // header takes the row ABOVE it — tmux's border row, or for the top panes the extra row the
+    // client height leaves free (owner decision 4) — and a vertical border column holds the divider.
+    qreal cw, ch;
+    tmuxCellSize(cw, ch);
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    std::function<void(Node *)> place = [&](Node *n) {
+        if (!n)
+            return;
+        if (n->isLeaf()) {
+            QQuickItem *cell = n->cell;
+            if (!cell || !n->view)
+                return;
+            const bool zoomed = m_zoomed && n == m_zoomLeaf;
+            const int cols = zoomed ? m_zoomCols : n->cols;
+            const int rows = zoomed ? m_zoomRows : n->rows;
+            cell->setVisible(!m_zoomed || zoomed);
+            cell->setProperty("headerH", ch);
+            cell->setX(zoomed ? 0 : n->cx * cw);
+            cell->setY(zoomed ? 0 : n->cy * ch);
+            cell->setWidth(cols * cw);
+            cell->setHeight((rows + 1) * ch);
+            n->view->setImposedGrid(rows, cols);
+            return;
+        }
+        const bool lr = n->orientation == Qt::Horizontal;
+        for (int i = 0; i < n->dividers.size(); ++i) {
+            DividerItem *d = n->dividers[i];
+            if (!d)
+                continue;
+            const Node *left = n->children.value(i);
+            // Left-right: the border column between two children, header row included.
+            // Top-bottom: the border row IS the lower pane's header — no divider item.
+            d->setVisible(lr && !m_zoomed && left);
+            if (lr && left) {
+                d->setX((left->cx + left->cols) * cw);
+                d->setY(n->cy * ch);
+                d->setWidth(cw);
+                d->setHeight((n->rows + 1) * ch);
+            }
+        }
+        for (Node *c : n->children)
+            place(c);
+    };
+    place(m_root);
+    for (int i = 0; i < leaves.size(); ++i)
+        if (leaves[i]->header)
+            leaves[i]->header->setIndex(leaves.size() > 1 ? i + 1 : 0);
+}
+
+void TerminalPanes::tmuxFocusPane(int pane)
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    for (Node *l : std::as_const(leaves)) {
+        if (l->tmuxPane != pane)
+            continue;
+        m_focused = l;
+        refreshHeaderFocus();
+        if (isVisible() && l->view) // never steal keyboard focus from another tab
+            l->view->takeFocus();
+        if (l->view)
+            emit titleChanged(l->view->title());
+        return;
+    }
+}
+
+TerminalView *TerminalPanes::tmuxView(int pane) const
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    for (Node *l : std::as_const(leaves))
+        if (l->tmuxPane == pane)
+            return l->view;
+    return nullptr;
+}
+
+QList<TerminalView *> TerminalPanes::views() const
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    QList<TerminalView *> out;
+    for (Node *l : std::as_const(leaves))
+        if (l->view)
+            out.append(l->view);
+    return out;
+}
+
+QVariantList TerminalPanes::debugTmuxGeometry() const
+{
+    qreal cw, ch;
+    tmuxCellSize(cw, ch);
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    QVariantList out;
+    for (Node *l : std::as_const(leaves)) {
+        if (!l->view)
+            continue;
+        const QPointF p = l->view->mapToItem(this, QPointF(0, 0));
+        QVariantMap m;
+        m[QStringLiteral("pane")] = l->tmuxPane;
+        m[QStringLiteral("cx")] = l->cx;
+        m[QStringLiteral("cy")] = l->cy;
+        m[QStringLiteral("cols")] = l->cols;
+        m[QStringLiteral("rows")] = l->rows;
+        m[QStringLiteral("x")] = p.x();
+        m[QStringLiteral("y")] = p.y();
+        m[QStringLiteral("w")] = l->view->width();
+        m[QStringLiteral("h")] = l->view->height();
+        m[QStringLiteral("gridCols")] = l->view->debugGrid().width();
+        m[QStringLiteral("gridRows")] = l->view->debugGrid().height();
+        m[QStringLiteral("visible")] = l->cell && l->cell->isVisible();
+        m[QStringLiteral("cellW")] = cw;
+        m[QStringLiteral("cellH")] = ch;
+        out.append(m);
+    }
+    return out;
 }

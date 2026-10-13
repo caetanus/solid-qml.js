@@ -354,7 +354,7 @@ if build_solidterm
     blur_args = ['-DHAVE_BACKGROUND_EFFECT']
   endif
   solidterm_moc = qt6.preprocess(
-    moc_headers: (blur_src.length() > 0 ? files('apps/solidterm/native/windowblur.h') : []) + files('apps/solidterm/native/ptysession.h', 'apps/solidterm/native/terminalview.h', 'apps/solidterm/native/terminalpanes.h', 'apps/solidterm/native/terminaltabs.h', 'apps/solidterm/native/systemtheme.h', 'apps/solidterm/native/keyrecorder.h', 'apps/solidterm/native/termconfig.h', 'apps/solidterm/native/paneheader.h'),
+    moc_headers: (blur_src.length() > 0 ? files('apps/solidterm/native/windowblur.h') : []) + files('apps/solidterm/native/ptysession.h', 'apps/solidterm/native/terminalview.h', 'apps/solidterm/native/terminalpanes.h', 'apps/solidterm/native/terminaltabs.h', 'apps/solidterm/native/tmuxsession.h', 'apps/solidterm/native/systemtheme.h', 'apps/solidterm/native/keyrecorder.h', 'apps/solidterm/native/termconfig.h', 'apps/solidterm/native/paneheader.h'),
     qresources: files('apps/solidterm/shaders.qrc'),
   )
   solidterm_exe = executable(
@@ -374,6 +374,12 @@ if build_solidterm
       'apps/solidterm/native/paneheader.cpp',
       'apps/solidterm/native/singleinstance.cpp',
       'apps/solidterm/native/panedropselftest.cpp',
+      'apps/solidterm/native/tmuxsession.cpp',
+      'apps/solidterm/native/tmuxselftest.cpp',
+      'apps/solidterm/native/tmux/protocol.cpp',
+      'apps/solidterm/native/tmux/layout.cpp',
+      'apps/solidterm/native/tmux/seed.cpp',
+      'apps/solidterm/native/tmux/client.cpp',
     ),
     blur_src,
     solidterm_moc,
@@ -503,6 +509,31 @@ if build_solidterm
       'SOLIDTERM_SELANCHORTEST': '1',
     },
     timeout: 40)
+  # tmux mode through the real UI, offscreen, self-checking (SOLIDTERM_TMUXTEST, tmuxselftest.h):
+  # `--tmux work` against the scripted FAKE tmux — tabs/splits from layouts, cell-exact geometry,
+  # seeded and live TermScreen contents equal to an oracle, re-split, window add/rename/close,
+  # %pause → reseed, read-only input, detach on window close (the fake logs what it received).
+  test('solidterm-tmux-ui', solidterm_exe,
+    args: ['--standalone', '--tmux', 'work'],
+    env: {
+      'QT_QPA_PLATFORM': 'offscreen',
+      'QT_FORCE_STDERR_LOGGING': '1',
+      'XDG_CONFIG_HOME': meson.current_build_dir() / 'solidterm-test-config',
+      'SOLIDTERM_TMUXTEST': 'fake',
+      'SOLIDTERM_TMUX_BIN': meson.current_source_dir() / 'apps/solidterm/tests/tmux/fake-tmux.py',
+      'FAKE_TMUX_SCENARIO': meson.current_source_dir() / 'apps/solidterm/tests/tmux/scenario-basic.py',
+      'FAKE_TMUX_LOG': meson.current_build_dir() / 'solidterm-tmux-ui-fake.log',
+    },
+    timeout: 60)
+  # The same UI against a REAL tmux on a private socket (skipped without tmux).
+  test('solidterm-tmux-ui-real', find_program('bash'),
+    args: [meson.current_source_dir() / 'apps/solidterm/tests/tmux/run-real-ui.sh', solidterm_exe.full_path(),
+           tmux_prog.found() ? tmux_prog.full_path() : '', meson.current_build_dir() / 'tmux-real-ui'],
+    env: { 'XDG_CONFIG_HOME': meson.current_build_dir() / 'solidterm-test-config' },
+    depends: solidterm_exe,
+    is_parallel: false,
+    timeout: 120)
+
   # Selection autoscroll (drag past the top/bottom edge): the pure edge-distance → lines/tick mapping
   # and the offset clamp, plus a simulated multi-tick walk proving the selection's moving end keeps
   # tracking the right absolute row as the view scrolls under a stationary pointer. No Qt, no vterm —

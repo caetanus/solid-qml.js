@@ -8,11 +8,14 @@ class TerminalTabs;
 #include <QPointer>
 #include <QQuickItem>
 #include <QStringList>
+#include <QHash>
 #include <QUrl>
 #include <QVector>
 
 class TerminalView;
 class PaneHeader;
+class TmuxSession;
+namespace tmux { struct LayoutCell; }
 
 // The split container (owner: "split screen … parecido com tilix"). Splitting a terminal is
 // terminal-domain layout that For→SplitView can't express through the transpiler subset, so it's
@@ -99,6 +102,22 @@ public:
     QStringList paneTitles() const;         // leaf titles in order (for the F12 overview)
     int focusedPaneIndex() const;           // index of the focused leaf
     Q_INVOKABLE void focusLeafByIndex(int i);
+
+    // ── tmux mode (docs/solidterm-tmux-control-mode.md 2.2-2.4) ──────────────────────────────────
+    // The next container created belongs to `session` (set around TerminalTabs' create): it starts
+    // EMPTY and its tree follows the window's layout — server-driven, never changed locally.
+    static void setPendingTmux(TmuxSession *session) { s_pendingTmux = session; }
+    bool isTmux() const { return m_isTmux; }
+    // Rebuild the tree from a layout, keeping every view whose pane id survives (scrollback,
+    // selection and parser state ride along); new ids get new views, vanished ones are destroyed.
+    // zoomPane >= 0: that pane fills the window at zoomCols x zoomRows (window_visible_layout).
+    void tmuxApplyLayout(const tmux::LayoutCell &root, int zoomPane, int zoomCols, int zoomRows);
+    void tmuxFocusPane(int pane);                 // tmux's active pane → our focused leaf
+    TerminalView *tmuxView(int pane) const;
+    QList<TerminalView *> views() const;
+    // Tests: per leaf {pane, cx, cy, cols, rows} from the layout and the view's {x, y, w, h} (in this
+    // item's coordinates), its grid {gridCols, gridRows} and the cell size {cellW, cellH}.
+    QVariantList debugTmuxGeometry() const;
     // Debug/test hook: drive the real drag path — drag leaf `srcIdx` onto `zone` (DropZone values:
     // 1=centre 2=left 3=right 4=top 5=bottom) of leaf `dstIdx`. Lets the grab harness exercise
     // rearrange without a synthetic gesture.
@@ -200,12 +219,16 @@ private:
         QQuickItem *cell = nullptr;
         TerminalView *view = nullptr;
         PaneHeader *header = nullptr;
+        // tmux mode: the pane id (leaves) and the cell rectangle from the layout (all nodes).
+        int tmuxPane = -1;
+        int cx = 0, cy = 0, cols = 0, rows = 0;
         bool isLeaf() const { return children.isEmpty(); }
     };
 
     // `startCwd`: directory a FRESH view's shell starts in (a split passes the focused pane's);
     // empty = the window's spawn context. Ignored when adopting a moved view.
-    Node *makeLeaf(TerminalView *adopt = nullptr, const QString &startCwd = QString()); // compose a cell; adopt a moved view or make one
+    Node *makeLeaf(TerminalView *adopt = nullptr, const QString &startCwd = QString(),
+                   int tmuxPane = -1, int cols = 0, int rows = 0); // compose a cell; adopt a moved view or make one
     void wirePane(TerminalView *v, PaneHeader *header);
     void applyStyle(TerminalView *v);
 
@@ -234,6 +257,15 @@ private:
     TerminalView *detachViewKeepAlive(TerminalView *v);     // remove from this tree, return the live view
     void insertExternalView(TerminalView *v, Node *target, int zone); // adopt a view from another window
     void detachToNewWindow(TerminalView *v);
+
+    // tmux mode
+    static inline TmuxSession *s_pendingTmux = nullptr;
+    QPointer<TmuxSession> m_tmux;       // the session this container shows a window of
+    bool m_isTmux = false;              // for good: a tmux tab never turns into a local one
+    int m_zoomCols = 0, m_zoomRows = 0;
+    Node *buildTmuxNode(const tmux::LayoutCell &cell, Node *parent, QHash<int, Node *> &reuse);
+    void tmuxRelayout();
+    void tmuxCellSize(qreal &w, qreal &h) const;
 
     Node *m_root = nullptr;
     Node *m_focused = nullptr;          // focused LEAF

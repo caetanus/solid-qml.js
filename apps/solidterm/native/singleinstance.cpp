@@ -53,7 +53,10 @@ std::string env(const char *name)
 bool standaloneRequested(int argc, char **argv)
 {
     for (int i = 1; i < argc; ++i)
-        if (std::strcmp(argv[i], "--standalone") == 0)
+        if (std::strcmp(argv[i], "--standalone") == 0
+            // `--tmux` cannot travel over the single-instance socket yet (Request carries cwd + env
+            // only; adding `args` is phase 4 of docs/solidterm-tmux-control-mode.md): its own process.
+            || std::strcmp(argv[i], "--tmux") == 0)
             return true;
     for (char **e = environ; *e; ++e) {
         if (std::strncmp(*e, "SOLIDTERM_", 10) != 0)

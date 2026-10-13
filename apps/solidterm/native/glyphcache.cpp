@@ -200,6 +200,19 @@ bool drawCellGraphic(QPainter *p, char32_t cp, qreal x0, qreal y0, qreal w, qrea
 
 } // namespace
 
+namespace {
+// The atlas font at physical resolution (setFont and cellMetrics must agree to the pixel).
+QFont cellFont(const QString &family, int pixelSize, qreal dpr)
+{
+    QFont f(family);
+    f.setPixelSize(qMax(1, qRound(pixelSize * dpr)));
+    f.setStyleHint(QFont::Monospace);
+    f.setHintingPreference(QFont::PreferFullHinting);
+    return f;
+}
+qreal cellPx(qreal v) { return qMax<qreal>(1, qRound(v)); }
+} // namespace
+
 void GlyphCache::setFont(const QString &family, int pixelSize, qreal dpr)
 {
     dpr = dpr > 0 ? dpr : 1.0;
@@ -207,19 +220,24 @@ void GlyphCache::setFont(const QString &family, int pixelSize, qreal dpr)
         return; // same font: keep the cached glyphs (resize must not throw away the atlas)
     m_dpr = dpr;
     m_logicalPx = pixelSize;
-    m_font = QFont(family);
-    m_font.setPixelSize(qMax(1, qRound(pixelSize * dpr)));
-    m_font.setStyleHint(QFont::Monospace);
-    m_font.setHintingPreference(QFont::PreferFullHinting);
+    m_font = cellFont(family, pixelSize, dpr);
     m_bold = m_font; m_bold.setBold(true);
     m_italic = m_font; m_italic.setItalic(true);
     m_boldItalic = m_bold; m_boldItalic.setItalic(true);
 
     const QFontMetricsF fm(m_font);
-    m_cellW = qMax<qreal>(1, qRound(fm.horizontalAdvance(QLatin1Char('M'))));
-    m_cellH = qMax<qreal>(1, qRound(fm.height()));
+    m_cellW = cellPx(fm.horizontalAdvance(QLatin1Char('M')));
+    m_cellH = cellPx(fm.height());
     m_ascent = fm.ascent();
     reset();
+}
+
+void GlyphCache::cellMetrics(const QString &family, int pixelSize, qreal dpr, qreal *cellW, qreal *cellH)
+{
+    dpr = dpr > 0 ? dpr : 1.0;
+    const QFontMetricsF fm(cellFont(family, pixelSize, dpr));
+    *cellW = cellPx(fm.horizontalAdvance(QLatin1Char('M'))) / dpr;
+    *cellH = cellPx(fm.height()) / dpr;
 }
 
 void GlyphCache::reset()

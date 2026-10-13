@@ -6,6 +6,7 @@
 #include "stallwatch.h"
 #include "mousereport.h"
 #include "scrollanchor.h"
+#include "tmux/client.h"
 
 #include "qmlcss/componentcache.h"
 
@@ -117,6 +118,89 @@ QSGMaterialShader *GlyphMaterial::createShader(QSGRendererInterface::RenderMode)
 
 } // namespace
 
+// tmux mode (docs/solidterm-tmux-control-mode.md 3.1): which pane of which control client this view
+// shows. The client owns the feed pipe; the view only hands its read end to the parser thread.
+struct TerminalView::TmuxLink {
+    std::shared_ptr<tmux::Client> client;
+    int pane = -1;
+    QString cwd;
+};
+
+void TerminalView::setTmuxPane(std::shared_ptr<tmux::Client> client, int pane)
+{
+    if (m_started || !client)
+        return; // only before the session starts
+    m_tmux = std::make_unique<TmuxLink>();
+    m_tmux->client = std::move(client);
+    m_tmux->pane = pane;
+}
+
+int TerminalView::tmuxPane() const
+{
+    return m_tmux ? m_tmux->pane : -1;
+}
+
+void TerminalView::setTmuxCwd(const QString &cwd)
+{
+    if (m_tmux)
+        m_tmux->cwd = cwd;
+}
+
+void TerminalView::setImposedGrid(int rows, int cols)
+{
+    if (rows == m_imposedRows && cols == m_imposedCols)
+        return;
+    m_imposedRows = rows;
+    m_imposedCols = cols;
+    if (isComponentComplete())
+        applyGrid();
+}
+
+QString TerminalView::dumpScreen(const TermScreen &term)
+{
+    QString out;
+    if (!term.isAttached())
+        return out;
+    const int total = term.sbCount() + term.rows();
+    for (int r = 0; r < total; ++r) {
+        const TermScreen::Line l = term.line(r);
+        QString line;
+        for (int c = 0; l.cells && c < l.cols; ++c) {
+            const TermCell &cell = l.cells[c];
+            if (cell.chars[0] == kWideContinuation)
+                continue;
+            if (!cell.chars[0]) {
+                line += QLatin1Char(' ');
+                continue;
+            }
+            int n = 0;
+            while (n < VTERM_MAX_CHARS_PER_CELL && cell.chars[n])
+                ++n;
+            line += QString::fromUcs4(reinterpret_cast<const char32_t *>(cell.chars), n);
+        }
+        while (line.endsWith(QLatin1Char(' ')))
+            line.chop(1);
+        out += line;
+        out += QLatin1Char('\n');
+    }
+    VTermPos pos;
+    vterm_state_get_cursorpos(term.state(), &pos);
+    out += QStringLiteral("cursor %1,%2\nalt %3\nsb %4\n").arg(pos.row).arg(pos.col).arg(term.isAltScreen() ? 1 : 0).arg(term.sbCount());
+    return out;
+}
+
+QList<QList<qint64>> TerminalView::debugGridLog() const
+{
+    ScreenLock lock(m_screenMutex);
+    return m_gridLog;
+}
+
+QString TerminalView::debugDump() const
+{
+    ScreenLock lock(m_screenMutex);
+    return dumpScreen(m_term);
+}
+
 TerminalView::TerminalView(QQuickItem *parent)
     : QQuickItem(parent)
 {
@@ -187,6 +271,8 @@ TerminalView::~TerminalView()
     delete m_newsNotifier;
     m_newsNotifier = nullptr;
     m_worker.stop();
+    if (m_tmux) // the worker no longer reads the feed pipe: the client may close it
+        m_tmux->client->releasePane(m_tmux->pane);
     if (m_vt)
         vterm_free(m_vt);
     m_vt = nullptr;
@@ -209,6 +295,7 @@ bool TerminalView::wkFeed(void *user, const char *data, size_t len)
     if (Q_UNLIKELY(PerfTrace::on) && PerfTrace::floodKeys && std::memchr(data, PerfTrace::echoChar, len))
         PerfTrace::stage(PerfTrace::PtyRead); // this slice carries the injected key's echo
     self->m_term.beginBatch();
+    self->m_fedBytes += len;
     vterm_input_write(self->m_vt, data, len);
     if (self->m_term.endBatch()) {
         self->m_news.damaged = true;
@@ -262,6 +349,11 @@ void TerminalView::parseOnGuiThread(const QByteArray &bytes)
 // with the lock held: from a slice on the parser thread or from a GUI input handler.
 void TerminalView::writeToPty(const char *s, size_t len)
 {
+    // tmux mode, phase 1 (read-only): nothing goes to the pane. Query replies produced while
+    // parsing must never go (tmux answered them itself, 3.2); keys/mouse/paste become send-keys in
+    // phase 2.
+    if (m_tmux)
+        return;
     if (Q_UNLIKELY(PerfTrace::on))
         PerfTrace::stage(PerfTrace::PtyWrite);
     if (m_threaded)
@@ -377,8 +469,8 @@ void TerminalView::applyNews()
         update();
     if (n.bells)
         emit bellRang(); // one flash for a burst of BELs
-    if (n.exited)
-        m_pty.markExited(); // → finished() → sessionFinished()
+    if (n.exited && !m_tmux)
+        m_pty.markExited(); // → finished() → sessionFinished(); a tmux pane's lifetime is tmux's
 }
 
 // ─── libvterm plumbing ──────────────────────────────────────────────────────────────────────────
@@ -523,25 +615,33 @@ void TerminalView::ensureSession()
     }
     m_news = News {};
 
-    QString cwd;
-    QStringList env;
-    if (m_hasStart) {
-        cwd = m_start.cwd;
-        env = m_start.env;
-    } else if (QQuickWindow *w = window()) {
-        cwd = w->property("solidtermCwd").toString();
-        env = w->property("solidtermEnv").toStringList();
+    int fd = -1;
+    if (m_tmux) {
+        // No pty: the parser thread reads the pane's feed pipe (there is no GUI-thread reader for it).
+        m_threaded = true;
+        fd = m_tmux->client->openPane(m_tmux->pane);
+    } else {
+        QString cwd;
+        QStringList env;
+        if (m_hasStart) {
+            cwd = m_start.cwd;
+            env = m_start.env;
+        } else if (QQuickWindow *w = window()) {
+            cwd = w->property("solidtermCwd").toString();
+            env = w->property("solidtermEnv").toStringList();
+        }
+        if (cwd.isEmpty() && env.isEmpty() && s_pendingSpawn) {
+            cwd = s_pendingSpawn->cwd;
+            env = s_pendingSpawn->env;
+        }
+        m_pty.start(m_rows, m_cols, QString(), cwd, env, /*readHere*/ !m_threaded);
+        fd = m_pty.masterFd();
     }
-    if (cwd.isEmpty() && env.isEmpty() && s_pendingSpawn) {
-        cwd = s_pendingSpawn->cwd;
-        env = s_pendingSpawn->env;
-    }
-    m_pty.start(m_rows, m_cols, QString(), cwd, env, /*readHere*/ !m_threaded);
     // Started paused, reading from the next GUI loop turn on — when the single-threaded notifier
     // would first fire too. The session starts before the item is laid out (the grid is still 2x2);
     // a parser running at once wrapped the shell's first output at 2 columns for good.
-    if (m_threaded && m_pty.masterFd() >= 0
-        && m_worker.start(m_pty.masterFd(), &m_screenMutex, &kWorkerSink, this, /*startPaused*/ true)) {
+    if (m_threaded && fd >= 0
+        && m_worker.start(fd, &m_screenMutex, &kWorkerSink, this, /*startPaused*/ true)) {
         m_newsNotifier = new QSocketNotifier(m_worker.guiFd(), QSocketNotifier::Read, this);
         connect(m_newsNotifier, &QSocketNotifier::activated, this, [this] {
             m_worker.guiAcknowledge(); // before the apply: news recorded after it posts a fresh wake
@@ -555,6 +655,10 @@ void TerminalView::ensureSession()
         }, Qt::QueuedConnection);
     }
     applyNews();
+    if (m_tmux) { // the grid the view starts with: lifts a resize fence waiting for it
+        m_gridLog.append({ 0, m_rows, m_cols });
+        m_tmux->client->ackPaneSize(m_tmux->pane, m_cols, m_rows);
+    }
     updateFocusReport(); // sync the program's focus state with whatever we're starting with
 }
 
@@ -579,8 +683,8 @@ void TerminalView::applyGrid()
     m_glyphs.setFont(m_font.family(), m_font.pixelSize(), window() ? window()->effectiveDevicePixelRatio() : 1.0);
     m_cellW = m_glyphs.cellWidth();
     m_cellH = m_glyphs.cellHeight();
-    const int cols = qMax(2, int(width() / m_cellW));
-    const int rows = qMax(2, int(height() / m_cellH));
+    const int cols = m_imposedCols > 0 ? m_imposedCols : qMax(2, int(width() / m_cellW));
+    const int rows = m_imposedRows > 0 ? m_imposedRows : qMax(2, int(height() / m_cellH));
     if (rows == m_rows && cols == m_cols)
         return;
     m_rows = rows;
@@ -590,8 +694,13 @@ void TerminalView::applyGrid()
             // Synchronous hand-off: the parser thread is held off while TermScreen resizes.
             ScreenLock lock(m_screenMutex);
             vterm_set_size(m_vt, rows, cols); // TermScreen resizes (and damages) inside
+            if (m_tmux)
+                m_gridLog.append({ qint64(m_fedBytes), rows, cols });
         }
-        m_pty.resize(rows, cols);
+        if (m_tmux) // tmux sized the pane already; output for the new size may flow now (3.4)
+            m_tmux->client->ackPaneSize(m_tmux->pane, cols, rows);
+        else
+            m_pty.resize(rows, cols);
         applyNews();
     }
     emit scrollChanged(); // viewportRows moved — the scrollbar's thumb size depends on it
@@ -2268,6 +2377,8 @@ void TerminalView::setForeground(const QColor &c)
 
 QString TerminalView::currentDirectory() const
 {
+    if (m_tmux)
+        return m_tmux->cwd;
     const qint64 pid = m_pty.pid();
     if (pid <= 0)
         return {};

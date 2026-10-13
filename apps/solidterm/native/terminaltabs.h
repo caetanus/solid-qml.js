@@ -10,6 +10,8 @@
 
 class TerminalPanes;
 class TerminalView;
+class TmuxSession;
+namespace tmux { struct LayoutCell; }
 
 // The session/tab stack (owner's queue: "TABS … manter panes vivos por tab"; + directive: chrome
 // in Solid, native only for the terminal). Each tab is a full split tree (TerminalPanes). Switching
@@ -121,6 +123,23 @@ public:
     TerminalPanes *activePanes() const { return active(); }
     int tabCount() const { return m_tabs.size(); }
 
+    // ── tmux mode (docs/solidterm-tmux-control-mode.md 2.1) ──────────────────────────────────────
+    // The next TerminalTabs to complete attaches to tmux session `name` instead of opening a local
+    // shell (main sets it around the window it builds for `--tmux <name>`). Its tabs are then the
+    // session's windows, driven by TmuxSession.
+    static void setPendingTmuxSession(const QString &name) { s_pendingTmux = name; }
+    bool isTmux() const { return m_isTmux; }
+    TmuxSession *tmuxSession() const;
+    TerminalPanes *tmuxTab(int window, bool create);  // the tab showing tmux window @window
+    void tmuxRemoveTab(int window);
+    void tmuxRenameTab(int window, const QString &name);
+    void tmuxSelectTab(int window);
+    int tmuxTabIndex(int window) const;
+    QList<int> tmuxWindows() const;                   // tab order
+    QString tmuxTabName(int window) const;
+    // The session is gone (exited): the window closes.
+    void tmuxSessionEnded();
+
 signals:
     void styleChanged();
     void reservedChanged();
@@ -148,8 +167,14 @@ private:
         TerminalPanes *panes = nullptr;
         QString title;         // OSC title from the focused pane
         QString customTitle;   // user-set override; when non-empty it wins
-        QString effective() const { return customTitle.isEmpty() ? title : customTitle; }
+        int tmuxWindow = -1;   // tmux mode: the window id (@N)
+        QString tmuxName;      // tmux mode: #{window_name}, shown while there is no OSC title
+        QString effective() const
+        {
+            return !customTitle.isEmpty() ? customTitle : !title.isEmpty() ? title : tmuxName;
+        }
     };
+    QString windowTitleFor(int index) const; // tmux mode adds "<session> — … — read-only (phase 1)"
 
     TerminalPanes *makePanes();
     bool routeDrag(class QDropEvent *event, bool drop); // false = not a SolidTerm pane drag
@@ -164,6 +189,9 @@ private:
 
     QVector<Tab> m_tabs;
     int m_active = 0;
+    static inline QString s_pendingTmux;
+    bool m_isTmux = false;
+    QPointer<TmuxSession> m_tmux;
     bool m_didInitialFocus = false;
     class QQmlComponent *m_panesComponent = nullptr;
 

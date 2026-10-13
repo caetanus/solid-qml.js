@@ -98,6 +98,8 @@ class Server:
         self.extended = False
         self.reactions = []        # (regex, fn, before, once)
         self.log_path = os.environ.get("FAKE_TMUX_LOG")
+        if self.log_path:
+            open(self.log_path, "w").close()  # one run per log
         self.exiting = False
         self.capture_groups = 0
 
@@ -224,7 +226,8 @@ class Server:
         x, y = p.cursor
         f = {
             "pane_id": "%%%d" % p.id, "window_id": "@%d" % (w.id if w else 0),
-            "pane_active": "1", "pane_width": str(p.w), "pane_height": str(p.h),
+            "pane_active": "1" if w and self.leaves(w.tree)[0] == p.id else "0",
+            "pane_width": str(p.w), "pane_height": str(p.h),
             "pane_current_path": p.path, "history_size": str(len(p.history)),
             "cursor_x": str(x), "cursor_y": str(y), "cursor_flag": "1",
             "alternate_on": "1" if p.alt else "0",
