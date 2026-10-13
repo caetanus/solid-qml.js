@@ -256,6 +256,14 @@ declare global {
     scrollToPage(page: number): void;
     /** QML signal; use doc.pagesChanged.connect(callback) from the ref. */
     readonly pagesChanged: { connect(callback: () => void): void; disconnect(callback: () => void): void };
+    /** Reactive UTF-16 document positions; selection endpoints are ordered, equal at the caret
+     *  when collapsed. Each change signal fires only when that property's value changes. */
+    readonly cursorPosition: number;
+    readonly selectionStart: number;
+    readonly selectionEnd: number;
+    readonly cursorPositionChanged: { connect(callback: () => void): void; disconnect(callback: () => void): void };
+    readonly selectionStartChanged: { connect(callback: () => void): void; disconnect(callback: () => void): void };
+    readonly selectionEndChanged: { connect(callback: () => void): void; disconnect(callback: () => void): void };
     readonly modified: boolean;
     readonly bold: boolean;
     readonly italic: boolean;

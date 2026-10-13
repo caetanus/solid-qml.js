@@ -98,6 +98,8 @@ State — reactive: reading `doc.bold` in a binding (a `classList`, a text) foll
 | `canPaste` | boolean | The SYSTEM clipboard (not this document) currently carries pasteable content — tracks another app too. |
 | `wordCount`, `charCount` | number | Whole document, kept incrementally (see "Counts" below) and notified (`contentsChanged`) after `loadOdf`/`newDocument`/attaching a document, not just a keystroke. A word is a Unicode word-boundary segment starting with a letter or digit; chars excludes the paragraph separator between blocks. |
 | `selectionWordCount`, `selectionCharCount` | number | The current selection, by the same rules; `0` with none. |
+| `cursorPosition` | number | Caret position in UTF-16 document characters, using the same coordinates as `setCursorPosition` and `blockIdAt`. |
+| `selectionStart`, `selectionEnd` | number | Ordered endpoints of the selection (text in `[selectionStart, selectionEnd)`); both equal the caret when collapsed. Each property is reactive and emits its own `…Changed()` signal only when its value changes, including cursor movement, typing, and document replacement. Connect through e.g. `doc.selectionEndChanged.connect(callback)` on the ref. |
 | `selectedText` | string | `""` with no selection; paragraphs separated by `"\n"`, like `plainText()`. |
 | `currentHeadingIndex` | number | Index into `headings()` of the heading at/before the caret, `-1` if none. |
 

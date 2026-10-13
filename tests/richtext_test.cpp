@@ -2755,6 +2755,51 @@ private slots:
         QCOMPARE(doc()->pageSize(), QSizeF(794, 1147));
     }
 
+    void documentSelectionProperties()
+    {
+        PageEditor w;
+        QVERIFY(w.root);
+        for (const char *name : {"cursorPosition", "selectionStart", "selectionEnd"}) {
+            QVERIFY2(w.root->property(name).isValid(), name);
+            QCOMPARE(w.root->property(name).toInt(), 0);
+        }
+        QSignalSpy cursor(w.root.data(), SIGNAL(cursorPositionChanged()));
+        QSignalSpy start(w.root.data(), SIGNAL(selectionStartChanged()));
+        QSignalSpy end(w.root.data(), SIGNAL(selectionEndChanged()));
+        QVERIFY(cursor.isValid() && start.isValid() && end.isValid());
+        auto check = [&](int c, int a, int b, int nc, int na, int nb) {
+            QCOMPARE(w.root->property("cursorPosition").toInt(), c);
+            QCOMPARE(w.root->property("selectionStart").toInt(), a);
+            QCOMPARE(w.root->property("selectionEnd").toInt(), b);
+            QCOMPARE(cursor.count(), nc);
+            QCOMPARE(start.count(), na);
+            QCOMPARE(end.count(), nb);
+            cursor.clear(); start.clear(); end.clear();
+        };
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "insertText", Q_ARG(QVariant, "abc\ndef")));
+        check(7, 7, 7, 1, 1, 1);
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "setCursorPosition", Q_ARG(QVariant, 2)));
+        check(2, 2, 2, 1, 1, 1);
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "setCursorPosition", Q_ARG(QVariant, 2)));
+        check(2, 2, 2, 0, 0, 0);
+        QVERIFY(QMetaObject::invokeMethod(w.edit(), "select", Q_ARG(int, 2), Q_ARG(int, 6)));
+        check(6, 2, 6, 1, 0, 1);
+        QVERIFY(QMetaObject::invokeMethod(w.edit(), "select", Q_ARG(int, 6), Q_ARG(int, 2)));
+        check(2, 2, 6, 1, 0, 0); // reversed selection: only the caret moved
+        w.fmt()->setAlignment(QStringLiteral("right"));
+        QCoreApplication::processEvents();
+        check(2, 2, 6, 0, 0, 0); // formatting and relayout do not move the selection
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "setCursorPosition", Q_ARG(QVariant, 7)));
+        check(7, 7, 7, 1, 1, 1);
+        w.view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        w.edit()->forceActiveFocus();
+        QTest::keyClick(&w.view, Qt::Key_X);
+        check(8, 8, 8, 1, 1, 1);
+        w.fmt()->newDocument();
+        check(0, 0, 0, 1, 1, 1);
+    }
+
     void documentScrollbar_data()
     {
         QTest::addColumn<bool>("pages");

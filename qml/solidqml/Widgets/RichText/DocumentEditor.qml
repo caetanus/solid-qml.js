@@ -21,6 +21,10 @@ RichText {
     _initialHtml: ""
 
     // ── state the app reads (reactive) ──────────────────────────────────────────────────────────
+    // Bind to the editor directly: each public property notifies only when its value changes.
+    readonly property int cursorPosition: _editor.cursorPosition
+    readonly property int selectionStart: _editor.selectionStart
+    readonly property int selectionEnd: _editor.selectionEnd
     readonly property bool modified: !!fmt && fmt.modified
     readonly property bool bold: !!fmt && fmt.bold
     readonly property bool italic: !!fmt && fmt.italic
