@@ -174,8 +174,24 @@ TerminalView::TerminalView(QQuickItem *parent)
             ++PerfTrace::ptyReads;
             PerfTrace::ptyBytes += bytes.size();
         }
+        // One batch per read: the vterm callbacks only RECORD that the scrollback/offset moved or the
+        // cursor moved (m_inInput), and the batch notifies once at the end — a `seq` scrolls ~500
+        // lines per 4 KiB read, and per-line scrollChanged() re-ran the QML scrollbar's bindings and
+        // its pulse() handler for every line (26% of the main thread), per-line resetBlink()
+        // restarted the blink QTimer (3.5%). Nothing renders mid-batch, so the observable state is
+        // the same.
+        m_inInput = true;
         vterm_input_write(m_vt, bytes.constData(), size_t(bytes.size()));
         vterm_screen_flush_damage(m_screen);
+        m_inInput = false;
+        if (m_scrollPending) {
+            m_scrollPending = false;
+            emit scrollChanged();
+        }
+        if (m_blinkPending) {
+            m_blinkPending = false;
+            resetBlink();
+        }
         // Output never moves a scrolled-back view (VTE/Tilix default): a TUI that redraws a spinner
         // many times a second (Claude Code) made reading the history impossible. Typing and paste
         // still snap back to live; lines pushed meanwhile keep the view anchored (cbSbPushLine).
@@ -196,7 +212,9 @@ int TerminalView::cbDamage(VTermRect, void *user)
 {
     if (Q_UNLIKELY(PerfTrace::on))
         PerfTrace::stage(PerfTrace::Damage);
-    static_cast<TerminalView *>(user)->update();
+    auto *self = static_cast<TerminalView *>(user);
+    if (!self->m_inInput) // a pty batch update()s once at its end
+        self->update();
     return 1;
 }
 
@@ -205,7 +223,10 @@ int TerminalView::cbMoveCursor(VTermPos pos, VTermPos, int visible, void *user)
     auto *self = static_cast<TerminalView *>(user);
     self->m_cursor = pos;
     self->m_cursorVisible = visible != 0;
-    self->resetBlink();
+    if (self->m_inInput)
+        self->m_blinkPending = true; // once per pty batch, see the bytesRead handler
+    else
+        self->resetBlink();
     return 1;
 }
 
@@ -224,7 +245,7 @@ int TerminalView::cbSetTermProp(VTermProp prop, VTermValue *val, void *user)
         self->m_mouseMode = val->number;
     } else if (prop == VTERM_PROP_ALTSCREEN) {
         self->m_altScreen = val->boolean;
-        self->scrollChanged(); // the scrollbar hides on the alt screen (vim/less), see altScreen()
+        self->notifyScrollChanged(); // the scrollbar hides on the alt screen (vim/less), see altScreen()
     }
     return 1;
 }
@@ -283,7 +304,7 @@ int TerminalView::cbSbPushLine(int cols, const VTermScreenCell *cells, void *use
     if (self->m_scrollback.size() > self->m_scrollbackLimit)
         self->m_scrollback.removeFirst();
     self->m_scrollOffset = offsetAfterPush(self->m_scrollOffset, int(self->m_scrollback.size()));
-    self->scrollChanged(); // scrollbackCount (and maybe scrollOffset) moved — the scrollbar listens
+    self->notifyScrollChanged(); // scrollbackCount (and maybe scrollOffset) moved — the scrollbar listens
     return 1;
 }
 
@@ -294,7 +315,7 @@ int TerminalView::cbSbPopLine(int cols, VTermScreenCell *cells, void *user)
         return 0;
     const SbLine line = self->m_scrollback.takeLast();
     self->m_scrollOffset = clampOffset(self->m_scrollOffset, int(self->m_scrollback.size()));
-    self->scrollChanged();
+    self->notifyScrollChanged();
     const int n = qMin(cols, int(line.cells.size()));
     std::copy(line.cells.begin(), line.cells.begin() + n, cells);
     // A line pushed while the terminal was narrower is padded with REAL blanks — a zeroed cell has

@@ -230,6 +230,19 @@ private:
         QVector<VTermScreenCell> cells;
     };
 
+    // Inside a pty batch (vterm_input_write in the bytesRead handler) the vterm callbacks defer
+    // scrollChanged()/resetBlink()/update() to ONE call at the batch's end.
+    bool m_inInput = false;
+    bool m_scrollPending = false;
+    bool m_blinkPending = false;
+    void notifyScrollChanged()
+    {
+        if (m_inInput)
+            m_scrollPending = true;
+        else
+            emit scrollChanged();
+    }
+
     void ensureSession();
     void applyGrid();                       // width/height/font → rows/cols → vterm + pty
     QColor toQColor(VTermColor c, bool isFg) const;
