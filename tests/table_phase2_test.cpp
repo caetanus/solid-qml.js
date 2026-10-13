@@ -19,6 +19,7 @@
 #include <QQuickTextDocument>
 #include <QSGRendererInterface>
 #include <QFile>
+#include <QElapsedTimer>
 #include <QDir>
 #include <QTemporaryDir>
 #include <QRandomGenerator>
@@ -146,6 +147,68 @@ private slots:
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
         QFile load("/proc/loadavg"); QVERIFY(load.open(QIODevice::ReadOnly));
         qInfo().noquote()<<"LOAD"<<load.readAll().trimmed();
+    }
+    void realBookBenchmark() {
+        const auto mode=qEnvironmentVariable("TABLE_BENCHMARK");
+        if(mode.isEmpty()) QSKIP("Opt-in real-book release benchmark");
+        auto read=[](const char *path) { QFile f(QString::fromLatin1(path)); if(!f.open(QIODevice::ReadOnly)) return QByteArray(); return f.readAll(); };
+        QVERIFY(read("/proc/loadavg").split(' ').first().toDouble()<6);
+        QTextDocument empty; BookView view; QVERIFY(view.initialize(empty,false,1,true));
+        view.handler.setLayoutEngine(mode); auto &d=*view.doc;
+        QElapsedTimer timer; timer.start(); d.setLayoutEnabled(false);
+        QVERIFY(view.handler.loadOdf(QUrl::fromLocalFile(qEnvironmentVariable("RICHTEXT_BOOK"))));
+        view.handler.configurePages(794,1118,32,{94,113,94,113}); d.setLayoutEnabled(true);
+        auto *layout=dynamic_cast<rt::RichTextLayout *>(d.documentLayout());
+        QCOMPARE(bool(layout),mode=="custom");
+        if(layout && qEnvironmentVariable("TABLE_DECORATION")=="painted") {
+            delete view.edit->findChild<QQuickItem *>("tableDecoration");
+            new rt::TableDecoration(layout,view.edit.data());
+        }
+        view.edit->setHeight(d.documentLayout()->documentSize().height()); QVERIFY(!view.frame(0,true).isNull());
+        qInfo()<<"OPEN parse layout frame ms"<<timer.nsecsElapsed()/1e6;
+        qInfo().noquote()<<"PSS"<<read("/proc/self/smaps_rollup");
+        QTextTable *middle=nullptr;
+        for(auto *frame:d.rootFrame()->childFrames()) if(auto *table=qobject_cast<QTextTable *>(frame))
+            if(!middle || qAbs(table->firstPosition()-d.characterCount()/2)<qAbs(middle->firstPosition()-d.characterCount()/2)) middle=table;
+        QVERIFY(middle);
+        const int inside=middle->cellAt(middle->rows()/2,middle->columns()-1).firstPosition();
+        int adjacent=middle->lastPosition()+1;
+        while(adjacent<d.characterCount()-1 && QTextCursor(d.findBlock(adjacent)).currentTable()) adjacent=d.findBlock(adjacent).next().position();
+        for(int scenario=0;scenario<8;++scenario) {
+            QList<double> times;
+            for(int sample=0;sample<7;++sample) {
+                QTextCursor c(&d); c.setPosition(scenario==0 ? 10 : scenario==2 ? d.characterCount()-2 : scenario==6 ? adjacent : scenario==7 ? inside : d.characterCount()/2);
+                if(scenario==5) c.movePosition(QTextCursor::StartOfBlock);
+                view.edit->setProperty("cursorPosition",c.position()); view.handler.setCursorPosition(c.position());
+                if(!sample) qInfo()<<"POSITION"<<scenario<<c.position()<<"in table"<<bool(c.currentTable());
+                if(layout) layout->counters={};
+                timer.restart();
+                if(scenario==3) c.insertBlock();
+                else if(scenario==4) c.insertText("A pasted paragraph with several words.\nAnother paragraph.");
+                else if(scenario==5) c.deletePreviousChar();
+                else c.insertText("x");
+                d.documentLayout()->documentSize(); times.append(timer.nsecsElapsed()/1e6);
+                if(layout) { const auto &n=layout->counters; qInfo()<<"COUNTERS"<<scenario<<n.shapedBlocks<<n.shapedCharacters<<n.placements<<n.translations<<n.convergences<<n.tableSolves<<n.cellReplays; }
+                d.undo(); d.documentLayout()->documentSize();
+            }
+            std::sort(times.begin(),times.end()); qInfo()<<"BENCH"<<scenario<<"median"<<times[3]<<"p95"<<times.last();
+            if(layout && scenario==1) QVERIFY2(times[3]<4,"Real-book midpoint must be below 4 ms");
+        }
+        QTextCursor editCursor(&d); editCursor.setPosition(d.characterCount()/2);
+        const qreal editY=d.documentLayout()->blockBoundingRect(editCursor.block()).y()-250;
+        view.edit->setProperty("cursorPosition",editCursor.position());
+        const auto before=view.frame(editY,true); timer.restart(); editCursor.insertText("x");
+        const auto after=view.frame(editY,true);
+        qInfo()<<"EDIT through rendered frame ms"<<timer.nsecsElapsed()/1e6;
+        QVERIFY(before!=after); d.undo(); d.documentLayout()->documentSize();
+        const qreal start=d.documentLayout()->frameBoundingRect(middle).y()-150;
+        view.frame(start,true); timer.restart();
+        for(int i=0;i<100;++i) QVERIFY(!view.frame(start+i*5,true).isNull());
+        qInfo()<<"SCROLL 100 small frames ms"<<timer.nsecsElapsed()/1e6;
+        timer.restart(); for(int i=0;i<10;++i) QVERIFY(!view.frame(start+i*600,true).isNull());
+        qInfo()<<"SCROLL 10 page-down frames ms"<<timer.nsecsElapsed()/1e6;
+        qInfo().noquote()<<"LOAD END"<<read("/proc/loadavg").trimmed();
+        QVERIFY(read("/proc/loadavg").split(' ').first().toDouble()<6);
     }
     void odfCellAlignmentRoundTrip() {
         QTemporaryDir dir; QVERIFY(dir.isValid());
@@ -482,7 +545,7 @@ private slots:
                 QCOMPARE(bl.textStart(),al.textStart()); QCOMPARE(bl.textLength(),al.textLength());
                 const auto ap=ar.topLeft()+al.position(),bp=br.topLeft()+bl.position();
                 // Long middle/bottom rows use the maintainer's invariant oracle.
-                if(kind==9 || kind==11 || kind==16 || kind==17) {
+                if(kind==9 || kind==11) {
                     const auto page=qFloor(bp.y()/stride);
                     QVERIFY(bp.y()>=page*stride+10);
                     QVERIFY(bp.y()+bl.height()<=page*stride+110);
