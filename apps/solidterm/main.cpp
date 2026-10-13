@@ -32,6 +32,9 @@
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QTimer>
+#include <QElapsedTimer>
+
+#include <type_traits>
 #include <QGuiApplication>
 #include <QClipboard>
 #include <QSurfaceFormat>
@@ -846,6 +849,78 @@ int main(int argc, char **argv)
 // TerminalView::outputPaused across press/hold/release/resume. Must show frozen counts + paused=true
 // for the whole hold, then paused=false and growing counts again after release. Real input via
 // QWindowSystemInterface — see the AUTOSCROLLTEST comment above for why (not a raw QMouseEvent).
+    // Debug/CI: SOLIDTERM_THREADSTRESS=<ms> — race harness for the parser thread (run it under
+    // ThreadSanitizer with a flooding SHELL, e.g. scripts/solidterm-threadstress.sh). Every 5 ms it
+    // does one GUI-side thing that touches the screen while the parser writes it: search / next /
+    // clear, scroll back and to live, hover (link scan), a selection drag (pause → copy → resume),
+    // a key, a scrollback-limit change, a window resize, a wheel notch, and every few hundred steps
+    // a split (a second flooding pane) or closing the focused pane mid-flood. Quits after <ms>.
+    if (const int stressMs = qEnvironmentVariableIntValue("SOLIDTERM_THREADSTRESS"); stressMs > 0 && window) {
+        QTimer::singleShot(1500, window, [window, stressMs] {
+            auto find = [window](auto *dummy) {
+                using T = std::remove_pointer_t<decltype(dummy)>;
+                QList<QQuickItem *> stack { window->contentItem() };
+                while (!stack.isEmpty()) {
+                    QQuickItem *it = stack.takeLast();
+                    if (auto *t = qobject_cast<T *>(it))
+                        return t;
+                    for (QQuickItem *k : it->childItems()) stack.append(k);
+                }
+                return static_cast<T *>(nullptr);
+            };
+            auto *timer = new QTimer(window);
+            auto *step = new int(0);
+            auto *clock = new QElapsedTimer;
+            clock->start();
+            timer->setInterval(5);
+            QObject::connect(timer, &QTimer::timeout, window, [=] {
+                if (clock->elapsed() > stressMs) {
+                    timer->stop();
+                    qInfo("solidterm: threadstress done, %d steps", *step);
+                    QCoreApplication::quit();
+                    return;
+                }
+                TerminalView *view = find(static_cast<TerminalView *>(nullptr));
+                TerminalPanes *panes = find(static_cast<TerminalPanes *>(nullptr));
+                if (!view)
+                    return;
+                const int n = (*step)++;
+                const QPointF a = view->mapToScene(QPointF(view->width() * 0.3, view->height() * 0.4));
+                const QPointF b = view->mapToScene(QPointF(view->width() * 0.7, view->height() * 0.6));
+                const QPointF h = view->mapToScene(QPointF((n * 37) % qMax(1, int(view->width())),
+                                                           (n * 53) % qMax(1, int(view->height()))));
+                auto mouse = [window](QPointF p, Qt::MouseButtons buttons, Qt::MouseButton button, QEvent::Type type) {
+                    QWindowSystemInterface::handleMouseEvent(window, p, window->mapToGlobal(p.toPoint()), buttons,
+                                                             button, type);
+                };
+                if (panes && n % 400 == 200)
+                    panes->split(n % 800 == 200 ? 1 : 2);
+                if (panes && n % 400 == 300)
+                    panes->closeFocused(); // closes a flooding pane (the last one quits the app: keep one)
+                switch (n % 14) {
+                case 0: view->search(QStringLiteral("7")); break;
+                case 1: view->searchNext(); break;
+                case 2: view->clearSearch(); break;
+                case 3: view->scrollTo(view->scrollbackCount() / 2); break;
+                case 4: view->scrollTo(0); break;
+                case 5: mouse(h, Qt::NoButton, Qt::NoButton, QEvent::MouseMove); break; // hover: link scan
+                case 6: mouse(a, Qt::LeftButton, Qt::LeftButton, QEvent::MouseButtonPress); break; // pause
+                case 7: mouse(b, Qt::LeftButton, Qt::NoButton, QEvent::MouseMove); break;
+                case 8: mouse(b, Qt::NoButton, Qt::LeftButton, QEvent::MouseButtonRelease); break; // copy + resume
+                case 9:
+                    QWindowSystemInterface::handleKeyEvent(window, QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, QStringLiteral("a"));
+                    QWindowSystemInterface::handleKeyEvent(window, QEvent::KeyRelease, Qt::Key_A, Qt::NoModifier, QStringLiteral("a"));
+                    break;
+                case 10: view->setScrollbackLimit((n / 14) % 2 ? 300 : 8000); break;
+                case 11: window->resize(window->width() + ((n / 14) % 2 ? 37 : -37), window->height() + ((n / 14) % 2 ? 19 : -19)); break;
+                case 12: QWindowSystemInterface::handleWheelEvent(window, h, window->mapToGlobal(h.toPoint()), QPoint(0, 0), QPoint(0, 120)); break;
+                case 13: view->copySelection(); break;
+                }
+            });
+            timer->start();
+        });
+    }
+
     if (qEnvironmentVariableIsSet("SOLIDTERM_PAUSETEST") && window) {
         QTimer::singleShot(1600, window, [&engine, window] {
             TerminalView *view = nullptr;
