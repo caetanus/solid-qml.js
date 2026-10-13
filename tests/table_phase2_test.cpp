@@ -1,5 +1,8 @@
 #include "shims/richtext_layout.h"
+#include "shims/richtext_table_decoration.h"
 #include "shims/richtext_odf.h"
+#include "shims/richtext.h"
+#include "shims/richtext_qt_p.h"
 // Public-API Qt oracle and custom table acceptance tests.
 #include <QTest>
 #include <QTextDocument>
@@ -97,6 +100,47 @@ static QTextTable *fixture(QTextDocument &d, int kind) {
 }
 
 
+struct BookView {
+    QQmlEngine engine;
+    QQuickWindow window;
+    QScopedPointer<QQuickItem> edit;
+    RichTextHandler handler;
+    QTextDocument *doc=nullptr;
+    rt::RichTextLayout *layout=nullptr;
+    bool initialize(const QTextDocument &source, bool custom, qreal zoom, bool culled) {
+        window.resize(qCeil(794*zoom),qCeil(700*zoom)); window.setColor(Qt::white);
+        window.contentItem()->setClip(true);
+        QQmlComponent component(&engine);
+        component.setData("import QtQuick\nTextEdit { textFormat: TextEdit.RichText; wrapMode: TextEdit.Wrap; cursorVisible: false; color: 'black' }",QUrl());
+        edit.reset(qobject_cast<QQuickItem *>(component.create())); if(!edit) return false;
+        edit->setParentItem(window.contentItem()); edit->setWidth(794*zoom);
+        doc=source.clone(&engine);
+        auto *quick=qvariant_cast<QQuickTextDocument *>(edit->property("textDocument"));
+        quick->setTextDocument(doc); handler.setDocument(quick); handler.setLayoutEngine("qt");
+        handler.setZoom(zoom); handler.configurePages(794*zoom,1118*zoom,32*zoom,{94*zoom,113*zoom,94*zoom,113*zoom});
+        if(custom) {
+            auto *image=dynamic_cast<QObject *>(doc->documentLayout()->handlerForObject(QTextFormat::ImageObject));
+            if(image) image->setParent(doc);
+            doc->setLayoutEnabled(false); layout=new rt::RichTextLayout(doc); doc->setDocumentLayout(layout);
+            if(image) layout->registerHandler(QTextFormat::ImageObject,image);
+            if(!rt::attachCustomLayoutToTextEdit(edit.data(),doc)) return false;
+            doc->markContentsDirty(0,doc->characterCount()); doc->setLayoutEnabled(true);
+            qEnvironmentVariable("TABLE_DECORATION")=="painted"
+                ? static_cast<QQuickItem *>(new rt::TableDecoration(layout,edit.data()))
+                : static_cast<QQuickItem *>(new rt::NodeTableDecoration(layout,edit.data()));
+        }
+        edit->setHeight(doc->documentLayout()->documentSize().height());
+        edit->setFlag(QQuickItem::ItemObservesViewport,culled);
+        window.show(); return QTest::qWaitForWindowExposed(&window);
+    }
+    QImage frame(qreal y, bool culled) {
+        edit->setY(-y); edit->setFlag(QQuickItem::ItemObservesViewport,culled);
+        if(culled) handler.refreshViewport();
+        QCoreApplication::sendPostedEvents(); QCoreApplication::processEvents();
+        return window.grabWindow();
+    }
+};
+
 class TablePhase2Tests : public QObject {
     Q_OBJECT
 private slots:
@@ -119,6 +163,99 @@ private slots:
         auto *copy=qobject_cast<QTextTable *>(frames.first()); QVERIFY(copy);
         QCOMPARE(copy->cellAt(0,0).format().verticalAlignment(),QTextCharFormat::AlignBottom);
         QCOMPARE(copy->cellAt(0,1).format().verticalAlignment(),QTextCharFormat::AlignMiddle);
+    }
+    void bookPixels_data() {
+        QTest::addColumn<qreal>("zoom"); QTest::newRow("zoom-1")<<qreal(1); QTest::newRow("zoom-1.5")<<qreal(1.5);
+    }
+    void bookPixels() {
+        if(!qEnvironmentVariableIsSet("RICHTEXT_BOOK")) QSKIP("Set RICHTEXT_BOOK");
+        QFETCH(qreal,zoom);
+        QTextDocument source; rt::StyleSheet styles; QString error;
+        QVERIFY2(rt::readOdt(qEnvironmentVariable("RICHTEXT_BOOK"),&source,&styles,&error),qPrintable(error));
+        BookView qt,qtFull,custom,customFull;
+        QVERIFY(qt.initialize(source,false,zoom,true)); QVERIFY(qtFull.initialize(source,false,zoom,false));
+        QVERIFY(custom.initialize(source,true,zoom,true)); QVERIFY(customFull.initialize(source,true,zoom,false));
+        if(qEnvironmentVariableIsSet("TABLE_DUMP")) {
+            auto a=qt.doc->begin(),b=custom.doc->begin();
+            for(int i=0;i<12;++i,a=a.next(),b=b.next()) {
+                qInfo()<<"ZOOM GEOMETRY"<<zoom<<i<<qt.doc->documentLayout()->blockBoundingRect(a)<<custom.layout->blockBoundingRect(b);
+                for(int n=0;n<qMin(a.layout()->lineCount(),b.layout()->lineCount());++n)
+                    qInfo()<<"ZOOM LINE"<<n<<a.layout()->lineAt(n).position()<<b.layout()->lineAt(n).position()<<a.layout()->lineAt(n).height()<<b.layout()->lineAt(n).height();
+            }
+        }
+        QCOMPARE(custom.doc->pageCount(),qt.doc->pageCount());
+        for(auto a=qt.doc->begin(),b=custom.doc->begin();a.isValid();a=a.next(),b=b.next()) {
+            const auto ar=qt.doc->documentLayout()->blockBoundingRect(a),br=custom.layout->blockBoundingRect(b);
+            QCOMPARE(a.layout()->lineCount(),b.layout()->lineCount());
+            for(int n=0;n<a.layout()->lineCount();++n) {
+                const auto al=a.layout()->lineAt(n),bl=b.layout()->lineAt(n);
+                QCOMPARE(al.textStart(),bl.textStart()); QCOMPARE(al.textLength(),bl.textLength());
+                const auto ap=ar.topLeft()+al.position(),bp=br.topLeft()+bl.position();
+                QCOMPARE(qFloor(ap.y()/(1150*zoom)),qFloor(bp.y()/(1150*zoom)));
+                QVERIFY2(qAbs(ap.x()-bp.x())<=.5 && qAbs(ap.y()-bp.y())<=.5 && qAbs(al.width()-bl.width())<=.5,
+                         qPrintable(QString("zoom %1 block %2 line %3 Qt %4,%5 custom %6,%7").arg(zoom).arg(a.blockNumber()).arg(n).arg(ap.x()).arg(ap.y()).arg(bp.x()).arg(bp.y())));
+            }
+        }
+        const auto tables=qt.doc->rootFrame()->childFrames(); QVERIFY(tables.size()>2);
+        const auto tableY=[&](int n) { return qt.doc->documentLayout()->frameBoundingRect(tables[n]).y(); };
+        const QList<qreal> offsets={0,qMax(0.,tableY(0)-50*zoom),tableY(tables.size()/2)-50*zoom,tableY(tables.size()-1)-50*zoom,qt.doc->documentLayout()->documentSize().height()/3,tableY(0)-200*zoom};
+        for(int i=0;i<offsets.size();++i) {
+            const auto expected=qt.frame(offsets[i],true), full=qtFull.frame(offsets[i],false);
+            const auto actual=custom.frame(offsets[i],true), unculled=customFull.frame(offsets[i],false);
+            qInfo()<<"BOOK PIXELS"<<zoom<<i<<offsets[i];
+            if(expected!=full || actual!=unculled || actual!=expected) {
+                artifact(expected,QString("8-book-qt-%1-%2.png").arg(zoom).arg(i));
+                artifact(actual,QString("8-book-custom-%1-%2.png").arg(zoom).arg(i));
+                artifact(full,QString("8-book-qt-full-%1-%2.png").arg(zoom).arg(i));
+                artifact(unculled,QString("8-book-custom-full-%1-%2.png").arg(zoom).arg(i));
+            }
+            QCOMPARE(expected,full); QCOMPARE(actual,unculled);
+            QCOMPARE(actual,expected);
+        }
+    }
+    void quickTableDecoration() {
+        const auto render=[&](bool custom) {
+            QQmlEngine engine; QQuickWindow window; window.resize(300,140); window.setColor(Qt::white);
+            QQmlComponent component(&engine);
+            component.setData("import QtQuick\nTextEdit { width: 300; height: 280; textFormat: TextEdit.RichText; wrapMode: TextEdit.Wrap; cursorVisible: false; color: 'black' }",QUrl());
+            QScopedPointer<QQuickItem> edit(qobject_cast<QQuickItem *>(component.create()));
+            if(!edit) return QImage();
+            edit->setParentItem(window.contentItem());
+            auto *doc=new QTextDocument(&engine); fixture(*doc,0);
+            rt::RichTextLayout *layout=nullptr;
+            if(custom) { layout=new rt::RichTextLayout(doc); doc->setDocumentLayout(layout); }
+            auto *quickDoc=qvariant_cast<QQuickTextDocument *>(edit->property("textDocument"));
+            quickDoc->setTextDocument(doc); doc->setPageSize({300,140});
+            if(custom) qEnvironmentVariable("TABLE_DECORATION")=="painted"
+                ? static_cast<QQuickItem *>(new rt::TableDecoration(layout,edit.data()))
+                : static_cast<QQuickItem *>(new rt::NodeTableDecoration(layout,edit.data()));
+            window.show(); if(!QTest::qWaitForWindowExposed(&window)) return QImage();
+            QCoreApplication::sendPostedEvents(); QCoreApplication::processEvents();
+            return window.grabWindow();
+        };
+        const auto expected=render(false),actual=render(true);
+        QVERIFY(!expected.isNull()); QVERIFY(!actual.isNull());
+        artifact(expected,"8-quick-decoration-qt.png"); artifact(actual,"8-quick-decoration-custom.png");
+        QCOMPARE(actual,expected);
+    }
+    void tablePainterDecoration_data() {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("collapsed")<<0;
+        QTest::newRow("separate")<<3;
+        QTest::newRow("background")<<13;
+    }
+    void tablePainterDecoration() {
+        QFETCH(int,kind); QTextDocument qt; auto *table=fixture(qt,kind);
+        if(kind==13) { auto cell=table->cellAt(0,1); auto format=cell.format(); format.setBackground(QColor("#d8f0ff")); cell.setFormat(format); }
+        qt.documentLayout()->documentSize();
+        QScopedPointer<QTextDocument> custom(qt.clone()); custom->setDocumentLayout(new rt::RichTextLayout(custom.data()));
+        QImage expected(300,280,QImage::Format_ARGB32_Premultiplied); expected.fill(Qt::white);
+        QImage actual=expected;
+        { QPainter p(&expected); qt.drawContents(&p); }
+        { QPainter p(&actual); custom->drawContents(&p); }
+        artifact(expected,QString("8-decoration-qt-%1.png").arg(kind));
+        artifact(actual,QString("8-decoration-custom-%1.png").arg(kind));
+        QCOMPARE(actual,expected);
     }
     void incrementalTables() {
         QTextDocument doc; auto *table=fixture(doc,10);
@@ -234,6 +371,14 @@ private slots:
                 qInfo()<<"CUSTOM"<<b.blockNumber()<<custom->documentLayout()->blockBoundingRect(b);
                 for(int i=0;i<b.layout()->lineCount();++i) { auto l=b.layout()->lineAt(i); qInfo()<<"LINE"<<l.textStart()<<l.textLength()<<l.position()<<l.height()<<l.width(); }
             }
+        }
+        const auto qtFrames=qt.rootFrame()->childFrames(), customFrames=custom->rootFrame()->childFrames();
+        QCOMPARE(qtFrames.size(),customFrames.size());
+        for(int i=0;i<qtFrames.size();++i) {
+            const auto a=qt.documentLayout()->frameBoundingRect(qtFrames[i]);
+            const auto b=custom->documentLayout()->frameBoundingRect(customFrames[i]);
+            QVERIFY2(qAbs(a.x()-b.x())<=.5 && qAbs(a.y()-b.y())<=.5 && qAbs(a.width()-b.width())<=.5 && qAbs(a.height()-b.height())<=.5,
+                     qPrintable(QString("frame Qt %1,%2 %3x%4 custom %5,%6 %7x%8").arg(a.x()).arg(a.y()).arg(a.width()).arg(a.height()).arg(b.x()).arg(b.y()).arg(b.width()).arg(b.height())));
         }
         QCOMPARE(custom->pageCount(),qt.pageCount());
         auto a=qt.begin(), b=custom->begin();

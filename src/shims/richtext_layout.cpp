@@ -54,8 +54,7 @@ void RichTextLayout::drawInlineObject(QPainter *painter, const QRectF &rect, QTe
         QAbstractTextDocumentLayout::drawInlineObject(painter, rect, object, position, format);
     } else if (format.isImageFormat()) {
         const auto resource = document()->resource(QTextDocument::ImageResource, QUrl(format.toImageFormat().name()));
-        if (resource.metaType()==QMetaType::fromType<QPixmap>()) painter->drawPixmap(rect,qvariant_cast<QPixmap>(resource),{});
-        else painter->drawImage(rect, qvariant_cast<QImage>(resource));
+        painter->drawImage(rect, qvariant_cast<QImage>(resource));
     }
 }
 void RichTextLayout::resizeInlineObject(QTextInlineObject object, int position, const QTextFormat &format)
@@ -68,10 +67,6 @@ void RichTextLayout::resizeInlineObject(QTextInlineObject object, int position, 
         const auto resource = document()->resource(QTextDocument::ImageResource, QUrl(imageFormat.name()));
         const QImage image = qvariant_cast<QImage>(resource);
         size = image.size() / image.devicePixelRatio();
-        if (resource.metaType()==QMetaType::fromType<QPixmap>()) {
-            const auto pixmap=qvariant_cast<QPixmap>(resource);
-            size=pixmap.size()/pixmap.devicePixelRatio();
-        }
         if (imageFormat.width() > 0) size.setWidth(imageFormat.width());
         if (imageFormat.height() > 0) size.setHeight(imageFormat.height());
     }
@@ -290,15 +285,19 @@ void RichTextLayout::layoutTable(QTextTable *table, Flow &flow, Pass &pass)
         for (int row=cell.row();row<cell.row()+cell.rowSpan();++row) have+=heights[row];
         heights[cell.row()+cell.rowSpan()-1]+=qMax(0.,entry.height-have);
     }
-    QVector<qreal> spanEnds(rows);
+    QVector<qreal> spanEnds(rows), rowStarts(rows), rowEnds(rows);
     qreal y=flow.y+edge;
-    const qreal tableTop=y;
+    qreal tableTop=y;
     for (int row=0;row<rows;++row) {
         const qreal textTop=qFloor(y/stride)*stride+m_root.topMargin()+edge;
         const qreal textBottom=(qFloor(y/stride)+1)*stride-m_root.bottomMargin()-edge;
         const qreal capacity=stride-m_root.topMargin()-m_root.bottomMargin()-2*edge;
-        if (heights[row]<=capacity && y+heights[row]>textBottom && y>textTop)
+        if (heights[row]<=capacity && y+heights[row]>textBottom && y>textTop) {
+            if (row>0) rowEnds[row-1]=qMax(rowEnds[row-1],textBottom);
             y=(qFloor(y/stride)+1)*stride+m_root.topMargin()+edge;
+        }
+        if (row==0) tableTop=y;
+        rowStarts[row]=y;
         qreal end=y+heights[row];
         for (const auto &entry:cells) if (entry.cell.row()==row) {
             const auto cell=entry.cell;
@@ -328,9 +327,35 @@ void RichTextLayout::layoutTable(QTextTable *table, Flow &flow, Pass &pass)
                 }
             }
         }
+        rowEnds[row]=end;
         y=end+(row+1<rows ? between : edge);
     }
-    m_tables.insert(table,{m_root.leftMargin()+edge,tableTop,tableWidth,y-(tableTop-edge)});
+    if (!m_tables.contains(table)) connect(table,&QObject::destroyed,this,[this,table] {
+        m_tables.remove(table); m_tableFragments.remove(table);
+    });
+    m_tables.insert(table,{m_root.leftMargin()+edge+cells.first().left,tableTop+cells.first().top,tableWidth,y-(tableTop-edge)});
+    auto &fragments=m_tableFragments[table]; fragments.clear();
+    QPen pen(format.borderBrush(),border);
+    if (border<=0 || format.borderStyle()==QTextFrameFormat::BorderStyle_None) pen.setStyle(Qt::NoPen);
+    if (!format.borderCollapse()) {
+        fragments.append({{m_root.leftMargin(),tableTop-edge,tableWidth-border,y-(tableTop-edge)-border},format.background(),pen,true,true,false});
+    }
+    for (const auto &entry:cells) {
+        const auto cell=entry.cell;
+        qreal x=m_root.leftMargin()+edge-padding-border, cellWidth=(cell.columnSpan()-1)*between+2*padding+border;
+        for (int col=0;col<cell.column();++col) x+=widths[col]+between;
+        for (int col=cell.column();col<cell.column()+cell.columnSpan();++col) cellWidth+=widths[col];
+        const qreal first=rowStarts[cell.row()]-padding-border;
+        const qreal last=rowEnds[cell.row()+cell.rowSpan()-1]+padding;
+        for (int page=qFloor(first/stride);page<=qFloor(last/stride);++page) {
+            const qreal pageTop=page*stride+m_root.topMargin()+border;
+            const qreal pageBottom=(page+1)*stride-m_root.bottomMargin()-border;
+            const qreal fragmentTop=qMax(first,pageTop), fragmentBottom=qMin(last,pageBottom);
+            if (fragmentBottom<fragmentTop) continue;
+            const auto background=cell.format().background().style()==Qt::NoBrush ? format.background() : cell.format().background();
+            fragments.append({{x,fragmentTop,cellWidth,fragmentBottom-fragmentTop},background,pen,first>=pageTop,last<=pageBottom,format.borderCollapse()});
+        }
+    }
     flow={y,format.bottomMargin(),false};
 }
 void RichTextLayout::documentChanged(int from, int removed, int added)
@@ -341,7 +366,9 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
     // transaction will provide the complete dirty range and publish geometry once.
     if (!doc->isLayoutEnabled()) return;
     const auto page = doc->pageSize();
-    const auto root = doc->rootFrame()->frameFormat();
+    auto root = doc->rootFrame()->frameFormat();
+    root.setTopMargin(qRound(root.topMargin())); root.setBottomMargin(qRound(root.bottomMargin()));
+    root.setLeftMargin(qRound(root.leftMargin())); root.setRightMargin(qRound(root.rightMargin()));
     const bool full = m_blocks.isEmpty() || page != m_page || root != m_root
         || (from == 0 && added >= doc->characterCount()-1);
     m_page = page; m_root = root;
@@ -410,6 +437,12 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
                     ++counters.translations; pass.changed.append(tail);
                 }
             }
+            if (delta!=0) for (auto *frame:doc->rootFrame()->childFrames()) {
+                auto *table=qobject_cast<QTextTable *>(frame);
+                if (!table || table->firstPosition()<=b.position()) continue;
+                m_tables[table].translate(0,delta);
+                for (auto &fragment:m_tableFragments[table]) fragment.rect.translate(0,delta);
+            }
             if (auto *last = blockInfo(doc->lastBlock())) flow = m_blocks.value(last->lifetime).outgoing;
             break;
         }
@@ -423,6 +456,12 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
         m_widthDirty = false;
     }
     m_size = QSizeF(documentWidth, page.height() > 0 ? m_pages*stride : flow.y+bottom);
+    m_fragments.clear();
+    for (auto *frame:doc->rootFrame()->childFrames()) {
+        auto *table=qobject_cast<QTextTable *>(frame);
+        const auto found=m_tableFragments.constFind(table);
+        if (found!=m_tableFragments.cend()) m_fragments.append(*found);
+    }
     // Publish only after every queried rectangle and live layout agrees.
     for (const auto &block : pass.changed) emit updateBlock(block);
     if (m_size != oldSize) emit documentSizeChanged(m_size);
@@ -449,10 +488,44 @@ int RichTextLayout::hitTest(const QPointF &point, Qt::HitTestAccuracy accuracy) 
     }
     return result;
 }
+void RichTextLayout::drawTableDecorations(QPainter *painter, const QRectF &clip, bool quick) const
+{
+    painter->save();
+    if (!clip.isEmpty()) painter->setClipRect(clip,Qt::IntersectClip);
+    for (const auto &fragment:m_fragments) {
+        if (!clip.isEmpty() && !fragment.rect.adjusted(-1,-1,1,1).intersects(clip)) continue;
+        if (quick) {
+            painter->fillRect(fragment.rect,fragment.background);
+            if (fragment.border.style()==Qt::NoPen) continue;
+            const qreal width=fragment.border.widthF();
+            const qreal inset=fragment.collapsed ? -width/2 : 0;
+            const auto rect=fragment.rect.translated(inset,inset);
+            const auto edge=[&](const QRectF &band) {
+                painter->fillRect(band.toAlignedRect(),fragment.border.brush());
+            };
+            edge({rect.left(),rect.top(),width,rect.height()+width});
+            edge({rect.right(),rect.top(),width,rect.height()+width});
+            if (fragment.top) edge({rect.left(),rect.top(),rect.width()+width,width});
+            if (fragment.bottom) edge({rect.left(),rect.bottom(),rect.width()+width,width});
+            continue;
+        }
+        painter->setPen(fragment.border); painter->setBrush(fragment.background);
+        if (fragment.top && fragment.bottom) painter->drawRect(fragment.rect);
+        else {
+            painter->fillRect(fragment.rect,fragment.background);
+            painter->drawLine(fragment.rect.topLeft(),fragment.rect.bottomLeft());
+            painter->drawLine(fragment.rect.topRight(),fragment.rect.bottomRight());
+            if (fragment.top) painter->drawLine(fragment.rect.topLeft(),fragment.rect.topRight());
+            if (fragment.bottom) painter->drawLine(fragment.rect.bottomLeft(),fragment.rect.bottomRight());
+        }
+    }
+    painter->restore();
+}
 void RichTextLayout::draw(QPainter *painter, const PaintContext &context)
 {
     painter->save();
     if (!context.clip.isEmpty()) painter->setClipRect(context.clip, Qt::IntersectClip);
+    drawTableDecorations(painter,context.clip);
     painter->setPen(context.palette.color(QPalette::Text));
     for (auto b = document()->begin(); b.isValid(); b = b.next()) {
         const auto rect = blockBoundingRect(b);
