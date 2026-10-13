@@ -124,8 +124,11 @@ test("menus: the C++ Menu hosts the popup shell (implicit size, Popup.Window, cs
   // Popup.Window: its own popup surface so it overflows the app window (opened synchronously via the
   // ref/trigger/context forms so the Wayland grab gets a fresh input serial).
   assert.match(src, /setPopupType\(QQuickPopup::Window\)/);
-  // Width floor on the POPUP itself — a background CssFill's implicitWidth is clobbered by the engine.
-  assert.match(src, /setImplicitWidth\(qMax<qreal>\(180\.0, qMax\(implicitContentWidth\(\) \+ leftPadding\(\) \+ rightPadding\(\),/);
+  // Width = max(widest row, Adwaita's 120px content floor) + padding — a background CssFill's
+  // implicitWidth is clobbered by the engine, and a per-row/flat 180 floor used to wrap long
+  // labels (the widest row never fed its width up to the Menu before — see kMenuContent below).
+  assert.match(src, /constexpr qreal kContentFloor = 120\.0;/);
+  assert.match(src, /setImplicitWidth\(qMax\(qMax\(implicitContentWidth\(\), kContentFloor\) \+ leftPadding\(\) \+ rightPadding\(\),/);
   // Padding reserves BOTH the transparent shadow gutter and the real Adwaita row inset (see
   // kMenuShadowMargin/kMenuContentGutter in menuwidgets.cpp) — no longer a bare `setPadding(1)`.
   assert.match(src, /setPadding\(kMenuShadowMargin \+ kMenuContentGutter\)/);

@@ -66,7 +66,11 @@
    "option"/"sep" sit on the SAME element, and the selector must ask for both on self, not ancestor+self. */
 .tmenu.popup { border-radius: 15px; }
 .tmenu.option { border-radius: 9px; }
-.tmenu.option-label { font-size: 13px; }
+/* A native menu never wraps an item's label — the POPUP sizes to the content, not the other way
+   round (see Menu/MenuItem::syncImplicit, menuwidgets.cpp, for the width-propagation fix this
+   pairs with: the ListView that hosts these rows never fed the widest one's width up to the Menu
+   before, so the card could end up narrower than a long label needed). */
+.tmenu.option-label { font-size: 13px; white-space: nowrap; }
 .tmenu.sep { margin: 6px 0; }
 
 /* preferences window — GNOME Settings geometry (grouped cards of label→control rows).

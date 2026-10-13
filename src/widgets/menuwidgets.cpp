@@ -38,11 +38,29 @@ Css.CssFill {
 
 const char *kMenuContent = R"(import QtQuick
 ListView {
+    id: lv
     property Item cssAncestor: root.cssAncestor
     clip: true
     model: root.contentModel
     currentIndex: root.currentIndex
     implicitHeight: contentHeight
+    // A vertical ListView never auto-sizes to its delegates' width (only Row/Column propagate
+    // implicit sizes) — `model` here is an OBJECT model (the actual MenuItem/MenuSeparator
+    // instances, not a data+delegate pair), so nothing ever fed the Menu's own implicitWidth the
+    // widest row's natural size; it silently fell back to the Menu's bare floor, and a long label
+    // (e.g. "Clear scrollback") wrapped inside whatever was left after padding. A native menu never
+    // wraps an item — the POPUP sizes to the content, not the other way round. `count`/`itemAtIndex`
+    // re-run this whenever a row is added/removed/relabelled (itemAtIndex's reads of
+    // `implicitWidth` are real property reads, so the binding re-evaluates when any row's own
+    // implicitWidth changes too — e.g. once a row's text metrics settle after font load).
+    implicitWidth: {
+        var w = 0
+        for (var i = 0; i < count; ++i) {
+            var it = lv.itemAtIndex(i)
+            if (it) w = Math.max(w, it.implicitWidth)
+        }
+        return w
+    }
     // Arrow keys belong to the MENU (activateNext/PreviousItem skips separators and moves
     // `highlighted`); an interactive ListView consumes the press itself once focus sits on
     // an item, so navigation only advances every other key (QTBUG-17051 — Basic's Menu
@@ -167,8 +185,12 @@ void Menu::componentComplete()
 
 void Menu::syncImplicit()
 {
-    setImplicitWidth(qMax<qreal>(180.0, qMax(implicitContentWidth() + leftPadding() + rightPadding(),
-                                              implicitBackgroundWidth() + leftInset() + rightInset())));
+    // Real Adwaita floor: `popover.menu > contents { min-width: 120px }` (gtk.css:1721) — applied
+    // to the CONTENT width (before padding), not the window total, so a short menu (e.g. a 2-item
+    // one) still gets a sensible card instead of shrink-wrapping to its narrowest label.
+    constexpr qreal kContentFloor = 120.0;
+    setImplicitWidth(qMax(qMax(implicitContentWidth(), kContentFloor) + leftPadding() + rightPadding(),
+                           implicitBackgroundWidth() + leftInset() + rightInset()));
     setImplicitHeight(qMax(implicitBackgroundHeight() + topInset() + bottomInset(),
                            implicitContentHeight() + topPadding() + bottomPadding()));
 }
@@ -231,7 +253,13 @@ void MenuItem::componentComplete()
 
 void MenuItem::syncImplicit()
 {
-    setImplicitWidth(qMax<qreal>(180.0, implicitContentWidth() + leftPadding() + rightPadding()));
+    // Real Adwaita: `popover.menu modelbutton { min-height: 32px; min-width: 40px; padding: 0
+    // 12px }` (gtk.css:1771) — a ROW's own floor is just enough for an icon-only/very short label;
+    // the CARD's overall minimum (Menu::syncImplicit's 120px content floor, gtk.css:1721) is a
+    // separate, larger number. A per-row floor of 180 (the old value) forced every row this wide
+    // regardless of its own text, which is backwards from how the widest row should actually drive
+    // the card's width.
+    setImplicitWidth(qMax<qreal>(40.0, implicitContentWidth() + leftPadding() + rightPadding()));
     setImplicitHeight(32);
 }
 
@@ -241,7 +269,11 @@ MenuSeparator::MenuSeparator(QQuickItem *parent)
     : QQuickMenuSeparator(parent)
 {
     setPadding(4);
-    setImplicitWidth(180);
+    // A separator never DEMANDS width (it's a line, not content) — it just stretches to whatever
+    // the menu ends up being, the same way every row does. A fixed 180 here used to feed straight
+    // into "widest row" width math and could force the card that wide even when every real item
+    // was shorter; 1 (its own line) lets the actual item labels drive the card's width instead.
+    setImplicitWidth(1);
     setImplicitHeight(9);
 }
 
@@ -257,7 +289,7 @@ void MenuSeparator::componentComplete()
 {
     QQuickMenuSeparator::componentComplete();
     setContentItem(createBoundItem(this, QStringLiteral("solidwidgets-menuseparator-rule"), kSeparatorRule));
-    setImplicitWidth(180);
+    setImplicitWidth(1);
     setImplicitHeight(9);
 }
 
