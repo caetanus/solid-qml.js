@@ -1,6 +1,7 @@
 # SolidTerm × tmux control mode (design)
 
-Status: **design only, for owner review**. Nothing here is implemented. Owner decision
+Status: **phases 0 and 1 implemented** (read-only viewer); see "Implementation status" at the end
+for what real tmux 3.7c corrected. Owner decision
 (2026-10-13): SolidTerm integrates with tmux **control mode** the way iTerm2 does with `tmux -CC`.
 tmux windows become native SolidTerm tabs, tmux panes become native splits, and each pane is a
 native `TerminalView` fed by tmux's `%output`. Scrolling, selection, search, links, mouse
@@ -919,3 +920,49 @@ does).
 4. Pane borders: tmux's one-row border becomes the lower pane's native header (exact fit).
 Defaults taken for the minor questions (owner may revisit): output skipped while paused → marker row first,
 history re-fetch later; floating panes (3.7) ignored with a notice; minimum tmux 3.5.
+
+## Implementation status: phases 0 and 1 (2026-10-13)
+
+Code: `apps/solidterm/native/tmux/` (Qt-free: `protocol` parser, correlator and quoting, `layout`,
+`seed`, `client`), `tmuxsession.*` (GUI side), tmux branches in `TerminalTabs`/`TerminalPanes`/
+`TerminalView`. Run: `solidterm --tmux <session>` (read-only; the window title says so).
+
+Tests (`meson test`): `solidterm-tmux-protocol` (golden transcripts, one recorded from a real 3.7c
+by `tests/tmux/record-transcript.sh`), `solidterm-tmux-client` (the client against the scripted fake
+`tests/tmux/fake-tmux.py` + `scenario-basic.py`), `solidterm-tmux-ui` (the real UI offscreen against
+the fake, `SOLIDTERM_TMUXTEST=fake`), and `solidterm-tmux-client-real` / `solidterm-tmux-ui-real` (a
+real tmux on a private `-S` socket under the build dir, skipped without tmux).
+
+Checked against real tmux 3.7c. These corrections to the sections above are now handled:
+
+- **A killed window of OUR session arrives as `%unlinked-window-close`**, not `%window-close`
+  (`kill-window` and a window whose last pane exits both do this). Both remove the tab.
+- **`%window-add` carries no layout** and no `%layout-change` follows, so the window is re-listed.
+- **Floating panes (3.7) are listed twice**: in `<…>` and as an extra child of the tiled root
+  (`{40x24,0,0,0,39x24,41,0[…],40x6,4,2,7}<40x6,4,2,7>`), which breaks `layout_check`. The parser
+  drops floating ids from the tiled tree. As decided, they are ignored with a notice.
+- `#{alternate_saved_x/y}` read `4294967295` when there is no saved screen. `capture-pane -P` with
+  nothing pending answers one empty line. `#{window_raw_flags}` can be empty, so fields are split
+  without collapsing spaces.
+- **1.4's "a stream parser, so splits are harmless" is wrong for UTF-8.** libvterm 0.3.3 does not
+  carry an incomplete UTF-8 sequence across `vterm_input_write` calls; it emits U+FFFD. TermWorker
+  now ends every slice on a UTF-8 boundary and holds an incomplete read tail for the next read. This
+  fixes the local pty path as well.
+
+Deviations from the plan above:
+
+- Seeding uses the probe, then ONE capture group per pane (4.2). The probe is per pane, not one
+  group for all panes, so a pane that dies cannot drop the others' probes.
+- The fence (3.4) holds only output that arrives after the size change. Bytes already in the feed
+  pipe may still be parsed at the new size (the same race as a local pty).
+- `--tmux` makes the process standalone. The single-instance `Request.args` is phase 4.
+- `TerminalView` holds one `TmuxLink` pointer plus the imposed grid. It also counts the bytes it has
+  parsed (one add per slice) so the tests' oracle can replay resizes at the same stream points.
+- Not done in phase 1 (phase 2/3): the key-name table (1.5), OSC 10/11 colours (1.8), select-pane
+  echo suppression, and the hidden/buried panes of owner decision 2.
+
+Phase 2 (input) needs: the key-name table (`keyToVTerm` tmux branch); `send-keys -l` coalescing;
+`-H` for mouse reports, paste (≤ 1 KiB per command, bracketed per libvterm's mode) and focus
+reports; `writeToPty` in tmux mode routes only those. Query replies produced inside `wkFeed` stay
+dropped (`m_inFeed`, 3.2). `refresh-client -r` for OSC 10/11. `readOnly` false by default. A
+fake-server corpus test of the exact command lines (the fake already logs every line it receives).

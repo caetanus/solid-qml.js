@@ -53,6 +53,14 @@ void TerminalTabs::emitModel()
     titles.reserve(m_tabs.size());
     for (const Tab &t : m_tabs)
         titles.append(t.effective());
+    // Only real changes: the TSX tab bar's Repeater binds its model to these titles, and an identical
+    // re-emission from inside its own (re)layout — the bar appearing shrinks this item, whose first
+    // geometry selects the active tab again — reads as a binding loop.
+    if (m_modelEmitted && titles == m_lastTitles && m_active == m_lastActive)
+        return;
+    m_modelEmitted = true;
+    m_lastTitles = titles;
+    m_lastActive = m_active;
     emit tabsChanged(titles, m_active);
 }
 

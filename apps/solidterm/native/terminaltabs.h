@@ -189,6 +189,9 @@ private:
 
     QVector<Tab> m_tabs;
     int m_active = 0;
+    QStringList m_lastTitles;  // the model as last emitted (emitModel skips repeats)
+    int m_lastActive = -1;
+    bool m_modelEmitted = false;
     static inline QString s_pendingTmux;
     bool m_isTmux = false;
     QPointer<TmuxSession> m_tmux;
