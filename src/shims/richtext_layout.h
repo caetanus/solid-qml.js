@@ -44,6 +44,7 @@ private:
         QString id;
         Flow incoming, outgoing;
         QRectF rect;
+        QList<QRectF> hitRects;
         qreal right = 0, width = 0, minimum = 0, preferred = 0;
         int revision = -1;
     };
@@ -59,6 +60,8 @@ private:
     QList<int> m_hitOrder, m_cellLineOrder, m_cellOrder;
     QList<qreal> m_hitBottom, m_cellLineBottom, m_cellBottom;
     QHash<int,QPair<int,int>> m_cellRanges;
+    QHash<quint64,QPair<int,int>> m_hitBlockRanges;
+    bool updateHitIndex(const QList<QTextBlock> &, int from, int removed, int added);
     void rebuildHitIndex();
     QHash<quint64, Cache> m_blocks;
     QSizeF m_size;

@@ -144,6 +144,7 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
     if (!first) flow.y += qMax(flow.bottom, quantizedLength(format.topMargin()));
     const qreal origin = flow.y;
     bool sameLines = known && !dirty;
+    next.hitRects.reserve(layout->lineCount());
     for (int index = 0; index < layout->lineCount(); ++index) {
         auto line = layout->lineAt(index);
         const qreal natural = line.height();
@@ -158,6 +159,7 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
         const QPointF position(quantizedLength(format.leftMargin()) + (direction == Qt::RightToLeft ? 0 : indent * doc->indentWidth() + (index == 0 ? format.textIndent() : 0)), flow.y-origin+offset);
         sameLines &= line.position() == position;
         line.setPosition(position);
+        next.hitRects.append(line.naturalTextRect());
         flow.y += advance;
     }
     layout->setPosition({left, origin});
@@ -464,24 +466,67 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
         const auto found=m_tableFragments.constFind(table);
         if (found!=m_tableFragments.cend()) m_fragments.append(*found);
     }
-    rebuildHitIndex();
+    if (full || !updateHitIndex(changed,from,removed,added)) rebuildHitIndex();
     // Publish only after every queried rectangle and live layout agrees.
     for (const auto &block : pass.changed) emit updateBlock(block);
     if (m_size != oldSize) emit documentSizeChanged(m_size);
     if (m_pages != oldPages) emit pageCountChanged(m_pages);
     emit update();
 }
+bool RichTextLayout::updateHitIndex(const QList<QTextBlock> &changed, int from, int removed, int added)
+{
+    // Preserve spatial order when an edit changes only horizontal extents.
+    // Structural changes or pagination changes rebuild the complete index.
+    if (m_hitBlockRanges.size()!=m_blocks.size()) return false;
+    for (const auto &block:changed) {
+        const auto *info=blockInfo(block);
+        const auto range=m_hitBlockRanges.constFind(info->lifetime);
+        if (range==m_hitBlockRanges.cend() || QTextCursor(block).currentTable()) return false;
+        const auto &cache=m_blocks[info->lifetime];
+        if (range->second-range->first!=cache.hitRects.size()) return false;
+        for(int i=0;i<cache.hitRects.size();++i) {
+            const auto rect=cache.hitRects[i].translated(cache.rect.topLeft());
+            const auto &old=m_hitLines[range->first+i].rect;
+            if(rect.top()!=old.top() || rect.bottom()!=old.bottom() || rect.left()!=old.left()) return false;
+        }
+    }
+    const int delta=added-removed;
+    if(delta) {
+        for(auto &line:m_hitLines) {
+            if(line.block>=from+removed) line.block+=delta;
+            if(line.cell>=from+removed) line.cell+=delta;
+        }
+        QHash<int,QPair<int,int>> ranges;
+        ranges.reserve(m_cellRanges.size());
+        for(auto it=m_cellRanges.cbegin();it!=m_cellRanges.cend();++it)
+            ranges.insert(it.key()>=from+removed ? it.key()+delta : it.key(),it.value());
+        m_cellRanges.swap(ranges);
+    }
+    for(const auto &block:changed) {
+        const auto lifetime=blockInfo(block)->lifetime;
+        const auto &cache=m_blocks[lifetime]; const int first=m_hitBlockRanges.value(lifetime).first;
+        for(int i=0;i<cache.hitRects.size();++i) {
+            auto &line=m_hitLines[first+i]; line.block=block.position();
+            line.rect=cache.hitRects[i].translated(cache.rect.topLeft());
+        }
+    }
+    return true;
+}
 void RichTextLayout::rebuildHitIndex()
 {
+    m_hitBlockRanges.clear();
     m_hitLines.clear(); m_hitOrder.clear(); m_cellLineOrder.clear(); m_cellRanges.clear();
     m_hitBottom.clear(); m_cellLineBottom.clear(); m_cellOrder.clear(); m_cellBottom.clear();
     for (auto b=document()->begin();b.isValid();b=b.next()) {
-        const auto *layout=b.layout();
+        const auto *info=blockInfo(b);
+        const auto cache=info ? m_blocks.constFind(info->lifetime) : m_blocks.cend();
+        if(cache==m_blocks.cend()) continue;
         const auto *table=QTextCursor(b).currentTable();
         const int cell=table ? table->cellAt(b.position()).firstPosition() : -1;
-        for (int line=0;line<layout->lineCount();++line) {
+        m_hitBlockRanges.insert(info->lifetime,{m_hitLines.size(),m_hitLines.size()+cache->hitRects.size()});
+        for (int line=0;line<cache->hitRects.size();++line) {
             const int index=m_hitLines.size();
-            m_hitLines.append({layout->lineAt(line).naturalTextRect().translated(layout->position()),b.position(),line,cell});
+            m_hitLines.append({cache->hitRects[line].translated(cache->rect.topLeft()),b.position(),line,cell});
             m_hitOrder.append(index);
             if (cell>=0) m_cellLineOrder.append(index);
         }

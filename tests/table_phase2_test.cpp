@@ -344,6 +344,39 @@ private slots:
             }
         }
     }
+    void realBookIncremental() {
+        if(!qEnvironmentVariableIsSet("RICHTEXT_BOOK")) QSKIP("Set RICHTEXT_BOOK");
+        QTextDocument source; rt::StyleSheet styles; QString error;
+        QVERIFY2(rt::readOdt(qEnvironmentVariable("RICHTEXT_BOOK"),&source,&styles,&error),qPrintable(error));
+        BookView view; QVERIFY(view.initialize(source,true,1,true)); auto &doc=*view.doc;
+        QRandomGenerator random(808);
+        for(int step=0;step<12;++step) {
+            QTextCursor cursor(&doc);
+            const auto frames=doc.rootFrame()->childFrames();
+            auto *table=qobject_cast<QTextTable *>(frames[random.bounded(frames.size())]); QVERIFY(table);
+            if(step%3==0) cursor=table->cellAt(random.bounded(table->rows()),random.bounded(table->columns())).firstCursorPosition();
+            else if(step%3==1) cursor.setPosition(table->lastPosition()+1);
+            else cursor.setPosition(random.bounded(doc.characterCount()-1));
+            if(step%4==0) cursor.insertBlock();
+            else if(step%4==1) cursor.insertText("seeded table edit ");
+            else if(step%4==2) cursor.deleteChar();
+            else doc.undo();
+            QScopedPointer<QTextDocument> cold(doc.clone()); cold->setDocumentLayout(new rt::RichTextLayout(cold.data()));
+            QCOMPARE(doc.pageCount(),cold->pageCount());
+            auto a=doc.begin(),b=cold->begin();
+            for(;a.isValid();a=a.next(),b=b.next()) {
+                QCOMPARE(doc.documentLayout()->blockBoundingRect(a),cold->documentLayout()->blockBoundingRect(b));
+                QCOMPARE(a.layout()->lineCount(),b.layout()->lineCount());
+                for(int i=0;i<a.layout()->lineCount();++i) {
+                    const auto al=a.layout()->lineAt(i),bl=b.layout()->lineAt(i);
+                    QCOMPARE(al.textStart(),bl.textStart()); QCOMPARE(al.textLength(),bl.textLength());
+                    QCOMPARE(al.position(),bl.position()); QCOMPARE(al.width(),bl.width());
+                    const QPointF point=al.naturalTextRect().center()+a.layout()->position();
+                    QCOMPARE(doc.documentLayout()->hitTest(point,Qt::FuzzyHit),cold->documentLayout()->hitTest(point,Qt::FuzzyHit));
+                }
+            }
+        }
+    }
     void bookOracle() {
         if(!qEnvironmentVariableIsSet("RICHTEXT_BOOK")) QSKIP("Set RICHTEXT_BOOK");
         QTextDocument doc; rt::StyleSheet styles; QString error;
