@@ -97,6 +97,24 @@ TextInputBase::TextInputBase(QQuickItem *parent)
     connect(this, &QQuickItem::enabledChanged, this, &TextInputBase::syncState);
 }
 
+void TextInputBase::forceActiveFocus()
+{
+    forceActiveFocus(Qt::OtherFocusReason);
+}
+
+void TextInputBase::forceActiveFocus(Qt::FocusReason reason)
+{
+    if (m_control) {
+        m_control->forceActiveFocus(reason);
+        // "Open find" conventions select the existing query so typing replaces it outright.
+        QMetaObject::invokeMethod(m_control, "selectAll");
+    } else {
+        // componentComplete() hasn't composed the control yet (shouldn't happen for an author who
+        // only gets a ref after mount — see publishLazyRefs — but fail safe, not silent, if it does).
+        QmlCss::CssFill::forceActiveFocus(reason);
+    }
+}
+
 void TextInputBase::setText(const QString &v)
 {
     if (m_text == v)

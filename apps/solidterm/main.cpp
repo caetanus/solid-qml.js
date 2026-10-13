@@ -298,6 +298,39 @@ int main(int argc, char **argv)
         }
     }
 
+    // Debug/CI: SOLIDTERM_FOCUSTEST=1 sends the REAL Ctrl+Shift+F accelerator (a QKeyEvent through
+    // the same QCoreApplication::sendEvent(window, …) path SENDKEYS/MOUSETEST use — real Qt Quick
+    // focus delivery, not a property poke) and immediately types "x" with no extra delay, the way a
+    // fast typist would. It then asserts activeFocusItem() is NOT the terminal and that "x" landed
+    // in the search field's own text (not silently dropped, and not routed to whatever had focus
+    // before) — prints PASS/FAIL and quits. This is a regression test for a real bug: `forceActive
+    // Focus()` called on the <input> ref used to focus the decorative CssFill WRAPPER (TextField's
+    // root item, not the T.TextField that actually handles keys — see TextInputBase::
+    // forceActiveFocus(), textinputs.cpp) — Qt reported a focus item, so nothing here LOOKED wrong
+    // at a glance, but keystrokes never reached the field. No sleep/timer is part of the fix itself
+    // — only this test's own settle delay before the keys are sent.
+    if (qEnvironmentVariableIsSet("SOLIDTERM_FOCUSTEST") && window) {
+        QTimer::singleShot(1600, window, [window] {
+            auto sendSeq = [window](const QKeySequence &seq, Qt::Key key, Qt::KeyboardModifiers mods, const QString &text) {
+                QKeyEvent press(QEvent::KeyPress, key, mods, text);
+                QCoreApplication::sendEvent(window, &press);
+                QKeyEvent release(QEvent::KeyRelease, key, mods, text);
+                QCoreApplication::sendEvent(window, &release);
+                Q_UNUSED(seq);
+            };
+            const QKeyCombination accel = QKeySequence(QStringLiteral("Ctrl+Shift+F"))[0];
+            sendSeq(QKeySequence(accel), Qt::Key(accel.key()), accel.keyboardModifiers(), QString());
+            // Back-to-back, no settle: a real fast typist doesn't wait for the field to "catch up".
+            sendSeq(QKeySequence(), Qt::Key_X, Qt::NoModifier, QStringLiteral("x"));
+            QQuickItem *f = window->activeFocusItem();
+            const QString cls = f ? QString::fromLatin1(f->metaObject()->className()) : QStringLiteral("null");
+            const QString text = f ? f->property("text").toString() : QString();
+            const bool ok = f && !cls.contains(QLatin1String("TerminalView")) && text == QLatin1String("x");
+            qInfo().noquote() << (ok ? "FOCUSTEST PASS" : "FOCUSTEST FAIL") << "focusItem=" << cls << "text=" << text;
+            QCoreApplication::exit(ok ? 0 : 1);
+        });
+    }
+
     // Debug: SOLIDTERM_PLAINSHOT=<prefix> grabs every window after a settle WITHOUT poking anything
     // (so focus state is real) — to check the fresh terminal grabs keyboard focus on launch.
     const QString plainShot = qEnvironmentVariable("SOLIDTERM_PLAINSHOT");
