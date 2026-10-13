@@ -122,6 +122,11 @@ private:
     // Worker only.
     std::vector<char> m_buf;               // read buffer (kReadSize)
     size_t m_carryOff = 0, m_carryLen = 0; // unparsed part of m_buf
+    // libvterm (0.3.3) does not carry an incomplete UTF-8 sequence from one vterm_input_write to the
+    // next: a sequence split across two feeds becomes U+FFFD twice. So every slice ends on a UTF-8
+    // boundary, and the incomplete tail of a read waits at m_buf[m_tailOff, +m_tailLen) to be moved
+    // to the front of the buffer and completed by the next read.
+    size_t m_tailOff = 0, m_tailLen = 0;
     int64_t m_lastPostNs = 0;
     bool m_newsPending = false;
     bool m_eof = false;

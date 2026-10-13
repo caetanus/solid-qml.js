@@ -75,6 +75,9 @@ struct View {
     View(const View &) = delete;
     View &operator=(const View &) = delete;
 
+    // Reads like TermWorker: an incomplete UTF-8 sequence at the end of a read waits for the next
+    // one (libvterm does not carry it across vterm_input_write calls).
+    std::string held;
     void pump()
     {
         char buf[65536];
@@ -83,7 +86,15 @@ struct View {
             if (n <= 0)
                 return;
             fed.append(buf, size_t(n));
-            vterm_input_write(vt, buf, size_t(n));
+            held.append(buf, size_t(n));
+            size_t back = 0;
+            while (back < 3 && back < held.size() && (static_cast<unsigned char>(held[held.size() - 1 - back]) & 0xc0) == 0x80)
+                ++back;
+            const unsigned char lead = back < held.size() ? static_cast<unsigned char>(held[held.size() - 1 - back]) : 0;
+            const size_t need = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
+            const size_t tail = need > back + 1 ? back + 1 : 0;
+            vterm_input_write(vt, held.data(), held.size() - tail);
+            held.erase(0, held.size() - tail);
         }
     }
     std::string row(int absRow) const
