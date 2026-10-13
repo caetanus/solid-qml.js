@@ -213,7 +213,7 @@ documented in [keyboard & accessibility](keyboard-accessibility.md).
 | `Show` | `Repeater` → `W.Text` | `when` expr, `fallback` elem |
 | `For` | `Css.CssRepeater` → `W.Text` | `each` expr, `key` key |
 | `Index` | `Repeater` → `W.Text` | `each` expr |
-| `VirtualList` | `W.Div` → `ListView` → `WheelHandler` | `class` expr, `classList` object, `ref` ident, `each` expr, `onEndReached` fn, `onKeyDown` fn |
+| `VirtualList` | `W.Div` → `ListView` → `WheelHandler` | `class` expr, `classList` object, `ref` ident, `each` expr, `key` key, `onEndReached` fn, `onKeyDown` fn |
 | `Switch` | `Css.CssIncubator` → `W.Text` | `fallback` elem |
 | `Match` | consumed by `Switch` | `when` expr |
 | `Dynamic` | `Css.CssText` | `component` expr |

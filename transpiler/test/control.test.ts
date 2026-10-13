@@ -118,7 +118,7 @@ test("onClick with the event reads modifiers; onContextMenu is a right-button ar
 test("VirtualList: a reusing ListView in a CSS box, rows as wide as the list, the row item published", async () => {
   const out = await qml(`import { Show } from "solid-js"; export function C(){ const [ts,setTs]=createSignal([]); let box; return <VirtualList class="rows" ref={box} each={ts()}>{(t) => <div class="row"><Show when={t.unread}><text>{t.from}</text></Show></div>}</VirtualList>; }`);
   assert.match(out, /W\.Div \{\n\s*id: _ref_box\n\s*cssClass: \["rows"\]/);
-  assert.match(out, /ListView \{[\s\S]*reuseItems: true[\s\S]*model: ts/);
+  assert.match(out, /ListView \{[\s\S]*reuseItems: true[\s\S]*property var __src: ts/);
   assert.match(out, /id: (__for\d+)\n\s*property var __forItem: modelData\n\s*width: ListView\.view \? ListView\.view\.width : 0/);
   assert.match(out, /text: "" \+ \(__for\d+\.__forItem\.from\)/);
 });

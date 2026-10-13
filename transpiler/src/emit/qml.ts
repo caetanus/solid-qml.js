@@ -2289,6 +2289,9 @@ function rowDelegate(delegate: t.ArrowFunctionExpression | t.FunctionExpression,
  *  Rows lay out with their own CSS, as wide as the list, as tall as their content. */
 function emitVirtualList(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
   const each = readEach(propsArg, scope);
+  // The field that names a row (key="id" / key={(r) => r.id}; "id" by default): what keeps the scroll
+  // position across a new `each` (see __swap below).
+  const key = forKeyField(propsArg) ?? "id";
   const props = readProps(propsArg);
   const pad = INDENT.repeat(level);
   const i = (n: number) => INDENT.repeat(level + n);
@@ -2329,7 +2332,28 @@ function emitVirtualList(propsArg: t.Node | undefined, children: t.Node[], scope
     // (Declared inside a ListView, the handler's parent is the contentItem: the view is named.)
     `${i(3)}onWheel: (ev) => { var lv = ${lvId}; var dy = ev.pixelDelta.y !== 0 ? ev.pixelDelta.y * 1.5 : (ev.angleDelta.y / 120) * 110; lv.contentY = Math.max(lv.originY, Math.min(lv.contentY - dy, lv.originY + lv.contentHeight - lv.height)) }`,
     `${i(2)}}`,
-    `${i(2)}model: ${each}`,
+    // A new `each` (the backend republished the list: a message read, one arrived) assigned straight
+    // to `model` resets the ListView to the top. Instead the row at the top of the view (by its key)
+    // and its pixel offset are noted, the array swapped, and the view put back on that row — even when
+    // rows above it came or went. At the very top the view stays at the top (what arrives shows).
+    // A non-array `each` (a count, a ListModel) is assigned as it is.
+    `${i(2)}property var __src: ${each}`,
+    `${i(2)}function __swap() {`,
+    `${i(3)}var src = __src, k, off = 0, found = false`,
+    `${i(3)}if (!Array.isArray(src)) { model = src; return }`,
+    // (the previous model reads back as a sequence, not an Array: its length is what is checked)
+    `${i(3)}if (!atYBeginning && model && model.length) {`,
+    `${i(4)}var r = indexAt(1, contentY + 1)`,
+    `${i(4)}if (r >= 0 && model[r] && model[r].${key} !== undefined) { k = model[r].${key}; var it = itemAtIndex(r); off = it ? contentY - it.y : 0; found = true }`,
+    `${i(3)}}`,
+    `${i(3)}var y = contentY`,
+    `${i(3)}model = src`,
+    `${i(3)}if (!found) return`,
+    `${i(3)}for (var j = 0; j < src.length; j++) if (src[j] && src[j].${key} === k) { positionViewAtIndex(j, ListView.Beginning); contentY += off; return }`,
+    `${i(3)}contentY = Math.max(originY, Math.min(y, originY + contentHeight - height))`,
+    `${i(2)}}`,
+    `${i(2)}on__SrcChanged: __swap()`,
+    `${i(2)}Component.onCompleted: model = __src`,
     ...(endHandler ? [`${i(2)}onAtYEndChanged: if (atYEnd && count > 0) { ${endHandler} }`] : []),
     `${i(2)}delegate: Component {`,
     ...rowDelegate(delegate, scope, level + 3, "VirtualList", ["width: ListView.view ? ListView.view.width : 0"]),

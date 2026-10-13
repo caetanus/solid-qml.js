@@ -165,7 +165,7 @@ export const ELEMENT_ATTRS: Record<string, Attrs> = {
   // key (C23): opt-in reuse by a field — see forKeyField.
   For: { each: "expr", key: "key" },
   Index: { each: "expr" },
-  VirtualList: { ...DYN, ref: "ident", each: "expr", onEndReached: "fn", onKeyDown: "fn" },
+  VirtualList: { ...DYN, ref: "ident", each: "expr", key: "key", onEndReached: "fn", onKeyDown: "fn" },
   Switch: { fallback: "elem" },
   Match: { when: "expr" },
   Dynamic: { component: "expr" },
