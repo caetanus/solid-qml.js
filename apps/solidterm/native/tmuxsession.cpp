@@ -6,12 +6,40 @@
 #include "tmux/client.h"
 #include "tmux/layout.h"
 
+#include "termconfig.h"
+
 #include <QCoreApplication>
+#include <QPointer>
+#include <QProcess>
+#include <QQuickWindow>
+#include <QRegularExpression>
 #include <QSocketNotifier>
 
 namespace {
 
-constexpr int kPauseAfterSeconds = 5; // 1.6: a stalled SolidTerm costs a reseed, not a disconnect
+constexpr int kPauseAfterDefault = 5; // 1.6: a stalled SolidTerm costs a reseed, not a disconnect
+
+QPointer<TermConfig> g_config;
+QList<TmuxSession *> g_live;
+
+int pref(const char *key, int fallback)
+{
+    return g_config ? g_config->getInt(QLatin1String(key), fallback) : fallback;
+}
+
+QString prefString(const char *key, const QString &fallback)
+{
+    return g_config ? g_config->getString(QLatin1String(key), fallback) : fallback;
+}
+
+// The environment for one-shot tmux processes: without TMUX (they must not think they are nested).
+QProcessEnvironment tmuxEnv()
+{
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.remove(QStringLiteral("TMUX"));
+    env.remove(QStringLiteral("TMUX_PANE"));
+    return env;
+}
 
 const char kWindowFormat[] = "#{window_id} #{window_index} #{window_active} #{window_raw_flags} "
                              "#{window_layout} #{window_visible_layout} #{window_name}";
@@ -44,12 +72,80 @@ bool fields(QStringView line, int n, QList<QStringView> &out, QStringView &rest)
 
 } // namespace
 
-TmuxSession::TmuxSession(const QString &name, TerminalTabs *tabs)
+void TmuxSession::setConfig(TermConfig *config)
+{
+    g_config = config;
+    QObject::connect(config, &TermConfig::changed, config, [](const QString &key) {
+        if (key == QLatin1String("tmuxPauseAfter") || key == QLatin1String("tmuxHoldCap"))
+            for (TmuxSession *s : std::as_const(g_live))
+                if (s->m_attached && !s->m_detaching) {
+                    tmux::CommandLine l;
+                    l.cmd("refresh-client").flag("-f").flag("pause-after=" + std::to_string(pref("tmuxPauseAfter", kPauseAfterDefault)));
+                    s->m_client->send(l, tmux::Client::KIgnore);
+                    s->m_client->setOverflowCap(size_t(pref("tmuxHoldCap", 8)) << 20);
+                }
+    });
+}
+
+TermConfig *TmuxSession::config()
+{
+    return g_config;
+}
+
+QString TmuxSession::binary()
+{
+    QString bin = qEnvironmentVariable("SOLIDTERM_TMUX_BIN");
+    if (bin.isEmpty())
+        bin = prefString("tmuxBinary", QString());
+    return bin.isEmpty() ? QStringLiteral("tmux") : bin;
+}
+
+bool TmuxSession::versionOk(const QString &line, QString *why)
+{
+    const QString v = line.trimmed();
+    if (!v.startsWith(QLatin1String("tmux "))) {
+        if (why)
+            *why = QStringLiteral("cannot tell the tmux version (\"%1\")").arg(v);
+        return false;
+    }
+    const QString ver = v.mid(5);
+    if (ver == QLatin1String("master"))
+        return true;
+    const QRegularExpressionMatch m = QRegularExpression(QStringLiteral("^(?:next-)?(\\d+)\\.(\\d+)")).match(ver);
+    if (!m.hasMatch()) {
+        if (why)
+            *why = QStringLiteral("cannot tell the tmux version (\"%1\")").arg(v);
+        return false;
+    }
+    const int major = m.captured(1).toInt(), minor = m.captured(2).toInt();
+    if (major > kMinMajor || (major == kMinMajor && minor >= kMinMinor))
+        return true;
+    if (why)
+        *why = QStringLiteral("%1 is too old: SolidTerm needs tmux %2.%3 or newer").arg(v).arg(kMinMajor).arg(kMinMinor);
+    return false;
+}
+
+TmuxSession *TmuxSession::find(const QString &name)
+{
+    for (TmuxSession *s : std::as_const(g_live))
+        if (s->m_name == name && !s->m_detaching && !s->m_finished && s->m_tabs)
+            return s;
+    return nullptr;
+}
+
+QQuickWindow *TmuxSession::window() const
+{
+    return m_tabs ? m_tabs->window() : nullptr;
+}
+
+TmuxSession::TmuxSession(const QString &name, TerminalTabs *tabs, bool attachOnly)
     : QObject(qApp) // outlives the window: a detach completes after the window is gone
     , m_name(name.isEmpty() ? QStringLiteral("main") : name)
     , m_tabs(tabs)
     , m_client(std::make_shared<tmux::Client>())
 {
+    m_attachOnly = attachOnly;
+    g_live.append(this);
     m_sizeTimer.setSingleShot(true);
     m_sizeTimer.setInterval(30); // one refresh-client -C per 30 ms while the window is dragged (3.4)
     connect(&m_sizeTimer, &QTimer::timeout, this, &TmuxSession::sendSize);
@@ -61,30 +157,85 @@ TmuxSession::TmuxSession(const QString &name, TerminalTabs *tabs)
 
 TmuxSession::~TmuxSession()
 {
+    g_live.removeAll(this);
     delete m_notifier;
     m_notifier = nullptr;
     if (m_client)
         m_client->stop(m_detaching ? 2000 : 0);
 }
 
+// Before the control client: `tmux -V` (the version gate, 7) and, unless attaching only,
+// `tmux has-session -t =<name>` — when it fails, our new-session CREATES the session, which is then
+// marked as SolidTerm's (decision 3: SolidTerm reattaches the sessions it created on start).
 void TmuxSession::startAttach()
 {
-    QString bin = qEnvironmentVariable("SOLIDTERM_TMUX_BIN");
-    if (bin.isEmpty())
-        bin = QStringLiteral("tmux");
+    m_probe = new QProcess(this);
+    m_probe->setProcessEnvironment(tmuxEnv());
+    m_probe->setProcessChannelMode(QProcess::MergedChannels);
+    connect(m_probe, &QProcess::finished, this, &TmuxSession::preflightDone);
+    connect(m_probe, &QProcess::errorOccurred, this, [this](QProcess::ProcessError e) {
+        if (e == QProcess::FailedToStart)
+            fail(QStringLiteral("tmux was not found (%1): install tmux %2.%3 or newer, or set its path in Preferences")
+                     .arg(binary()).arg(kMinMajor).arg(kMinMinor), false);
+    });
+    m_probeStep = 0;
+    m_probe->start(binary(), { QStringLiteral("-V") });
+}
+
+void TmuxSession::preflightDone()
+{
+    if (m_finished || m_detaching)
+        return;
+    const QString out = QString::fromLocal8Bit(m_probe->readAll());
+    if (m_probeStep == 0) {
+        QString why;
+        if (!versionOk(out.section(QLatin1Char('\n'), 0, 0), &why)) {
+            fail(why, false);
+            return;
+        }
+        if (m_attachOnly) {
+            spawn();
+            return;
+        }
+        m_probeStep = 1;
+        m_probe->start(binary(), { QStringLiteral("has-session"), QStringLiteral("-t"), QLatin1Char('=') + m_name });
+        return;
+    }
+    m_createdByUs = m_probe->exitCode() != 0;
+    spawn();
+}
+
+void TmuxSession::fail(const QString &why, bool reattach)
+{
+    qWarning("solidterm: tmux: %s", qPrintable(why));
+    m_error = why;
+    if (m_tabs)
+        m_tabs->tmuxSessionLost(why, reattach);
+    emit banner(why, reattach);
+    emit exited(why);
+    finish();
+}
+
+void TmuxSession::spawn()
+{
     // Attach, or create then attach (5.1); -x/-y size a NEW session like our panes area (it is
     // corrected by refresh-client -C as soon as the window is laid out).
     const int cols = m_cols > 0 ? m_cols : 80, rows = m_rows > 0 ? m_rows : 24;
-    const std::vector<std::string> args = { "-C", "new-session", "-A", "-s", m_name.toStdString(),
-                                            "-x", std::to_string(cols), "-y", std::to_string(rows) };
-    if (m_tabs) // a reattach restores as much history as our scrollback keeps (4.2)
+    std::vector<std::string> args;
+    if (m_attachOnly)
+        args = { "-C", "attach-session", "-t", "=" + m_name.toStdString() };
+    else
+        args = { "-C", "new-session", "-A", "-s", m_name.toStdString(), "-x", std::to_string(cols), "-y", std::to_string(rows) };
+    // A reattach restores as much history as our scrollback keeps (4.2), or what the preference says.
+    const int history = pref("tmuxHistory", 0);
+    if (history > 0)
+        m_client->setHistoryLimit(history);
+    else if (m_tabs)
         m_client->setHistoryLimit(m_tabs->scrollbackLimit());
+    m_client->setOverflowCap(size_t(pref("tmuxHoldCap", 8)) << 20);
     std::string err;
-    if (!m_client->start(bin.toStdString(), args, &err)) {
-        m_error = QString::fromStdString(err);
-        qWarning("solidterm: tmux: %s", qPrintable(m_error));
-        emit exited(m_error);
-        finish();
+    if (!m_client->start(binary().toStdString(), args, &err)) {
+        fail(QString::fromStdString(err), false);
         return;
     }
     m_notifier = new QSocketNotifier(m_client->guiFd(), QSocketNotifier::Read, this);
@@ -124,7 +275,13 @@ void TmuxSession::detach()
         return;
     m_detaching = true;
     m_tabs = nullptr;
-    if (m_client->started()) {
+    if (m_client->started() && m_attached) {
+        if (prefString("tmuxCloseAction", QStringLiteral("detach")) == QLatin1String("kill") && m_sessionId >= 0) {
+            // Preference: closing the window ends the session (and its programs) instead (6.5).
+            tmux::CommandLine l;
+            l.cmd("kill-session").session("-t", m_sessionId);
+            m_client->send(l, tmux::Client::KIgnore);
+        }
         m_client->detach();
         m_detachTimer.start();
     } else {
@@ -196,15 +353,48 @@ void TmuxSession::handle(tmux::Event &e)
     switch (e.type) {
     case tmux::Event::Log:
         qInfo("solidterm: %s", e.text.c_str());
+        if (e.text.rfind("tmux stderr: ", 0) == 0)
+            m_lastStderr = QString::fromStdString(e.text.substr(13));
         return;
-    case tmux::Event::Exit:
+    case tmux::Event::Exit: {
         if (!m_detaching)
             qInfo("solidterm: tmux client ended%s%s", e.text.empty() ? "" : ": ", e.text.c_str());
         emit exited(QString::fromStdString(e.text));
-        if (m_tabs)
-            m_tabs->tmuxSessionEnded(); // the server-exited banner is phase 4: the window closes
-        finish();
+        if (m_detaching) {
+            finish();
+            return;
+        }
+        if (m_tabs && m_built && m_tabs->tmuxTotalTabs() == 0) {
+            // The session ended with its last window (detach-on-destroy): the window closes, as a
+            // local window does when its last shell exits (5.1).
+            m_tabs->tmuxSessionEnded();
+            finish();
+            return;
+        }
+        // The server went away, or someone detached / killed this client (7): keep the panes and
+        // what they show, read-only, under a banner offering Reattach.
+        QString reason = QString::fromStdString(e.text);
+        if (reason.isEmpty() && !m_lastStderr.isEmpty())
+            reason = m_lastStderr;
+        if (!reason.isEmpty()) {
+            lost(reason);
+            return;
+        }
+        // tmux 3.7c says a bare "%exit" both for kill-server and for a detach by someone else
+        // (recorded): ask the server whether the session is still there to tell them apart.
+        auto *probe = new QProcess(this);
+        probe->setProcessEnvironment(tmuxEnv());
+        connect(probe, &QProcess::finished, this, [this, probe] {
+            lost(probe->exitCode() == 0 ? QStringLiteral("detached (by another client or a command)")
+                                        : QStringLiteral("the tmux server is gone"));
+        });
+        connect(probe, &QProcess::errorOccurred, this, [this](QProcess::ProcessError err) {
+            if (err == QProcess::FailedToStart)
+                lost(QStringLiteral("the tmux client ended"));
+        });
+        probe->start(binary(), { QStringLiteral("has-session"), QStringLiteral("-t"), QLatin1Char('=') + m_name });
         return;
+    }
     case tmux::Event::Reply: {
         QStringList lines;
         for (const std::string &l : e.lines)
@@ -266,8 +456,13 @@ void TmuxSession::handle(tmux::Event &e)
             if (m_cols > 0)
                 sendSize();
             tmux::CommandLine pa;
-            pa.cmd("refresh-client").flag("-f").flag("pause-after=" + std::to_string(kPauseAfterSeconds));
+            pa.cmd("refresh-client").flag("-f").flag("pause-after=" + std::to_string(pref("tmuxPauseAfter", kPauseAfterDefault)));
             m_client->send(pa, tmux::Client::KIgnore);
+            if (m_createdByUs && m_sessionId >= 0) { // decision 3: ours to reattach on start
+                tmux::CommandLine mark;
+                mark.cmd("set-option").session("-t", m_sessionId).flag("@solidterm").flag("1");
+                m_client->send(mark, tmux::Client::KIgnore);
+            }
             requestLists(true);
         }
         break;
@@ -695,4 +890,25 @@ void TmuxSession::applyModes()
         if (TerminalPanes *p = w >= 0 ? m_tabs->tmuxTab(w, false) : nullptr)
             p->tmuxSetPaneMode(it.key(), it.value());
     }
+}
+
+void TmuxSession::killSession()
+{
+    if (m_sessionId < 0)
+        return;
+    tmux::CommandLine l;
+    l.cmd("kill-session").session("-t", m_sessionId);
+    send(l);
+}
+
+void TmuxSession::lost(const QString &reason)
+{
+    if (m_finished)
+        return;
+    const QString text = m_built ? QStringLiteral("tmux session \"%1\": %2 — the panes are read-only").arg(m_name, reason)
+                                 : QStringLiteral("tmux session \"%1\": %2").arg(m_name, reason);
+    if (m_tabs)
+        m_tabs->tmuxSessionLost(text, true);
+    emit banner(text, true);
+    finish();
 }

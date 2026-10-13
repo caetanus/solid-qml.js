@@ -134,7 +134,14 @@ public:
     // The next TerminalTabs to complete attaches to tmux session `name` instead of opening a local
     // shell (main sets it around the window it builds for `--tmux <name>`). Its tabs are then the
     // session's windows, driven by TmuxSession.
-    static void setPendingTmuxSession(const QString &name) { s_pendingTmux = name; }
+    static void setPendingTmuxSession(const QString &name, bool attachOnly = false)
+    {
+        s_pendingTmux = name;
+        s_pendingTmuxAttachOnly = attachOnly;
+    }
+    // Opens an OS window attached to a tmux session (main's window factory; it raises the window
+    // already showing that session instead, 5.2).
+    static void setOpenTmuxWindowHook(void (*hook)(const QString &name, bool attachOnly)) { s_openTmuxWindow = hook; }
     bool isTmux() const { return m_isTmux; }
     TmuxSession *tmuxSession() const;
     TerminalPanes *tmuxTab(int window, bool create, bool hidden = false); // the tab showing tmux window @window
@@ -151,6 +158,19 @@ public:
     QString tmuxTabName(int window) const;
     // The session is gone (exited): the window closes.
     void tmuxSessionEnded();
+    // The control client is gone but the window stays (server exited, detached by someone, too old
+    // a tmux…): panes read-only with their content, a banner (tmuxBanner) offering Reattach.
+    void tmuxSessionLost(const QString &text, bool canReattach);
+    int tmuxTotalTabs() const { return m_tabs.size(); } // hidden ones included
+
+    // ── session picker / lifecycle (phase 4; UI in the TSX) ──────────────────────────────────────
+    Q_INVOKABLE void refreshTmuxSessions();                     // → tmuxSessionsChanged
+    Q_INVOKABLE void openTmuxSession(const QString &name);      // attach (a new OS window, or raise)
+    Q_INVOKABLE void newTmuxSession(const QString &name);       // create + attach ("New tmux session…")
+    Q_INVOKABLE void tmuxReattach();                            // after a lost session (banner)
+    Q_INVOKABLE void tmuxDetach();                              // close this window = detach
+    Q_INVOKABLE void tmuxKillSession();
+    Q_INVOKABLE void closeWindow();
 
 signals:
     void styleChanged();
@@ -161,6 +181,10 @@ signals:
     void allClosed();                          // last tab closed → the app can quit
     // tmux mode on/off and the hidden tabs/panes ({window, title}) for the "Hidden panes" menu.
     void tmuxStateChanged(bool tmux, const QVariantList &hidden);
+    // A message over the window ("" = none) and whether Reattach is offered.
+    void tmuxBanner(const QString &text, bool canReattach);
+    // tmux sessions on the server ({name, attached, ours}), after refreshTmuxSessions().
+    void tmuxSessionsChanged(const QVariantList &sessions);
     void titleChanged(const QString &title);   // active tab's focused-pane title → window
     void accelerator(const QString &sequence); // a reserved chord from the active tab
     void searchChanged(int index, int count);  // active tab's search state → the Solid search bar
@@ -213,6 +237,10 @@ private:
     int m_lastActive = -1;
     bool m_modelEmitted = false;
     static inline QString s_pendingTmux;
+    static inline bool s_pendingTmuxAttachOnly = false;
+    static inline void (*s_openTmuxWindow)(const QString &, bool) = nullptr;
+    QString m_tmuxName;
+    void startTmux(const QString &name, bool attachOnly);
     bool m_isTmux = false;
     QPointer<TmuxSession> m_tmux;
     bool m_didInitialFocus = false;

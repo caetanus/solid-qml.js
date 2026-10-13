@@ -56,6 +56,11 @@
 .search-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border: none; border-radius: 9px; background: transparent; }
 .search-btn-icon { width: 16px; height: 16px; }
 
+/* tmux: the session was lost (server exited, detached elsewhere, tmux too old) — panes stay, read-only */
+.tmux-banner { display: flex; flex-direction: row; align-items: center; padding: 6px 12px; gap: 8px; background-color: #6b4d12; }
+.tmux-banner-t { flex: 1; font-size: 13px; color: #ffffff; }
+.tmux-banner-b { padding: 4px 14px; border: none; border-radius: 6px; font-size: 13px; background-color: #8f6d22; color: #ffffff; }
+
 .term-status {
   display: flex; flex-direction: row; justify-content: space-between;
   padding: 5px 12px; border-top: 1px solid #1a1a1a; font-size: 11px;

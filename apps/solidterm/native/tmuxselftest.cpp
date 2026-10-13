@@ -6,6 +6,7 @@
 #include "termscreen.h"
 #include "tmux/seed.h"
 #include "tmuxsession.h"
+#include "termconfig.h"
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -31,6 +32,9 @@ struct Ctx {
     QString mode;
     int failures = 0;
     QStringList titlesSeen;            // every tab title the model showed
+    QString banner;                    // the last tmuxBanner text
+    bool bannerReattach = false;
+    QVariantList sessions;             // the last tmuxSessionsChanged
 };
 Ctx *g = nullptr;
 
@@ -1079,6 +1083,156 @@ void realStructStart()
     });
 }
 
+// ─── lifecycle (phase 4) ────────────────────────────────────────────────────────────────────────
+
+QQuickWindow *otherWindow()
+{
+    for (QWindow *w : QGuiApplication::topLevelWindows())
+        if (auto *qw = qobject_cast<QQuickWindow *>(w); qw && qw != g->window && qw->isVisible())
+            return qw;
+    return nullptr;
+}
+
+TerminalTabs *tabsOf(QQuickWindow *w)
+{
+    QList<QQuickItem *> stack { w->contentItem() };
+    while (!stack.isEmpty()) {
+        QQuickItem *it = stack.takeLast();
+        if (auto *t = qobject_cast<TerminalTabs *>(it))
+            return t;
+        for (QQuickItem *k : it->childItems())
+            stack.append(k);
+    }
+    return nullptr;
+}
+
+int countLines(const QString &prefix)
+{
+    int n = 0;
+    for (const QString &l : logLines())
+        n += l.startsWith(prefix) ? 1 : 0;
+    return n;
+}
+
+void lifeKill()
+{
+    // Preference "closing a tmux window kills the session": kill-session, then the client ends.
+    TmuxSession::config()->set(QStringLiteral("tmuxCloseAction"), QStringLiteral("kill"));
+    closeAndDetach([] {
+        check(logLines().join(QLatin1Char('\n')).contains(QLatin1String("kill-session -t '$1'")),
+              QStringLiteral("with tmuxCloseAction=kill, closing the window sends kill-session"));
+        TmuxSession::config()->set(QStringLiteral("tmuxCloseAction"), QStringLiteral("detach")); // the shared test config
+        TmuxSession::config()->set(QStringLiteral("tmuxPauseAfter"), 5);
+        finishTest();
+    });
+}
+
+void lifeServerExit()
+{
+    g->session->sendTestStep(QStringLiteral("step serverexit"));
+    waitFor([] { return !g->banner.isEmpty(); }, 5000, QStringLiteral("the server exiting shows a banner"), [] {
+        check(g->banner.contains(QStringLiteral("server exited unexpectedly")) && g->bannerReattach,
+              QStringLiteral("…naming the reason, offering Reattach: ") + g->banner);
+        check(g->window && g->window->isVisible() && g->tabs->count() == 1, QStringLiteral("the window and its tab stay"));
+        check(view(1) && view(1)->readOnly() && dump(1).contains(QStringLiteral("life-marker")),
+              QStringLiteral("the pane keeps its content, read-only"));
+        const int argvBefore = countLines(QStringLiteral("# argv:"));
+        g->tabs->tmuxReattach();
+        waitFor([argvBefore] {
+            return countLines(QStringLiteral("# argv:")) == argvBefore + 1 && g->banner.isEmpty() && g->tabs->tmuxSession()
+                && g->tabs->tmuxSession()->seedsCompleted() == 1 && view(1) && !view(1)->readOnly();
+        }, 8000, QStringLiteral("Reattach: a new control client, the banner goes, the pane is live again"), [] {
+            g->session = g->tabs->tmuxSession();
+            lifeKill();
+        });
+    });
+}
+
+void lifePrefs()
+{
+    const int mark = int(logLines().size());
+    TmuxSession::config()->set(QStringLiteral("tmuxPauseAfter"), 1);
+    waitFor([mark] { return logHas(mark, QStringLiteral("refresh-client -f pause-after=1")); }, 3000,
+            QStringLiteral("changing the pause-after preference applies live (refresh-client -f pause-after=1)"), lifeServerExit);
+}
+
+void lifePicker()
+{
+    g->tabs->refreshTmuxSessions();
+    waitFor([] { return g->sessions.size() == 2; }, 5000, QStringLiteral("the picker lists the server's sessions (list-sessions)"), [] {
+        const QVariantMap a = g->sessions.value(0).toMap(), b = g->sessions.value(1).toMap();
+        check(a.value(QStringLiteral("name")) == QStringLiteral("other") && a.value(QStringLiteral("ours")).toBool()
+                  && b.value(QStringLiteral("name")) == QStringLiteral("third") && !b.value(QStringLiteral("ours")).toBool(),
+              QStringLiteral("…with SolidTerm's own (@solidterm) marked"));
+        g->tabs->openTmuxSession(QStringLiteral("other"));
+        waitFor([] {
+            QQuickWindow *w = otherWindow();
+            TerminalTabs *t = w ? tabsOf(w) : nullptr;
+            return t && t->count() == 1 && logLines().contains(QStringLiteral("# argv: -C attach-session -t =other"));
+        }, 8000, QStringLiteral("Attach from the picker opens a new window on that session (attach-session -t =other)"), [] {
+            const int windows = int(QGuiApplication::topLevelWindows().size());
+            g->tabs->openTmuxSession(QStringLiteral("other"));
+            QTimer::singleShot(500, qApp, [windows] {
+                check(int(QGuiApplication::topLevelWindows().size()) == windows && countLines(QStringLiteral("# argv: -C attach-session")) == 1,
+                      QStringLiteral("asking again raises that window instead of attaching twice"));
+                QQuickWindow *w = otherWindow();
+                if (w)
+                    w->close();
+                waitFor([] { return !otherWindow() && !TmuxSession::find(QStringLiteral("other")); }, 5000,
+                        QStringLiteral("closing it detaches it"), lifePrefs);
+            });
+        });
+    });
+}
+
+void lifeStart()
+{
+    waitFor([] { return g->tabs && g->tabs->count() == 1 && g->session && g->session->seedsCompleted() == 1 && view(1); },
+            10000, QStringLiteral("life: attached"), [] {
+        if (!view(1)) {
+            finishTest();
+            return;
+        }
+        waitFor([] { return logLines().contains(QStringLiteral("set-option -t '$1' @solidterm 1")); }, 3000,
+                QStringLiteral("a session SolidTerm created is marked @solidterm (decision 3)"), lifePicker);
+    });
+}
+
+void gateStart(const QString &want)
+{
+    waitFor([] { return !g->banner.isEmpty(); }, 8000, QStringLiteral("a banner explains why there is no tmux session"), [want] {
+        check(g->banner.contains(want), QStringLiteral("…saying: ") + g->banner);
+        check(!g->bannerReattach && g->tabs->count() == 0, QStringLiteral("…with no tabs and no Reattach"));
+        check(countLines(QStringLiteral("# argv:")) == 0, QStringLiteral("no control client was started"));
+        if (const QString shot = qEnvironmentVariable("SOLIDTERM_TMUXTEST_SHOT"); !shot.isEmpty())
+            g->window->grabWindow().save(shot); // to look at the banner
+        closeAndDetach(finishTest);
+    });
+}
+
+// ─── lifecycle against a real tmux ──────────────────────────────────────────────────────────────
+
+void realLifeStart()
+{
+    waitFor([] { return g->tabs && g->tabs->count() == 1 && g->session && g->session->seedsCompleted() == 1; }, 10000,
+            QStringLiteral("real-life: attached to a session that did not exist (created)"), [] {
+        waitFor([] {
+            QProcess p;
+            p.start(qEnvironmentVariable("SOLIDTERM_TMUX_BIN"),
+                    { QStringLiteral("show-options"), QStringLiteral("-t"), QStringLiteral("created"), QStringLiteral("-v"), QStringLiteral("@solidterm") });
+            p.waitForFinished(2000);
+            return p.readAllStandardOutput().trimmed() == "1";
+        }, 5000, QStringLiteral("real-life: it is marked @solidterm (SolidTerm created it)"), [] {
+            tmuxCmd({ QStringLiteral("kill-server") });
+            waitFor([] { return !g->banner.isEmpty(); }, 5000, QStringLiteral("real-life: kill-server shows the banner"), [] {
+                check(g->bannerReattach && g->window->isVisible() && g->banner.contains(QStringLiteral("the tmux server is gone")),
+                      QStringLiteral("real-life: …saying the server is gone, with Reattach; the window stays: ") + g->banner);
+                closeAndDetach(finishTest);
+            });
+        });
+    });
+}
+
 } // namespace
 
 namespace TmuxSelfTest {
@@ -1100,9 +1254,17 @@ void start(QQuickWindow *window, const QString &mode)
         QTimer::singleShot(0, qApp, [] { QCoreApplication::exit(1); });
         return;
     }
+    // A fresh fake-tmux log for this run (the fake appends: one-shot commands and control clients).
+    if (const QString log = qEnvironmentVariable("FAKE_TMUX_LOG"); !log.isEmpty())
+        QFile(log).resize(0);
     g->session = g->tabs->tmuxSession();
     g->session->setTee(true); // before the attach starts (it is queued): every byte, from the first
     QGuiApplication::setQuitOnLastWindowClosed(false); // the verdict comes after the window closes
+    QObject::connect(g->tabs, &TerminalTabs::tmuxBanner, qApp, [](const QString &text, bool reattach) {
+        g->banner = text;
+        g->bannerReattach = reattach;
+    });
+    QObject::connect(g->tabs, &TerminalTabs::tmuxSessionsChanged, qApp, [](const QVariantList &list) { g->sessions = list; });
     QObject::connect(g->tabs, &TerminalTabs::tabsChanged, qApp, [](const QStringList &titles, int) {
         for (const QString &t : titles)
             if (!g->titlesSeen.contains(t))
@@ -1112,6 +1274,14 @@ void start(QQuickWindow *window, const QString &mode)
         QTimer::singleShot(0, qApp, realStart);
     else if (mode == QLatin1String("input"))
         QTimer::singleShot(0, qApp, inputStart);
+    else if (mode == QLatin1String("life"))
+        QTimer::singleShot(0, qApp, lifeStart);
+    else if (mode == QLatin1String("oldversion"))
+        QTimer::singleShot(0, qApp, [] { gateStart(QStringLiteral("too old: SolidTerm needs tmux 3.5")); });
+    else if (mode == QLatin1String("nobinary"))
+        QTimer::singleShot(0, qApp, [] { gateStart(QStringLiteral("tmux was not found")); });
+    else if (mode == QLatin1String("real-life"))
+        QTimer::singleShot(0, qApp, realLifeStart);
     else if (mode == QLatin1String("real-struct"))
         QTimer::singleShot(0, qApp, realStructStart);
     else if (mode == QLatin1String("struct"))

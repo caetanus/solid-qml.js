@@ -121,6 +121,21 @@ export function Term(props: { onTitle: (t: string) => void }) {
   // (ui* names: a signal named like a TerminalTabs member — hiddenPanes() — would be shadowed.)
   const [uiTmuxOn, setUiTmuxOn] = createSignal(false);
   const [uiHiddenPanes, setUiHiddenPanes] = createSignal([]);
+  // Lifecycle (phase 4): a banner when the session is lost (server exited, too old a tmux…), the
+  // session picker (tmux list-sessions, refreshed on each right-click) and "New tmux session…".
+  const [uiTmuxBanner, setUiTmuxBanner] = createSignal("");
+  const [uiTmuxBannerReattach, setUiTmuxBannerReattach] = createSignal(false);
+  const [uiTmuxSessions, setUiTmuxSessions] = createSignal([]);
+  const [newSessionOpen, setNewSessionOpen] = createSignal(false);
+  const [newSessionName, setNewSessionName] = createSignal("");
+  const openNewSession = () => { setNewSessionName(""); setNewSessionOpen(true); };
+  const createSession = () => { term.newTmuxSession(newSessionName()); setNewSessionOpen(false); term.refocus(); };
+  const [uiTmuxBinary, setUiTmuxBinary] = createSignal(termConfig.getString("tmuxBinary", ""));
+  const [uiTmuxPauseAfter, setUiTmuxPauseAfter] = createSignal(termConfig.getInt("tmuxPauseAfter", 5));
+  const [uiTmuxHoldCap, setUiTmuxHoldCap] = createSignal(termConfig.getInt("tmuxHoldCap", 8));
+  const [uiTmuxHistory, setUiTmuxHistory] = createSignal(termConfig.getInt("tmuxHistory", 0));
+  const [uiTmuxClose, setUiTmuxClose] = createSignal(termConfig.getString("tmuxCloseAction", "detach"));
+  const [uiTmuxReattach, setUiTmuxReattach] = createSignal(termConfig.getInt("tmuxReattach", 1));
   const paneToggleReadOnly = () => { const nv = !paneReadOnly(); term.setReadOnlyFocused(nv); setPaneReadOnly(nv); };
   // F12 overview: a list of every pane across every tab.
   const [overviewOpen, setOverviewOpen] = createSignal(false);
@@ -265,6 +280,16 @@ export function Term(props: { onTitle: (t: string) => void }) {
         </div>
       </Show>
 
+      <Show when={uiTmuxBanner() !== ""}>
+        <div class="tmux-banner">
+          <text class="tmux-banner-t">{uiTmuxBanner()}</text>
+          <Show when={uiTmuxBannerReattach()}>
+            <button class="tmux-banner-b" onClick={() => term.tmuxReattach()}>Reattach</button>
+          </Show>
+          <button class="tmux-banner-b" onClick={() => term.closeWindow()}>Close</button>
+        </div>
+      </Show>
+
       <div class="term-body">
         <TerminalTabs
           ref={term}
@@ -292,6 +317,8 @@ export function Term(props: { onTitle: (t: string) => void }) {
           onAccelerator={(seq) => onAccel(seq)}
           onTitleChanged={(t) => { setTitle(t); props.onTitle(t); }}
           onTmuxStateChanged={(on, hidden) => { setUiTmuxOn(on); setUiHiddenPanes(hidden); }}
+          onTmuxBanner={(text, reattach) => { setUiTmuxBanner(text); setUiTmuxBannerReattach(reattach); }}
+          onTmuxSessionsChanged={(list) => setUiTmuxSessions(list)}
           onHoverLinkChanged={(url) => setHoverLinkUrl(url)}
         />
         {/* suppressWhen: a program that turned mouse tracking on (vim, htop, tmux…) gets the
@@ -299,7 +326,7 @@ export function Term(props: { onTitle: (t: string) => void }) {
             escape hatch), same as Shift forces local selection/scrollback over reporting
             everywhere else. See TerminalView::wantsMouseReport. */}
         <ContextMenu class="tmenu" onClose={() => setMenuLink("")}
-          suppressWhen={(mods) => { setMenuLink(hoverLinkUrl()); return term.wantsMouseReportFocused(mods); }}>
+          suppressWhen={(mods) => { setMenuLink(hoverLinkUrl()); term.refreshTmuxSessions(); return term.wantsMouseReportFocused(mods); }}>
           {/* Only when the right-click landed on an auto-detected link (menuLink: hoverLinkUrl as it
               was at the right-click — see TerminalView::hoverLinkChanged). */}
           <Show when={menuLink() !== ""}>
@@ -319,6 +346,13 @@ export function Term(props: { onTitle: (t: string) => void }) {
             <MenuItem onClick={() => term.killTab()}>Kill ta&b</MenuItem>
           </Show>
           <For each={uiHiddenPanes()}>{(h) => <MenuItem onClick={() => term.restoreHidden(h.window)}>{"Show hidden: " + h.title}</MenuItem>}</For>
+          <MenuSeparator />
+          <MenuItem onClick={() => openNewSession()}>New t&mux session…</MenuItem>
+          <For each={uiTmuxSessions()}>{(t) => <MenuItem onClick={() => term.openTmuxSession(t.name)}>{(t.current ? "tmux: " : "Attach tmux: ") + t.name + (t.ours ? " ★" : "") + (t.attached > 0 && !t.current ? " (attached)" : "")}</MenuItem>}</For>
+          <Show when={uiTmuxOn()}>
+            <MenuItem onClick={() => term.tmuxDetach()}>&Detach from tmux</MenuItem>
+            <MenuItem onClick={() => term.tmuxKillSession()}>Kill tmux session</MenuItem>
+          </Show>
           <MenuSeparator />
           <MenuItem onClick={() => openSearch()}>&Find…</MenuItem>
           <MenuItem onClick={() => openRename()}>Set &title…</MenuItem>
@@ -506,6 +540,64 @@ export function Term(props: { onTitle: (t: string) => void }) {
             </div>
           </div>
 
+          <text class="cfg-group">tmux</text>
+          <div class="cfg-card">
+            <div class="cfg-row">
+              <text class="cfg-l">tmux binary</text>
+              <input class="cfg-in-img" value={uiTmuxBinary()} placeholder="tmux (from PATH)"
+                     onInput={(e) => { setUiTmuxBinary(e.target.value); termConfig.set("tmuxBinary", e.target.value); }} />
+            </div>
+            <hr class="cfg-div" />
+            <div class="cfg-row">
+              <text class="cfg-l">Closing a tmux window</text>
+              <select class="cfg-sel" value={uiTmuxClose()}
+                      onChange={(v) => { setUiTmuxClose(v); termConfig.set("tmuxCloseAction", v); }}>
+                <option value="detach">Detaches</option>
+                <option value="kill">Kills the session</option>
+              </select>
+            </div>
+            <hr class="cfg-div" />
+            <div class="cfg-row">
+              <text class="cfg-l">Reattach my sessions on start</text>
+              <select class="cfg-sel" value={"" + uiTmuxReattach()}
+                      onChange={(v) => { setUiTmuxReattach(parseInt(v)); termConfig.set("tmuxReattach", parseInt(v)); }}>
+                <option value="1">On</option>
+                <option value="0">Off</option>
+              </select>
+            </div>
+            <hr class="cfg-div" />
+            <div class="cfg-row">
+              <text class="cfg-l">History restored on attach</text>
+              <select class="cfg-sel" value={"" + uiTmuxHistory()}
+                      onChange={(v) => { setUiTmuxHistory(parseInt(v)); termConfig.set("tmuxHistory", parseInt(v)); }}>
+                <option value="0">As much as the scrollback</option>
+                <option value="2000">2000 lines</option>
+                <option value="10000">10000 lines</option>
+                <option value="50000">50000 lines</option>
+              </select>
+            </div>
+            <hr class="cfg-div" />
+            <div class="cfg-row">
+              <text class="cfg-l">Pause a stalled pane after</text>
+              <select class="cfg-sel" value={"" + uiTmuxPauseAfter()}
+                      onChange={(v) => { setUiTmuxPauseAfter(parseInt(v)); termConfig.set("tmuxPauseAfter", parseInt(v)); }}>
+                <option value="1">1 s</option>
+                <option value="5">5 s</option>
+                <option value="30">30 s</option>
+              </select>
+            </div>
+            <hr class="cfg-div" />
+            <div class="cfg-row">
+              <text class="cfg-l">Output held while selecting</text>
+              <select class="cfg-sel" value={"" + uiTmuxHoldCap()}
+                      onChange={(v) => { setUiTmuxHoldCap(parseInt(v)); termConfig.set("tmuxHoldCap", parseInt(v)); }}>
+                <option value="8">up to 8 MiB per pane</option>
+                <option value="32">up to 32 MiB per pane</option>
+                <option value="128">up to 128 MiB per pane</option>
+              </select>
+            </div>
+          </div>
+
           <text class="cfg-group">Keyboard</text>
           <div class="cfg-card">
             <For each={ACTIONS}>
@@ -545,6 +637,21 @@ export function Term(props: { onTitle: (t: string) => void }) {
               <text class="ov-title">{(row().panes > 1 ? (row().pane + 1) + ": " : "") + (row().title || "terminal")}</text>
             </div>
           }</Index>
+        </div>
+      </dialog>
+      </Show>
+
+      <Show when={newSessionOpen()}>
+      <dialog open={newSessionOpen()} title="New tmux session" class="cfg" onClose={() => setNewSessionOpen(false)}>
+        <div class="cfg-body paste-body">
+          <text class="paste-warn">Session name</text>
+          <input class="cfg-in rename-in" value={newSessionName()} placeholder="main"
+                 onInput={(e) => setNewSessionName(e.target.value)} />
+          <text class="paste-hint">Opens a window on it; an existing session of that name is attached.</text>
+          <div class="cfg-actions paste-actions">
+            <button class="paste-cancel" onClick={() => setNewSessionOpen(false)}>Cancel</button>
+            <button class="cfg-close" type="submit" onClick={() => createSession()}>Open</button>
+          </div>
         </div>
       </dialog>
       </Show>

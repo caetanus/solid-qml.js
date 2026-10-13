@@ -36,6 +36,17 @@ W.Div {
     property var paneReadOnly: false
     property var uiTmuxOn: false
     property var uiHiddenPanes: []
+    property var uiTmuxBanner: ""
+    property var uiTmuxBannerReattach: false
+    property var uiTmuxSessions: []
+    property var newSessionOpen: false
+    property var newSessionName: ""
+    property var uiTmuxBinary: termConfig.getString("tmuxBinary", "")
+    property var uiTmuxPauseAfter: termConfig.getInt("tmuxPauseAfter", 5)
+    property var uiTmuxHoldCap: termConfig.getInt("tmuxHoldCap", 8)
+    property var uiTmuxHistory: termConfig.getInt("tmuxHistory", 0)
+    property var uiTmuxClose: termConfig.getString("tmuxCloseAction", "detach")
+    property var uiTmuxReattach: termConfig.getInt("tmuxReattach", 1)
     property var overviewOpen: false
     property var renameOpen: false
     property var renameValue: ""
@@ -63,6 +74,8 @@ W.Div {
     function cancelPaste() { pastePrompt = ""; _ref_term.refocus(); }
     function closeCfg() { cfgOpen = false; _ref_term.refocus(); }
     function openPaneMenu(x_, y_, ro) { paneReadOnly = ro; _ref_paneMenu.open(x_, y_); }
+    function openNewSession() { newSessionName = ""; newSessionOpen = true; }
+    function createSession() { _ref_term.newTmuxSession(newSessionName); newSessionOpen = false; _ref_term.refocus(); }
     function paneToggleReadOnly() { var nv = !paneReadOnly; _ref_term.setReadOnlyFocused(nv); paneReadOnly = nv; }
     function closeOverview() { overviewOpen = false; _ref_term.refocus(); }
     function toggleOverview() { if (overviewOpen) { closeOverview(); } else { overviewOpen = true; } }
@@ -278,6 +291,29 @@ W.Div {
             }
         }
     }
+    Repeater {
+        model: (uiTmuxBanner !== "") ? 1 : 0
+        W.Div {
+            cssClass: ["tmux-banner"]
+            W.Text {
+                cssClass: ["tmux-banner-t"]
+                text: "" + (uiTmuxBanner)
+            }
+            Repeater {
+                model: (uiTmuxBannerReattach) ? 1 : 0
+                W.Button {
+                    cssClass: ["tmux-banner-b"]
+                    text: "Reattach"
+                    onClicked: _ref_term.tmuxReattach()
+                }
+            }
+            W.Button {
+                cssClass: ["tmux-banner-b"]
+                text: "Close"
+                onClicked: _ref_term.closeWindow()
+            }
+        }
+    }
     W.Div {
         cssClass: ["term-body"]
         Css.CssRect {
@@ -309,6 +345,8 @@ W.Div {
                 onAccelerator: function(seq) { return onAccel(seq) }
                 onTitleChanged: function(t) { title = t; onTitle(t); }
                 onTmuxStateChanged: function(on_, hidden) { uiTmuxOn = on_; uiHiddenPanes = hidden; }
+                onTmuxBanner: function(text, reattach) { uiTmuxBanner = text; uiTmuxBannerReattach = reattach; }
+                onTmuxSessionsChanged: function(list) { return uiTmuxSessions = list }
                 onHoverLinkChanged: function(url) { return hoverLinkUrl = url }
             }
         }
@@ -318,7 +356,7 @@ W.Div {
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.RightButton
-                onPressed: function(mouse) { if ((function() { menuLink = hoverLinkUrl; return _ref_term.wantsMouseReportFocused(mouse.modifiers); })()) mouse.accepted = false }
+                onPressed: function(mouse) { if ((function() { menuLink = hoverLinkUrl; _ref_term.refreshTmuxSessions(); return _ref_term.wantsMouseReportFocused(mouse.modifiers); })()) mouse.accepted = false }
                 onClicked: function(mouse) { __ctxAnchor3.x = mouse.x; __ctxAnchor3.y = mouse.y; __menu3.popup(0, 0) }
             }
             Item {
@@ -439,6 +477,51 @@ W.Div {
                     W.MenuSeparator { menuClass: __menu3.authorClass }
                     W.MenuItem {
                         menuClass: __menu3.authorClass
+                        text: "New t&mux session…"
+                        onTriggered: { openNewSession() }
+                    }
+                    Instantiator {
+                        id: __menuDyn10
+                        model: uiTmuxSessions
+                        delegate: Component {
+                            W.MenuItem {
+                                menuClass: __menu3.authorClass
+                                text: ((modelData.current ? "tmux: " : "Attach tmux: ") + modelData.name + (modelData.ours ? " ★" : "") + (modelData.attached > 0 && !modelData.current ? " (attached)" : ""))
+                                onTriggered: { _ref_term.openTmuxSession(modelData.name) }
+                            }
+                        }
+                        onObjectAdded: (index, object) => __menu3.insertItem(9 + __menuDyn4.count + __menuDyn5.count + __menuDyn6.count + __menuDyn7.count + __menuDyn8.count + __menuDyn9.count + index, object)
+                        onObjectRemoved: (index, object) => __menu3.removeItem(object)
+                    }
+                    Instantiator {
+                        id: __menuDyn11
+                        model: (uiTmuxOn) ? 1 : 0
+                        delegate: Component {
+                            W.MenuItem {
+                                menuClass: __menu3.authorClass
+                                text: "&Detach from tmux"
+                                onTriggered: { _ref_term.tmuxDetach() }
+                            }
+                        }
+                        onObjectAdded: (index, object) => __menu3.insertItem(9 + __menuDyn4.count + __menuDyn5.count + __menuDyn6.count + __menuDyn7.count + __menuDyn8.count + __menuDyn9.count + __menuDyn10.count + index, object)
+                        onObjectRemoved: (index, object) => __menu3.removeItem(object)
+                    }
+                    Instantiator {
+                        id: __menuDyn12
+                        model: (uiTmuxOn) ? 1 : 0
+                        delegate: Component {
+                            W.MenuItem {
+                                menuClass: __menu3.authorClass
+                                text: "Kill tmux session"
+                                onTriggered: { _ref_term.tmuxKillSession() }
+                            }
+                        }
+                        onObjectAdded: (index, object) => __menu3.insertItem(9 + __menuDyn4.count + __menuDyn5.count + __menuDyn6.count + __menuDyn7.count + __menuDyn8.count + __menuDyn9.count + __menuDyn10.count + __menuDyn11.count + index, object)
+                        onObjectRemoved: (index, object) => __menu3.removeItem(object)
+                    }
+                    W.MenuSeparator { menuClass: __menu3.authorClass }
+                    W.MenuItem {
+                        menuClass: __menu3.authorClass
                         text: "&Find…"
                         onTriggered: { openSearch() }
                     }
@@ -506,11 +589,11 @@ W.Div {
                                     text: "Font family"
                                 }
                                 W.TextField {
-                                    id: __input11
+                                    id: __input14
                                     cssClass: ["cfg-in-img"]
                                     onTextEdited: { uiFontFamily = text; termConfig.set("fontFamily", text); }
                                     Binding {
-                                        target: __input11
+                                        target: __input14
                                         property: "text"
                                         value: uiFontFamily
                                         restoreMode: Binding.RestoreNone
@@ -533,15 +616,15 @@ W.Div {
                                     text: "Font size"
                                 }
                                 W.Select {
-                                    id: __input12
+                                    id: __input15
                                     cssClass: ["cfg-sel"]
                                     model: ["9 px", "10 px", "11 px", "12 px", "13 px", "14 px", "15 px", "16 px", "17 px", "18 px", "19 px", "20 px", "21 px", "22 px", "23 px", "24 px", "25 px", "26 px", "27 px", "28 px", "32 px", "36 px"]
                                     values: ["9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "32", "36"]
-                                    onActivated: (__idx) => { uiFontSize = parseInt(__input12.values[__idx]); termConfig.set("fontSize", parseInt(__input12.values[__idx])); }
+                                    onActivated: (__idx) => { uiFontSize = parseInt(__input15.values[__idx]); termConfig.set("fontSize", parseInt(__input15.values[__idx])); }
                                     Binding {
-                                        target: __input12
+                                        target: __input15
                                         property: "currentIndex"
-                                        value: __input12.values.indexOf("" + uiFontSize)
+                                        value: __input15.values.indexOf("" + uiFontSize)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -557,15 +640,15 @@ W.Div {
                                     text: "Color scheme"
                                 }
                                 W.Select {
-                                    id: __input13
+                                    id: __input16
                                     cssClass: ["cfg-sel"]
                                     model: ["System", "Midnight", "Midnight (high contrast)", "Monokai", "Solarized Dark", "Gruvbox", "Paper (light)"]
                                     values: ["system", "midnight", "midnight-hc", "monokai", "solarized", "gruvbox", "paper"]
-                                    onActivated: (__idx) => { scheme = __input13.values[__idx]; termConfig.set("scheme", __input13.values[__idx]); }
+                                    onActivated: (__idx) => { scheme = __input16.values[__idx]; termConfig.set("scheme", __input16.values[__idx]); }
                                     Binding {
-                                        target: __input13
+                                        target: __input16
                                         property: "currentIndex"
-                                        value: __input13.values.indexOf(scheme)
+                                        value: __input16.values.indexOf(scheme)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -583,12 +666,12 @@ W.Div {
                                 W.Div {
                                     cssClass: ["cfg-imgrow"]
                                     W.TextField {
-                                        id: __input14
+                                        id: __input17
                                         cssClass: ["cfg-in-img"]
                                         placeholder: "none"
                                         onTextEdited: { bgImage = text; termConfig.set("bgImage", text); }
                                         Binding {
-                                            target: __input14
+                                            target: __input17
                                             property: "text"
                                             value: bgImage
                                             restoreMode: Binding.RestoreNone
@@ -619,14 +702,14 @@ W.Div {
                                 W.Div {
                                     cssClass: ["cfg-slide"]
                                     W.Slider {
-                                        id: __input15
+                                        id: __input18
                                         cssClass: ["cfg-range"]
                                         from: 40
                                         to: 100
                                         stepSize: 1
-                                        onMoved: { opacity_ = parseInt(__input15.value); termConfig.set("opacity", parseInt(__input15.value)); sysTheme.setUiOpacity(parseInt(__input15.value) / 100); }
+                                        onMoved: { opacity_ = parseInt(__input18.value); termConfig.set("opacity", parseInt(__input18.value)); sysTheme.setUiOpacity(parseInt(__input18.value) / 100); }
                                         Binding {
-                                            target: __input15
+                                            target: __input18
                                             property: "value"
                                             value: "" + opacity_
                                             restoreMode: Binding.RestoreNone
@@ -651,14 +734,14 @@ W.Div {
                                 W.Div {
                                     cssClass: ["cfg-slide"]
                                     W.Slider {
-                                        id: __input16
+                                        id: __input19
                                         cssClass: ["cfg-range"]
                                         from: 0
                                         to: 100
                                         stepSize: 5
-                                        onMoved: { uiBlur = parseInt(__input16.value); termConfig.set("blur", parseInt(__input16.value)); }
+                                        onMoved: { uiBlur = parseInt(__input19.value); termConfig.set("blur", parseInt(__input19.value)); }
                                         Binding {
-                                            target: __input16
+                                            target: __input19
                                             property: "value"
                                             value: "" + uiBlur
                                             restoreMode: Binding.RestoreNone
@@ -681,15 +764,15 @@ W.Div {
                                     text: "Header bar"
                                 }
                                 W.Select {
-                                    id: __input17
+                                    id: __input20
                                     cssClass: ["cfg-sel"]
                                     model: ["Shown", "Hidden"]
                                     values: ["1", "0"]
-                                    onActivated: (__idx) => { showHeader = parseInt(__input17.values[__idx]); termConfig.set("showHeader", parseInt(__input17.values[__idx])); }
+                                    onActivated: (__idx) => { showHeader = parseInt(__input20.values[__idx]); termConfig.set("showHeader", parseInt(__input20.values[__idx])); }
                                     Binding {
-                                        target: __input17
+                                        target: __input20
                                         property: "currentIndex"
-                                        value: __input17.values.indexOf("" + showHeader)
+                                        value: __input20.values.indexOf("" + showHeader)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -705,15 +788,15 @@ W.Div {
                                     text: "Status bar"
                                 }
                                 W.Select {
-                                    id: __input18
+                                    id: __input21
                                     cssClass: ["cfg-sel"]
                                     model: ["Shown", "Hidden"]
                                     values: ["1", "0"]
-                                    onActivated: (__idx) => { showStatus = parseInt(__input18.values[__idx]); termConfig.set("showStatus", parseInt(__input18.values[__idx])); }
+                                    onActivated: (__idx) => { showStatus = parseInt(__input21.values[__idx]); termConfig.set("showStatus", parseInt(__input21.values[__idx])); }
                                     Binding {
-                                        target: __input18
+                                        target: __input21
                                         property: "currentIndex"
-                                        value: __input18.values.indexOf("" + showStatus)
+                                        value: __input21.values.indexOf("" + showStatus)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -729,15 +812,15 @@ W.Div {
                                     text: "Split animation"
                                 }
                                 W.Select {
-                                    id: __input19
+                                    id: __input22
                                     cssClass: ["cfg-sel"]
                                     model: ["On", "Off"]
                                     values: ["1", "0"]
-                                    onActivated: (__idx) => { animSplits = parseInt(__input19.values[__idx]); termConfig.set("animSplits", parseInt(__input19.values[__idx])); }
+                                    onActivated: (__idx) => { animSplits = parseInt(__input22.values[__idx]); termConfig.set("animSplits", parseInt(__input22.values[__idx])); }
                                     Binding {
-                                        target: __input19
+                                        target: __input22
                                         property: "currentIndex"
-                                        value: __input19.values.indexOf("" + animSplits)
+                                        value: __input22.values.indexOf("" + animSplits)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -755,14 +838,14 @@ W.Div {
                                 W.Div {
                                     cssClass: ["cfg-slide"]
                                     W.Slider {
-                                        id: __input20
+                                        id: __input23
                                         cssClass: ["cfg-range"]
                                         from: 0
                                         to: 24
                                         stepSize: 1
-                                        onMoved: { uiSplitGap = parseInt(__input20.value); termConfig.set("splitGap", parseInt(__input20.value)); }
+                                        onMoved: { uiSplitGap = parseInt(__input23.value); termConfig.set("splitGap", parseInt(__input23.value)); }
                                         Binding {
-                                            target: __input20
+                                            target: __input23
                                             property: "value"
                                             value: "" + uiSplitGap
                                             restoreMode: Binding.RestoreNone
@@ -791,15 +874,15 @@ W.Div {
                                     text: "Scrollback"
                                 }
                                 W.Select {
-                                    id: __input21
+                                    id: __input24
                                     cssClass: ["cfg-sel"]
                                     model: ["1000 lines", "5000 lines", "8000 lines", "20000 lines", "100000 lines"]
                                     values: ["1000", "5000", "8000", "20000", "100000"]
-                                    onActivated: (__idx) => { scrollback = parseInt(__input21.values[__idx]); termConfig.set("scrollback", parseInt(__input21.values[__idx])); }
+                                    onActivated: (__idx) => { scrollback = parseInt(__input24.values[__idx]); termConfig.set("scrollback", parseInt(__input24.values[__idx])); }
                                     Binding {
-                                        target: __input21
+                                        target: __input24
                                         property: "currentIndex"
-                                        value: __input21.values.indexOf("" + scrollback)
+                                        value: __input24.values.indexOf("" + scrollback)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -815,15 +898,15 @@ W.Div {
                                     text: "Focus follows mouse"
                                 }
                                 W.Select {
-                                    id: __input22
+                                    id: __input25
                                     cssClass: ["cfg-sel"]
                                     model: ["Off", "On"]
                                     values: ["0", "1"]
-                                    onActivated: (__idx) => { uiFocusHover = parseInt(__input22.values[__idx]); termConfig.set("focusOnHover", parseInt(__input22.values[__idx])); }
+                                    onActivated: (__idx) => { uiFocusHover = parseInt(__input25.values[__idx]); termConfig.set("focusOnHover", parseInt(__input25.values[__idx])); }
                                     Binding {
-                                        target: __input22
+                                        target: __input25
                                         property: "currentIndex"
-                                        value: __input22.values.indexOf("" + uiFocusHover)
+                                        value: __input25.values.indexOf("" + uiFocusHover)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -839,15 +922,161 @@ W.Div {
                                     text: "Scrollbar"
                                 }
                                 W.Select {
-                                    id: __input23
+                                    id: __input26
                                     cssClass: ["cfg-sel"]
                                     model: ["Always", "Auto (while scrolling or on hover)", "Never"]
                                     values: ["always", "auto", "never"]
-                                    onActivated: (__idx) => { uiScrollbar = __input23.values[__idx]; termConfig.set("scrollbar", __input23.values[__idx]); }
+                                    onActivated: (__idx) => { uiScrollbar = __input26.values[__idx]; termConfig.set("scrollbar", __input26.values[__idx]); }
                                     Binding {
-                                        target: __input23
+                                        target: __input26
                                         property: "currentIndex"
-                                        value: __input23.values.indexOf(uiScrollbar)
+                                        value: __input26.values.indexOf(uiScrollbar)
+                                        restoreMode: Binding.RestoreNone
+                                    }
+                                }
+                            }
+                        }
+                        W.Text {
+                            cssClass: ["cfg-group"]
+                            text: "tmux"
+                        }
+                        W.Div {
+                            cssClass: ["cfg-card"]
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "tmux binary"
+                                }
+                                W.TextField {
+                                    id: __input27
+                                    cssClass: ["cfg-in-img"]
+                                    placeholder: "tmux (from PATH)"
+                                    onTextEdited: { uiTmuxBinary = text; termConfig.set("tmuxBinary", text); }
+                                    Binding {
+                                        target: __input27
+                                        property: "text"
+                                        value: uiTmuxBinary
+                                        restoreMode: Binding.RestoreNone
+                                    }
+                                }
+                            }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Closing a tmux window"
+                                }
+                                W.Select {
+                                    id: __input28
+                                    cssClass: ["cfg-sel"]
+                                    model: ["Detaches", "Kills the session"]
+                                    values: ["detach", "kill"]
+                                    onActivated: (__idx) => { uiTmuxClose = __input28.values[__idx]; termConfig.set("tmuxCloseAction", __input28.values[__idx]); }
+                                    Binding {
+                                        target: __input28
+                                        property: "currentIndex"
+                                        value: __input28.values.indexOf(uiTmuxClose)
+                                        restoreMode: Binding.RestoreNone
+                                    }
+                                }
+                            }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Reattach my sessions on start"
+                                }
+                                W.Select {
+                                    id: __input29
+                                    cssClass: ["cfg-sel"]
+                                    model: ["On", "Off"]
+                                    values: ["1", "0"]
+                                    onActivated: (__idx) => { uiTmuxReattach = parseInt(__input29.values[__idx]); termConfig.set("tmuxReattach", parseInt(__input29.values[__idx])); }
+                                    Binding {
+                                        target: __input29
+                                        property: "currentIndex"
+                                        value: __input29.values.indexOf("" + uiTmuxReattach)
+                                        restoreMode: Binding.RestoreNone
+                                    }
+                                }
+                            }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "History restored on attach"
+                                }
+                                W.Select {
+                                    id: __input30
+                                    cssClass: ["cfg-sel"]
+                                    model: ["As much as the scrollback", "2000 lines", "10000 lines", "50000 lines"]
+                                    values: ["0", "2000", "10000", "50000"]
+                                    onActivated: (__idx) => { uiTmuxHistory = parseInt(__input30.values[__idx]); termConfig.set("tmuxHistory", parseInt(__input30.values[__idx])); }
+                                    Binding {
+                                        target: __input30
+                                        property: "currentIndex"
+                                        value: __input30.values.indexOf("" + uiTmuxHistory)
+                                        restoreMode: Binding.RestoreNone
+                                    }
+                                }
+                            }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Pause a stalled pane after"
+                                }
+                                W.Select {
+                                    id: __input31
+                                    cssClass: ["cfg-sel"]
+                                    model: ["1 s", "5 s", "30 s"]
+                                    values: ["1", "5", "30"]
+                                    onActivated: (__idx) => { uiTmuxPauseAfter = parseInt(__input31.values[__idx]); termConfig.set("tmuxPauseAfter", parseInt(__input31.values[__idx])); }
+                                    Binding {
+                                        target: __input31
+                                        property: "currentIndex"
+                                        value: __input31.values.indexOf("" + uiTmuxPauseAfter)
+                                        restoreMode: Binding.RestoreNone
+                                    }
+                                }
+                            }
+                            W.Div {
+                                cssClass: ["cfg-div"]
+                                cssPrimitive: "hr"
+                            }
+                            W.Div {
+                                cssClass: ["cfg-row"]
+                                W.Text {
+                                    cssClass: ["cfg-l"]
+                                    text: "Output held while selecting"
+                                }
+                                W.Select {
+                                    id: __input32
+                                    cssClass: ["cfg-sel"]
+                                    model: ["up to 8 MiB per pane", "up to 32 MiB per pane", "up to 128 MiB per pane"]
+                                    values: ["8", "32", "128"]
+                                    onActivated: (__idx) => { uiTmuxHoldCap = parseInt(__input32.values[__idx]); termConfig.set("tmuxHoldCap", parseInt(__input32.values[__idx])); }
+                                    Binding {
+                                        target: __input32
+                                        property: "currentIndex"
+                                        value: __input32.values.indexOf("" + uiTmuxHoldCap)
                                         restoreMode: Binding.RestoreNone
                                     }
                                 }
@@ -938,6 +1167,52 @@ W.Div {
         }
     }
     Repeater {
+        model: (newSessionOpen) ? 1 : 0
+        W.Dialog {
+            open: !!(newSessionOpen)
+            title: "New tmux session"
+            cssClass: ["cfg"]
+            onDialogClosed: { newSessionOpen = false }
+            W.Div {
+                cssClass: ["cfg-body", "paste-body"]
+                W.Text {
+                    cssClass: ["paste-warn"]
+                    text: "Session name"
+                }
+                W.TextField {
+                    id: __input35
+                    cssClass: ["cfg-in", "rename-in"]
+                    placeholder: "main"
+                    onTextEdited: { newSessionName = text }
+                    Binding {
+                        target: __input35
+                        property: "text"
+                        value: newSessionName
+                        restoreMode: Binding.RestoreNone
+                    }
+                }
+                W.Text {
+                    cssClass: ["paste-hint"]
+                    text: "Opens a window on it; an existing session of that name is attached."
+                }
+                W.Div {
+                    cssClass: ["cfg-actions", "paste-actions"]
+                    W.Button {
+                        cssClass: ["paste-cancel"]
+                        text: "Cancel"
+                        onClicked: newSessionOpen = false
+                    }
+                    W.Button {
+                        cssClass: ["cfg-close"]
+                        isDefault: true
+                        text: "Open"
+                        onClicked: createSession()
+                    }
+                }
+            }
+        }
+    }
+    Repeater {
         model: (renameOpen) ? 1 : 0
         W.Dialog {
             open: !!(renameOpen)
@@ -951,12 +1226,12 @@ W.Div {
                     text: "Tab title"
                 }
                 W.TextField {
-                    id: __input26
+                    id: __input37
                     cssClass: ["cfg-in", "rename-in"]
                     placeholder: "(empty = automatic)"
                     onTextEdited: { renameValue = text }
                     Binding {
-                        target: __input26
+                        target: __input37
                         property: "text"
                         value: renameValue
                         restoreMode: Binding.RestoreNone
