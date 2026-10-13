@@ -52,42 +52,50 @@ void TerminalTabs::emitModel()
     QStringList titles;
     titles.reserve(m_tabs.size());
     for (const Tab &t : m_tabs)
-        titles.append(t.effective());
+        if (!t.hidden)
+            titles.append(t.effective());
+    const int active = visibleIndex(m_active);
     // Only real changes: the TSX tab bar's Repeater binds its model to these titles, and an identical
     // re-emission from inside its own (re)layout — the bar appearing shrinks this item, whose first
     // geometry selects the active tab again — reads as a binding loop.
-    if (m_modelEmitted && titles == m_lastTitles && m_active == m_lastActive)
+    if (m_modelEmitted && titles == m_lastTitles && active == m_lastActive)
         return;
     m_modelEmitted = true;
     m_lastTitles = titles;
-    m_lastActive = m_active;
-    emit tabsChanged(titles, m_active);
+    m_lastActive = active;
+    emit tabsChanged(titles, active);
 }
 
-void TerminalTabs::setTabTitle(int index, const QString &title)
+void TerminalTabs::setTabTitle(int visible, const QString &title)
 {
-    if (index < 0 || index >= m_tabs.size())
+    const int index = realIndex(visible);
+    if (index < 0)
         return;
+    if (m_tmux && !title.isEmpty()) // a custom title persists in tmux (2.4)
+        m_tmux->renameWindow(m_tabs[index].tmuxWindow, title);
     m_tabs[index].customTitle = title;
     emitModel();
     if (index == m_active)
         emit titleChanged(windowTitleFor(index));
 }
 
-QString TerminalTabs::tabTitle(int index) const
+QString TerminalTabs::tabTitle(int visible) const
 {
-    return (index >= 0 && index < m_tabs.size()) ? m_tabs[index].effective() : QString();
+    const int index = realIndex(visible);
+    return index >= 0 ? m_tabs[index].effective() : QString();
 }
 
 QVariantList TerminalTabs::overview() const
 {
     QVariantList out;
     for (int t = 0; t < m_tabs.size(); ++t) {
+        if (m_tabs[t].hidden)
+            continue;
         const QStringList titles = m_tabs[t].panes->paneTitles();
         const int focused = m_tabs[t].panes->focusedPaneIndex();
         for (int p = 0; p < titles.size(); ++p) {
             QVariantMap row;
-            row["tab"] = t;
+            row["tab"] = visibleIndex(t);
             row["pane"] = p;
             row["panes"] = titles.size();
             row["tabTitle"] = m_tabs[t].effective();
@@ -99,11 +107,12 @@ QVariantList TerminalTabs::overview() const
     return out;
 }
 
-void TerminalTabs::focusPane(int tab, int pane)
+void TerminalTabs::focusPane(int visibleTab, int pane)
 {
-    if (tab < 0 || tab >= m_tabs.size())
+    const int tab = realIndex(visibleTab);
+    if (tab < 0)
         return;
-    selectTab(tab);
+    selectTab(visibleTab);
     m_tabs[tab].panes->focusLeafByIndex(pane);
 }
 
@@ -157,7 +166,7 @@ TerminalPanes *TerminalTabs::makePanes()
     });
     connect(panes, &TerminalPanes::allClosed, this, [this, panes] {
         for (int k = 0; k < m_tabs.size(); ++k)
-            if (m_tabs[k].panes == panes) { closeTab(k); return; }
+            if (m_tabs[k].panes == panes) { closeAt(k); return; }
     });
     return panes;
 }
@@ -170,6 +179,8 @@ void TerminalTabs::componentComplete()
         m_isTmux = true;
         m_tmux = new TmuxSession(s_pendingTmux, this);
         s_pendingTmux = QString();
+        connect(m_tmux, &TmuxSession::hiddenChanged, this, &TerminalTabs::emitTmuxState);
+        QMetaObject::invokeMethod(this, &TerminalTabs::emitTmuxState, Qt::QueuedConnection);
         return;
     }
     newTab(); // the first tab
@@ -177,20 +188,36 @@ void TerminalTabs::componentComplete()
 
 void TerminalTabs::newTab()
 {
-    if (m_isTmux)
-        return; // tmux: new-window (phase 3)
+    if (m_isTmux) { // server-driven: the new window arrives as %window-add (2.5)
+        if (m_tmux)
+            m_tmux->newWindow(m_tabs.value(m_active).tmuxWindow);
+        return;
+    }
     TerminalPanes *panes = makePanes();
     if (!panes)
         return;
     Tab t;
     t.panes = panes;
     m_tabs.append(t);
-    selectTab(m_tabs.size() - 1);
+    activateTab(m_tabs.size() - 1);
 }
 
-void TerminalTabs::closeTab(int index)
+void TerminalTabs::closeTab(int visible)
 {
-    if (index < 0 || index >= m_tabs.size() || m_isTmux) // tmux: hide/kill (owner decision 2, phase 4)
+    const int index = realIndex(visible);
+    if (index < 0)
+        return;
+    if (m_isTmux) { // owner decision 2: closing a tmux tab HIDES it (its programs keep running)
+        if (m_tmux)
+            m_tmux->hideWindow(m_tabs[index].tmuxWindow);
+        return;
+    }
+    closeAt(index);
+}
+
+void TerminalTabs::closeAt(int index)
+{
+    if (index < 0 || index >= m_tabs.size())
         return;
     TerminalPanes *panes = m_tabs[index].panes;
     m_tabs.removeAt(index);
@@ -213,14 +240,57 @@ void TerminalTabs::closeTab(int index)
         m_active = m_tabs.size() - 1;
     else if (index < m_active)
         --m_active;
-    selectTab(m_active);
+    activateTab(m_active);
+}
+
+// Public API: indexes are VISIBLE tab indexes (the TSX tab bar). In tmux mode hidden tabs (owner
+// decision 2) exist but are not shown; locally there are none, so visible == real.
+int TerminalTabs::realIndex(int visible) const
+{
+    for (int k = 0, v = 0; k < m_tabs.size(); ++k) {
+        if (m_tabs[k].hidden)
+            continue;
+        if (v++ == visible)
+            return k;
+    }
+    return -1;
+}
+
+int TerminalTabs::visibleIndex(int real) const
+{
+    if (real < 0 || real >= m_tabs.size() || m_tabs[real].hidden)
+        return -1;
+    int v = 0;
+    for (int k = 0; k < real; ++k)
+        v += m_tabs[k].hidden ? 0 : 1;
+    return v;
+}
+
+int TerminalTabs::visibleCount() const
+{
+    int n = 0;
+    for (const Tab &t : m_tabs)
+        n += t.hidden ? 0 : 1;
+    return n;
 }
 
 void TerminalTabs::selectTab(int index)
 {
+    const int real = realIndex(index);
+    if (real < 0)
+        return;
+    activateTab(real);
+    // tmux: the window becomes the session's current one too (other clients follow; 2.4).
+    if (m_tmux)
+        m_tmux->selectWindow(m_tabs[real].tmuxWindow);
+}
+
+void TerminalTabs::activateTab(int index)
+{
     if (index < 0 || index >= m_tabs.size())
         return;
     m_active = index;
+    m_tabs[index].hidden = false; // showing a tab un-hides it
     for (int k = 0; k < m_tabs.size(); ++k)
         m_tabs[k].panes->setVisible(k == index);
     relayout();
@@ -252,7 +322,7 @@ void TerminalTabs::geometryChange(const QRectF &n, const QRectF &o)
     }
     if (!m_didInitialFocus && width() > 0 && height() > 0 && active()) {
         m_didInitialFocus = true;
-        selectTab(m_active);
+        activateTab(m_active);
     }
 }
 
@@ -401,7 +471,12 @@ bool TerminalTabs::routeDrag(QDropEvent *event, bool drop)
     TerminalView *src = TerminalPanes::dragSource(event->mimeData());
     if (!src)
         return false; // not ours (or another process's pane: a pty cannot cross processes)
-    if (m_isTmux) { // tmux ↔ local is refused; tmux moves are commands (phase 3)
+    // tmux ↔ local, and between tmux sessions, is refused: a tmux pane moves by tmux command within
+    // its session (2.5); a local pane's pty cannot enter tmux.
+    TerminalPanes *srcOwner = TerminalPanes::ownerOf(src);
+    TerminalTabs *srcTabs = srcOwner ? qobject_cast<TerminalTabs *>(srcOwner->parentItem()) : nullptr;
+    const bool srcTmux = srcOwner && srcOwner->isTmux();
+    if (srcTmux != m_isTmux || (m_isTmux && (!srcTabs || srcTabs->tmuxSession() != m_tmux))) {
         if (drop)
             TerminalPanes::recordNoopDrop();
         event->setDropAction(Qt::IgnoreAction);
@@ -492,7 +567,7 @@ void TerminalTabs::adoptViewAsTab(TerminalView *v)
     t.panes = panes;
     t.title = v->title();
     m_tabs.append(t);
-    selectTab(m_tabs.size() - 1);
+    activateTab(m_tabs.size() - 1);
 }
 
 // ─── tmux mode ──────────────────────────────────────────────────────────────────────────────────
@@ -516,7 +591,7 @@ int TerminalTabs::tmuxTabIndex(int window) const
     return -1;
 }
 
-TerminalPanes *TerminalTabs::tmuxTab(int window, bool create)
+TerminalPanes *TerminalTabs::tmuxTab(int window, bool create, bool hidden)
 {
     const int i = tmuxTabIndex(window);
     if (i >= 0)
@@ -529,9 +604,10 @@ TerminalPanes *TerminalTabs::tmuxTab(int window, bool create)
     Tab t;
     t.panes = panes;
     t.tmuxWindow = window;
+    t.hidden = hidden;
     m_tabs.append(t);
-    if (m_tabs.size() == 1)
-        selectTab(0);
+    if (!hidden && visibleCount() == 1)
+        activateTab(m_tabs.size() - 1);
     else {
         panes->setVisible(false);
         relayout();
@@ -546,6 +622,8 @@ void TerminalTabs::tmuxRemoveTab(int window)
     if (index < 0)
         return;
     TerminalPanes *panes = m_tabs[index].panes;
+    if (panes)
+        panes->tmuxParkAll(); // a pane that moved on keeps its view (2.2)
     m_tabs.removeAt(index);
     if (panes)
         panes->deleteLater();
@@ -558,7 +636,44 @@ void TerminalTabs::tmuxRemoveTab(int window)
         m_active = m_tabs.size() - 1;
     else if (index < m_active)
         --m_active;
-    selectTab(m_active);
+    activateVisibleNear(m_active);
+}
+
+// After the active tab went away or was hidden: the nearest visible tab (none → the window stays
+// as it is; TmuxSession detaches when the last visible tab is hidden).
+void TerminalTabs::activateVisibleNear(int index)
+{
+    for (int d = 0; d < m_tabs.size(); ++d) {
+        for (const int k : { index + d, index - d }) {
+            if (k >= 0 && k < m_tabs.size() && !m_tabs[k].hidden) {
+                const bool changed = k != m_active;
+                activateTab(k);
+                if (changed && m_tmux)
+                    m_tmux->selectWindow(m_tabs[k].tmuxWindow);
+                return;
+            }
+        }
+    }
+    emitModel();
+}
+
+void TerminalTabs::tmuxSetHidden(int window, bool hidden)
+{
+    const int i = tmuxTabIndex(window);
+    if (i < 0 || m_tabs[i].hidden == hidden)
+        return;
+    m_tabs[i].hidden = hidden;
+    if (hidden) {
+        m_tabs[i].panes->setVisible(false);
+        if (i == m_active)
+            activateVisibleNear(i);
+        else
+            emitModel();
+    } else {
+        activateTab(i);
+        if (m_tmux)
+            m_tmux->selectWindow(window);
+    }
 }
 
 void TerminalTabs::tmuxRenameTab(int window, const QString &name)
@@ -575,8 +690,8 @@ void TerminalTabs::tmuxRenameTab(int window, const QString &name)
 void TerminalTabs::tmuxSelectTab(int window)
 {
     const int i = tmuxTabIndex(window);
-    if (i >= 0 && i != m_active)
-        selectTab(i);
+    if (i >= 0 && i != m_active && !m_tabs[i].hidden) // a hidden tab stays hidden
+        activateTab(i);
 }
 
 QList<int> TerminalTabs::tmuxWindows() const
@@ -598,4 +713,49 @@ void TerminalTabs::tmuxSessionEnded()
     m_tmux = nullptr; // nothing to detach any more
     if (QQuickWindow *w = window())
         w->close();
+}
+
+bool TerminalTabs::tmuxTabHidden(int window) const
+{
+    const int i = tmuxTabIndex(window);
+    return i >= 0 && m_tabs[i].hidden;
+}
+
+int TerminalTabs::activeTmuxWindow() const
+{
+    return m_tabs.value(m_active).tmuxWindow;
+}
+
+void TerminalTabs::emitTmuxState()
+{
+    emit tmuxStateChanged(m_isTmux, m_tmux ? m_tmux->hidden() : QVariantList());
+}
+
+QVariantList TerminalTabs::hiddenPanes() const
+{
+    return m_tmux ? m_tmux->hidden() : QVariantList();
+}
+
+void TerminalTabs::restoreHidden(int window)
+{
+    if (m_tmux)
+        m_tmux->restoreHidden(window);
+}
+
+void TerminalTabs::killFocused()
+{
+    if (auto *p = active())
+        p->killFocused();
+}
+
+void TerminalTabs::killTab()
+{
+    if (m_tmux && active())
+        m_tmux->killWindow(m_tabs[m_active].tmuxWindow);
+}
+
+void TerminalTabs::leaveTmuxModeFocused()
+{
+    if (auto *p = active())
+        p->leaveTmuxModeFocused();
 }

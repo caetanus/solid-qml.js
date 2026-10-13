@@ -78,7 +78,21 @@ void PaneHeader::paint(QPainter *p)
     const QString base = m_title.isEmpty() ? QStringLiteral("terminal") : m_title;
     const QString full = m_index > 0 ? (QString::number(m_index) + QStringLiteral(": ") + base) : base;
     p->setPen(m_focused ? m_foreground : m_foreground.darker(130));
-    const QRectF textRect(10, 0, width() - 76, height());
+    // Badge (tmux mode) at the right, before the lock/buttons; the title gets what is left.
+    qreal badgeW = 0;
+    if (!m_badge.isEmpty())
+        badgeW = qMin(width() / 2, qreal(p->fontMetrics().horizontalAdvance(m_badge)) + 14);
+    const QRectF textRect(10, 0, qMax<qreal>(0, width() - 76 - badgeW), height());
+    if (badgeW > 0) {
+        const QRectF br(maximizeRect().left() - 24 - badgeW, 3, badgeW, height() - 6);
+        p->setPen(Qt::NoPen);
+        QColor fill = m_accent;
+        fill.setAlpha(70);
+        p->setBrush(fill);
+        p->drawRoundedRect(br, 4, 4);
+        p->setPen(m_foreground);
+        p->drawText(br, Qt::AlignCenter, p->fontMetrics().elidedText(m_badge, Qt::ElideRight, int(br.width() - 8)));
+    }
     const QString elided = p->fontMetrics().elidedText(full, Qt::ElideRight, int(textRect.width()));
     p->drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, elided);
 
@@ -176,4 +190,12 @@ void PaneHeader::mouseReleaseEvent(QMouseEvent *event)
     m_armed = false;
     m_dragging = false;
     event->accept();
+}
+
+void PaneHeader::setBadge(const QString &v)
+{
+    if (m_badge == v)
+        return;
+    m_badge = v;
+    update();
 }

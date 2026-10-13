@@ -118,6 +118,18 @@ public:
     // Tests: per leaf {pane, cx, cy, cols, rows} from the layout and the view's {x, y, w, h} (in this
     // item's coordinates), its grid {gridCols, gridRows} and the cell size {cellW, cellH}.
     QVariantList debugTmuxGeometry() const;
+    Q_INVOKABLE void killFocused();                // tmux: kill-pane (an explicit kill; close only hides)
+    Q_INVOKABLE void leaveTmuxModeFocused();       // tmux: send-keys -X cancel
+    void tmuxSetPaneMode(int pane, const QString &mode); // header badge ("" = none)
+    // Give up pane's live view to another window (it moved there); this tree drops the leaf until
+    // its own layout arrives.
+    TerminalView *tmuxReleaseView(int pane);
+    // The window is going away (closed or killed): park every live view with the session, in case
+    // its pane moved to another window whose layout comes after the close (join-pane does that).
+    void tmuxParkAll();
+    int tmuxFocusedPane() const;
+    // Tests: drag the divider right after the child holding `leftPane` by `px` (press/drag/release).
+    void debugTmuxDragDivider(int leftPane, qreal px);
     // Debug/test hook: drive the real drag path — drag leaf `srcIdx` onto `zone` (DropZone values:
     // 1=centre 2=left 3=right 4=top 5=bottom) of leaf `dstIdx`. Lets the grab harness exercise
     // rearrange without a synthetic gesture.
@@ -265,6 +277,20 @@ private:
     int m_zoomCols = 0, m_zoomRows = 0;
     Node *buildTmuxNode(const tmux::LayoutCell &cell, Node *parent, QHash<int, Node *> &reuse);
     void tmuxRelayout();
+    void tmuxDividerPress(Node *node, int idx);
+    void tmuxDividerDrag(qreal px);
+    void tmuxDividerSend();
+    void tmuxDividerRelease();
+    void tmuxFinishDrag(TerminalView *v, bool accepted, bool noop, int zone, TerminalPanes *dst,
+                        TerminalView *anchor, class TerminalTabs *tabs);
+    struct TmuxDrag {
+        class DividerItem *item = nullptr;
+        int pane = -1;
+        bool horizontal = true;
+        int startCells = 0, lastSent = 0;
+        qreal px = 0;
+    } m_tmuxDrag;
+    class QTimer *m_tmuxDragTimer = nullptr;
     void tmuxCellSize(qreal &w, qreal &h) const;
 
     Node *m_root = nullptr;

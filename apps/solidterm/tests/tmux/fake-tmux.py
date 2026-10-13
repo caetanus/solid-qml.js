@@ -101,8 +101,10 @@ class Server:
         if self.log_path:
             open(self.log_path, "w").close()  # one run per log
         self.exiting = False
+        self.fixed = {}            # pane id -> ("x"|"y", cells) from resize-pane
         self.active_pane = {}      # window id -> pane id (default: its first pane)
         self.capture_groups = 0
+        self.after_block = []
 
     # ── model ────────────────────────────────────────────────────────────────────────────────
     def pane(self, pid, **kw):
@@ -152,21 +154,84 @@ class Server:
         kind, children = tree
         n = len(children)
         parts = []
-        if kind == "{":
-            avail = w - (n - 1)
-            pos = x
-            for i, c in enumerate(children):
-                cw = avail // n if i < n - 1 else avail - (avail // n) * (n - 1)
-                parts.append(self.cell(c, pos, y, cw, h))
-                pos += cw + 1
-            return "%dx%d,%d,%d{%s}" % (w, h, x, y, ",".join(parts))
-        avail = h - (n - 1)
-        pos = y
+        axis = "x" if kind == "{" else "y"
+        total = (w if kind == "{" else h) - (n - 1)
+        # resize-pane -x/-y pins a child's size (a leaf, or a split of the other kind holding it).
+        sizes = [None] * n
         for i, c in enumerate(children):
-            ch = avail // n if i < n - 1 else avail - (avail // n) * (n - 1)
-            parts.append(self.cell(c, x, pos, w, ch))
-            pos += ch + 1
+            if isinstance(c, int) or c[0] != kind:
+                for pid in self.leaves(c):
+                    f = self.fixed.get(pid)
+                    if f and f[0] == axis:
+                        sizes[i] = max(1, min(f[1], total - (n - 1)))
+        free = total - sum(v for v in sizes if v is not None)
+        loose = [i for i in range(n) if sizes[i] is None]
+        for k, i in enumerate(loose):
+            sizes[i] = free // len(loose) if k < len(loose) - 1 else free - (free // len(loose)) * (len(loose) - 1)
+        if not loose:
+            sizes[-1] += total - sum(sizes)
+        pos = x if kind == "{" else y
+        for i, c in enumerate(children):
+            if kind == "{":
+                parts.append(self.cell(c, pos, y, sizes[i], h))
+            else:
+                parts.append(self.cell(c, x, pos, w, sizes[i]))
+            pos += sizes[i] + 1
+        if kind == "{":
+            return "%dx%d,%d,%d{%s}" % (w, h, x, y, ",".join(parts))
         return "%dx%d,%d,%d[%s]" % (w, h, x, y, ",".join(parts))
+
+    # ── tree edits (split, move, break, join, kill) ──────────────────────────────────────────
+    def remove_leaf(self, tree, pid):
+        if isinstance(tree, int):
+            return None if tree == pid else tree
+        kind, children = tree
+        kids = [k for k in (self.remove_leaf(c, pid) for c in children) if k is not None]
+        if not kids:
+            return None
+        if len(kids) == 1:
+            return kids[0]
+        # a child of the same kind merges into us (tmux never nests a split in one of its kind)
+        flat = []
+        for k in kids:
+            flat += k[1] if not isinstance(k, int) and k[0] == kind else [k]
+        return (kind, flat)
+
+    def insert_beside(self, tree, target, pid, kind, before):
+        if isinstance(tree, int):
+            if tree != target:
+                return tree
+            return (kind, [pid, tree] if before else [tree, pid])
+        k, children = tree
+        out = []
+        for c in children:
+            if c == target and k == kind:
+                out += [pid, c] if before else [c, pid]
+            else:
+                out.append(self.insert_beside(c, target, pid, kind, before))
+        return (k, out)
+
+    def new_pane_id(self):
+        return max(self.panes.keys() | {0}) + 1
+
+    def new_window_id(self):
+        return max([w.id for w in self.windows] + [0]) + 1
+
+    def take_pane(self, pid):
+        """Remove pane pid from its window; a window left empty goes (3.7c: %unlinked-window-close).
+        Returns the window it was in."""
+        w = self.window_of(pid)
+        if not w:
+            return None
+        w.tree = self.remove_leaf(w.tree, pid)
+        if w.zoom == pid:
+            w.zoom = None
+        if w.tree is None:
+            self.windows.remove(w)
+            self.after_block.append(lambda w=w: emit(b"%%unlinked-window-close @%d" % w.id))
+        else:
+            self.after_block.append(lambda w=w: self.layout_change(w))
+        return w
 
     def relayout(self, w):
         body = self.cell(w.tree, 0, 0, self.cols, self.rows)
@@ -188,8 +253,9 @@ class Server:
         emit(("%%layout-change @%d %s %s %s" % (w.id, w.layout, w.visible, self.flags(w))).encode())
 
     # ── stream ───────────────────────────────────────────────────────────────────────────────
-    def output(self, pid, data: bytes, cut=None):
-        """%output for pane `pid`; `cut` = list of byte offsets where tmux would split the data."""
+    def output(self, pid, data: bytes, cut=None, gap=0.0):
+        """%output for pane `pid`; `cut` = list of byte offsets where tmux would split the data;
+        `gap` seconds between the pieces (so they reach the pane's parser in separate reads)."""
         if isinstance(data, str):
             data = data.encode()
         pieces = []
@@ -205,6 +271,8 @@ class Server:
                 emit(b"%%extended-output %%%d 0 : " % pid + encode_output(piece))
             else:
                 emit(b"%%output %%%d " % pid + encode_output(piece))
+            if gap:
+                time.sleep(gap)
 
     def notify(self, line: str):
         emit(line.encode())
@@ -239,7 +307,7 @@ class Server:
             "origin_flag": "0", "mouse_standard_flag": "0", "mouse_button_flag": "0",
             "mouse_any_flag": "0", "mouse_sgr_flag": "0", "mouse_utf8_flag": "0",
             "bracket_paste_flag": "0", "cursor_shape": "default", "cursor_blinking": "0",
-            "pane_in_mode": "0", "pane_title": p.title, "pane_pid": str(4000 + p.id),
+            "pane_in_mode": "0", "pane_mode": "", "pane_title": p.title, "pane_pid": str(4000 + p.id),
         }
         f.update(p.modes)
         return f
@@ -402,6 +470,122 @@ class Server:
                     hist = list(p.history)
                 rows = hist + ([] if e == "-1" else screen)
             return [encode_capture(r) for r in rows], False
+        if name in ("split-window", "splitw"):
+            flags, vals, pos = self.opts(args[1:], "tcl")
+            p = self.target_pane(vals)
+            if p is None:
+                return ["can't find pane: " + vals.get("t", "")], True
+            w = self.window_of(p.id)
+            nid = self.new_pane_id()
+            self.pane(nid, screen=[b"$ "], cursor=(2, 0), title="new %d" % nid)
+            w.tree = self.insert_beside(w.tree, p.id, nid, "{" if "h" in flags else "[", "b" in flags)
+            self.active_pane[w.id] = nid
+            self.after_block.append(lambda: self.layout_change(w))
+            self.after_block.append(lambda: emit(b"%%window-pane-changed @%d %%%d" % (w.id, nid)))
+            return [], False
+        if name in ("new-window", "neww"):
+            flags, vals, pos = self.opts(args[1:], "tcn")
+            nid, wid = self.new_pane_id(), self.new_window_id()
+            self.pane(nid, screen=[b"$ "], cursor=(2, 0), title="")
+            nw = self.window(wid, vals.get("n", "new"), nid)
+            if "d" not in flags:
+                self.active_window = wid
+                self.after_block.append(lambda: emit(b"%%session-window-changed $%d @%d" % (self.session, wid)))
+            self.after_block.append(lambda: emit(b"%%window-add @%d" % wid))
+            return [], False
+        if name in ("select-window", "selectw"):
+            flags, vals, pos = self.opts(args[1:], "t")
+            w = self.find_window(int(vals.get("t", "@-1")[1:]))
+            if w is None:
+                return ["can't find window: " + vals.get("t", "")], True
+            self.active_window = w.id
+            self.after_block.append(lambda: emit(b"%%session-window-changed $%d @%d" % (self.session, w.id)))
+            return [], False
+        if name in ("resize-pane", "resizep"):
+            flags, vals, pos = self.opts(args[1:], "txy")
+            p = self.target_pane(vals)
+            if p is None:
+                return ["can't find pane: " + vals.get("t", "")], True
+            w = self.window_of(p.id)
+            if "Z" in flags:
+                w.zoom = None if w.zoom == p.id else p.id
+            if "x" in vals:
+                self.fixed[p.id] = ("x", int(vals["x"]))
+            if "y" in vals:
+                self.fixed[p.id] = ("y", int(vals["y"]))
+            self.after_block.append(lambda: self.layout_change(w))
+            return [], False
+        if name in ("swap-pane", "swapp"):
+            flags, vals, pos = self.opts(args[1:], "st")
+            a, b = int(vals["s"][1:]), int(vals["t"][1:])
+            wa, wb = self.window_of(a), self.window_of(b)
+            def swap(t):
+                if isinstance(t, int):
+                    return b if t == a else a if t == b else t
+                return (t[0], [swap(c) for c in t[1]])
+            for w in {wa, wb}:
+                w.tree = swap(w.tree)
+                self.after_block.append(lambda w=w: self.layout_change(w))
+            return [], False
+        if name in ("move-pane", "movep", "join-pane", "joinp"):
+            flags, vals, pos = self.opts(args[1:], "stl")
+            a = int(vals["s"][1:])
+            t = vals["t"]
+            if self.window_of(a) is None:
+                return ["can't find pane: " + vals["s"]], True
+            if t.startswith("@"):
+                tw = self.find_window(int(t[1:]))
+                if tw is None:
+                    return ["can't find window: " + t], True
+                b = self.active_pane.get(tw.id)
+                if b not in self.leaves(tw.tree) or b == a:
+                    b = [x for x in self.leaves(tw.tree) if x != a][0]
+            else:
+                b = int(t[1:])
+                tw = self.window_of(b)
+            self.take_pane(a)
+            tw.tree = self.insert_beside(tw.tree, b, a, "{" if "h" in flags else "[", "b" in flags)
+            # 3.7c's order (recorded): the source window's close/layout first, then the target's
+            self.after_block.append(lambda: emit(b"%%window-pane-changed @%d %%%d" % (tw.id, a)))
+            self.after_block.append(lambda: self.layout_change(tw))
+            return [], False
+        if name in ("break-pane", "breakp"):
+            flags, vals, pos = self.opts(args[1:], "stn")
+            a = int(vals["s"][1:])
+            if self.window_of(a) is None:
+                return ["can't find pane: " + vals["s"]], True
+            self.take_pane(a)
+            wid = self.new_window_id()
+            self.window(wid, "broken", a)
+            if "d" not in flags:
+                self.active_window = wid
+                self.after_block.append(lambda: emit(b"%%session-window-changed $%d @%d" % (self.session, wid)))
+            self.after_block.append(lambda: emit(b"%%window-add @%d" % wid))
+            return [], False
+        if name in ("kill-pane", "killp"):
+            flags, vals, pos = self.opts(args[1:], "t")
+            p = self.target_pane(vals)
+            if p is None or not vals.get("t", "").startswith("%"):
+                return ["can't find pane: " + vals.get("t", "")], True
+            self.take_pane(p.id)
+            self.panes.pop(p.id, None)
+            return [], False
+        if name in ("kill-window", "killw"):
+            flags, vals, pos = self.opts(args[1:], "t")
+            w = self.find_window(int(vals.get("t", "@-1")[1:]))
+            if w is None:
+                return ["can't find window: " + vals.get("t", "")], True
+            self.windows.remove(w)
+            self.after_block.append(lambda: emit(b"%%unlinked-window-close @%d" % w.id))
+            return [], False
+        if name in ("rename-window", "renamew"):
+            flags, vals, pos = self.opts(args[1:], "t")
+            w = self.find_window(int(vals.get("t", "@-1")[1:]))
+            if w is None:
+                return ["can't find window"], True
+            w.name = pos[0] if pos else ""
+            self.after_block.append(lambda: emit(("%%window-renamed @%d %s" % (w.id, w.name)).encode()))
+            return [], False
         if name == "select-pane":
             flags, vals, pos = self.opts(args[1:], "tT")
             t = vals.get("t", "")
@@ -416,6 +600,10 @@ class Server:
             flags, vals, pos = self.opts(args[1:], "tNc")
             if vals.get("t", "").startswith("%") and self.panes.get(int(vals["t"][1:])) is None:
                 return ["can't find pane: " + vals["t"]], True
+            p = self.target_pane(vals)
+            if "X" in flags and p and p.modes.get("pane_in_mode") == "1" and pos[-1:] == ["cancel"]:
+                p.modes["pane_in_mode"], p.modes["pane_mode"] = "0", ""
+                self.after_block.append(lambda: emit(b"%%pane-mode-changed %%%d" % p.id))
             return [], False
         if name == "detach-client":
             self.exiting = True

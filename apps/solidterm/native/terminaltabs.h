@@ -75,9 +75,16 @@ public:
     void setFocusOnHover(bool v);
     QStringList reservedSequences() const { return m_reserved; }
     void setReservedSequences(const QStringList &v);
-    int count() const { return m_tabs.size(); }
+    int count() const { return visibleCount(); } // tabs shown (tmux: hidden ones are not)
 
     Q_INVOKABLE void newTab();
+    // tmux mode (docs/solidterm-tmux-control-mode.md 2.5, owner decision 2): closing a tab or pane
+    // HIDES it; these bring it back or kill for real, and leave a tmux mode (copy mode…).
+    Q_INVOKABLE QVariantList hiddenPanes() const;  // [{window, title}]
+    Q_INVOKABLE void restoreHidden(int window);
+    Q_INVOKABLE void killFocused();
+    Q_INVOKABLE void killTab();
+    Q_INVOKABLE void leaveTmuxModeFocused();
     Q_INVOKABLE void closeTab(int index);
     Q_INVOKABLE void selectTab(int index);
     // F12 overview: flat list of every pane across every tab ({tab,pane,tabTitle,title,active}).
@@ -130,7 +137,12 @@ public:
     static void setPendingTmuxSession(const QString &name) { s_pendingTmux = name; }
     bool isTmux() const { return m_isTmux; }
     TmuxSession *tmuxSession() const;
-    TerminalPanes *tmuxTab(int window, bool create);  // the tab showing tmux window @window
+    TerminalPanes *tmuxTab(int window, bool create, bool hidden = false); // the tab showing tmux window @window
+    void tmuxSetHidden(int window, bool hidden);
+    bool tmuxTabHidden(int window) const;
+    int activeTmuxWindow() const;
+    int visibleCount() const;
+    void emitTmuxState();                             // → tmuxStateChanged
     void tmuxRemoveTab(int window);
     void tmuxRenameTab(int window, const QString &name);
     void tmuxSelectTab(int window);
@@ -147,6 +159,8 @@ signals:
     // add / close / select / OSC-title change.
     void tabsChanged(const QStringList &titles, int active);
     void allClosed();                          // last tab closed → the app can quit
+    // tmux mode on/off and the hidden tabs/panes ({window, title}) for the "Hidden panes" menu.
+    void tmuxStateChanged(bool tmux, const QVariantList &hidden);
     void titleChanged(const QString &title);   // active tab's focused-pane title → window
     void accelerator(const QString &sequence); // a reserved chord from the active tab
     void searchChanged(int index, int count);  // active tab's search state → the Solid search bar
@@ -168,6 +182,7 @@ private:
         QString title;         // OSC title from the focused pane
         QString customTitle;   // user-set override; when non-empty it wins
         int tmuxWindow = -1;   // tmux mode: the window id (@N)
+        bool hidden = false;   // tmux mode: closed by the user = hidden (owner decision 2)
         QString tmuxName;      // tmux mode: #{window_name}, shown while there is no OSC title
         QString effective() const
         {
@@ -184,7 +199,12 @@ private:
     static QVector<TerminalTabs *> s_allTabs;
     void applyStyle(TerminalPanes *p);
     void relayout();
-    void emitModel();          // push (titles, active) to the TSX
+    void emitModel();          // push (titles, active) to the TSX (visible tabs only)
+    void activateTab(int realIndex);            // show m_tabs[realIndex]
+    void activateVisibleNear(int realIndex);
+    void closeAt(int realIndex);
+    int realIndex(int visible) const;
+    int visibleIndex(int real) const;
     TerminalPanes *active() const;
 
     QVector<Tab> m_tabs;

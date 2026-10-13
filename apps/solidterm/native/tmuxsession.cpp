@@ -1,6 +1,7 @@
 #include "tmuxsession.h"
 
 #include "terminalpanes.h"
+#include "terminalview.h"
 #include "terminaltabs.h"
 #include "tmux/client.h"
 #include "tmux/layout.h"
@@ -15,9 +16,9 @@ constexpr int kPauseAfterSeconds = 5; // 1.6: a stalled SolidTerm costs a reseed
 const char kWindowFormat[] = "#{window_id} #{window_index} #{window_active} #{window_raw_flags} "
                              "#{window_layout} #{window_visible_layout} #{window_name}";
 const char kPaneFormat[] = "#{pane_id} #{window_id} #{pane_active} #{pane_width} #{pane_height} "
-                           "#{pane_current_path}";
+                           "#{pane_in_mode} #{pane_mode} #{pane_current_path}";
 
-enum Tag : uint64_t { TagInitial = 1, TagRefresh = 2, TagStep = 3 };
+enum Tag : uint64_t { TagInitial = 1, TagRefresh = 2, TagStep = 3, TagMode = 4 };
 
 // Split off n space-separated fields (no collapsing: tmux leaves #{window_raw_flags} empty for a
 // window that is neither current nor last); the rest of the line is `rest`.
@@ -185,6 +186,13 @@ void TmuxSession::requestLists(bool initial)
 void TmuxSession::handle(tmux::Event &e)
 {
     using tmux::Note;
+    static const bool trace = qEnvironmentVariableIsSet("SOLIDTERM_TMUX_TRACE");
+    if (trace) {
+        if (e.type == tmux::Event::Notify)
+            qInfo("tmux< %%%s %d/%d/%d %s %s %s", tmux::noteName(e.note), e.session, e.window, e.pane, e.text.c_str(), e.text2.c_str(), e.text3.c_str());
+        else if (e.type == tmux::Event::Reply)
+            qInfo("tmux< reply kind %d tag %llu%s (%zu lines)", e.kind, (unsigned long long)e.tag, e.error ? " ERROR" : "", e.lines.size());
+    }
     switch (e.type) {
     case tmux::Event::Log:
         qInfo("solidterm: %s", e.text.c_str());
@@ -207,19 +215,24 @@ void TmuxSession::handle(tmux::Event &e)
             return;
         }
         if (e.kind == tmux::Client::KListWindows) {
-            if (e.tag == TagInitial && !m_built)
+            if (e.tag == TagInitial && !m_built) {
                 m_pendingWindows = lines;
-            else
+            } else {
                 applyWindowList(lines, false);
+                // tmux's state after every notification before this reply: parked views whose pane
+                // no window names any more are gone.
+                flushParked();
+            }
         } else if (e.kind == tmux::Client::KListPanes) {
             for (const QString &l : std::as_const(lines)) {
                 QList<QStringView> f;
                 QStringView rest;
-                if (!fields(l, 5, f, rest))
+                if (!fields(l, 7, f, rest))
                     continue;
                 const int pane = tmux::parseId(f[0].toString().toStdString(), '%');
                 const int window = tmux::parseId(f[1].toString().toStdString(), '@');
                 m_paneCwd.insert(pane, rest.toString());
+                m_paneMode.insert(pane, f[5] == QLatin1String("1") ? f[6].toString() : QString());
                 if (f[2] == QLatin1String("1"))
                     m_activePane.insert(window, pane);
             }
@@ -227,7 +240,14 @@ void TmuxSession::handle(tmux::Event &e)
                 m_built = true;
                 applyWindowList(m_pendingWindows, true);
                 m_pendingWindows.clear();
+                applyModes();
             }
+        } else if (e.kind == tmux::Client::KUser && (e.tag >> 32) == TagMode) {
+            // "#{pane_in_mode} #{pane_mode}" for pane (tag & 0xffffffff)
+            const int pane = int(e.tag & 0xffffffffu);
+            const QString l = lines.value(0);
+            m_paneMode.insert(pane, l.startsWith(QLatin1String("1 ")) ? l.mid(2) : QString());
+            applyModes();
         } else if (e.kind == tmux::Client::KUser && e.tag == TagStep) {
             emit stepReplied(lines.value(0));
         }
@@ -264,13 +284,27 @@ void TmuxSession::handle(tmux::Event &e)
     case Note::UnlinkedWindowClose: // 3.7c reports OUR killed windows this way too
         if (m_tabs)
             m_tabs->tmuxRemoveTab(e.window);
+        if (m_hiddenOrigin.remove(e.window))
+            emit hiddenChanged();
         break;
+    case Note::PaneModeChanged: { // copy mode etc. (6.6): ask which, for the header badge
+        tmux::CommandLine l;
+        l.cmd("display-message").flag("-p").pane("-t", e.pane).arg("#{pane_in_mode} #{pane_mode}");
+        m_client->send(l, tmux::Client::KUser, (uint64_t(TagMode) << 32) | uint32_t(e.pane));
+        break;
+    }
     case Note::WindowRenamed:
         if (m_tabs)
             m_tabs->tmuxRenameTab(e.window, text);
         break;
     case Note::SessionWindowChanged:
-        if (m_tabs && e.session == m_sessionId)
+        if (e.session != m_sessionId)
+            break;
+        m_serverWindow = e.window;
+        if (e.window == m_selectedWindow)
+            break; // the echo of our own select-window
+        m_selectedWindow = -1;
+        if (m_tabs) // another client, a tmux binding, or a window we just created
             m_tabs->tmuxSelectTab(e.window);
         break;
     case Note::WindowPaneChanged:
@@ -312,13 +346,16 @@ void TmuxSession::applyWindowList(const QStringList &lines, bool initial)
         if (f[2] == QLatin1String("1"))
             activeWindow = window;
         const bool isNew = m_tabs->tmuxTabIndex(window) < 0;
-        m_tabs->tmuxTab(window, true);
+        applyLayout(window, f[4].toString(), f[5].toString(), f[3].toString(), isNew);
         if (isNew || initial)
             m_tabs->tmuxRenameTab(window, name.toString());
-        applyLayout(window, f[4].toString(), f[5].toString(), f[3].toString(), isNew);
     }
+    // The session's current window: on attach, and after a window we created (new-window,
+    // break-pane) whose %session-window-changed came before its tab existed.
     if (initial && activeWindow >= 0)
-        m_tabs->tmuxSelectTab(activeWindow);
+        m_serverWindow = activeWindow;
+    if (m_serverWindow >= 0)
+        m_tabs->tmuxSelectTab(m_serverWindow);
 }
 
 void TmuxSession::beforeInput(void *session, int pane)
@@ -358,13 +395,17 @@ void TmuxSession::applyLayout(int window, const QString &layout, const QString &
             zoomRows = int(v.root.sy);
         }
     }
-    TerminalPanes *panes = m_tabs->tmuxTab(window, true);
+    const bool hide = m_tabs->tmuxTabIndex(window) < 0 && hideIfPending(window, l.root);
+    TerminalPanes *panes = m_tabs->tmuxTab(window, true, hide);
     if (!panes)
         return;
     panes->tmuxApplyLayout(l.root, zoomPane, zoomCols, zoomRows);
+    applyModes();
     {
         std::vector<const tmux::LayoutCell *> leaves;
         tmux::layoutLeaves(l.root, leaves);
+        for (auto it = m_paneWindow.begin(); it != m_paneWindow.end();)
+            it = it.value() == window ? m_paneWindow.erase(it) : std::next(it);
         for (const tmux::LayoutCell *c : leaves)
             m_paneWindow.insert(c->pane, window);
     }
@@ -385,4 +426,273 @@ void TmuxSession::finish()
     m_client->stop(500); // after %exit/EOF the process is gone or going; after the 2 s timeout: SIGTERM
     emit finished();
     deleteLater();
+}
+
+// ─── structural actions (docs/solidterm-tmux-control-mode.md 2.5) ─────────────────────────────────
+
+void TmuxSession::send(const tmux::CommandLine &line)
+{
+    m_client->send(line, tmux::Client::KIgnore); // a failure ("no space for new pane") is logged
+}
+
+void TmuxSession::split(int pane, int orient)
+{
+    if (pane < 0)
+        return;
+    tmux::CommandLine l;
+    // -c: tmux expands the format for the target pane — the new pane starts where that one is.
+    l.cmd("split-window").flag(orient == Qt::Horizontal ? "-h" : "-v").pane("-t", pane).flagArg("-c", "#{pane_current_path}");
+    send(l);
+}
+
+void TmuxSession::newWindow(int afterWindow)
+{
+    tmux::CommandLine l;
+    l.cmd("new-window").flag("-a");
+    if (afterWindow >= 0)
+        l.window("-t", afterWindow);
+    l.flagArg("-c", "#{pane_current_path}");
+    send(l);
+}
+
+void TmuxSession::selectWindow(int window)
+{
+    if (window < 0 || window == m_serverWindow)
+        return;
+    m_selectedWindow = window;
+    m_serverWindow = window; // a list reply in flight must not switch us back
+    tmux::CommandLine l;
+    l.cmd("select-window").window("-t", window);
+    send(l);
+}
+
+void TmuxSession::zoom(int pane)
+{
+    if (pane < 0)
+        return;
+    tmux::CommandLine l;
+    l.cmd("resize-pane").flag("-Z").pane("-t", pane);
+    send(l);
+}
+
+void TmuxSession::resizePane(int pane, bool horizontal, int cells)
+{
+    tmux::CommandLine l;
+    l.cmd("resize-pane").pane("-t", pane).number(horizontal ? "-x" : "-y", cells);
+    send(l);
+}
+
+void TmuxSession::swapPane(int a, int b)
+{
+    tmux::CommandLine l;
+    l.cmd("swap-pane").pane("-s", a).pane("-t", b);
+    send(l);
+}
+
+void TmuxSession::movePane(int a, int b, bool horizontal, bool before)
+{
+    tmux::CommandLine l;
+    l.cmd("move-pane").pane("-s", a).pane("-t", b).flag(horizontal ? "-h" : "-v");
+    if (before)
+        l.flag("-b");
+    send(l);
+}
+
+void TmuxSession::breakPane(int pane)
+{
+    tmux::CommandLine l;
+    l.cmd("break-pane").pane("-s", pane);
+    send(l);
+}
+
+void TmuxSession::killPane(int pane)
+{
+    if (pane < 0)
+        return;
+    tmux::CommandLine l;
+    l.cmd("kill-pane").pane("-t", pane);
+    send(l);
+}
+
+void TmuxSession::killWindow(int window)
+{
+    if (window < 0)
+        return;
+    tmux::CommandLine l;
+    l.cmd("kill-window").window("-t", window);
+    send(l);
+}
+
+void TmuxSession::leaveMode(int pane)
+{
+    if (pane < 0)
+        return;
+    tmux::CommandLine l;
+    l.cmd("send-keys").flag("-X").pane("-t", pane).arg("cancel");
+    send(l);
+}
+
+void TmuxSession::renameWindow(int window, const QString &name)
+{
+    if (window < 0)
+        return;
+    tmux::CommandLine l;
+    l.cmd("rename-window").window("-t", window).arg(name.toStdString());
+    send(l);
+}
+
+// ─── hidden panes (owner decision 2) ─────────────────────────────────────────────────────────────
+
+void TmuxSession::hidePane(int pane)
+{
+    const int window = m_paneWindow.value(pane, -1);
+    if (pane < 0 || window < 0 || !m_tabs)
+        return;
+    int panesInWindow = 0;
+    for (auto it = m_paneWindow.cbegin(); it != m_paneWindow.cend(); ++it)
+        panesInWindow += it.value() == window ? 1 : 0;
+    if (panesInWindow <= 1) {
+        hideWindow(window);
+        return;
+    }
+    // Out of its window, into one of its own that arrives hidden (hideIfPending).
+    m_pendingHide.insert(pane, window);
+    tmux::CommandLine l;
+    l.cmd("break-pane").flag("-d").pane("-s", pane);
+    send(l);
+}
+
+void TmuxSession::hideWindow(int window)
+{
+    if (!m_tabs || window < 0 || m_tabs->tmuxTabIndex(window) < 0)
+        return;
+    if (!m_hiddenOrigin.contains(window))
+        m_hiddenOrigin.insert(window, -1);
+    m_tabs->tmuxSetHidden(window, true);
+    emit hiddenChanged();
+    maybeDetachEmpty();
+}
+
+bool TmuxSession::hideIfPending(int window, const tmux::LayoutCell &root)
+{
+    if (root.type != tmux::LayoutCell::Pane || !m_pendingHide.contains(root.pane))
+        return false;
+    m_hiddenOrigin.insert(window, m_pendingHide.take(root.pane));
+    QMetaObject::invokeMethod(this, &TmuxSession::hiddenChanged, Qt::QueuedConnection);
+    return true;
+}
+
+void TmuxSession::maybeDetachEmpty()
+{
+    // Nothing visible left in this OS window: it closes, which detaches (5.1); a reattach shows the
+    // hidden ones again.
+    if (m_tabs && m_tabs->visibleCount() == 0)
+        if (QQuickWindow *w = m_tabs->window())
+            QMetaObject::invokeMethod(w, &QWindow::close, Qt::QueuedConnection);
+}
+
+QVariantList TmuxSession::hidden() const
+{
+    QVariantList out;
+    if (!m_tabs)
+        return out;
+    for (int w : m_tabs->tmuxWindows()) {
+        if (!m_tabs->tmuxTabHidden(w))
+            continue;
+        QVariantMap m;
+        m[QStringLiteral("window")] = w;
+        m[QStringLiteral("title")] = m_tabs->tmuxTabName(w);
+        out.append(m);
+    }
+    return out;
+}
+
+void TmuxSession::restoreHidden(int window)
+{
+    if (!m_tabs || !m_tabs->tmuxTabHidden(window))
+        return;
+    const int origin = m_hiddenOrigin.value(window, -1);
+    int pane = -1, panes = 0;
+    for (auto it = m_paneWindow.cbegin(); it != m_paneWindow.cend(); ++it)
+        if (it.value() == window) {
+            pane = it.key();
+            ++panes;
+        }
+    if (origin >= 0 && panes == 1 && m_tabs->tmuxTabIndex(origin) >= 0 && !m_tabs->tmuxTabHidden(origin)) {
+        // A broken-out pane goes back into its window; its own (hidden) window then closes.
+        tmux::CommandLine l;
+        l.cmd("join-pane").pane("-s", pane).window("-t", origin);
+        send(l);
+        m_hiddenOrigin.remove(window);
+        selectWindow(origin);
+        m_tabs->tmuxSelectTab(origin);
+    } else {
+        m_hiddenOrigin.remove(window);
+        m_tabs->tmuxSetHidden(window, false); // shows and selects it
+    }
+    emit hiddenChanged();
+}
+
+// ─── views moving between windows ────────────────────────────────────────────────────────────────
+
+void TmuxSession::parkView(int pane, TerminalView *view)
+{
+    if (!view)
+        return;
+    if (qEnvironmentVariableIsSet("SOLIDTERM_TMUX_TRACE"))
+        qInfo("tmux: park %%%d view %p", pane, static_cast<void *>(view));
+    view->setParentItem(nullptr);
+    view->setParent(this);
+    if (QPointer<TerminalView> old = m_parked.value(pane); old && old != view)
+        old->deleteLater();
+    m_parked.insert(pane, view);
+    if (!m_flushPending) {
+        m_flushPending = true;
+        requestLists(false); // its reply settles which parked views are gone
+    }
+}
+
+TerminalView *TmuxSession::takeView(int pane, TerminalPanes *into)
+{
+    if (qEnvironmentVariableIsSet("SOLIDTERM_TMUX_TRACE"))
+        qInfo("tmux: take %%%d (parked: %d)", pane, int(m_parked.contains(pane)));
+    if (TerminalView *v = takeParked(pane))
+        return v;
+    if (!m_tabs)
+        return nullptr;
+    for (int w : m_tabs->tmuxWindows()) {
+        TerminalPanes *p = m_tabs->tmuxTab(w, false);
+        if (p && p != into && p->tmuxView(pane))
+            return p->tmuxReleaseView(pane);
+    }
+    return nullptr;
+}
+
+TerminalView *TmuxSession::takeParked(int pane)
+{
+    QPointer<TerminalView> v = m_parked.take(pane);
+    return v.data();
+}
+
+void TmuxSession::flushParked()
+{
+    m_flushPending = false;
+    for (const QPointer<TerminalView> &v : std::as_const(m_parked)) {
+        if (v) {
+            m_paneWindow.remove(v->tmuxPane());
+            v->deleteLater(); // the pane left the session: its worker stops, the client closes the pipe
+        }
+    }
+    m_parked.clear();
+}
+
+void TmuxSession::applyModes()
+{
+    if (!m_tabs)
+        return;
+    for (auto it = m_paneMode.cbegin(); it != m_paneMode.cend(); ++it) {
+        const int w = m_paneWindow.value(it.key(), -1);
+        if (TerminalPanes *p = w >= 0 ? m_tabs->tmuxTab(w, false) : nullptr)
+            p->tmuxSetPaneMode(it.key(), it.value());
+    }
 }

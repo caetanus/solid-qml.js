@@ -40,6 +40,7 @@ public:
 
     QColor color;
     std::function<void(qreal)> onDrag;
+    std::function<void()> onPress, onRelease; // tmux mode: the drag's start and end (resize-pane)
 
     QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override
     {
@@ -52,7 +53,19 @@ public:
     }
 
 protected:
-    void mousePressEvent(QMouseEvent *e) override { m_last = e->scenePosition(); e->accept(); }
+    void mousePressEvent(QMouseEvent *e) override
+    {
+        m_last = e->scenePosition();
+        if (onPress)
+            onPress();
+        e->accept();
+    }
+    void mouseReleaseEvent(QMouseEvent *e) override
+    {
+        if (onRelease)
+            onRelease();
+        e->accept();
+    }
     void mouseMoveEvent(QMouseEvent *e) override
     {
         const QPointF now = e->scenePosition();
@@ -417,8 +430,13 @@ void TerminalPanes::unlinkLeaf(Node *leaf)
 
 void TerminalPanes::split(int orient)
 {
-    if (!m_focused || m_isTmux) // tmux: split-window (phase 3)
+    if (!m_focused)
         return;
+    if (m_isTmux) { // server-driven (2.5): the new pane arrives with the %layout-change
+        if (m_tmux)
+            m_tmux->split(m_focused->tmuxPane, orient);
+        return;
+    }
     m_zoomed = false; m_zoomLeaf = nullptr; // splitting exits zoom (tmux/tilix behaviour)
     Node *leaf = m_focused;
     // Like tilix: the new pane's shell starts where the focused pane's shell is now.
@@ -446,8 +464,13 @@ void TerminalPanes::split(int orient)
 
 void TerminalPanes::removeLeaf(Node *leaf)
 {
-    if (!leaf || !leaf->isLeaf() || m_isTmux) // tmux: panes leave with the layout (hide/kill: phases 3-4)
+    if (!leaf || !leaf->isLeaf())
         return;
+    if (m_isTmux) { // owner decision 2: closing a tmux pane HIDES it (it keeps running in tmux)
+        if (m_tmux)
+            m_tmux->hidePane(leaf->tmuxPane);
+        return;
+    }
     m_zoomed = false; m_zoomLeaf = nullptr; // closing a pane exits zoom
 
     // Root is the only pane → close the app.
@@ -614,7 +637,11 @@ QQuickItem *TerminalPanes::ensureDropOverlay()
 
 int TerminalPanes::dragHover(TerminalView *src, const QPointF &local)
 {
-    if (m_isTmux) { // tmux <-> local and tmux-to-tmux moves are commands (phase 3)
+    // A tmux pane only lands in a tmux window of the SAME session (the drop becomes a tmux command,
+    // 2.5); tmux ↔ local and across sessions are refused.
+    TerminalPanes *srcOwner = ownerOf(src);
+    const bool srcTmux = srcOwner && srcOwner->m_isTmux;
+    if (srcTmux != m_isTmux || (m_isTmux && srcOwner->m_tmux != m_tmux)) {
         dragClear();
         return ZoneNone;
     }
@@ -625,7 +652,7 @@ int TerminalPanes::dragHover(TerminalView *src, const QPointF &local)
     }
     // Within one container the centre swaps; across containers there is no swap partner, so the
     // centre folds into the nearest side (the indicator shows exactly what will happen).
-    const bool same = leafOfView(src) != nullptr;
+    const bool same = leafOfView(src) != nullptr || m_isTmux; // swap-pane works across tmux windows
     const QPointF inCell(local.x() - t->cell->x(), local.y() - t->cell->y());
     int zone = zoneAt(inCell, t->cell->width(), t->cell->height(), same);
     if (t->view == src)
@@ -722,7 +749,7 @@ QPixmap TerminalPanes::dragPreview(TerminalView *v, const QPointF &grabInCell, Q
 
 void TerminalPanes::beginPaneDrag(TerminalView *v, const QPointF &pressInCell)
 {
-    if (m_isTmux || !leafOfView(v) || dragInProgress())
+    if (!leafOfView(v) || dragInProgress())
         return;
     QPoint hot;
     const QPixmap preview = dragPreview(v, pressInCell, &hot);
@@ -774,6 +801,10 @@ void TerminalPanes::finishDrag(TerminalView *v)
     TerminalPanes *src = ownerOf(v);
     if (!src)
         return;
+    if (src->m_isTmux) {
+        src->tmuxFinishDrag(v, d.serial == s_dragSerial, d.noop, d.zone, d.panes, d.anchor, d.tabs);
+        return;
+    }
     static const bool log = qEnvironmentVariableIsSet("SOLIDTERM_DRAGLOG");
     if (log)
         qInfo("solidterm: pane drop → %s (zone %d)",
@@ -1040,9 +1071,16 @@ void TerminalPanes::rebuildDividers(Node *splitNode)
         div->color = dividerColor();
         Node *node = splitNode;
         const int leftIdx = i;
+        if (m_isTmux) {
+            // tmux: the divider sizes the pane on its left/top with resize-pane (2.5). The drag's
+            // state lives here, not in the node: every resize rebuilds the tree.
+            div->onPress = [this, node, leftIdx] { tmuxDividerPress(node, leftIdx); };
+            div->onDrag = [this](qreal d) { tmuxDividerDrag(d); };
+            div->onRelease = [this] { tmuxDividerRelease(); };
+            splitNode->dividers.append(div);
+            continue;
+        }
         div->onDrag = [this, node, leftIdx](qreal d) {
-            if (m_isTmux)
-                return; // tmux: resize-pane (phase 3)
             // Convert the pixel drag to a fraction of this split's main-axis extent, then move the
             // share from one neighbour to the other (clamped so neither collapses).
             const qreal delta = d / qMax<qreal>(1, node->lastAvail);
@@ -1157,8 +1195,11 @@ void TerminalPanes::relayout()
 
 void TerminalPanes::toggleZoom()
 {
-    if (m_isTmux)
-        return; // tmux: resize-pane -Z (phase 3); tmux's own zoom is shown (tmuxApplyLayout)
+    if (m_isTmux) { // resize-pane -Z; tmux's zoom comes back as the visible layout (tmuxApplyLayout)
+        if (m_tmux && m_focused)
+            m_tmux->zoom(m_focused->tmuxPane);
+        return;
+    }
     if (m_zoomed) {
         m_zoomed = false;
         m_zoomLeaf = nullptr;
@@ -1434,6 +1475,9 @@ TerminalPanes::Node *TerminalPanes::buildTmuxNode(const tmux::LayoutCell &cell, 
     Node *n = nullptr;
     if (cell.type == tmux::LayoutCell::Pane) {
         n = reuse.take(cell.pane);
+        if (!n && m_tmux) // moved here from another window (move-pane, break-pane, join-pane): same view
+            if (TerminalView *moved = m_tmux->takeView(cell.pane, this))
+                n = makeLeaf(moved, QString(), cell.pane, int(cell.sx), int(cell.sy));
         if (!n)
             n = makeLeaf(nullptr, QString(), cell.pane, int(cell.sx), int(cell.sy));
         if (!n)
@@ -1493,18 +1537,31 @@ void TerminalPanes::tmuxApplyLayout(const tmux::LayoutCell &root, int zoomPane, 
     }
     Node *fresh = buildTmuxNode(root, nullptr, reuse);
     for (Node *sp : std::as_const(splits)) {
-        for (DividerItem *d : sp->dividers)
-            if (d)
-                d->deleteLater();
+        for (DividerItem *d : sp->dividers) {
+            if (!d)
+                continue;
+            if (d == m_tmuxDrag.item) { // being dragged: keep it (and its mouse grab) until release
+                d->color = Qt::transparent;
+                d->update();
+                continue;
+            }
+            d->deleteLater();
+        }
         delete sp;
     }
-    // Panes no longer in the layout: gone from this window (their view stops reading; the client
-    // closes the feed pipe).
+    // Panes no longer in this window's layout: parked with the session. If another window's layout
+    // names them (a move), that window adopts the live view — scrollback, selection and parser state
+    // ride along; otherwise the session drops them once tmux confirms they are gone (2.2).
     for (Node *gone : std::as_const(reuse)) {
         if (m_focused == gone)
             m_focused = nullptr;
-        if (gone->view)
-            gone->view->deleteLater();
+        if (gone->view) {
+            disconnect(gone->view, nullptr, this, nullptr);
+            if (m_tmux)
+                m_tmux->parkView(gone->tmuxPane, gone->view);
+            else
+                gone->view->deleteLater();
+        }
         if (gone->cell)
             gone->cell->deleteLater();
         delete gone;
@@ -1654,7 +1711,221 @@ QVariantList TerminalPanes::debugTmuxGeometry() const
         m[QStringLiteral("visible")] = l->cell && l->cell->isVisible();
         m[QStringLiteral("cellW")] = cw;
         m[QStringLiteral("cellH")] = ch;
+        m[QStringLiteral("badge")] = l->header ? l->header->badge() : QString();
+        m[QStringLiteral("focused")] = l == m_focused;
         out.append(m);
     }
     return out;
+}
+
+// ─── tmux mode: structural actions (docs/solidterm-tmux-control-mode.md 2.5) ──────────────────────
+
+void TerminalPanes::killFocused()
+{
+    if (m_isTmux && m_tmux && m_focused)
+        m_tmux->killPane(m_focused->tmuxPane);
+}
+
+void TerminalPanes::leaveTmuxModeFocused()
+{
+    if (m_isTmux && m_tmux && m_focused)
+        m_tmux->leaveMode(m_focused->tmuxPane);
+}
+
+void TerminalPanes::tmuxSetPaneMode(int pane, const QString &mode)
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    for (Node *l : std::as_const(leaves))
+        if (l->tmuxPane == pane && l->header)
+            l->header->setBadge(mode.isEmpty() ? QString() : QStringLiteral("tmux: %1 — Esc to leave").arg(mode));
+}
+
+void TerminalPanes::tmuxParkAll()
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    QList<int> panes;
+    for (Node *l : std::as_const(leaves))
+        if (l->view)
+            panes.append(l->tmuxPane); // tmuxReleaseView frees the node: keep the ids, not the nodes
+    for (int pane : std::as_const(panes))
+        if (TerminalView *v = m_tmux ? tmuxReleaseView(pane) : nullptr)
+            m_tmux->parkView(pane, v);
+}
+
+TerminalView *TerminalPanes::tmuxReleaseView(int pane)
+{
+    QVector<Node *> leaves;
+    collectLeaves(m_root, leaves);
+    for (Node *l : std::as_const(leaves)) {
+        if (l->tmuxPane != pane || !l->view)
+            continue;
+        TerminalView *v = l->view;
+        disconnect(v, nullptr, this, nullptr);
+        v->setParentItem(nullptr);
+        QQuickItem *cell = l->cell;
+        l->view = nullptr;
+        l->cell = nullptr;
+        l->header = nullptr;
+        if (m_focused == l)
+            m_focused = nullptr;
+        if (m_zoomLeaf == l) {
+            m_zoomLeaf = nullptr;
+            m_zoomed = false;
+        }
+        if (l == m_root)
+            m_root = nullptr;
+        else
+            unlinkLeaf(l);
+        delete l;
+        if (cell)
+            cell->deleteLater();
+        if (m_root) {
+            relayout();
+            if (!m_focused) {
+                QVector<Node *> rest;
+                collectLeaves(m_root, rest);
+                if (!rest.isEmpty())
+                    m_focused = rest.first();
+                refreshHeaderFocus();
+            }
+        }
+        emit panesChanged();
+        return v;
+    }
+    return nullptr;
+}
+
+int TerminalPanes::tmuxFocusedPane() const
+{
+    return m_focused ? m_focused->tmuxPane : -1;
+}
+
+// The divider after child `idx` moves with the size of a pane in that child reached through splits
+// of the OTHER orientation only (tmux never nests a split inside one of the same orientation), so
+// tmux's resize walks up to exactly this split: layout_resize_pane_to resizes the nearest ancestor
+// cell of the matching type, to -x/-y = that child's new size.
+void TerminalPanes::tmuxDividerPress(Node *node, int idx)
+{
+    m_tmuxDrag = {};
+    if (!node || idx < 0 || idx >= node->children.size())
+        return;
+    Node *c = node->children[idx];
+    const int cells = node->orientation == Qt::Horizontal ? c->cols : c->rows;
+    while (c && !c->isLeaf())
+        c = c->children.first();
+    if (!c)
+        return;
+    m_tmuxDrag.item = node->dividers.value(idx);
+    m_tmuxDrag.pane = c->tmuxPane;
+    m_tmuxDrag.horizontal = node->orientation == Qt::Horizontal;
+    m_tmuxDrag.startCells = m_tmuxDrag.lastSent = cells;
+    m_tmuxDrag.px = 0;
+    if (!m_tmuxDragTimer) {
+        m_tmuxDragTimer = new QTimer(this);
+        m_tmuxDragTimer->setSingleShot(true);
+        m_tmuxDragTimer->setInterval(50); // one resize-pane per 50 ms while dragging (2.5)
+        connect(m_tmuxDragTimer, &QTimer::timeout, this, [this] { tmuxDividerSend(); });
+    }
+}
+
+void TerminalPanes::tmuxDividerDrag(qreal d)
+{
+    if (m_tmuxDrag.pane < 0)
+        return;
+    m_tmuxDrag.px += d;
+    if (!m_tmuxDragTimer->isActive())
+        m_tmuxDragTimer->start();
+}
+
+void TerminalPanes::tmuxDividerSend()
+{
+    if (m_tmuxDrag.pane < 0 || !m_tmux)
+        return;
+    qreal cw, ch;
+    tmuxCellSize(cw, ch);
+    const qreal cell = m_tmuxDrag.horizontal ? cw : ch;
+    const int target = qMax(1, m_tmuxDrag.startCells + int(qRound(m_tmuxDrag.px / cell)));
+    if (target == m_tmuxDrag.lastSent)
+        return;
+    m_tmuxDrag.lastSent = target;
+    m_tmux->resizePane(m_tmuxDrag.pane, m_tmuxDrag.horizontal, target);
+}
+
+void TerminalPanes::tmuxDividerRelease()
+{
+    if (m_tmuxDragTimer)
+        m_tmuxDragTimer->stop();
+    tmuxDividerSend(); // the final value
+    DividerItem *kept = m_tmuxDrag.item;
+    m_tmuxDrag = {};
+    // A divider kept alive through a relayout during the drag is orphaned now.
+    bool live = false;
+    std::function<void(Node *)> walk = [&](Node *n) {
+        if (!n)
+            return;
+        for (DividerItem *d : n->dividers)
+            live = live || d == kept;
+        for (Node *c : n->children)
+            walk(c);
+    };
+    walk(m_root);
+    if (kept && !live)
+        kept->deleteLater();
+}
+
+void TerminalPanes::debugTmuxDragDivider(int leftPane, qreal px)
+{
+    // Find the split whose child (holding leftPane through other-orientation splits) precedes a
+    // divider, and drive the same press/drag/release path the mouse does.
+    std::function<bool(Node *)> find = [&](Node *n) -> bool {
+        if (!n || n->isLeaf())
+            return false;
+        for (int i = 0; i + 1 < n->children.size(); ++i) {
+            Node *c = n->children[i];
+            while (c && !c->isLeaf())
+                c = c->children.first();
+            if (c && c->tmuxPane == leftPane) {
+                tmuxDividerPress(n, i);
+                tmuxDividerDrag(px);
+                tmuxDividerRelease();
+                return true;
+            }
+        }
+        for (Node *c : n->children)
+            if (find(c))
+                return true;
+        return false;
+    };
+    find(m_root);
+}
+
+void TerminalPanes::tmuxFinishDrag(TerminalView *v, bool accepted, bool noop, int zone, TerminalPanes *dst,
+                                   TerminalView *anchor, TerminalTabs *tabs)
+{
+    Node *src = leafOfView(v);
+    if (!src || !m_tmux)
+        return;
+    const int a = src->tmuxPane;
+    if (!accepted) { // dropped outside every window: a new OS window is phase 6 — a new tab for now
+        m_tmux->breakPane(a);
+        return;
+    }
+    if (noop)
+        return;
+    if (zone == ZoneNewTab) {
+        if (tabs && tabs->tmuxSession() == m_tmux)
+            m_tmux->breakPane(a);
+        return;
+    }
+    if (!dst || !dst->m_isTmux || dst->m_tmux != m_tmux || !anchor)
+        return;
+    const int b = anchor->tmuxPane();
+    if (b < 0 || b == a)
+        return;
+    if (zone == ZoneCenter)
+        m_tmux->swapPane(a, b);
+    else
+        m_tmux->movePane(a, b, zone == ZoneLeft || zone == ZoneRight, zone == ZoneLeft || zone == ZoneTop);
 }
