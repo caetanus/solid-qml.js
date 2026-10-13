@@ -3,6 +3,7 @@
 #include "autoscroll.h"
 #include "linkscan.h"
 #include "perftrace.h"
+#include "stallwatch.h"
 #include "mousereport.h"
 #include "scrollanchor.h"
 
@@ -21,6 +22,7 @@
 #include <QQmlEngine>
 #include <QTimer>
 #include <QQuickWindow>
+#include <QSocketNotifier>
 #include <QSGGeometry>
 #include <QSGGeometryNode>
 #include <QSGImageNode>
@@ -30,6 +32,8 @@
 #include <QSGVertexColorMaterial>
 #include <QUrl>
 
+#include <algorithm>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -165,96 +169,195 @@ TerminalView::TerminalView(QQuickItem *parent)
             w->alert(0);
     });
 
-    connect(&m_pty, &PtySession::bytesRead, this, [this](const QByteArray &bytes) {
-        if (!m_vt)
-            return;
-        if (Q_UNLIKELY(PerfTrace::on)) {
-            PerfTrace::stage(PerfTrace::PtyRead);
-            ++PerfTrace::ptyReads;
-            PerfTrace::ptyBytes += bytes.size();
-        }
-        // One batch per read: the vterm callbacks only RECORD that the scrollback/offset moved or the
-        // cursor moved (m_inInput), and the batch notifies once at the end — a `seq` scrolls ~500
-        // lines per 4 KiB read, and per-line scrollChanged() re-ran the QML scrollbar's bindings and
-        // its pulse() handler for every line (26% of the main thread), per-line resetBlink()
-        // restarted the blink QTimer (3.5%). Nothing renders mid-batch, so the observable state is
-        // the same.
-        m_inInput = true;
-        m_term.beginBatch();
-        vterm_input_write(m_vt, bytes.constData(), size_t(bytes.size()));
-        if (m_term.endBatch() && Q_UNLIKELY(PerfTrace::on))
-            PerfTrace::stage(PerfTrace::Damage);
-        m_inInput = false;
-        if (m_scrollPending) {
-            m_scrollPending = false;
-            emit scrollChanged();
-        }
-        if (m_blinkPending) {
-            m_blinkPending = false;
-            resetBlink();
-        }
-        // Output never moves a scrolled-back view (VTE/Tilix default): a TUI that redraws a spinner
-        // many times a second (Claude Code) made reading the history impossible. Typing and paste
-        // still snap back to live; lines pushed meanwhile keep the view anchored (cbSbPushLine).
-        update();
-    });
+    // Single-threaded mode only (the parser thread reads the pty itself otherwise).
+    connect(&m_pty, &PtySession::bytesRead, this, &TerminalView::parseOnGuiThread);
     connect(&m_pty, &PtySession::finished, this, &TerminalView::sessionFinished);
 }
 
 TerminalView::~TerminalView()
 {
+    // The parser thread first: after stop() nothing but this thread touches m_vt/m_term. It never
+    // waits on the GUI thread, so the join cannot deadlock (a slice in progress finishes first).
+    delete m_newsNotifier;
+    m_newsNotifier = nullptr;
+    m_worker.stop();
     if (m_vt)
         vterm_free(m_vt);
+}
+
+bool TerminalView::parserThreadEnabled()
+{
+    static const bool on = qEnvironmentVariable("SOLIDTERM_PARSER_THREAD") != QLatin1String("0");
+    return on;
+}
+
+// ─── parsing: the parser thread's sink, or the GUI thread in single-threaded mode ─────────────────
+
+// One batch per slice/read: the TermScreen hooks only record news, which is applied (scrollChanged,
+// blink restart, update) once per GUI wake — a `seq` scrolls ~500 lines per 4 KiB, and per-line
+// scrollChanged() re-ran the QML scrollbar's bindings for every line (26% of the main thread).
+bool TerminalView::wkFeed(void *user, const char *data, size_t len)
+{
+    auto *self = static_cast<TerminalView *>(user);
+    self->m_term.beginBatch();
+    vterm_input_write(self->m_vt, data, len);
+    if (self->m_term.endBatch()) {
+        self->m_news.damaged = true;
+        if (Q_UNLIKELY(PerfTrace::on))
+            PerfTrace::stage(PerfTrace::Damage);
+    }
+    return self->m_news.any();
+}
+
+void TerminalView::wkExited(void *user)
+{
+    static_cast<TerminalView *>(user)->m_news.exited = true;
+}
+
+void TerminalView::wkReadProbe(void *user, size_t len)
+{
+    if (Q_UNLIKELY(PerfTrace::on)) {
+        PerfTrace::stage(PerfTrace::PtyRead);
+        PerfTrace::ptyReads.fetch_add(1, std::memory_order_relaxed);
+        PerfTrace::ptyBytes.fetch_add(int64_t(len), std::memory_order_relaxed);
+    }
+    if (Q_UNLIKELY(StallWatch::on))
+        static_cast<TerminalView *>(user)->m_pty.noteRead(len);
+}
+
+static const TermWorkerSink kWorkerSink = {
+    /*feed*/ TerminalView::wkFeed,
+    /*exited*/ TerminalView::wkExited,
+    /*readProbe*/ TerminalView::wkReadProbe,
+};
+
+void TerminalView::parseOnGuiThread(const QByteArray &bytes)
+{
+    if (!m_vt)
+        return;
+    if (Q_UNLIKELY(PerfTrace::on)) {
+        PerfTrace::stage(PerfTrace::PtyRead);
+        PerfTrace::ptyReads.fetch_add(1, std::memory_order_relaxed);
+        PerfTrace::ptyBytes.fetch_add(bytes.size(), std::memory_order_relaxed);
+    }
+    {
+        ScreenLock lock(m_screenMutex); // uncontended here: no parser thread in this mode
+        wkFeed(this, bytes.constData(), size_t(bytes.size()));
+    }
+    applyNews();
+}
+
+// libvterm's output callback (keys, paste, mouse/focus reports, DA/DSR responses). Always called
+// with the lock held: from a slice on the parser thread or from a GUI input handler.
+void TerminalView::writeToPty(const char *s, size_t len)
+{
+    if (Q_UNLIKELY(PerfTrace::on))
+        PerfTrace::stage(PerfTrace::PtyWrite);
+    if (m_threaded)
+        m_worker.queueOutput(s, len); // non-blocking; the worker writes what the kernel defers
+    else
+        m_pty.writeBytes(QByteArray(s, int(len)));
+}
+
+int TerminalView::effectiveOffset(int sbCount, uint64_t pushed) const
+{
+    // Output never moves a scrolled-back view (VTE/Tilix default): each line pushed since the GUI
+    // last looked moves the view one further from live, capped at the oldest line — the same result
+    // as offsetAfterPush() once per line.
+    if (m_scrollOffset <= 0)
+        return 0;
+    const uint64_t moved = pushed - m_seenPushed;
+    return int(std::min<uint64_t>(uint64_t(m_scrollOffset) + moved, uint64_t(std::max(sbCount, 0))));
+}
+
+// GUI thread: take what libvterm reported (on whichever thread) and act on it.
+void TerminalView::applyNews()
+{
+    News n;
+    int sb;
+    uint64_t pushed;
+    {
+        ScreenLock lock(m_screenMutex);
+        n = m_news;
+        m_news.title.clear();
+        m_news.titleChanged = m_news.cursorMoved = m_news.scrollMoved = m_news.damaged = m_news.exited = false;
+        m_news.bells = 0;
+        sb = m_term.sbCount();
+        pushed = m_term.pushedTotal();
+    }
+    bool scroll = n.scrollMoved || pushed != m_seenPushed || sb != m_sbCount;
+    if (scroll) {
+        m_scrollOffset = clampOffset(effectiveOffset(sb, pushed), sb);
+        m_seenPushed = pushed;
+        m_sbCount = sb;
+    }
+    if (n.altScreen != m_altScreen) {
+        m_altScreen = n.altScreen;
+        scroll = true; // the scrollbar hides on the alt screen (vim/less), see altScreen()
+    }
+    m_mouseMode = n.mouseMode; // decideMouseAction() (mousereport.h) reads it on every mouse event
+    const bool cursorChanged = n.cursor.row != m_cursor.row || n.cursor.col != m_cursor.col
+        || n.cursorVisible != m_cursorVisible;
+    m_cursor = n.cursor;
+    m_cursorVisible = n.cursorVisible;
+    if (n.titleChanged) {
+        m_title = n.title;
+        emit titleChanged();
+    }
+    if (scroll)
+        emit scrollChanged();
+    if (n.cursorMoved)
+        resetBlink(); // solid cursor on activity (calls update())
+    if (n.damaged || cursorChanged || scroll)
+        update();
+    if (n.bells)
+        emit bellRang(); // one flash for a burst of BELs
+    if (n.exited)
+        m_pty.markExited(); // → finished() → sessionFinished()
 }
 
 // ─── libvterm plumbing ──────────────────────────────────────────────────────────────────────────
 
 // Content changed outside a pty batch (resize, reset): repaint. Inside a batch TermScreen makes no
 // call at all — the bytesRead handler update()s once at its end.
+// Content changed outside a parse batch (resize, reset): recorded; the caller applies the news.
 void TerminalView::cbDamage(void *user)
 {
     if (Q_UNLIKELY(PerfTrace::on))
         PerfTrace::stage(PerfTrace::Damage);
-    auto *self = static_cast<TerminalView *>(user);
-    if (!self->m_inInput)
-        self->update();
+    static_cast<TerminalView *>(user)->m_news.damaged = true;
 }
 
 int TerminalView::cbMoveCursor(VTermPos pos, VTermPos, int visible, void *user)
 {
-    auto *self = static_cast<TerminalView *>(user);
-    self->m_cursor = pos;
-    self->m_cursorVisible = visible != 0;
-    if (self->m_inInput)
-        self->m_blinkPending = true; // once per pty batch, see the bytesRead handler
-    else
-        self->resetBlink();
+    News &n = static_cast<TerminalView *>(user)->m_news;
+    n.cursor = pos;
+    n.cursorVisible = visible != 0;
+    n.cursorMoved = true;
     return 1;
 }
 
 int TerminalView::cbSetTermProp(VTermProp prop, VTermValue *val, void *user)
 {
-    auto *self = static_cast<TerminalView *>(user);
+    News &n = static_cast<TerminalView *>(user)->m_news;
     if (prop == VTERM_PROP_TITLE) {
-        self->m_title = QString::fromUtf8(val->string.str, qsizetype(val->string.len));
-        emit self->titleChanged();
+        n.title = QString::fromUtf8(val->string.str, qsizetype(val->string.len));
+        n.titleChanged = true;
     } else if (prop == VTERM_PROP_CURSORVISIBLE) {
-        self->m_cursorVisible = val->boolean;
-        self->update();
+        n.cursorVisible = val->boolean;
+        n.damaged = true;
     } else if (prop == VTERM_PROP_MOUSE) {
-        // DECSET 1000/1002/1003 (CLICK/DRAG/MOVE) or a reset to NONE — decideMouseAction() in
-        // mousereport.h reads this on every mouse event, no further bookkeeping needed here.
-        self->m_mouseMode = val->number;
+        n.mouseMode = val->number; // DECSET 1000/1002/1003 (CLICK/DRAG/MOVE) or NONE
     } else if (prop == VTERM_PROP_ALTSCREEN) {
-        self->m_altScreen = val->boolean;
-        self->notifyScrollChanged(); // the scrollbar hides on the alt screen (vim/less), see altScreen()
+        n.altScreen = val->boolean;
+        n.scrollMoved = true;
     }
     return 1;
 }
 
 int TerminalView::cbBell(void *user)
 {
-    emit static_cast<TerminalView *>(user)->bellRang();
+    ++static_cast<TerminalView *>(user)->m_news.bells;
     return 1;
 }
 
@@ -268,6 +371,7 @@ void TerminalView::itemChange(ItemChange change, const ItemChangeData &data)
         m_bgNode = m_glyphNode = m_cursorNode = nullptr;
         m_imageNode = nullptr;
         m_glyphs.reset();
+        m_snapValid = false; // copy every row on the next frame
         // Window close (data.window == nullptr, item leaving the scene for good) or pane detach/
         // reattach (data.window == the new window) both end any local selection drag that was live —
         // either way, pty reads must resume rather than stay frozen forever.
@@ -297,21 +401,18 @@ void TerminalView::itemChange(ItemChange change, const ItemChangeData &data)
 }
 
 // A line entered the scrollback (TermScreen MOVED the row there; a full ring recycled its oldest).
-void TerminalView::cbSbPushed(int sbCount, void *user)
+// The scroll anchoring itself is applied by applyNews()/the renderer from pushedTotal().
+void TerminalView::cbSbPushed(int, void *user)
 {
-    auto *self = static_cast<TerminalView *>(user);
-    self->m_scrollOffset = offsetAfterPush(self->m_scrollOffset, sbCount);
-    self->notifyScrollChanged(); // scrollbackCount (and maybe scrollOffset) moved — the scrollbar listens
+    static_cast<TerminalView *>(user)->m_news.scrollMoved = true;
 }
 
 // A line left the scrollback (popped back onto the screen when the terminal grew taller, or trimmed
 // by a lower limit). TermScreen pads a line pushed while narrower with REAL blanks — a zeroed cell
 // has width 0 and hangs libvterm's backfill loop forever (see scrollbackcells.h).
-void TerminalView::cbSbPopped(int sbCount, void *user)
+void TerminalView::cbSbPopped(int, void *user)
 {
-    auto *self = static_cast<TerminalView *>(user);
-    self->m_scrollOffset = clampOffset(self->m_scrollOffset, sbCount);
-    self->notifyScrollChanged();
+    static_cast<TerminalView *>(user)->m_news.scrollMoved = true; // applyNews() clamps the offset
 }
 
 static const TermScreenHooks kTermHooks = {
@@ -329,12 +430,11 @@ void TerminalView::ensureSession()
         return;
     m_started = true;
 
+    m_threaded = parserThreadEnabled();
     m_vt = TermScreen::newVTerm(m_rows, m_cols);
     vterm_set_utf8(m_vt, 1);
     vterm_output_set_callback(m_vt, [](const char *s, size_t len, void *user) {
-        if (Q_UNLIKELY(PerfTrace::on))
-            PerfTrace::stage(PerfTrace::PtyWrite);
-        static_cast<TerminalView *>(user)->m_pty.writeBytes(QByteArray(s, int(len)));
+        static_cast<TerminalView *>(user)->writeToPty(s, len);
     }, this);
 
     // Our own screen over libvterm's state layer (primary + alt screen + scrollback ring).
@@ -349,6 +449,14 @@ void TerminalView::ensureSession()
     vterm_color_rgb(&bg, uint8_t(m_background.red()), uint8_t(m_background.green()), uint8_t(m_background.blue()));
     vterm_state_set_default_colors(state, &fg, &bg);
     m_term.reset(true);
+    // The 256-colour palette, once: libvterm never changes it afterwards (it handles no OSC 4), so
+    // the renderer needs no access to VTermState. Same values as vterm_state_convert_color_to_rgb.
+    for (int i = 0; i < 256; ++i) {
+        VTermColor c;
+        vterm_state_get_palette_color(state, i, &c);
+        m_indexed[i] = QColor(c.rgb.red, c.rgb.green, c.rgb.blue);
+    }
+    m_news = News {};
 
     QString cwd;
     QStringList env;
@@ -363,7 +471,25 @@ void TerminalView::ensureSession()
         cwd = s_pendingSpawn->cwd;
         env = s_pendingSpawn->env;
     }
-    m_pty.start(m_rows, m_cols, QString(), cwd, env);
+    m_pty.start(m_rows, m_cols, QString(), cwd, env, /*readHere*/ !m_threaded);
+    // Started paused, reading from the next GUI loop turn on — when the single-threaded notifier
+    // would first fire too. The session starts before the item is laid out (the grid is still 2x2);
+    // a parser running at once wrapped the shell's first output at 2 columns for good.
+    if (m_threaded && m_pty.masterFd() >= 0
+        && m_worker.start(m_pty.masterFd(), &m_screenMutex, &kWorkerSink, this, /*startPaused*/ true)) {
+        m_newsNotifier = new QSocketNotifier(m_worker.guiFd(), QSocketNotifier::Read, this);
+        connect(m_newsNotifier, &QSocketNotifier::activated, this, [this] {
+            m_worker.guiAcknowledge(); // before the apply: news recorded after it posts a fresh wake
+            applyNews();
+        });
+        QMetaObject::invokeMethod(this, [this] {
+            if (m_outputPaused)
+                return; // a selection drag already holds it; its resume starts reading
+            ScreenLock lock(m_screenMutex);
+            m_worker.setPaused(false);
+        }, Qt::QueuedConnection);
+    }
+    applyNews();
     updateFocusReport(); // sync the program's focus state with whatever we're starting with
 }
 
@@ -395,8 +521,13 @@ void TerminalView::applyGrid()
     m_rows = rows;
     m_cols = cols;
     if (m_vt) {
-        vterm_set_size(m_vt, rows, cols); // TermScreen resizes (and damages) inside
+        {
+            // Synchronous hand-off: the parser thread is held off while TermScreen resizes.
+            ScreenLock lock(m_screenMutex);
+            vterm_set_size(m_vt, rows, cols); // TermScreen resizes (and damages) inside
+        }
         m_pty.resize(rows, cols);
+        applyNews();
     }
     emit scrollChanged(); // viewportRows moved — the scrollbar's thumb size depends on it
     update();
@@ -417,9 +548,8 @@ QColor TerminalView::toQColor(VTermColor c, bool isFg) const
         return m_foreground;
     if (VTERM_COLOR_IS_DEFAULT_BG(&c))
         return m_background;
-    if (m_hasPalette && VTERM_COLOR_IS_INDEXED(&c) && c.indexed.idx < 16)
-        return m_palette[c.indexed.idx];
-    vterm_state_convert_color_to_rgb(m_term.state(), &c);
+    if (VTERM_COLOR_IS_INDEXED(&c))
+        return m_hasPalette && c.indexed.idx < 16 ? m_palette[c.indexed.idx] : m_indexed[c.indexed.idx];
     return QColor(c.rgb.red, c.rgb.green, c.rgb.blue);
     Q_UNUSED(isFg);
 }
@@ -468,6 +598,57 @@ inline void pushGlyphQuad(std::vector<GlyphVertex> &v, qreal x, qreal y, qreal w
 
 } // namespace
 
+// Render thread, GUI blocked: copy the visible rows (and the scalars the frame needs) out of the
+// screen under the lock. In the live view only rows the parser dirtied since the last frame are
+// copied; scrolled back, resized, after a DECSCNM flip or a window change, all of them (~212 KB at
+// 105x56, tens of microseconds).
+void TerminalView::copySnapshot(int &sbCount, int &offset, VTermPos &cursor, bool &cursorVisible, bool &reverse)
+{
+    const int rows = m_rows, cols = m_cols;
+    const size_t cells = size_t(rows) * size_t(cols);
+    if (m_snapRows != rows || m_snapCols != cols) {
+        m_snap.assign(cells, TermCell {});
+        m_snapLen.assign(size_t(rows), -1);
+        m_snapLive.assign(size_t(rows), 0);
+        m_snapRows = rows;
+        m_snapCols = cols;
+        m_snapValid = false;
+    }
+    ScreenLock lock(m_screenMutex);
+    sbCount = m_term.sbCount();
+    offset = clampOffset(effectiveOffset(sbCount, m_term.pushedTotal()), sbCount);
+    reverse = m_term.globalReverse();
+    cursor = m_news.cursor;
+    cursorVisible = m_news.cursorVisible;
+    const bool all = !m_snapValid || offset != 0 || m_snapOffset != 0 || reverse != m_snapReverse
+        || m_term.rows() != rows || m_term.cols() != cols;
+    for (int row = 0; row < rows; ++row) {
+        if (!all && (row >= m_term.rows() || !m_term.rowDirty(row)))
+            continue;
+        const int liveRow = row - offset;
+        TermScreen::Line line;
+        if (liveRow < 0) {
+            if (sbCount + liveRow >= 0)
+                line = m_term.line(sbCount + liveRow);
+        } else if (liveRow < m_term.rows()) {
+            line = m_term.liveLine(liveRow);
+        }
+        const size_t at = size_t(row) * size_t(cols);
+        if (!line.cells) {
+            m_snapLen[size_t(row)] = -1;
+            continue;
+        }
+        const int n = std::min(line.cols, cols);
+        std::memcpy(m_snap.data() + at, line.cells, size_t(n) * sizeof(TermCell));
+        m_snapLen[size_t(row)] = n;
+        m_snapLive[size_t(row)] = line.live ? 1 : 0;
+    }
+    m_term.clearDirty();
+    m_snapOffset = offset;
+    m_snapReverse = reverse;
+    m_snapValid = true;
+}
+
 QSGNode *TerminalView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *data)
 {
     if (Q_UNLIKELY(PerfTrace::on)) {
@@ -505,32 +686,29 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
     baseBg.setAlphaF(m_bgOpacity);
     pushBgQuad(bg, 0, 0, width(), height(), baseBg);
 
-    const int sbShown = m_scrollOffset;
-    const int sbCount = m_term.sbCount();
-    m_term.clearDirty(); // every row is rebuilt below (per-row geometry reuse is proposal P4)
+    // The visible rows, copied out of the screen under the lock (the parser thread keeps writing it);
+    // everything below reads the copy. Every row's geometry is rebuilt (per-row reuse is proposal P4).
+    int sbCount = 0, sbShown = 0;
+    VTermPos cursorPos;
+    bool cursorVisible = true, globalReverse = false;
+    copySnapshot(sbCount, sbShown, cursorPos, cursorVisible, globalReverse);
     // Past the end of a scrollback row narrower than the grid: a value-initialised cell, exactly what
     // the previous `VTermScreenCell cell {}` gave (zero colours = RGB black, not the default).
     static const TermCell kPastEnd {};
     for (int row = 0; row < m_rows; ++row) {
-        const int liveRow = row - sbShown;
-        TermScreen::Line line;
-        if (liveRow < 0) {
-            const int idx = sbCount + liveRow;
-            if (idx < 0)
-                continue;
-            line = m_term.line(idx);
-        } else {
-            line = m_term.liveLine(liveRow);
-        }
+        const int lineCols = m_snapLen[size_t(row)];
+        if (lineCols < 0)
+            continue; // above the oldest scrollback line
+        const TermCell *lineCells = m_snap.data() + size_t(row) * size_t(m_snapCols);
         // DECSCNM applies to live rows at read time (scrollback rows have it baked in).
-        const bool flipReverse = line.live && m_term.globalReverse();
+        const bool flipReverse = m_snapLive[size_t(row)] && globalReverse;
         const qreal y = row * m_cellH;
 
         int col = 0;
         while (col < m_cols) {
-            const bool inLine = col < line.cols;
-            const TermCell &cell = inLine ? line.cells[col] : kPastEnd;
-            const int cw = inLine ? TermScreen::widthAt(line.cells, line.cols, col) : 1;
+            const bool inLine = col < lineCols;
+            const TermCell &cell = inLine ? lineCells[col] : kPastEnd;
+            const int cw = inLine ? TermScreen::widthAt(lineCells, lineCols, col) : 1;
             const qreal x = col * m_cellW;
             const qreal w = cw * m_cellW;
 
@@ -585,8 +763,8 @@ QSGNode *TerminalView::buildPaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 
     // Cursor: a semi-transparent block (focused) so the glyph shows through, or an outline
     // (unfocused). Hidden while scrolled back.
-    if (m_cursorVisible && sbShown == 0) {
-        const qreal cx = m_cursor.col * m_cellW, cy = m_cursor.row * m_cellH;
+    if (cursorVisible && sbShown == 0) {
+        const qreal cx = cursorPos.col * m_cellW, cy = cursorPos.row * m_cellH;
         if (hasActiveFocus()) {
             if (m_blinkOn) {
                 QColor cur = m_foreground;
@@ -805,6 +983,7 @@ void TerminalView::inputMethodEvent(QInputMethodEvent *event)
             update();
         }
         resetBlink();
+        ScreenLock lock(m_screenMutex);
         for (const char32_t c : commit.toUcs4())
             vterm_keyboard_unichar(m_vt, c, VTERM_MOD_NONE);
     }
@@ -890,7 +1069,10 @@ void TerminalView::keyPressEvent(QKeyEvent *event)
         return;
     }
     resetBlink();
-    keyToVTerm(event);
+    {
+        ScreenLock lock(m_screenMutex); // libvterm's encoder reads its modes and fills its output buffer
+        keyToVTerm(event);
+    }
     event->accept();
 }
 
@@ -898,7 +1080,7 @@ TerminalView::CellPos TerminalView::cellAt(const QPointF &p) const
 {
     CellPos c;
     const int row = qBound(0, int(p.y() / m_cellH), m_rows - 1);
-    c.absRow = m_term.sbCount() - m_scrollOffset + row;
+    c.absRow = m_sbCount - m_scrollOffset + row;
     c.col = qBound(0, int(p.x() / m_cellW), m_cols - 1);
     return c;
 }
@@ -918,6 +1100,7 @@ QString TerminalView::selectedText() const
     CellPos from, to;
     selectedRange(from, to);
     QString out;
+    ScreenLock lock(m_screenMutex);
     for (int absRow = from.absRow; absRow <= to.absRow; ++absRow) {
         const int c0 = absRow == from.absRow ? from.col : 0;
         const int c1 = absRow == to.absRow ? to.col : m_cols - 1;
@@ -992,7 +1175,12 @@ void TerminalView::pasteText(const QString &text)
 
 void TerminalView::clearScrollback()
 {
-    m_term.clearScrollback();
+    {
+        ScreenLock lock(m_screenMutex);
+        m_term.clearScrollback();
+        m_seenPushed = m_term.pushedTotal();
+    }
+    m_sbCount = 0;
     m_scrollOffset = 0;
     m_selValid = false;
     emit selectionChanged();
@@ -1018,8 +1206,13 @@ void TerminalView::setReadOnly(bool v)
 
 void TerminalView::resetTerminal()
 {
-    if (m_term.isAttached())
-        m_term.reset(true); // hard reset: clears attrs, modes, cursor
+    if (m_term.isAttached()) {
+        {
+            ScreenLock lock(m_screenMutex);
+            m_term.reset(true); // hard reset: clears attrs, modes, cursor
+        }
+        applyNews();
+    }
     m_scrollOffset = 0;
     emit scrollChanged();
     update();
@@ -1045,6 +1238,7 @@ void TerminalView::updateFocusReport()
     if (focused == m_focusReported)
         return;
     m_focusReported = focused;
+    ScreenLock lock(m_screenMutex);
     VTermState *state = vterm_obtain_state(m_vt);
     if (focused)
         vterm_state_focus_in(state);
@@ -1068,10 +1262,12 @@ QString TerminalView::rowText(int absRow) const
 
 void TerminalView::search(const QString &query)
 {
+    applyNews(); // absolute rows below agree with the GUI's scrollback count
     m_searchQuery = query;
     m_matches.clear();
     m_searchIndex = -1;
     if (!query.isEmpty() && m_term.isAttached()) {
+        ScreenLock lock(m_screenMutex); // the whole walk: the parser thread waits (user action, once)
         const int total = m_term.sbCount() + m_rows;
         for (int absRow = 0; absRow < total; ++absRow) {
             const QString line = rowText(absRow);
@@ -1084,10 +1280,10 @@ void TerminalView::search(const QString &query)
                 from = idx + query.length();
             }
         }
-        if (!m_matches.isEmpty()) {
-            m_searchIndex = m_matches.size() - 1; // most recent (nearest the bottom)
-            scrollToMatch(m_searchIndex);
-        }
+    }
+    if (!m_matches.isEmpty()) {
+        m_searchIndex = m_matches.size() - 1; // most recent (nearest the bottom)
+        scrollToMatch(m_searchIndex);
     }
     emit searchChanged(m_searchIndex + 1, int(m_matches.size()));
     update();
@@ -1097,7 +1293,7 @@ void TerminalView::scrollToMatch(int i)
 {
     if (i < 0 || i >= m_matches.size())
         return;
-    const int sbSize = m_term.sbCount();
+    const int sbSize = m_sbCount;
     const int desiredTop = m_matches[i].absRow - m_rows / 2; // centre the match
     m_scrollOffset = qBound(0, sbSize - desiredTop, sbSize);
     emit scrollChanged();
@@ -1145,13 +1341,16 @@ TerminalView::LinkSpan TerminalView::linkAt(const QPointF &p) const
 {
     if (!m_term.isAttached())
         return {};
+    ScreenLock lock(m_screenMutex); // rows + libvterm's line info (reallocated by a resize)
     const int row = int(p.y() / m_cellH);
     const int col = int(p.x() / m_cellW);
     if (row < 0 || row >= m_rows || col < 0 || col >= m_cols)
         return {};
 
+    // The screen as it is now (the parser may be ahead of the GUI's copies): same anchoring rule
+    // as the renderer.
     const int sbSize = m_term.sbCount();
-    const int queriedAbsRow = sbSize - m_scrollOffset + row;
+    const int queriedAbsRow = sbSize - clampOffset(effectiveOffset(sbSize, m_term.pushedTotal()), sbSize) + row;
     const int liveRow = queriedAbsRow - sbSize; // >= 0 while this row is the live screen, not scrollback
 
     // Find the actual start of the (possibly wrapped) line: walk backward over LIVE rows flagged as
@@ -1299,6 +1498,7 @@ void TerminalView::reportMousePress(Qt::MouseButton button, const QPointF &pos, 
     const VTermModifier mod = qtModsToVTerm(mods);
     const int col = pixelToCellIndex(pos.x(), m_cellW, m_cols);
     const int row = pixelToCellIndex(pos.y(), m_cellH, m_rows);
+    ScreenLock lock(m_screenMutex);
     vterm_mouse_move(m_vt, row, col, mod);
     vterm_mouse_button(m_vt, vb, true, mod);
     m_lastReportedCell = { row, col };
@@ -1312,6 +1512,7 @@ void TerminalView::reportMouseRelease(Qt::MouseButton button, const QPointF &pos
     const VTermModifier mod = qtModsToVTerm(mods);
     const int col = pixelToCellIndex(pos.x(), m_cellW, m_cols);
     const int row = pixelToCellIndex(pos.y(), m_cellH, m_rows);
+    ScreenLock lock(m_screenMutex);
     vterm_mouse_move(m_vt, row, col, mod);
     vterm_mouse_button(m_vt, vb, false, mod);
     m_lastReportedCell = { row, col };
@@ -1333,6 +1534,7 @@ void TerminalView::reportMouseMotion(const QPointF &pos, Qt::KeyboardModifiers m
     if (row == m_lastReportedCell.row && col == m_lastReportedCell.col)
         return;
     m_lastReportedCell = { row, col };
+    ScreenLock lock(m_screenMutex);
     vterm_mouse_move(m_vt, row, col, qtModsToVTerm(mods));
 }
 
@@ -1347,6 +1549,7 @@ void TerminalView::reportWheel(const QPointF &pos, int angleDeltaY, Qt::Keyboard
     const VTermModifier mod = qtModsToVTerm(mods);
     const int col = pixelToCellIndex(pos.x(), m_cellW, m_cols);
     const int row = pixelToCellIndex(pos.y(), m_cellH, m_rows);
+    ScreenLock lock(m_screenMutex);
     vterm_mouse_move(m_vt, row, col, mod);
     const int button = notches > 0 ? 4 : 5;
     for (int i = 0, n = qAbs(notches); i < n; ++i)
@@ -1362,13 +1565,18 @@ void TerminalView::sendAltScrollKeys(int angleDeltaY)
     if (!m_vt || notches == 0)
         return;
     const VTermKey key = notches > 0 ? VTERM_KEY_UP : VTERM_KEY_DOWN;
+    ScreenLock lock(m_screenMutex);
     for (int i = 0, n = qAbs(notches) * 3; i < n; ++i)
         vterm_keyboard_key(m_vt, key, VTERM_MOD_NONE);
 }
 
 void TerminalView::selectWordAt(const CellPos &c)
 {
-    const QString line = rowText(c.absRow);
+    QString line;
+    {
+        ScreenLock lock(m_screenMutex);
+        line = rowText(c.absRow);
+    }
     const auto isWord = [](QChar ch) {
         return ch.isLetterOrNumber() || QStringLiteral("._-~/:@%+=").contains(ch);
     };
@@ -1386,7 +1594,11 @@ void TerminalView::selectWordAt(const CellPos &c)
 
 void TerminalView::selectLineAt(const CellPos &c)
 {
-    QString line = rowText(c.absRow);
+    QString line;
+    {
+        ScreenLock lock(m_screenMutex);
+        line = rowText(c.absRow);
+    }
     int end = line.size() - 1;
     while (end > 0 && line[end] == QLatin1Char(' ')) --end;
     m_selAnchor = { c.absRow, 0 };
@@ -1425,6 +1637,7 @@ void TerminalView::mouseDoubleClickEvent(QMouseEvent *event)
 
 void TerminalView::mousePressEvent(QMouseEvent *event)
 {
+    applyNews(); // positions below (cellAt) use the GUI's copies: bring them up to the screen
     forceActiveFocus(Qt::MouseFocusReason);
     emit focusRequested(); // user intent: this pane is now the focused one (TerminalPanes updates m_focused)
 
@@ -1572,7 +1785,15 @@ void TerminalView::pauseOutputForSelection()
     if (m_outputPaused)
         return;
     m_outputPaused = true;
-    m_pty.pause();
+    if (m_threaded) {
+        {
+            ScreenLock lock(m_screenMutex); // once this returns no slice runs until resume
+            m_worker.setPaused(true);
+        }
+        applyNews(); // what was parsed before the pause, so positions agree with the frozen screen
+    } else {
+        m_pty.pause();
+    }
     emit outputPausedChanged();
 }
 
@@ -1583,7 +1804,12 @@ void TerminalView::resumeOutputFromSelection()
     if (!m_outputPaused)
         return;
     m_outputPaused = false;
-    m_pty.resume();
+    if (m_threaded) {
+        ScreenLock lock(m_screenMutex);
+        m_worker.setPaused(false);
+    } else {
+        m_pty.resume();
+    }
     emit outputPausedChanged();
 }
 
@@ -1602,7 +1828,7 @@ void TerminalView::autoscrollTick()
     if (lines <= 0)
         return;
     const bool above = overshoot < 0;
-    m_scrollOffset = autoscrollOffsetAfterTick(m_scrollOffset, m_term.sbCount(), lines, above);
+    m_scrollOffset = autoscrollOffsetAfterTick(m_scrollOffset, m_sbCount, lines, above);
     emit scrollChanged();
 
     const int edgeRow = above ? 0 : m_rows - 1;
@@ -1645,7 +1871,7 @@ void TerminalView::wheelEvent(QWheelEvent *event)
 
     // Local (today's behaviour): scroll SolidTerm's own scrollback.
     const int lines = event->angleDelta().y() / 40; // 3 lines per notch
-    m_scrollOffset = qBound(0, m_scrollOffset + lines, m_term.sbCount());
+    m_scrollOffset = qBound(0, m_scrollOffset + lines, m_sbCount);
     emit scrollChanged();
     update();
     event->accept();
@@ -1765,7 +1991,7 @@ void TerminalView::setScrollbarMode(const QString &v)
 
 void TerminalView::scrollTo(int offset)
 {
-    const int clamped = clampOffset(offset, m_term.sbCount());
+    const int clamped = clampOffset(offset, m_sbCount);
     if (clamped == m_scrollOffset)
         return;
     m_scrollOffset = clamped;
@@ -1959,7 +2185,12 @@ void TerminalView::setScrollbackLimit(int v)
     if (m_scrollbackLimit == v)
         return;
     m_scrollbackLimit = qMax(0, v);
-    m_term.setScrollbackLimit(m_scrollbackLimit); // a lower limit trims at once (cbSbPopped clamps the offset)
+    {
+        ScreenLock lock(m_screenMutex);
+        m_term.setScrollbackLimit(m_scrollbackLimit); // a lower limit trims at once
+    }
+    if (m_term.isAttached())
+        applyNews(); // clamps the offset
     emit scrollbackLimitChanged();
 }
 
@@ -1968,6 +2199,7 @@ void TerminalView::sendText(const QString &text)
     if (!m_vt || m_readOnly)
         return;
     const auto ucs4 = text.toUcs4();
+    ScreenLock lock(m_screenMutex);
     for (const char32_t c : ucs4)
         vterm_keyboard_unichar(m_vt, c, VTERM_MOD_NONE);
 }

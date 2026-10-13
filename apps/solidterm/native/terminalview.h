@@ -3,6 +3,7 @@
 #include "glyphcache.h"
 #include "ptysession.h"
 #include "termscreen.h"
+#include "termworker.h"
 
 #include <QColor>
 #include <QFont>
@@ -118,7 +119,7 @@ public:
     int blur() const { return m_blur; }
     void setBlur(int v);
     int scrollOffset() const { return m_scrollOffset; }
-    int scrollbackCount() const { return m_term.sbCount(); }
+    int scrollbackCount() const { return m_sbCount; }
     int viewportRows() const { return m_rows; }
     bool isAltScreen() const { return m_altScreen; }
     QString scrollbarMode() const { return m_scrollbarMode; }
@@ -219,32 +220,63 @@ protected:
     void hoverLeaveEvent(QHoverEvent *event) override;
 
 public:
-    // TermScreen hooks (static thunks → the view; public for the file-static hook table).
+    // TermScreen hooks (static thunks → the view; public for the file-static hook table). They run
+    // wherever libvterm runs (the parser thread, or the GUI thread for resize/reset/keys), always
+    // under m_screenMutex, and only RECORD news (m_news) — applyNews() acts on it on the GUI thread.
     static void cbDamage(void *user);
     static int cbMoveCursor(VTermPos pos, VTermPos oldPos, int visible, void *user);
     static int cbSetTermProp(VTermProp prop, VTermValue *val, void *user);
     static int cbBell(void *user);
     static void cbSbPushed(int sbCount, void *user);
     static void cbSbPopped(int sbCount, void *user);
+    // TermWorker sink (parser thread, lock held).
+    static bool wkFeed(void *user, const char *data, size_t len);
+    static void wkExited(void *user);
+    static void wkReadProbe(void *user, size_t len);
 
 private:
+    // ── threading (docs/solidterm-parser-thread.md) ──────────────────────────────────────────────
+    // SOLIDTERM_PARSER_THREAD=0 keeps the GUI-thread reader (PtySession's notifier) for A/B.
+    static bool parserThreadEnabled();
+    bool m_threaded = false;
+    // Guards m_vt (parser, state, encoders, output buffer), m_term and m_news. Taken by the parser
+    // thread per slice, by GUI readers, by the renderer's snapshot copy and by keyboard/mouse input.
+    mutable ScreenMutex m_screenMutex; // const readers (selectedText, linkAt) lock it too
+    TermWorker m_worker;
+    class QSocketNotifier *m_newsNotifier = nullptr; // m_worker.guiFd() on the GUI thread
 
-    // Inside a pty batch (vterm_input_write in the bytesRead handler) the vterm callbacks defer
-    // scrollChanged()/resetBlink()/update() to ONE call at the batch's end.
-    bool m_inInput = false;
-    bool m_scrollPending = false;
-    bool m_blinkPending = false;
-    void notifyScrollChanged()
-    {
-        if (m_inInput)
-            m_scrollPending = true;
-        else
-            emit scrollChanged();
-    }
+    // What libvterm reported since the GUI last applied it (lock held to touch). The first four are
+    // current values, the rest are events cleared by applyNews().
+    struct News {
+        VTermPos cursor = { 0, 0 };
+        bool cursorVisible = true;
+        int mouseMode = VTERM_PROP_MOUSE_NONE;
+        bool altScreen = false;
+        QString title;
+        bool titleChanged = false;
+        bool cursorMoved = false;   // → blink phase restart
+        bool scrollMoved = false;   // scrollback grew/shrank or altscreen flipped → scrollChanged
+        bool damaged = false;       // content changed → update()
+        bool exited = false;        // the shell is gone
+        int bells = 0;
+        bool any() const { return titleChanged || cursorMoved || scrollMoved || damaged || exited || bells; }
+    };
+    News m_news;
+    // GUI thread: take the news (scroll anchoring, signals, update()). Must not hold the lock.
+    void applyNews();
+    void parseOnGuiThread(const QByteArray &bytes); // single-threaded mode
+    void writeToPty(const char *s, size_t len);     // libvterm's output callback (lock held)
+
+    // GUI copies of the screen's scalars (QML and the input handlers read these, never m_term).
+    int m_sbCount = 0;
+    uint64_t m_seenPushed = 0;      // m_term.pushedTotal() as of the last applyNews()
+    int effectiveOffset(int sbCount, uint64_t pushed) const; // m_scrollOffset + pushes since then
 
     void ensureSession();
     void applyGrid();                       // width/height/font → rows/cols → vterm + pty
     QColor toQColor(VTermColor c, bool isFg) const;
+    QColor m_indexed[256];                  // libvterm's 256-colour palette, read once at start
+
     void keyToVTerm(QKeyEvent *event);
 
     // Auto-detected hyperlink (URL) under the mouse: absolute row + col span + the URL. Hovering
@@ -260,7 +292,7 @@ private:
 
     // Scrollback search.
     struct Match { int absRow = 0; int c0 = 0; int len = 0; };
-    QString rowText(int absRow) const;      // col-indexed text of an absolute row
+    QString rowText(int absRow) const;      // col-indexed text of an absolute row (lock held)
     void scrollToMatch(int i);
     QString m_searchQuery;
     QVector<Match> m_matches;
@@ -303,6 +335,16 @@ private:
     QSGGeometryNode *m_bgNode = nullptr;
     QSGGeometryNode *m_glyphNode = nullptr;
     QSGGeometryNode *m_cursorNode = nullptr;
+    // Render snapshot: the visible rows copied out of m_term under the lock at the start of each
+    // updatePaintNode (render thread, GUI blocked); the geometry is built from it with no lock held.
+    std::vector<TermCell> m_snap;           // m_snapRows x m_snapCols
+    std::vector<int> m_snapLen;             // cells in use per row (-1: no line there)
+    std::vector<uint8_t> m_snapLive;        // live row (DECSCNM applies) or scrollback
+    int m_snapRows = 0, m_snapCols = 0;
+    int m_snapOffset = -1;                  // effective scroll offset of the copy
+    bool m_snapReverse = false;
+    bool m_snapValid = false;               // false → copy every row next frame
+    void copySnapshot(int &sbCount, int &offset, VTermPos &cursor, bool &cursorVisible, bool &reverse);
     QString m_title;
     VTermPos m_cursor = { 0, 0 };
     bool m_cursorVisible = true;

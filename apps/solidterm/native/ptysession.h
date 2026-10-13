@@ -21,9 +21,14 @@ public:
     // Spawn $SHELL (or `program`) at rows×cols. Returns false when the pty/fork fails.
     // `cwd` / `env` ("KEY=VALUE" entries) default to this process's; a window opened for another
     // `solidterm` invocation passes THAT caller's, so the shell starts where it was asked for.
+    // `readHere` = false: no QSocketNotifier — another reader (TermWorker, the parser thread) owns
+    // the read side of masterFd() and reports the shell's exit through markExited().
     bool start(int rows, int cols, const QString &program = QString(), const QString &cwd = QString(),
-               const QStringList &env = QStringList());
-    // Stall-watchdog accounting (stallwatch.h).
+               const QStringList &env = QStringList(), bool readHere = true);
+    int masterFd() const { return m_master; }
+    // The external reader saw EOF/EIO: reap the child and emit finished() (GUI thread).
+    void markExited();
+    // Stall-watchdog accounting (stallwatch.h) for a read done by the external reader; any thread.
     void noteRead(size_t n);
     void resize(int rows, int cols);
     void writeBytes(const QByteArray &bytes);

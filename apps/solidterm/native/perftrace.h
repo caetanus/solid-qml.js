@@ -38,7 +38,7 @@ inline std::atomic<int> frameCount { 0 };
 inline std::atomic<int64_t> paintNsTotal { 0 }; // summed updatePaintNode time
 inline std::atomic<int> paintCount { 0 };
 inline std::atomic<int64_t> paintNsMax { 0 };
-inline int64_t ptyReads = 0, ptyBytes = 0; // GUI thread only
+inline std::atomic<int64_t> ptyReads { 0 }, ptyBytes { 0 }; // the reading thread (GUI or parser)
 
 // ── latency (one key in flight) ──────────────────────────────────────────────────────────────
 enum Stage { Key, PtyWrite, PtyRead, Damage, PaintBegin, PaintEnd, Swap, StageCount };
@@ -105,8 +105,8 @@ inline void dump(const char *path)
     const int64_t offset = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                std::chrono::system_clock::now().time_since_epoch()).count() - nowNs();
     std::fprintf(f, "realtime_offset %lld\n", static_cast<long long>(offset)); // steady → wall clock
-    std::fprintf(f, "pty_reads %lld\npty_bytes %lld\n", static_cast<long long>(ptyReads),
-                 static_cast<long long>(ptyBytes));
+    std::fprintf(f, "pty_reads %lld\npty_bytes %lld\n", static_cast<long long>(ptyReads.load()),
+                 static_cast<long long>(ptyBytes.load()));
     std::fprintf(f, "paint_count %d\npaint_ns_total %lld\npaint_ns_max %lld\nframes %d\n", paintCount.load(),
                  static_cast<long long>(paintNsTotal.load()), static_cast<long long>(paintNsMax.load()), n);
     for (int i = 0; i < n; ++i)

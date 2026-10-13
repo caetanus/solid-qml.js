@@ -224,7 +224,7 @@ PtySession::~PtySession()
 }
 
 bool PtySession::start(int rows, int cols, const QString &program, const QString &cwd,
-                       const QStringList &env)
+                       const QStringList &env, bool readHere)
 {
     struct winsize ws = {};
     ws.ws_row = static_cast<unsigned short>(rows);
@@ -289,6 +289,8 @@ bool PtySession::start(int rows, int cols, const QString &program, const QString
         connect(hb, &QTimer::timeout, this, [] { StallWatch::heartbeat(); });
         hb->start(100);
     }
+    if (!readHere)
+        return true;
     m_notifier = new QSocketNotifier(m_master, QSocketNotifier::Read, this);
     m_notifier->setEnabled(!m_paused); // honour a pause() requested before start() somehow raced in
     connect(m_notifier, &QSocketNotifier::activated, this, [this] { onReadable(); });
@@ -300,6 +302,16 @@ void PtySession::noteRead(size_t n)
     m_swLastReadNs.store(StallWatch::nowNs(), std::memory_order_relaxed);
     m_swBytes.fetch_add(int64_t(n), std::memory_order_relaxed);
     m_swReads.fetch_add(1, std::memory_order_relaxed);
+}
+
+void PtySession::markExited()
+{
+    if (m_pid <= 0)
+        return;
+    int status = 0;
+    ::waitpid(pid_t(m_pid), &status, WNOHANG);
+    m_pid = -1;
+    emit finished();
 }
 
 void PtySession::resize(int rows, int cols)
