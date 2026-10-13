@@ -132,7 +132,14 @@ TerminalPanes::TerminalPanes(QQuickItem *parent)
 TerminalPanes::~TerminalPanes()
 {
     s_all.removeAll(this);
-    deleteSubtree(m_root);
+    // ~QQuickItem runs after this body and clears the focus scope, which emits activeFocusChanged on
+    // our (still alive, deleteLater'd) views → refreshHeaderFocus walks the tree: it must find none,
+    // not the freed nodes (a use-after-free MALLOC_PERTURB_ turned into an assert, killing a tab).
+    Node *root = m_root;
+    m_root = nullptr;
+    m_focused = nullptr;
+    m_zoomLeaf = nullptr;
+    deleteSubtree(root);
 }
 
 // ─── tree construction ──────────────────────────────────────────────────────────────────────────
