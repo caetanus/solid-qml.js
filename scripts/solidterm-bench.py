@@ -228,11 +228,11 @@ def main():
         if keys:
             names = ["key", "ptywrite", "ptyread", "damage", "paint0", "paint1", "swap"]
             lat = []
-            for i, k in enumerate(keys):
+            for ki, k in enumerate(keys):
                 if all(k):
                     d = {n: (k[j] - k[0]) / 1e6 for j, n in enumerate(names)}
-                    if i in extra["KE"]:
-                        d["keyevent"] = (extra["KE"][i] - k[0]) / 1e6
+                    if ki in extra["KE"]:
+                        d["keyevent"] = (extra["KE"][ki] - k[0]) / 1e6
                     lat.append(d)
             rec["latency"] = lat
             rec["keys_sent"] = len(keys)
