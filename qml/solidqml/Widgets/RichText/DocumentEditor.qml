@@ -323,6 +323,7 @@ RichText {
     function blockText(blockId) { return fmt ? fmt.blockText(blockId) : "" }
     // Marks are an overlay, not content (not saved, copied, undone, nor `modified`).
     function addMark(kind, blockId, start, end, id) { return fmt ? fmt.addMark(kind, blockId, start, end, id || "") : "" }
+    function removeMark(id) { return fmt ? fmt.removeMark(id) : false }
     function clearMarks(kind, blockId) { if (fmt) fmt.clearMarks(kind, blockId || "") }
     function markStyle(kind, style) {
         if (!fmt) return _noEngine

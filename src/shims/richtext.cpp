@@ -2511,6 +2511,18 @@ QString RichTextHandler::addMark(const QString &kind, const QString &blockId, in
     return m_marks.last().id;
 }
 
+bool RichTextHandler::removeMark(const QString &id)
+{
+    for (qsizetype i = 0; i < m_marks.size(); ++i) {
+        if (m_marks.at(i).id != id)
+            continue;
+        m_marks.removeAt(i);
+        scheduleMarksRepaint();
+        return true;
+    }
+    return false;
+}
+
 void RichTextHandler::clearMarks(const QString &kind, const QString &blockId)
 {
     const qsizetype k = m_kinds.indexOf(kind);

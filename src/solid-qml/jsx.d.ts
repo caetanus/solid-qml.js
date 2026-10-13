@@ -407,6 +407,9 @@ declare global {
      *  undone nor counted as a modification. Edits move it with the text; an edit inside it (or
      *  deleting any of it) removes it. */
     addMark(kind: string, blockId: string, start: number, end: number, id?: string): string;
+    /** Removes one mark with this id, regardless of kind; false if unknown. Other marks, undo,
+     *  redo and modified are untouched. Use unique ids to identify a particular mark. */
+    removeMark(id: string): boolean;
     /** Every mark of `kind`, or only those in `blockId`. Other kinds/blocks are untouched. */
     clearMarks(kind: string, blockId?: string): void;
     /** How `kind` is drawn (see DocumentMarkStyle). */

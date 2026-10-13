@@ -302,6 +302,7 @@ public:
     // the block's text. Marks are never saved, copied, undone or counted as a modification.
     Q_INVOKABLE QString addMark(const QString &kind, const QString &blockId, int start, int end,
                                 const QString &id = QString());
+    Q_INVOKABLE bool removeMark(const QString &id); // one matching mark, false when unknown
     // Every mark of `kind` (blockId "") or only those in one block. Other kinds/blocks untouched.
     Q_INVOKABLE void clearMarks(const QString &kind, const QString &blockId = QString());
     // { underline: "wave"|"single"|"none"|null, color: "#rrggbb"|null, background: color|null }:

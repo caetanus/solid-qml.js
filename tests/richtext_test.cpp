@@ -5,6 +5,7 @@
 // paragraph/character styles (define, apply, re-apply, next style on Enter, direct formatting)
 // and their styles.xml round-trip.
 #include "shims/richtext.h"
+#include "shims/richtext_layout.h"
 #include "shims/richtext_odf.h"
 #include "shims/richtext_qt_p.h"
 #include "qmlcss/QMLCss.h"
@@ -2753,6 +2754,88 @@ private slots:
         m_fmt->setCursorPosition(6);
         m_fmt->insertText(QStringLiteral("x"));
         QCOMPARE(doc()->pageSize(), QSizeF(794, 1147));
+    }
+
+    void removeMark_data()
+    {
+        QTest::addColumn<QString>("engine");
+        QTest::newRow("custom") << QStringLiteral("custom");
+        QTest::newRow("qt") << QStringLiteral("qt");
+    }
+
+    void removeMark()
+    {
+        QFETCH(QString, engine);
+        PageEditor w;
+        QVERIFY(w.root);
+        w.root->setProperty("layoutEngine", engine);
+        auto *fmt = w.fmt();
+        auto *d = fmt->document()->textDocument();
+        fmt->insertText(QStringLiteral("I saw teh cat\nAnother word"));
+        fmt->insertText(QStringLiteral("!"));
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "undo")); // retain redo as well as undo
+        w.view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        QCoreApplication::processEvents();
+        QCOMPARE(dynamic_cast<rt::RichTextLayout *>(d->documentLayout()) != nullptr, engine == "custom");
+        d->setModified(false);
+        const QString html = fmt->toHtml();
+        const int undo = d->availableUndoSteps(), redo = d->availableRedoSteps();
+        QVERIFY(d->isUndoAvailable());
+        QVERIFY(d->isRedoAvailable());
+        QSignalSpy content(d, &QTextDocument::contentsChanged);
+        QSignalSpy modified(d, &QTextDocument::modificationChanged);
+        const auto ids = fmt->blockIds();
+        // Out-of-order insertion exercises the unsorted mark list too.
+        const QString keep = fmt->addMark(QStringLiteral("grammar"), ids[1], 0, 7);
+        const QString remove = fmt->addMark(QStringLiteral("spelling"), ids[0], 6, 9);
+        QVERIFY(!fmt->removeMark(QStringLiteral("unknown")));
+        QCOMPARE(fmt->marks().size(), 2);
+        const auto keptMark = fmt->markAt(d->findBlockByNumber(1).position());
+        const auto segments = fmt->markSegments();
+        QVERIFY(!segments.isEmpty());
+        const auto redPixels = [&]() {
+            const QImage image = w.view.grabWindow();
+            int count = 0;
+            for (int y = 0; y < image.height(); ++y)
+                for (int x = 0; x < image.width(); ++x) {
+                    const QColor p = image.pixelColor(x, y);
+                    if (p.red() > p.green() + 60 && p.red() > p.blue() + 60) ++count;
+                }
+            return count;
+        };
+        QTRY_VERIFY(redPixels() > 6);
+        QVariant result;
+        QVERIFY(QMetaObject::invokeMethod(w.root.data(), "removeMark", Q_RETURN_ARG(QVariant, result),
+                                          Q_ARG(QVariant, remove)));
+        QVERIFY(result.toBool());
+        QTRY_COMPARE(redPixels(), 0); // the overlay repaints, with either layout
+        QCOMPARE(fmt->marks().size(), 1);
+        QCOMPARE(fmt->marks()[0].id, keep);
+        QCOMPARE(fmt->markAt(d->findBlockByNumber(1).position()), keptMark);
+        QVERIFY(fmt->markAt(6).isNull());
+        QVERIFY(!fmt->removeMark(remove));
+        QVERIFY(fmt->removeMark(keep)); // another kind, last mark
+        QVERIFY(!fmt->hasMarks());
+        QVERIFY(fmt->markSegments().isEmpty());
+
+        // Caller-supplied ids need not be unique: remove ONE matching mark, not all of them.
+        fmt->addMark(QStringLiteral("custom-kind"), ids[1], 0, 2, QStringLiteral("duplicate"));
+        fmt->addMark(QStringLiteral("highlight"), ids[0], 0, 1, QStringLiteral("duplicate"));
+        QVERIFY(fmt->removeMark(QStringLiteral("duplicate")));
+        QCOMPARE(fmt->marks().size(), 1);
+        QCOMPARE(fmt->markAt(0).toMap().value("kind").toString(), QStringLiteral("highlight"));
+        QVERIFY(fmt->removeMark(QStringLiteral("duplicate")));
+        QVERIFY(!fmt->removeMark(QStringLiteral("duplicate")));
+        QCoreApplication::processEvents();
+        QCOMPARE(fmt->toHtml(), html);
+        QCOMPARE(d->availableUndoSteps(), undo);
+        QCOMPARE(d->availableRedoSteps(), redo);
+        QVERIFY(d->isUndoAvailable());
+        QVERIFY(d->isRedoAvailable());
+        QVERIFY(!fmt->isModified());
+        QCOMPARE(content.count(), 0);
+        QCOMPARE(modified.count(), 0);
     }
 
     void blockIdsInRangeBoundariesAndTables()

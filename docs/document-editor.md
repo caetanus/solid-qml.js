@@ -134,6 +134,7 @@ Methods:
 | `blockIdAt(pos)` | string | The id of the block holding document position `pos`; `""` outside the document. |
 | `blockText(blockId)` | string | The block's plain text, UTF-16 — the space mark offsets count in (a soft line break reads as `"\n"`, same length). `""` for an unknown id. |
 | `addMark(kind, blockId, start, end, id?)` | string | Marks `[start, end)` of the block's text; returns the mark's id (`id`, or a generated one), `""` for an unknown block or a range outside its text. Ids are the app's: not checked for uniqueness. |
+| `removeMark(id)` | boolean | Removes one mark with this id, regardless of kind; `false` when unknown. Leaves all other marks untouched and repaints the overlay. Never changes document content, undo/redo or `modified`. If caller-supplied ids are duplicated, removes only one match; use unique ids to identify a particular mark. |
 | `clearMarks(kind, blockId?)` | | Every mark of `kind`, or only those in `blockId`. Other kinds and blocks are untouched. |
 | `markStyle(kind, style)` | `{ ok, error }` | How `kind` is drawn: `{ underline: "wave" \| "single" \| "none", color, background }` — left out: kept; `null`: removed. An error (`underline: expected …`, `color: not a color …`, an unknown property) changes nothing. |
 | `markAt(pos)` | `{kind, id, blockId, start, end}` or `null` | The mark over the character at `pos`. |
@@ -373,6 +374,19 @@ const check = (id: string) => {
 
 `examples/document-editor.tsx` does exactly this with a toy rule (every "teh" is misspelled;
 right-click offers "the").
+
+For an app's “review the selection” action, read `selectedText` and the reactive endpoints
+from the handle. `blockIdsInRange` has an **inclusive** end, whereas selected text excludes
+`selectionEnd`. To get only blocks containing selected characters (or the caret's block when
+collapsed):
+
+```ts
+const from = doc.selectionStart;
+const to = Math.max(from, doc.selectionEnd - 1);
+const blocksToReview = doc.blockIdsInRange(from, to);
+// Dismiss one review annotation without touching other annotations or document history:
+doc.removeMark(reviewMarkId);
+```
 
 **Block ids.** Every block — paragraph, heading, list item, table-cell paragraph — has a string
 id, unique in the document. It stays the same while the block is typed in and while other blocks
