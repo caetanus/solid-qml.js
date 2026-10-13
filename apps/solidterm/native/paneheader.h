@@ -27,6 +27,9 @@ public:
     void setFocused(bool v);
     bool readOnly() const { return m_readOnly; }
     void setReadOnly(bool v);
+    // A short status shown at the right of the title (tmux mode: "tmux: copy-mode — Esc to leave").
+    QString badge() const { return m_badge; }
+    void setBadge(const QString &v);
     QColor background() const { return m_background; }
     void setBackground(const QColor &v);
     QColor foreground() const { return m_foreground; }
@@ -70,6 +73,7 @@ private:
     int m_index = 0;       // 0 = no number (single pane); >0 shows "N: title"
     bool m_focused = false;
     bool m_readOnly = false;
+    QString m_badge;
     QColor m_background = QColor("#2a2a2a");
     QColor m_foreground = QColor("#cccccc");
     QColor m_accent = QColor("#3584e4");

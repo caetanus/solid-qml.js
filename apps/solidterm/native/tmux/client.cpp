@@ -393,6 +393,10 @@ void Client::onOutput(int pane, char *data, size_t len)
     Route &r = route(pane);
     if (r.state == Route::Seeding)
         return; // contained in the capture that is on its way (4.3, rule 1)
+    m_unwrapBefore.clear();
+    len = r.unwrap.process(data, len, m_unwrapBefore);
+    if (!m_unwrapBefore.empty())
+        write(r, pane, m_unwrapBefore.data(), m_unwrapBefore.size());
     write(r, pane, data, len);
 }
 
@@ -589,6 +593,7 @@ void Client::finishSeed(Route &r, int pane, bool ok)
     else
         buildSeed(bytes, r.snap, r.cap);
     r.state = Route::Live;
+    r.unwrap = PassthroughUnwrapper {}; // the stream before the snapshot was not seen
     write(r, pane, bytes.data(), bytes.size());
     if (r.reseed)
         m_reseedsDone.fetch_add(1, std::memory_order_relaxed);

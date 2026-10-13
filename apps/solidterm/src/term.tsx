@@ -116,6 +116,11 @@ export function Term(props: { onTitle: (t: string) => void }) {
     paneMenu.open(x, y);
   };
   const paneFind = () => openSearch();
+  // tmux mode (docs/solidterm-tmux-control-mode.md, owner decision 2): closing a tab or pane HIDES
+  // it — it keeps running in tmux; "Show hidden …" brings it back, "Kill …" ends it for real.
+  // (ui* names: a signal named like a TerminalTabs member — hiddenPanes() — would be shadowed.)
+  const [uiTmuxOn, setUiTmuxOn] = createSignal(false);
+  const [uiHiddenPanes, setUiHiddenPanes] = createSignal([]);
   const paneToggleReadOnly = () => { const nv = !paneReadOnly(); term.setReadOnlyFocused(nv); setPaneReadOnly(nv); };
   // F12 overview: a list of every pane across every tab.
   const [overviewOpen, setOverviewOpen] = createSignal(false);
@@ -209,7 +214,11 @@ export function Term(props: { onTitle: (t: string) => void }) {
         <MenuItem onClick={() => term.split(Qt.Horizontal)}>Split &right</MenuItem>
         <MenuItem onClick={() => term.split(Qt.Vertical)}>Split &down</MenuItem>
         <MenuItem onClick={() => term.toggleZoom()}>&Zoom pane</MenuItem>
-        <MenuItem onClick={() => term.closeFocused()}>Close &pane</MenuItem>
+        <MenuItem onClick={() => term.closeFocused()}>{uiTmuxOn() ? "Hide &pane" : "Close &pane"}</MenuItem>
+        <Show when={uiTmuxOn()}>
+          <MenuItem onClick={() => term.leaveTmuxModeFocused()}>Leave tmux &mode</MenuItem>
+          <MenuItem onClick={() => term.killFocused()}>&Kill pane</MenuItem>
+        </Show>
       </Menu>
 
       <Show when={showHeader() !== 0}>
@@ -281,6 +290,7 @@ export function Term(props: { onTitle: (t: string) => void }) {
           reservedSequences={[kSplitRight(), kSplitDown(), kClosePane(), kFocusNext(), kFocusPrev(), kNewTab(), kNextTab(), kPrevTab(), kSearch(), kZoomPane(), "Ctrl+=", "Ctrl++", "Ctrl+-", "Ctrl+0", "Ctrl+,", "F12"]}
           onAccelerator={(seq) => onAccel(seq)}
           onTitleChanged={(t) => { setTitle(t); props.onTitle(t); }}
+          onTmuxStateChanged={(on, hidden) => { setUiTmuxOn(on); setUiHiddenPanes(hidden); }}
           onHoverLinkChanged={(url) => setHoverLinkUrl(url)}
         />
         {/* suppressWhen: a program that turned mouse tracking on (vim, htop, tmux…) gets the
@@ -302,7 +312,12 @@ export function Term(props: { onTitle: (t: string) => void }) {
           <MenuItem onClick={() => term.newTab()}>New &tab</MenuItem>
           <MenuItem onClick={() => term.split(Qt.Horizontal)}>Split &right</MenuItem>
           <MenuItem onClick={() => term.split(Qt.Vertical)}>Split &down</MenuItem>
-          <MenuItem onClick={() => term.closeFocused()}>Close &pane</MenuItem>
+          <MenuItem onClick={() => term.closeFocused()}>{uiTmuxOn() ? "Hide &pane" : "Close &pane"}</MenuItem>
+          <Show when={uiTmuxOn()}>
+            <MenuItem onClick={() => term.killFocused()}>&Kill pane</MenuItem>
+            <MenuItem onClick={() => term.killTab()}>Kill ta&b</MenuItem>
+          </Show>
+          <For each={uiHiddenPanes()}>{(h) => <MenuItem onClick={() => term.restoreHidden(h.window)}>{"Show hidden: " + h.title}</MenuItem>}</For>
           <MenuSeparator />
           <MenuItem onClick={() => openSearch()}>&Find…</MenuItem>
           <MenuItem onClick={() => openRename()}>Set &title…</MenuItem>

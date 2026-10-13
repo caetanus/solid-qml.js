@@ -682,6 +682,403 @@ void realInputStart()
     });
 }
 
+// ─── structure (phase 3) ────────────────────────────────────────────────────────────────────────
+
+int windowOf(int pane)
+{
+    for (int w : g->tabs->tmuxWindows())
+        if (TerminalPanes *p = g->tabs->tmuxTab(w, false))
+            if (p->tmuxView(pane))
+                return w;
+    return -1;
+}
+
+QList<int> panesOf(int window)
+{
+    QList<int> out;
+    TerminalPanes *p = g->tabs->tmuxTab(window, false);
+    if (p)
+        for (TerminalView *v : p->views())
+            out.append(v->tmuxPane());
+    return out;
+}
+
+int leafIndex(int pane)
+{
+    return panesOf(windowOf(pane)).indexOf(pane);
+}
+
+bool logHas(int from, const QString &line)
+{
+    return logLines().mid(from).contains(line);
+}
+
+// Each step: run `act`, wait for `line` in the fake's log and for `cond`, check, then `next`.
+void stepCmd(const QString &what, std::function<void()> act, const QString &line, std::function<bool()> cond,
+             std::function<void()> next)
+{
+    const int mark = int(logLines().size());
+    act();
+    waitFor([mark, line, cond] { return (line.isEmpty() || logHas(mark, line)) && cond(); }, 5000, what, [mark, line, cond, next] {
+        if (!((line.isEmpty() || logHas(mark, line)) && cond())) { // say what the model looks like
+            QStringList state;
+            for (int w : g->tabs->tmuxWindows()) {
+                QStringList ps;
+                for (int p : panesOf(w))
+                    ps << QString::number(p);
+                state << QStringLiteral("@%1%2[%3]").arg(w).arg(g->tabs->tmuxTabHidden(w) ? QStringLiteral("(hidden)") : QString()).arg(ps.join(QLatin1Char(',')));
+            }
+            qWarning().noquote() << "  model:" << state.join(QLatin1Char(' ')) << "active @" << g->tabs->activeTmuxWindow()
+                                 << "hidden" << g->tabs->hiddenPanes().size() << "| sent since:" << logLines().mid(mark).filter(QStringLiteral("-")).join(QStringLiteral(" / ")).left(400);
+        }
+        next();
+    });
+}
+
+QPointer<TerminalView> g_moved; // a view that must survive moves between windows
+
+void structEnd()
+{
+    // Hiding the last visible tab: the OS window closes = detach; the session lives on.
+    const int mark = int(logLines().size());
+    const int visible = g->tabs->count();
+    for (int i = visible - 1; i >= 0; --i)
+        g->tabs->closeTab(i);
+    waitFor([] { return g->session.isNull(); }, 5000,
+            QStringLiteral("hiding every tab closes the window, which detaches (no kill sent)"), [mark] {
+        const QStringList lines = logLines().mid(mark);
+        check(lines.contains(QStringLiteral("detach-client")) && !lines.join(QLatin1Char('\n')).contains(QLatin1String("kill-")),
+              QStringLiteral("the log shows detach-client and no kill"));
+        finishTest();
+    });
+}
+
+void structDcs()
+{
+    stepCmd(QStringLiteral("DCS tmux; passthrough is unwrapped: the inner OSC 2 set the pane title"),
+            [] { g->session->sendTestStep(QStringLiteral("step dcs")); }, QString(),
+            [] { return view(1) && view(1)->title() == QStringLiteral("from-passthrough") && dump(1).contains(QStringLiteral("after-dcs")); },
+            [] {
+                if (view(1) && view(1)->title() != QStringLiteral("from-passthrough"))
+                    qWarning().noquote() << "  %1 title:" << view(1)->title() << "\n" << dump(1).right(400);
+                check(!dump(1).contains(QStringLiteral("tmux;")) && !dump(1).contains(QStringLiteral("from-passthrough")),
+                      QStringLiteral("no passthrough bytes leaked onto the screen"));
+                structEnd();
+            });
+}
+
+void structMode()
+{
+    stepCmd(QStringLiteral("%pane-mode-changed → the header shows a copy-mode badge"),
+            [] { g->session->sendTestStep(QStringLiteral("step mode")); }, QString(),
+            [] { return geomOf(1).value(QStringLiteral("badge")).toString().contains(QStringLiteral("copy-mode")); }, [] {
+        focusPane(1);
+        stepCmd(QStringLiteral("Leave tmux mode → send-keys -X cancel → the badge goes"),
+                [] { g->tabs->leaveTmuxModeFocused(); }, QStringLiteral("send-keys -X -t '%1' 'cancel'"),
+                [] { return geomOf(1).value(QStringLiteral("badge")).toString().isEmpty(); }, structDcs);
+    });
+}
+
+void structKill()
+{
+    // An explicit kill: kill-pane / kill-window, and the pane/tab is gone (not hidden).
+    int victim = -1;
+    for (int p : panesOf(windowOf(1)))
+        if (p != 1 && p != 2)
+            victim = p;
+    focusPane(victim);
+    stepCmd(QStringLiteral("Kill pane → kill-pane; the pane is gone, not hidden"),
+            [] { g->tabs->killFocused(); }, QStringLiteral("kill-pane -t '%%1'").arg(victim),
+            [victim] { return !view(victim) && g->tabs->hiddenPanes().isEmpty(); }, [] {
+        g->tabs->selectTab(1); // kill the OTHER tab (@2), keeping %1 for the next steps
+        QCoreApplication::processEvents();
+        const int tabsBefore = g->tabs->count();
+        const int w = g->tabs->activeTmuxWindow();
+        stepCmd(QStringLiteral("Kill tab → kill-window; the tab is gone"),
+                [] { g->tabs->killTab(); }, QStringLiteral("kill-window -t '@%1'").arg(w),
+                [tabsBefore, w] { return g->tabs->count() == tabsBefore - 1 && !g->tabs->tmuxWindows().contains(w); }, structMode);
+    });
+}
+
+void structHideTab()
+{
+    const int tabsBefore = g->tabs->count();
+    const int mark = int(logLines().size());
+    g->tabs->closeTab(tabsBefore - 1); // the last tab (@2)
+    QCoreApplication::processEvents();
+    check(g->tabs->count() == tabsBefore - 1 && g->tabs->hiddenPanes().size() == 1,
+          QStringLiteral("closing a tab hides it (one hidden entry)"));
+    check(!logLines().mid(mark).join(QLatin1Char('\n')).contains(QLatin1String("kill")), QStringLiteral("hiding a tab sends no kill"));
+    const int w = g->tabs->hiddenPanes().value(0).toMap().value(QStringLiteral("window")).toInt();
+    g->tabs->restoreHidden(w);
+    QCoreApplication::processEvents();
+    check(g->tabs->count() == tabsBefore && g->tabs->hiddenPanes().isEmpty() && g->tabs->activeTmuxWindow() == w,
+          QStringLiteral("Show hidden brings the tab back, selected"));
+    g->tabs->selectTab(0);
+    QCoreApplication::processEvents();
+    structKill();
+}
+
+void structHidePane()
+{
+    // Close (= hide) the moved pane: break-pane -d into a hidden window; the view survives.
+    const int pane = g_moved ? g_moved->tmuxPane() : -1;
+    const int origin = windowOf(pane);
+    const int tabsBefore = g->tabs->count();
+    focusPane(pane);
+    stepCmd(QStringLiteral("Hide pane → break-pane -d; it leaves the window into a hidden tab"),
+            [] { g->tabs->closeFocused(); }, QStringLiteral("break-pane -d -s '%%1'").arg(pane),
+            [pane, origin, tabsBefore] {
+                return windowOf(pane) >= 0 && windowOf(pane) != origin && g->tabs->count() == tabsBefore
+                    && g->tabs->hiddenPanes().size() == 1;
+            }, [pane, origin] {
+        check(view(pane) == g_moved.data(), QStringLiteral("the hidden pane keeps its view (content, scrollback)"));
+        const int hw = windowOf(pane);
+        stepCmd(QStringLiteral("Show hidden → join-pane back into its window, same view"),
+                [hw] { g->tabs->restoreHidden(hw); }, QStringLiteral("join-pane -s '%%1' -t '@%2'").arg(pane).arg(origin),
+                [pane, origin] { return windowOf(pane) == origin && g->tabs->hiddenPanes().isEmpty(); }, [pane] {
+                    check(view(pane) == g_moved.data() && dump(pane).contains(QStringLiteral("-marker")),
+                          QStringLiteral("rejoined with the same view and its output"));
+                    structHideTab();
+                });
+    });
+}
+
+void structNewTab()
+{
+    const int tabsBefore = g->tabs->count();
+    stepCmd(QStringLiteral("New tab → new-window -a; the tab appears and is selected"),
+            [] { g->tabs->newTab(); }, QStringLiteral("new-window -a -t '@1' -c '#{pane_current_path}'"),
+            [tabsBefore] { return g->tabs->count() == tabsBefore + 1 && g->tabs->activeTmuxWindow() == g->tabs->tmuxWindows().last(); }, [] {
+        const int created = g->tabs->tmuxWindows().last();
+        stepCmd(QStringLiteral("Selecting tab 0 → select-window, and the echo does not switch back"),
+                [] { g->tabs->selectTab(0); }, QStringLiteral("select-window -t '@1'"),
+                [] { return g->tabs->activeTmuxWindow() == 1; }, [created] {
+            QTimer::singleShot(300, qApp, [created] {
+                check(g->tabs->activeTmuxWindow() == 1, QStringLiteral("still on @1 after the echo"));
+                const int w = created;
+                stepCmd(QStringLiteral("…and the new window is killed"), [w] { g->session->killWindow(w); }, QString(),
+                        [w] { return !g->tabs->tmuxWindows().contains(w); }, structHidePane);
+            });
+        });
+    });
+}
+
+void structResize()
+{
+    // The tree is {%2, [%1, %n]} now: drag the divider after %2 by +5 cells → resize-pane -x.
+    const int cols = gi(2, "cols");
+    const qreal cw = geomOf(2).value(QStringLiteral("cellW")).toReal();
+    stepCmd(QStringLiteral("Divider drag → resize-pane -x; tmux's new layout is applied"),
+            [cw] { g->tabs->tmuxTab(1, false)->debugTmuxDragDivider(2, 5 * cw); },
+            QStringLiteral("resize-pane -t '%2' -x %1").arg(cols + 5),
+            [cols] { return gi(2, "cols") == cols + 5; }, structNewTab);
+}
+
+void structZoom()
+{
+    focusPane(1);
+    stepCmd(QStringLiteral("Zoom → resize-pane -Z; only %1 is shown, full size"),
+            [] { g->tabs->toggleZoom(); }, QStringLiteral("resize-pane -Z -t '%1'"),
+            [] {
+                for (int p : panesOf(1))
+                    if (geomOf(p).value(QStringLiteral("visible")).toBool() != (p == 1))
+                        return false;
+                return true;
+            }, [] {
+        stepCmd(QStringLiteral("Zoom again → back to the split"),
+                [] { g->tabs->toggleZoom(); }, QString(),
+                [] {
+                    for (int p : panesOf(1))
+                        if (!geomOf(p).value(QStringLiteral("visible")).toBool())
+                            return false;
+                    return true;
+                }, structResize);
+    });
+}
+
+void structDrag()
+{
+    const int n = g_moved ? g_moved->tmuxPane() : -1;
+    // Drag the new pane to the BOTTOM of %2: move-pane -s %n -t %2 -v (the view rides along).
+    stepCmd(QStringLiteral("Drop a pane on another's bottom → move-pane -v; same view after the move"),
+            [n] { g->tabs->tmuxTab(1, false)->debugDragLeaf(leafIndex(n), leafIndex(2), 5 /*ZoneBottom*/); },
+            QStringLiteral("move-pane -s '%%1' -t '%2' -v").arg(n),
+            [n] { return geomOf(n).value(QStringLiteral("cx")) == geomOf(2).value(QStringLiteral("cx"))
+                         && gi(n, "cy") > gi(2, "cy"); }, [n] {
+        check(view(n) == g_moved.data() && dump(n).contains(QStringLiteral("pane-%1-marker").arg(n)),
+              QStringLiteral("the moved pane kept its view and output"));
+        // Centre drop of %1 onto %2: swap-pane.
+        const int x1 = gi(1, "cx"), x2 = gi(2, "cx");
+        stepCmd(QStringLiteral("Drop a pane on another's centre → swap-pane"),
+                [] { g->tabs->tmuxTab(1, false)->debugDragLeaf(leafIndex(1), leafIndex(2), 1 /*ZoneCenter*/); },
+                QStringLiteral("swap-pane -s '%1' -t '%2'"),
+                [x1, x2] { return gi(1, "cx") == x2 && gi(2, "cx") == x1; }, structZoom);
+    });
+}
+
+void structSplit()
+{
+    focusPane(1);
+    const QList<int> before = panesOf(1);
+    stepCmd(QStringLiteral("Split right → split-window -h; the new pane arrives with the layout"),
+            [] { g->tabs->split(Qt::Horizontal); }, QStringLiteral("split-window -h -t '%1' -c '#{pane_current_path}'"),
+            [before] { return panesOf(1).size() == before.size() + 1; }, [before] {
+        int n = -1;
+        for (int p : panesOf(1))
+            if (!before.contains(p))
+                n = p;
+        QString why;
+        check(geometryOk(g->tabs->tmuxTab(1, false), &why), QStringLiteral("the split is cell-exact ") + why);
+        g->session->sendTestStep(QStringLiteral("step mark"));
+        waitFor([n] { return dump(n).contains(QStringLiteral("pane-%1-marker").arg(n)); }, 3000,
+                QStringLiteral("the new pane shows its output"), [n] {
+            g_moved = view(n);
+            structDrag();
+        });
+    });
+}
+
+void structStart()
+{
+    waitFor([] { return g->tabs && g->tabs->count() == 2 && g->session && g->session->seedsCompleted() == 3 && view(1) && view(3); },
+            10000, QStringLiteral("struct: attached, two tabs, three panes"), [] {
+        if (!view(1)) {
+            finishTest();
+            return;
+        }
+        structSplit();
+    });
+}
+
+// ─── structure against a real tmux ──────────────────────────────────────────────────────────────
+
+void realStructEnd()
+{
+    closeAndDetach(finishTest);
+}
+
+void realStructMode()
+{
+    tmuxCmd({ QStringLiteral("copy-mode"), QStringLiteral("-t"), QStringLiteral("%0") });
+    waitFor([] { return geomOf(0).value(QStringLiteral("badge")).toString().contains(QStringLiteral("copy-mode")); }, 5000,
+            QStringLiteral("real-struct: copy-mode entered from outside shows the header badge"), [] {
+        focusPane(0);
+        g->tabs->leaveTmuxModeFocused();
+        waitFor([] { return geomOf(0).value(QStringLiteral("badge")).toString().isEmpty(); }, 5000,
+                QStringLiteral("real-struct: Leave tmux mode (send-keys -X cancel) clears it"), realStructEnd);
+    });
+}
+
+void realStructDcs()
+{
+    tmuxCmd({ QStringLiteral("send-keys"), QStringLiteral("-t"), QStringLiteral("%0"),
+              QStringLiteral("printf '\\033Ptmux;\\033\\033]2;passthru-title\\007\\033\\\\'; echo dcs-done"), QStringLiteral("Enter") });
+    waitFor([] { return view(0) && view(0)->title() == QStringLiteral("passthru-title"); }, 5000,
+            QStringLiteral("real-struct: a program's DCS tmux; passthrough is unwrapped (inner OSC 2 → title)"), realStructMode);
+}
+
+void realStructTab()
+{
+    const int before = g->tabs->count();
+    g->tabs->newTab();
+    waitFor([before] { return g->tabs->count() == before + 1 && g->tabs->activeTmuxWindow() == g->tabs->tmuxWindows().last(); }, 5000,
+            QStringLiteral("real-struct: New tab → new-window; the tab appears selected"), [before] {
+        g->tabs->killTab();
+        waitFor([before] { return g->tabs->count() == before; }, 5000, QStringLiteral("real-struct: Kill tab → kill-window"), [] {
+            g->tabs->selectTab(0);
+            realStructDcs();
+        });
+    });
+}
+
+void realStructResize()
+{
+    const int w0 = g->tabs->tmuxWindows().value(0);
+    const int cols = gi(0, "cols");
+    const qreal cw = geomOf(0).value(QStringLiteral("cellW")).toReal();
+    g->tabs->tmuxTab(w0, false)->debugTmuxDragDivider(0, 4 * cw);
+    waitFor([cols] { return gi(0, "cols") == cols + 4; }, 5000,
+            QStringLiteral("real-struct: a divider drag resizes the pane by 4 columns (resize-pane -x)"), [] {
+        QString why;
+        check(geometryOk(g->tabs->tmuxTab(g->tabs->tmuxWindows().value(0), false), &why), QStringLiteral("real-struct: still cell-exact ") + why);
+        realStructTab();
+    });
+}
+
+void realStructZoom()
+{
+    focusPane(0);
+    g->tabs->toggleZoom();
+    waitFor([] {
+        for (int p : panesOf(g->tabs->tmuxWindows().value(0)))
+            if (geomOf(p).value(QStringLiteral("visible")).toBool() != (p == 0))
+                return false;
+        return true;
+    }, 5000, QStringLiteral("real-struct: zoom (resize-pane -Z) shows only that pane"), [] {
+        g->tabs->toggleZoom();
+        waitFor([] {
+            for (int p : panesOf(g->tabs->tmuxWindows().value(0)))
+                if (!geomOf(p).value(QStringLiteral("visible")).toBool())
+                    return false;
+            return true;
+        }, 5000, QStringLiteral("real-struct: unzoom"), realStructResize);
+    });
+}
+
+void realStructHide(int n)
+{
+    const int w0 = g->tabs->tmuxWindows().value(0);
+    focusPane(n);
+    g->tabs->closeFocused();
+    waitFor([n, w0] { return windowOf(n) != w0 && g->tabs->hiddenPanes().size() == 1 && g->tabs->count() == 2; }, 5000,
+            QStringLiteral("real-struct: Hide pane → break-pane -d into a hidden window, the tab count unchanged"), [n, w0] {
+        check(view(n) == g_moved.data(), QStringLiteral("real-struct: the hidden pane kept its view"));
+        g->tabs->restoreHidden(windowOf(n));
+        waitFor([n, w0] { return windowOf(n) == w0 && g->tabs->hiddenPanes().isEmpty(); }, 5000,
+                QStringLiteral("real-struct: Show hidden → join-pane, back in its window"), [n] {
+            check(view(n) == g_moved.data(), QStringLiteral("real-struct: back with the same view"));
+            check(view(n) && view(n)->debugDump().contains(QStringLiteral("split-marker")),
+                  QStringLiteral("real-struct: its output intact"));
+            if (!view(n) || !view(n)->debugDump().contains(QStringLiteral("split-marker")))
+                qWarning().noquote() << (view(n) ? view(n)->debugDump() : QStringLiteral("<no view>"));
+            // Then kill it explicitly.
+            focusPane(n);
+            g->tabs->killFocused();
+            waitFor([n] { return !view(n); }, 5000, QStringLiteral("real-struct: Kill pane → kill-pane"), realStructZoom);
+        });
+    });
+}
+
+void realStructStart()
+{
+    waitFor([] { return g->tabs && g->tabs->count() == 2 && g->session && g->session->seedsCompleted() >= 3 && view(0) && view(1); },
+            10000, QStringLiteral("real-struct: attached"), [] {
+        if (!view(0)) {
+            finishTest();
+            return;
+        }
+        const int w0 = g->tabs->tmuxWindows().value(0);
+        const QList<int> before = panesOf(w0);
+        focusPane(1);
+        g->tabs->split(Qt::Vertical);
+        waitFor([w0, before] { return panesOf(w0).size() == before.size() + 1; }, 5000,
+                QStringLiteral("real-struct: Split down → split-window -v; the new pane comes with tmux's layout"), [w0, before] {
+            int n = -1;
+            for (int p : panesOf(w0))
+                if (!before.contains(p))
+                    n = p;
+            QString why;
+            check(geometryOk(g->tabs->tmuxTab(w0, false), &why), QStringLiteral("real-struct: cell-exact ") + why);
+            g_moved = view(n);
+            tmuxCmd({ QStringLiteral("send-keys"), QStringLiteral("-t"), QStringLiteral("%%1").arg(n),
+                      QStringLiteral("printf 'split-%s\\n' marker"), QStringLiteral("Enter") });
+            waitFor([n] { return view(n) && view(n)->debugDump().contains(QStringLiteral("split-marker")); }, 5000,
+                    QStringLiteral("real-struct: the new pane runs a shell"), [n] { realStructHide(n); });
+        });
+    });
+}
+
 } // namespace
 
 namespace TmuxSelfTest {
@@ -715,6 +1112,10 @@ void start(QQuickWindow *window, const QString &mode)
         QTimer::singleShot(0, qApp, realStart);
     else if (mode == QLatin1String("input"))
         QTimer::singleShot(0, qApp, inputStart);
+    else if (mode == QLatin1String("real-struct"))
+        QTimer::singleShot(0, qApp, realStructStart);
+    else if (mode == QLatin1String("struct"))
+        QTimer::singleShot(0, qApp, structStart);
     else if (mode == QLatin1String("real-input"))
         QTimer::singleShot(0, qApp, realInputStart);
     else

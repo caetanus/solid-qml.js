@@ -25,6 +25,7 @@
 // Only the reader thread writes to file descriptors (it blocks SIGPIPE for itself), so a dead tmux or
 // a released pane can never kill the process.
 
+#include "passthrough.h"
 #include "protocol.h"
 #include "seed.h"
 
@@ -141,6 +142,7 @@ private:
         std::string over;                  // overflow, from overHead on
         size_t overHead = 0;
         std::string tee;
+        PassthroughUnwrapper unwrap;       // "ESC P tmux; … ESC \\" → the inner sequence (7)
         bool overPending() const { return overHead < over.size(); }
     };
 
@@ -184,6 +186,7 @@ private:
     bool m_sawExit = false;
     bool m_outEof = false, m_errEof = false;
     std::string m_errCarry;
+    std::string m_unwrapBefore;            // reused: bytes the unwrapper hands back
 };
 
 } // namespace tmux

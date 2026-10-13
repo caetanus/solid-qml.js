@@ -567,6 +567,37 @@ if build_solidterm
     depends: solidterm_exe,
     is_parallel: false,
     timeout: 120)
+  # tmux STRUCTURE through the real UI against the fake tmux (phase 3, SOLIDTERM_TMUXTEST=struct):
+  # split / drag (move-pane, swap-pane) / zoom / divider resize / new tab / select-window echo go out
+  # as the exact tmux commands and come back as the model; views ride along across windows; closing
+  # a pane or tab HIDES it (break-pane -d / a hidden tab) and "Show hidden" brings it back
+  # (join-pane); explicit kills; copy-mode badge; DCS tmux; passthrough unwrapped; hiding the last
+  # tab detaches.
+  test('solidterm-tmux-struct', solidterm_exe,
+    args: ['--standalone', '--tmux', 'struct'],
+    env: {
+      'QT_QPA_PLATFORM': 'offscreen',
+      'QT_FORCE_STDERR_LOGGING': '1',
+      'XDG_CONFIG_HOME': meson.current_build_dir() / 'solidterm-test-config',
+      'SOLIDTERM_TMUXTEST': 'struct',
+      'SOLIDTERM_TMUX_BIN': meson.current_source_dir() / 'apps/solidterm/tests/tmux/fake-tmux.py',
+      'FAKE_TMUX_SCENARIO': meson.current_source_dir() / 'apps/solidterm/tests/tmux/scenario-struct.py',
+      'FAKE_TMUX_LOG': meson.current_build_dir() / 'solidterm-tmux-struct-fake.log',
+    },
+    timeout: 60)
+  # The same structural actions against a REAL tmux (private socket; skipped without tmux).
+  test('solidterm-tmux-struct-real', find_program('bash'),
+    args: [meson.current_source_dir() / 'apps/solidterm/tests/tmux/run-real-ui.sh', solidterm_exe.full_path(),
+           tmux_prog.found() ? tmux_prog.full_path() : '', meson.current_build_dir() / 'tmux-real-ui', 'real-struct'],
+    env: { 'XDG_CONFIG_HOME': meson.current_build_dir() / 'solidterm-test-config' },
+    depends: solidterm_exe,
+    is_parallel: false,
+    timeout: 120)
+  # tmux passthrough unwrapping (native/tmux/passthrough.h): every split of the stream.
+  test('solidterm-tmux-passthrough',
+    executable('test-solidterm-tmux-passthrough', files('apps/solidterm/tests/tmux_passthrough_test.cpp')),
+    timeout: 30)
+
   # `solidterm --help` prints usage (with --tmux) and exits before any window or instance code.
   test('solidterm-help', find_program('sh'),
     args: ['-c', 'out=$(DISPLAY= WAYLAND_DISPLAY= QT_QPA_PLATFORM=none "$0" --help) && echo "$out" | grep -q -- "--tmux" && echo "$out" | grep -q "^Usage: solidterm"', solidterm_exe.full_path()],

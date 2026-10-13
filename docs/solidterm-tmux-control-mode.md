@@ -1,6 +1,6 @@
 # SolidTerm × tmux control mode (design)
 
-Status: **phases 0, 1 and 2 implemented** (viewer with input); see "Implementation status" at the
+Status: **phases 0 to 3 implemented** (input, structural sync, hidden panes); see "Implementation status" at the
 end for what real tmux 3.7c corrected. Owner decision
 (2026-10-13): SolidTerm integrates with tmux **control mode** the way iTerm2 does with `tmux -CC`.
 tmux windows become native SolidTerm tabs, tmux panes become native splits, and each pane is a
@@ -1005,3 +1005,57 @@ output, and lazy `select-pane`. `solidterm-tmux-input-real` uses a real tmux on 
 typed `echo typed-$((6*7))` comes back as `typed-42`; `tests/tmux/mouse-echo.py`, a program like
 vim or less (alternate screen, SGR mouse, bracketed paste), receives the click, the wheel and a
 bracketed paste. `solidterm-help` covers `--help`.
+
+## Implementation status: phase 3, structure (2026-10-13)
+
+- Every row of the 2.5 table goes out as the tmux command, and only the notifications change the
+  model: split (`split-window -h|-v -t %P -c '#{pane_current_path}'`), new tab
+  (`new-window -a -t @W -c …`), tab click (`select-window`, with its echo ignored), zoom
+  (`resize-pane -Z`), divider drag (`resize-pane -t %P -x|-y N`, once per 50 ms and the final
+  value on release), header drag-and-drop (`swap-pane` on the centre, `move-pane -h|-v [-b]` on a
+  side, `break-pane` on the tab strip or outside every window), and an explicit "Kill pane" /
+  "Kill tab" (`kill-pane` / `kill-window`). tmux ↔ local and cross-session drops are refused.
+  Divider drag: the pane given to `resize-pane` is a leaf of the child before the divider that
+  is reached only through splits of the other orientation, so tmux's resize walks up to exactly
+  that split. The drag state lives in `TerminalPanes`, not in the tree, which every resize
+  rebuilds; the grabbed divider is kept alive and transparent until release.
+- **Views move between windows** with their pane (2.2). A pane that leaves a window's layout is
+  parked with the session, and a pane that leaves through a window close (`kill-window`, the
+  window a `join-pane` empties) is parked too. A layout that names the pane adopts the live view;
+  if the destination's layout comes first (3.7c sends `%unlinked-window-close` of the source
+  BEFORE the destination's `%layout-change` for `join-pane`), the view is taken from the other
+  tree directly. The next `list-windows` reply, which reflects tmux's state after those
+  notifications, drops whatever is still parked. Nothing is reseeded, so scrollback, selection
+  and parser state ride along.
+- **Hidden panes (owner decision 2).** Closing a tab hides it: the tab is kept but not shown, and
+  nothing is sent. Closing a pane that shares its window sends `break-pane -d` and the window it
+  lands in is hidden as it arrives. Hidden tabs keep their views (programs and output continue).
+  "Show hidden: …" entries in the context menu bring them back: a broken-out pane rejoins its
+  window with `join-pane -s %P -t @origin` if that window still exists and is visible, otherwise
+  its tab shows again. Hiding is not stored in tmux, so **a reattach shows everything again**
+  (my reading of "reappears on reattach"). Hiding the last visible tab closes the OS window,
+  which detaches.
+- **New tabs and the session's current window:** 3.7c sends `%session-window-changed` before
+  `%window-add`. The window is remembered and selected once its tab exists (after the list).
+- **Copy mode (6.6):** `list-panes` carries `#{pane_in_mode} #{pane_mode}`; a
+  `%pane-mode-changed` asks for them. The pane header shows a badge ("tmux: copy-mode — Esc to
+  leave"). "Leave tmux mode" sends `send-keys -X -t %P cancel`.
+- **`DCS tmux;` passthrough (7)** is unwrapped by the reader in stream order
+  (`native/tmux/passthrough.h`): streaming, in place, any split. Its state is reset when a pane
+  is (re)seeded.
+- OSC 10/11 reports are coalesced to one per event-loop turn (style setters come in bursts).
+- `SOLIDTERM_TMUX_TRACE=1` also prints the notifications and replies received.
+- Fixed along the way: `~TerminalPanes` freed the tree, then `~QQuickItem` emitted focus changes
+  whose handler walked it (a use-after-free that `MALLOC_PERTURB_` turned into an abort when a
+  tab was killed). The tree pointer is now cleared first.
+
+Tests: `solidterm-tmux-struct` runs the real UI against the fake, whose tree model implements
+split/new/select/resize/zoom/swap/move/break/join/kill/rename with 3.7c's notification order.
+It checks the exact command lines, the resulting model, view identity across moves, hiding and
+restoring panes and tabs, kills, the copy-mode badge, DCS unwrapping and detach when nothing
+is visible. `solidterm-tmux-struct-real` does the same against a real tmux (outside copy-mode,
+a real program's passthrough). `solidterm-tmux-passthrough` tests the unwrapper with every cut
+of the stream.
+
+Still open (phase 4+): single-instance `--tmux` forwarding, session picker, banners for a server
+that exits, the version gate, preferences, and pause-on-select with cap and reseed polish.
