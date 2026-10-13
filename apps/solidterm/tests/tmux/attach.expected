@@ -1,0 +1,26 @@
+begin 302 flags=0
+end 302 (not ours: ignored)
+note session-changed $0 [work]
+sent 1x #1.. : refresh-client -C 120x40
+sent 1x #2.. : refresh-client -f pause-after=5
+sent 1x #3.. : list-windows -F '#{window_id} #{window_index} #{window_active} #{window_raw_flags} #{window_layout} #{window_visible_layout} #{window_name}'
+sent 1x #4.. : list-panes -s -F '#{pane_id} #{window_id} #{pane_active} #{pane_width} #{pane_height} #{pane_current_path}'
+begin 307 flags=1
+end 307 answers #1
+output %0 \x1b[?25l
+begin 308 flags=1
+end 308 answers #2
+note window-renamed @0 [editor]
+begin 309 flags=1
+  | @0 0 1 * d67e,80x24,0,0{40x24,0,0,0,39x24,41,0[39x12,41,0,1,39x11,41,13,2]} d67e,80x24,0,0{40x24,0,0,0,39x24,41,0[39x12,41,0,1,39x11,41,13,2]} editor
+  | @1 1 0 - b260,80x24,0,0,3 b260,80x24,0,0,3 my logs
+end 309 answers #3
+output %0 \x1b[?25h
+begin 310 flags=1
+  | %0 @0 1 40 24 /home/ada/src
+  | %1 @0 0 39 12 /home/ada
+  | %2 @0 0 39 11 /tmp/with space
+  | %3 @1 1 80 24 /var/log
+end 310 answers #4
+note layout-change @0 [95e4,120x40,0,0{60x40,0,0,0,59x40,61,0[59x20,61,0,1,59x19,61,21,2]}] [95e4,120x40,0,0{60x40,0,0,0,59x40,61,0[59x20,61,0,1,59x19,61,21,2]}] [*]
+output %3 tail: waiting\x0d\x0a

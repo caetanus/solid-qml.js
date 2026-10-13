@@ -1,0 +1,104 @@
+begin 312 flags=0
+end 312 (not ours: ignored)
+note session-changed $0 [rec]
+sent 1x #1.. : refresh-client -C 100x30
+sent 1x #2.. : refresh-client -f pause-after=5
+sent 1x #3.. : list-windows -F '#{window_id} #{window_index} #{window_active} #{window_raw_flags} #{window_layout} #{window_visible_layout} #{window_name}'
+sent 1x #4.. : list-panes -s -F '#{pane_id} #{window_id} #{pane_active} #{pane_width} #{pane_height} #{pane_current_path}'
+sent 1x #5.. : display-message -p -t '%0' '#{pane_width} #{pane_height} #{history_size} #{cursor_x} #{cursor_y} #{cursor_flag} #{alternate_on} #{alternate_saved_x} #{alternate_saved_y} #{scroll_region_upper} #{scroll_region_lower} #{keypad_cursor_flag} #{keypad_flag} #{insert_flag} #{wrap_flag} #{origin_flag} #{mouse_standard_flag} #{mouse_button_flag} #{mouse_any_flag} #{mouse_sgr_flag} #{mouse_utf8_flag} #{bracket_paste_flag} #{cursor_shape} #{cursor_blinking} #{pane_in_mode} #{pane_title}'
+sent 2x #6.. : capture-pane -p -t '%0' -e -C -J -S -50 -E '-' ; capture-pane -p -t '%0' -P -C
+sent 3x #8.. : display-message -p 'a' ; kill-pane -t '%99' ; display-message -p 'b'
+sent 1x #11.. : bogus-cmd
+sent 1x #12.. : display-message -p 'it'"'"'s $HOME'
+sent 1x #13.. : detach-client
+begin 317 flags=1
+end 317 answers #1
+begin 318 flags=1
+end 318 answers #2
+begin 319 flags=1
+  | @0 0 1 * 77dd,100x30,0,0{50x30,0,0,0,49x30,51,0[49x15,51,0,1,49x14,51,16,2]} 77dd,100x30,0,0{50x30,0,0,0,49x30,51,0[49x15,51,0,1,49x14,51,16,2]} main
+  | @1 1 0 - a880,100x30,0,0,3 a880,100x30,0,0,3 logs
+end 319 answers #3
+begin 320 flags=1
+  | %0 @0 1 50 30 /
+  | %1 @0 0 49 15 /
+  | %2 @0 0 49 14 /
+  | %3 @1 1 100 30 /
+end 320 answers #4
+begin 321 flags=1
+  | 50 30 0 2 3 1 0 4294967295 4294967295 0 29 0 0 0 1 0 0 0 0 0 0 1 default 0 0 pane0
+end 321 answers #5
+begin 322 flags=1
+  | $ printf 'one\\\\ntwo\\\\n'
+  | one
+  | two
+  | $ 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+  | 
+end 322 answers #6
+begin 323 flags=1
+  | 
+end 323 answers #7
+begin 324 flags=1
+  | a
+end 324 answers #8
+begin 325 flags=1
+  | can't find pane: %99
+error 325 answers #9
+  dropped #10 (group member after the error)
+begin 326 flags=1
+  | parse error: unknown command: bogus-cmd
+error 326 answers #11
+begin 327 flags=1
+  | it's $HOME
+end 327 answers #12
+note layout-change @0 [77dd,100x30,0,0{50x30,0,0,0,49x30,51,0[49x15,51,0,1,49x14,51,16,2]}] [77dd,100x30,0,0{50x30,0,0,0,49x30,51,0[49x15,51,0,1,49x14,51,16,2]}] [*]
+note layout-change @1 [a880,100x30,0,0,3] [a880,100x30,0,0,3] [-]
+output %1 \x0d\x1b[K\x0d$ 
+output %2 \x0d\x1b[K\x0d$ 
+output %3 \x0d\x1b[K\x0d$ 
+output %0 \x0d\x1b[K\x0d$ 
+output %0 printf 'a\\\\b\\tc\\001 caf\\303\\251 \\033[31mred\\033[0\x0d0m\\n'\x0d\x0a\x1b[?2004l\x0d
+output %0 a\\b\x09c\x01 caf\xc3\xa9 \x1b[31mred\x1b[0m\x0d\x0a
+output %0 \x1b[?2004h$ 
+note window-pane-changed @0 %4
+note layout-change @0 [0678,100x30,0,0{50x30,0,0[50x15,0,0,0,50x14,0,16,4],49x30,51,0[49x15,51,0,1,49x14,51,16,2]}] [0678,100x30,0,0{50x30,0,0[50x15,0,0,0,50x14,0,16,4],49x30,51,0[49x15,51,0,1,49x14,51,16,2]}] [*]
+output %0 \x0d\x1b[K\x0d$ 
+output %4 \x1b[?2004h$ 
+note session-window-changed $0 @2
+note window-add @2
+output %5 \x1b[?2004h
+output %5 $ 
+note window-renamed @2 [renamed one]
+note session-window-changed $0 @0
+note unlinked-window-close @2
+note window-pane-changed @0 %0
+note layout-change @0 [0678,100x30,0,0{50x30,0,0[50x15,0,0,0,50x14,0,16,4],49x30,51,0[49x15,51,0,1,49x14,51,16,2]}] [a87d,100x30,0,0,0] [*Z]
+output %0 \x0d\x1b[K\x0d$ 
+begin 353 flags=1
+end 353 answers #13
+note exit

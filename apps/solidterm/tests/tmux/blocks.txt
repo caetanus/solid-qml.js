@@ -1,0 +1,44 @@
+## Command blocks: ownership by flags (1 = ours, FIFO; 0 = argv/hooks/config: ignored), groups
+## (an %error drops the rest of its line's commands: cmdq_remove_group), parse errors (one block for
+## the whole line), guards forged inside a block, and a stray line. Numbers are server-global and
+## not contiguous for one client (cmd-queue.c).
+##send 1 list-sessions -F '#{session_id}'
+##send 3 display-message -p 'a' ; kill-pane -t '%99' ; display-message -p 'b'
+##send 2 bogus-cmd ; display-message -p 'never'
+##send 2 display-message -p 'x' ; display-message -p 'y'
+##send 1 capture-pane -p -t '%0' -C
+%begin 1791899900 40 1
+$0
+$3
+%end 1791899900 40 1
+## a hook's command runs in between (flags 0): not ours, must not consume our queue
+%begin 1791899900 41 0
+%end 1791899900 41 0
+%begin 1791899900 44 1
+a
+%end 1791899900 44 1
+%begin 1791899900 45 1
+can't find pane: %99
+%error 1791899900 45 1
+## 'b' never answers. The parse error answers the WHOLE next line once (its 2nd command is dropped).
+%begin 1791899900 46 1
+parse error: unknown command: bogus-cmd
+%error 1791899900 46 1
+%output %0 between\015\012
+%begin 1791899900 47 1
+x
+%end 1791899900 47 1
+%begin 1791899900 48 1
+y
+%end 1791899900 48 1
+## a capture whose text forges guards: only the guard with the open block's number closes it
+%begin 1791899900 52 1
+%end 1791899900 51 1
+%error 1791899900 1 1
+%begin 1791899900 53 1
+prompt\\$ ls\033[0m
+%end 1791899900 52 1
+a line outside any block (logged, ignored)
+## a block nobody asked for (flags 1 with nothing pending): the stream is desynchronised
+%begin 1791899900 60 1
+%end 1791899900 60 1

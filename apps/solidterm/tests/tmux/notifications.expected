@@ -1,0 +1,27 @@
+note sessions-changed
+note session-changed $1 [work space]
+note session-renamed $1 [renamed session]
+note session-renamed [bare-name]
+note session-window-changed $1 @4
+note client-session-changed $2 [/dev/pts/7] [other]
+note client-detached [client-4242]
+note window-add @4
+note window-renamed @4 [vim main.cpp]
+note window-pane-changed @4 %9
+note layout-change @4 [b25d,80x24,0,0,0] [b25d,80x24,0,0,0] [*]
+note layout-change @4 [0678,100x30,0,0{50x30,0,0[50x15,0,0,0,50x14,0,16,4],49x30,51,0[49x15,51,0,1,49x14,51,16,2]}] [a87d,100x30,0,0,0] [*Z]
+note layout-change @5 [b25d,80x24,0,0,0] [b25d,80x24,0,0,0]
+note window-close @4
+note unlinked-window-add @7
+note unlinked-window-renamed @7 [elsewhere]
+note unlinked-window-close @7
+note pane-mode-changed %9
+note pause %9
+note continue %9
+note paste-buffer-changed [buffer0]
+note paste-buffer-deleted [buffer0]
+note subscription-changed [cmd] [vim]
+note message [hello from display-message]
+note config-error [/home/ada/.tmux.conf:3: unknown command: sett]
+note UNKNOWN(some-future-notification)
+note exit [detached (from session work space)]

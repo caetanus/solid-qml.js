@@ -1,0 +1,38 @@
+sent 1x #1.. : list-sessions -F '#{session_id}'
+sent 3x #2.. : display-message -p 'a' ; kill-pane -t '%99' ; display-message -p 'b'
+sent 2x #5.. : bogus-cmd ; display-message -p 'never'
+sent 2x #7.. : display-message -p 'x' ; display-message -p 'y'
+sent 1x #9.. : capture-pane -p -t '%0' -C
+begin 40 flags=1
+  | $0
+  | $3
+end 40 answers #1
+begin 41 flags=0
+end 41 (not ours: ignored)
+begin 44 flags=1
+  | a
+end 44 answers #2
+begin 45 flags=1
+  | can't find pane: %99
+error 45 answers #3
+  dropped #4 (group member after the error)
+begin 46 flags=1
+  | parse error: unknown command: bogus-cmd
+error 46 answers #5
+  dropped #6 (group member after the error)
+output %0 between\x0d\x0a
+begin 47 flags=1
+  | x
+end 47 answers #7
+begin 48 flags=1
+  | y
+end 48 answers #8
+begin 52 flags=1
+  | %end 1791899900 51 1
+  | %error 1791899900 1 1
+  | %begin 1791899900 53 1
+  | prompt\\\\$ ls\\033[0m
+end 52 answers #9
+stray a line outside any block (logged, ignored)
+begin 60 flags=1
+end 60 DESYNC (nothing pending)

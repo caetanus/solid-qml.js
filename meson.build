@@ -434,6 +434,17 @@ if build_solidterm
       dependencies: [util_dep, dependency('threads')]),
     timeout: 120)
 
+  # tmux control-mode protocol library (docs/solidterm-tmux-control-mode.md, phase 0), no Qt, no tmux:
+  # golden transcripts (hand-written from tmux 3.7c's source and one recorded from a real 3.7c, see
+  # apps/solidterm/tests/tmux/record-transcript.sh) fed in every chunking, plus decoder / correlator /
+  # quoting / layout unit checks. See tmux_protocol_test.cpp.
+  solidterm_tmux_proto = files('apps/solidterm/native/tmux/protocol.cpp', 'apps/solidterm/native/tmux/layout.cpp')
+  test('solidterm-tmux-protocol',
+    executable('test-solidterm-tmux-protocol',
+      files('apps/solidterm/tests/tmux_protocol_test.cpp') + solidterm_tmux_proto,
+      cpp_args: ['-DTMUX_TRANSCRIPTS="' + meson.current_source_dir() / 'apps/solidterm/tests/tmux' + '"']),
+    timeout: 20)
+
   # Mouse reporting (xterm/VTE protocol): the decision table (mode/altscreen/shift →
   # report|altscroll|local) plus libvterm's own SGR/X10/DRAG/wheel/DECCKM encoding, driven the same
   # way TerminalView drives it. No Qt — see mousereport_test.cpp.

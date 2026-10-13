@@ -1,0 +1,30 @@
+## An attach as SolidTerm does it (docs/solidterm-tmux-control-mode.md 5.1), in tmux 3.7c's shape:
+## the argv command's block comes first with flags 0 (not ours), then %session-changed; our commands
+## answer with flags 1 in send order. %output of pane 0 sits between our blocks (pane reads are
+## queued between commands, never inside a block).
+%begin 1791899855 302 0
+%end 1791899855 302 0
+%session-changed $0 work
+##send 1 refresh-client -C 120x40
+##send 1 refresh-client -f pause-after=5
+##send 1 list-windows -F '#{window_id} #{window_index} #{window_active} #{window_raw_flags} #{window_layout} #{window_visible_layout} #{window_name}'
+##send 1 list-panes -s -F '#{pane_id} #{window_id} #{pane_active} #{pane_width} #{pane_height} #{pane_current_path}'
+%begin 1791899855 307 1
+%end 1791899855 307 1
+%output %0 \033[?25l
+%begin 1791899855 308 1
+%end 1791899855 308 1
+%window-renamed @0 editor
+%begin 1791899855 309 1
+@0 0 1 * d67e,80x24,0,0{40x24,0,0,0,39x24,41,0[39x12,41,0,1,39x11,41,13,2]} d67e,80x24,0,0{40x24,0,0,0,39x24,41,0[39x12,41,0,1,39x11,41,13,2]} editor
+@1 1 0 - b260,80x24,0,0,3 b260,80x24,0,0,3 my logs
+%end 1791899855 309 1
+%extended-output %0 0 : \033[?25h
+%begin 1791899855 310 1
+%0 @0 1 40 24 /home/ada/src
+%1 @0 0 39 12 /home/ada
+%2 @0 0 39 11 /tmp/with space
+%3 @1 1 80 24 /var/log
+%end 1791899855 310 1
+%layout-change @0 95e4,120x40,0,0{60x40,0,0,0,59x40,61,0[59x20,61,0,1,59x19,61,21,2]} 95e4,120x40,0,0{60x40,0,0,0,59x40,61,0[59x20,61,0,1,59x19,61,21,2]} *
+%output %3 tail: waiting\015\012
