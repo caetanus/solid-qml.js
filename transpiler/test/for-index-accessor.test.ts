@@ -97,8 +97,9 @@ test("VirtualList shares rowDelegate: its index accessor positions resolve the s
     `import { VirtualList } from "solid-js"; export function C(){ const [ts,setTs]=createSignal([]); return <VirtualList class="rows" each={ts()}>{(t, i) => <div class={i() === 0 ? "first" : ""}><text>{t.from}-{i()}</text></div>}</VirtualList>; }`,
   );
   assert.match(out, /property int __forIndex: index/, out);
-  assert.match(out, /__forIndex === 0 \? "first" : ""/, out);
-  assert.match(out, /text: "" \+ \(modelData\.from\) \+ "-" \+ \(__forIndex\)/, out);
+  // (a VirtualList row is always published on its root: it reads its item as __src[index] there)
+  assert.match(out, /(__for\d+\.)?__forIndex === 0 \? "first" : ""/, out);
+  assert.match(out, /text: "" \+ \(__for\d+\.__forItem\.from\) \+ "-" \+ \(__for\d+\.__forIndex\)/, out);
 });
 
 test("For: a <select onChange> inside a row no longer shadows the row's OWN i() — the onActivated\n" +

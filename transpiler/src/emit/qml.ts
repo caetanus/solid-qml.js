@@ -2215,7 +2215,7 @@ function emitFor(propsArg: t.Node | undefined, children: t.Node[], scope: Scope,
  *  up the context chain, so the inner delegate still sees it. Without a nested use the emission
  *  is unchanged. `extra`: lines for the root (after the publish lines), at rootLevel + 1. */
 function rowDelegate(delegate: t.ArrowFunctionExpression | t.FunctionExpression, scope: Scope, rootLevel: number,
-                     owner: string, extra: string[] = []): string[] {
+                     owner: string, extra: string[] = [], itemExpr?: string): string[] {
   const [param, indexParam] = delegate.params;
   const itemName = param && t.isIdentifier(param) ? param.name : null;
   // <For>'s SECOND delegate param is an INDEX ACCESSOR (Solid: `i()` reads the row's current
@@ -2240,7 +2240,10 @@ function rowDelegate(delegate: t.ArrowFunctionExpression | t.FunctionExpression,
   // MailApp.tsx — `<For each={fConds()}>{(c, i) => <select onChange={(e) => condSet(i(), …)}>`.)
   let indexRef = indexName ? "__forIndex" : "index";
   let publish: string | null = null;
-  if ((itemName && usedInNestedLoop(body, itemName)) || (indexName && usedInNestedLoop(body, indexName))) {
+  // `itemExpr`: the row's item comes from that expression on the root, not from `modelData`
+  // (<VirtualList>: `ListView.view.__src[index]`) — an attached property only the root can read,
+  // so the row is always published and the body reads it through the root's id.
+  if (itemExpr !== undefined || (itemName && usedInNestedLoop(body, itemName)) || (indexName && usedInNestedLoop(body, indexName))) {
     const counter = scope.hoverCounter ?? { n: 0 };
     publish = `__for${counter.n++}`;
     rowRef = `${publish}.__forItem`;
@@ -2271,7 +2274,7 @@ function rowDelegate(delegate: t.ArrowFunctionExpression | t.FunctionExpression,
     } else {
       head.push(`${rootPad}id: ${publish}`);
     }
-    head.push(`${rootPad}property var __forItem: modelData`);
+    head.push(`${rootPad}property var __forItem: ${itemExpr ?? "modelData"}`);
   }
   // Declared whenever the delegate HAS an index param at all — not only when crossing into a
   // nested loop — so i() never has to fall back to the bare (shadowable) `index` (see the comment
@@ -2283,8 +2286,8 @@ function rowDelegate(delegate: t.ArrowFunctionExpression | t.FunctionExpression,
 
 /** <VirtualList each={E} class="…">{(item) => <row/>}</VirtualList> → a VIRTUALIZED list: a QtQuick
  *  ListView in a CSS box (the box takes its size from the layout, like any div). Only the rows in
- *  view (plus a cache margin) exist, and they are REUSED — scrolling, or a new `each` (another
- *  mailbox, a refresh), moves rows' modelData instead of creating/destroying them. For long lists
+ *  view (plus a cache margin) exist, and they are REUSED — scrolling moves them, and a new `each`
+ *  (a refresh) only rebinds them: rows are created/destroyed only for keys that came or went. For long lists
  *  whose <For> would build every row (each one a whole subtree of CSS boxes, texts, areas).
  *  Rows lay out with their own CSS, as wide as the list, as tall as their content. */
 function emitVirtualList(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, guard?: string): string[] {
@@ -2332,31 +2335,43 @@ function emitVirtualList(propsArg: t.Node | undefined, children: t.Node[], scope
     // (Declared inside a ListView, the handler's parent is the contentItem: the view is named.)
     `${i(3)}onWheel: (ev) => { var lv = ${lvId}; var dy = ev.pixelDelta.y !== 0 ? ev.pixelDelta.y * 1.5 : (ev.angleDelta.y / 120) * 110; lv.contentY = Math.max(lv.originY, Math.min(lv.contentY - dy, lv.originY + lv.contentHeight - lv.height)) }`,
     `${i(2)}}`,
-    // A new `each` (the backend republished the list: a message read, one arrived) assigned straight
-    // to `model` resets the ListView to the top. Instead the row at the top of the view (by its key)
-    // and its pixel offset are noted, the array swapped, and the view put back on that row — even when
-    // rows above it came or went. At the very top the view stays at the top (what arrives shows).
-    // A non-array `each` (a count, a ListModel) is assigned as it is.
+    // The rows are a ListModel of empty entries, kept in step with `each` by key; each row reads its
+    // item as `__src[index]`. A new `each` (the backend republished the list: a message read, a body
+    // arrived) with the same keys touches no row — the rows' bindings just read the new objects —
+    // so nothing is recreated: an open row's state and running animations survive. (Assigning the
+    // array to `model` reset the ListView: every row destroyed and built again, the view back at
+    // the top.) Rows that came or went are inserted/removed between the common prefix and suffix
+    // of the keys; then the view is put back on the row that was at its top (by key, with its pixel
+    // offset) — or stays at the top when it was there (what arrives shows). A non-array `each`
+    // lists nothing.
     `${i(2)}property var __src: ${each}`,
+    `${i(2)}property var __keys: []`,
+    `${i(2)}ListModel { id: ${lvId}Rows }`,
+    `${i(2)}model: ${lvId}Rows`,
     `${i(2)}function __swap() {`,
-    `${i(3)}var src = __src, k, off = 0, found = false`,
-    `${i(3)}if (!Array.isArray(src)) { model = src; return }`,
-    // (the previous model reads back as a sequence, not an Array: its length is what is checked)
-    `${i(3)}if (!atYBeginning && model && model.length) {`,
+    `${i(3)}var src = Array.isArray(__src) ? __src : [], old = __keys, keys = []`,
+    `${i(3)}for (var n = 0; n < src.length; n++) keys.push(src[n] ? src[n].${key} : undefined)`,
+    `${i(3)}var p = 0; while (p < old.length && p < keys.length && old[p] === keys[p]) p++`,
+    `${i(3)}var s = 0; while (s < old.length - p && s < keys.length - p && old[old.length - 1 - s] === keys[keys.length - 1 - s]) s++`,
+    `${i(3)}var gone = old.length - p - s, added = keys.length - p - s`,
+    `${i(3)}__keys = keys`,
+    `${i(3)}if (gone === 0 && added === 0) return`,
+    `${i(3)}var top = atYBeginning, k, off = 0, found = false`,
+    `${i(3)}if (!top && old.length) {`,
     `${i(4)}var r = indexAt(1, contentY + 1)`,
-    `${i(4)}if (r >= 0 && model[r] && model[r].${key} !== undefined) { k = model[r].${key}; var it = itemAtIndex(r); off = it ? contentY - it.y : 0; found = true }`,
+    `${i(4)}if (r >= 0 && old[r] !== undefined) { k = old[r]; var it = itemAtIndex(r); off = it ? contentY - it.y : 0; found = true }`,
     `${i(3)}}`,
-    `${i(3)}var y = contentY`,
-    `${i(3)}model = src`,
-    `${i(3)}if (!found) return`,
-    `${i(3)}for (var j = 0; j < src.length; j++) if (src[j] && src[j].${key} === k) { positionViewAtIndex(j, ListView.Beginning); contentY += off; return }`,
-    `${i(3)}contentY = Math.max(originY, Math.min(y, originY + contentHeight - height))`,
+    `${i(3)}if (gone > 0) ${lvId}Rows.remove(p, gone)`,
+    `${i(3)}for (var a = 0; a < added; a++) ${lvId}Rows.insert(p + a, {})`,
+    `${i(3)}if (top) { positionViewAtBeginning(); return }`,
+    `${i(3)}if (found) { var j = keys.indexOf(k); if (j >= 0) { positionViewAtIndex(j, ListView.Beginning); contentY += off } }`,
     `${i(2)}}`,
     `${i(2)}on__SrcChanged: __swap()`,
-    `${i(2)}Component.onCompleted: model = __src`,
+    `${i(2)}Component.onCompleted: __swap()`,
     ...(endHandler ? [`${i(2)}onAtYEndChanged: if (atYEnd && count > 0) { ${endHandler} }`] : []),
     `${i(2)}delegate: Component {`,
-    ...rowDelegate(delegate, scope, level + 3, "VirtualList", ["width: ListView.view ? ListView.view.width : 0"]),
+    ...rowDelegate(delegate, scope, level + 3, "VirtualList", ["width: ListView.view ? ListView.view.width : 0"],
+                  "ListView.view ? ListView.view.__src[index] : undefined"),
     `${i(2)}}`,
     `${i(1)}}`,
     `${pad}}`,
