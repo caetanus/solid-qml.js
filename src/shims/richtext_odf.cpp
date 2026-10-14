@@ -1,4 +1,5 @@
 #include "richtext_odf.h"
+#include "richtext_qt_p.h"
 #include "richtext_blocks.h"
 
 #include <QBuffer>
@@ -580,6 +581,7 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     // (re-enabling it starts an empty stack), so Ctrl+Z can't empty the freshly opened document.
     doc->setUndoRedoEnabled(false);
     doc->clear();
+    doc->setProperty("_rtImageSampling", QVariant());
     auto rootFormat = doc->rootFrame()->frameFormat();
     rootFormat.setProperty(kDocumentSpacingProperty, true);
     QVariantList reserved;
@@ -1311,7 +1313,7 @@ private:
         QString path = m_pictureByName.value(name);
         QSize size;
         if (path.isEmpty()) {
-            const QVariant res = m_doc->resource(QTextDocument::ImageResource, QUrl(name));
+            const QVariant res = originalImage(m_doc, QUrl(name));
             QImage img;
             QByteArray data;
             if (res.typeId() == QMetaType::QImage) img = res.value<QImage>();

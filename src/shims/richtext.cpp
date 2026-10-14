@@ -290,6 +290,7 @@ void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const
     m_doc->setPageSize(QSizeF(width, m_pageStride > 0 ? m_pageStride : -1));
     if (marginsChanged) m_doc->setLayoutEnabled(layoutEnabled);
     selectLayoutEngine();
+    rt::prepareImageSampling(m_doc, m_document->parent());
     if (layoutEnabled)
         rt::refreshTextEditSize(m_document->parent());
     if (layoutEnabled) syncPageCount();
@@ -712,7 +713,8 @@ QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
     m_bulkReset = true; // every block goes: blocksLoaded below, not one blockRemoved each
     // Undo off: the reset (and styling the first paragraph) leaves no history.
     doc->setUndoRedoEnabled(false);
-    doc->clear(); // also drops the image resources
+    doc->clear();
+    doc->setProperty("_rtImageSampling", QVariant()); // also drops the image resources
     auto rootFormat = doc->rootFrame()->frameFormat();
     rootFormat.clearProperty(rt::kDocumentGeometryProperty);
     rootFormat.clearProperty(rt::kDocumentSpacingProperty);
@@ -1296,6 +1298,7 @@ bool RichTextHandler::insertImage(const QUrl &file)
         fmt.setHeight(img.height() * maxWidth / img.width());
     }
     insertionCursor().insertImage(fmt);
+    rt::prepareImageSampling(doc, m_document->parent());
     setError(QString());
     emit formatChanged();
     return true;
@@ -1417,7 +1420,7 @@ void RichTextHandler::saveOdfCopyAsync(const QUrl &file)
     for (const auto &format : m_doc->allFormats()) {
         if (!format.isImageFormat()) continue;
         const QUrl name(format.toImageFormat().name());
-        QVariant resource = m_doc->resource(QTextDocument::ImageResource, name);
+        QVariant resource = rt::originalImage(m_doc, name);
         if (resource.metaType().id() == QMetaType::QPixmap)
             resource = resource.value<QPixmap>().toImage();
         images.append({name, resource});
@@ -1818,6 +1821,7 @@ void RichTextHandler::setZoom(qreal z)
         edit.endEditBlock();
     }
     m_zoom = z;
+    if (doc) rt::prepareImageSampling(doc, m_document->parent());
     if (m_selectionStart == m_selectionEnd && !m_pendingFont.isEmpty())
         mergeInsertionFont(m_pendingFont);
     emit zoomChanged();

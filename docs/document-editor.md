@@ -604,3 +604,10 @@ default. Invalid positions return `""`.
 `documentLanguage` (and is also returned for an unknown block). It does not combine
 mixed inline languages: use `languageAt` for those. ODF `fo:language` and
 `fo:country` are retained through style inheritance and saving.
+
+Embedded images are area-sampled with `Qt::SmoothTransformation` to their display
+size times the window device-pixel ratio. The sampled resource is reused while
+that size stays unchanged and refreshed on page resize, zoom or a DPR change;
+scrolling and caret frames do not resample it. Both live layout engines and the
+QPainter fidelity export use these pixels. ODF saves and asynchronous copies keep
+the original full-resolution image.

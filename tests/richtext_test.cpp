@@ -422,6 +422,54 @@ private slots:
         QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), 10.0);
     }
 
+    void downscaledImagesUseAreaSampling()
+    {
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+        QQuickWindow window; window.setColor(Qt::white); window.resize(300, 600);
+        auto *edit = qobject_cast<QQuickItem *>(m_edit.data());
+        edit->setParentItem(window.contentItem());
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        const qreal dpr = window.effectiveDevicePixelRatio();
+        QImage source(1024, 1024, QImage::Format_RGB32);
+        for (int y = 0; y < source.height(); ++y)
+            for (int x = 0; x < source.width(); ++x)
+                source.setPixelColor(x, y, (x % 4 == 0) ? Qt::black : Qt::white);
+        const QString png = m_dir.filePath("stripes.png");
+        QVERIFY(source.save(png));
+        for (const QString &engine : {QStringLiteral("custom"), QStringLiteral("qt")}) {
+            m_fmt->newDocument();
+            m_fmt->setLayoutEngine(engine);
+            QVERIFY(m_fmt->insertImage(QUrl::fromLocalFile(png)));
+            m_edit->setProperty("width", 300);
+            m_fmt->configurePages(300, 600, 0, {10,10,10,10});
+            QTextCursor cursor(doc()); cursor.setPosition(0); cursor.movePosition(QTextCursor::NextCharacter, QTextCursor::KeepAnchor);
+            auto format = cursor.charFormat().toImageFormat();
+            format.setWidth(64); format.setHeight(64); cursor.setCharFormat(format);
+            m_fmt->configurePages(300, 600, 0, {10,10,10,10});
+            const auto sampled = doc()->resource(QTextDocument::ImageResource, QUrl(format.name())).value<QImage>();
+            QCOMPARE(sampled.size(), QSize(qRound(64*dpr), qRound(64*dpr)));
+            QVERIFY2(qAbs(sampled.pixelColor(20,20).red() - 191) <= 1, qPrintable(QString::number(sampled.pixelColor(20,20).red())));
+            const auto key = sampled.cacheKey();
+            m_fmt->configurePages(300, 600, 0, {10,10,10,10});
+            QCOMPARE(doc()->resource(QTextDocument::ImageResource, QUrl(format.name())).value<QImage>().cacheKey(), key);
+            QImage output(300,600,QImage::Format_RGB32); output.fill(Qt::white);
+            QPainter painter(&output); doc()->documentLayout()->draw(&painter, {}); painter.end();
+            QVERIFY(qAbs(output.pixelColor(30,30).red() - 191) <= 1);
+            QTRY_VERIFY(qAbs(window.grabWindow().pixelColor(qRound(30 * window.effectiveDevicePixelRatio()), qRound(30 * window.effectiveDevicePixelRatio())).red() - 191) <= 2);
+            const QString copy = m_dir.filePath("stripes.odt");
+            QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(copy)));
+            QCOMPARE(QImage::fromData(QZipReader(copy).fileData("Pictures/image1.png")), source);
+            m_fmt->setZoom(2);
+            QCOMPARE(doc()->resource(QTextDocument::ImageResource, QUrl(format.name())).value<QImage>().size(), QSize(qRound(128*dpr), qRound(128*dpr)));
+            m_fmt->setZoom(1);
+            format.clearProperty(QTextFormat::ImageWidth); format.setHeight(32);
+            cursor.setCharFormat(format);
+            m_fmt->configurePages(300,600,0,{10,10,10,10});
+            QCOMPARE(doc()->resource(QTextDocument::ImageResource, QUrl(format.name())).value<QImage>().size(), QSize(qRound(32*dpr), qRound(32*dpr)));
+        }
+        edit->setParentItem(nullptr);
+    }
+
     void odfRelativeImagesFollowTextWidthAndAspect()
     {
         QImage image(1000, 500, QImage::Format_RGB32); image.fill(Qt::red);
@@ -456,6 +504,8 @@ private slots:
         QCOMPARE(charAt(doc(), 0).doubleProperty(rt::kRelativeImageWidthProperty), 100.0);
         m_edit->setProperty("width", 300);
         m_fmt->configurePages(300, 600, 0, {10,10,10,10});
+        check(280);
+        m_fmt->setLayoutEngine("qt");
         check(280);
     }
 
