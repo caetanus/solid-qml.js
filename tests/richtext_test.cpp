@@ -271,6 +271,27 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void odfLinksKeepStyleAndTargetThroughNestedSpans()
+    {
+        const QString path = m_dir.filePath("links.odt");
+        writeOdt(path, "<text:p>Before <text:a xlink:href=\"https://example.test/\"><text:span text:style-name=\"Emphasis\">Link</text:span></text:a> after</text:p>", {},
+            "<style:style style:name=\"Internet_20_link\" style:family=\"text\"><style:text-properties fo:color=\"#000080\" style:text-underline-style=\"solid\"/></style:style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        const auto check = [&] {
+            const auto link = charAt(doc(), 7);
+            QCOMPARE(link.anchorHref(), QString("https://example.test/"));
+            QVERIFY(link.isAnchor()); QVERIFY(link.fontUnderline()); QVERIFY(link.fontItalic());
+            QCOMPARE(link.foreground().color(), QColor("#000080"));
+            QVERIFY(!charAt(doc(), 12).isAnchor());
+            QVERIFY(!charAt(doc(), 12).fontUnderline());
+        };
+        check();
+        const QString copy = m_dir.filePath("links-copy.odt");
+        QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(copy)));
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(copy)));
+        check();
+    }
+
     void odfParagraphSpacingSurvivesTableBoundaries()
     {
         const QString path = m_dir.filePath("table-spacing.odt");

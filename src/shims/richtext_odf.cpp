@@ -695,15 +695,35 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                     act().block().setUserData(new BlockInfo(xmlId.toString()));
                 act().setCharFormat(p.chars);
                 runs << Run { p.style, QString(), p.charDirect, p.chars, true };
-            } else if (name == QLatin1String("span")) {
+            } else if (name == QLatin1String("span") || name == QLatin1String("a")) {
                 if (!runs.isEmpty()) {
                     const Run &outer = runs.last();
-                    const SpanStyle &s = spanStyle(attrs.value(QLatin1String("text:style-name")).toString());
+                    const bool link = name == QLatin1String("a");
+                    QString style = attrs.value(QLatin1String("text:style-name")).toString();
+                    if (link && style.isEmpty()) style = QStringLiteral("Internet_20_link");
+                    const SpanStyle &s = spanStyle(style);
                     Run r { outer.paraStyle, s.named ? s.charStyle : outer.charStyle, outer.direct, {}, false };
                     for (auto it = s.direct.cbegin(); it != s.direct.cend(); ++it)
                         r.direct.insert(it.key(), it.value());
                     r.format = sheet.charFormat(r.paraStyle, r.charStyle);
                     applyProps(r.format, r.direct, false);
+                    if (outer.format.isAnchor()) {
+                        r.format.setAnchor(true);
+                        r.format.setAnchorHref(outer.format.anchorHref());
+                        const auto own = s.named ? sheet.resolved(s.charStyle) : QVariantMap();
+                        if (!s.direct.contains(QStringLiteral("color")) && !own.contains(QStringLiteral("color")))
+                            r.format.setForeground(outer.format.foreground());
+                        if (!s.direct.contains(QStringLiteral("underline")) && !own.contains(QStringLiteral("underline")))
+                            r.format.setFontUnderline(outer.format.fontUnderline());
+                    }
+                    if (link) {
+                        if (!s.named) {
+                            if (!s.direct.contains(QStringLiteral("color"))) r.format.setForeground(QColor(QStringLiteral("#000080")));
+                            if (!s.direct.contains(QStringLiteral("underline"))) r.format.setFontUnderline(true);
+                        }
+                        r.format.setAnchor(true);
+                        r.format.setAnchorHref(attrs.value(QLatin1String("xlink:href")).toString());
+                    }
                     act().setCharFormat(r.format);
                     runs << r;
                 }
@@ -816,7 +836,7 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                 while (!runs.isEmpty() && !runs.takeLast().paragraph) {}
                 if (!runs.isEmpty())
                     act().setCharFormat(runs.last().format); // back in the paragraph a note sat in
-            } else if (name == QLatin1String("span")) {
+            } else if (name == QLatin1String("span") || name == QLatin1String("a")) {
                 if (runs.size() > 1 && !runs.last().paragraph) {
                     runs.removeLast();
                     act().setCharFormat(runs.last().format);
@@ -1172,10 +1192,12 @@ private:
         m_pendingSpaces = 0;
         QString openKey; // the span(s) open now: "charStyle|autoStyle"
         int openDepth = 0;
+        bool openLink = false;
         const auto closeSpans = [&] {
             flushText();
             for (; openDepth > 0; --openDepth)
                 m_x.writeEndElement();
+            if (openLink) { m_x.writeEndElement(); openLink = false; }
             openKey.clear();
         };
         for (auto it = b.begin(); !it.atEnd(); ++it) {
@@ -1197,9 +1219,16 @@ private:
             const QVariantMap d = directProps(cf, m_sheet.charFormat(style, cs), false);
             const QString autoName = d.isEmpty() ? QString()
                 : autoStyle(m_autoText, "T", QStringLiteral("text"), QString(), d);
-            const QString key = cs + QLatin1Char('|') + autoName;
+            const QString href = cf.isAnchor() ? cf.anchorHref() : QString();
+            const QString key = cs + QLatin1Char('|') + autoName + QLatin1Char('|') + href;
             if (key != openKey) {
                 closeSpans();
+                if (!href.isEmpty()) {
+                    m_x.writeStartElement(QStringLiteral("text:a"));
+                    m_x.writeAttribute(QStringLiteral("xlink:href"), href);
+                    m_x.writeAttribute(QStringLiteral("xlink:type"), QStringLiteral("simple"));
+                    openLink = true;
+                }
                 if (!cs.isEmpty()) {
                     m_x.writeStartElement(QStringLiteral("text:span"));
                     m_x.writeAttribute(QStringLiteral("text:style-name"), odfName(cs));

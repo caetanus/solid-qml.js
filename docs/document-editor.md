@@ -458,13 +458,13 @@ and selection behave exactly as without marks; the hit test takes the character 
   `zoom` too.
 - ODF coverage is the word-like subset: paragraphs and headings (`text:h` with its outline
   level), spans (nested ones too), bullet and numbered lists (nested by level), tables (merged
-  cells), inline images, a manual page break before a paragraph (`fo:break-before="page"`, from
+  cells), hyperlinks (targets and nested span formatting), inline images, a manual page break before a paragraph (`fo:break-before="page"`, from
   `insertPageBreak()`), and the named paragraph/character styles of `styles.xml` with the
   automatic styles over them as direct formatting. Our writer produces `content.xml`,
   `styles.xml` (the named styles), `meta.xml` and the manifest — LibreOffice 26.8 opens the result
   with every named style, parent, next style and heading level in place. Not kept yet: page SETUP
   (size/margins/printing) and headers/footers, footnotes as footnotes (their text is kept,
-  inline), bookmarks and links (their text is kept), unknown package entries. A paragraph whose
+  inline), bookmarks, unknown package entries. A paragraph whose
   styles give it no vertical
   spacing gets a quarter pixel under it (invisible; it keeps Qt's viewport culling from
   over-drawing). Files saved by the earlier Qt-based writer still open (their headings come back
