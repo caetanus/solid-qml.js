@@ -1,8 +1,11 @@
 #include "richtext_layout.h"
 #include "richtext_blocks.h"
+#include "richtext_odf.h"
 
 #include <QPainter>
 #include <QFontMetricsF>
+#include <QRawFont>
+#include <QtEndian>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextImageFormat>
@@ -123,12 +126,16 @@ QRectF RichTextLayout::blockBoundingRect(const QTextBlock &b) const
 }
 void RichTextLayout::drawInlineObject(QPainter *painter, const QRectF &rect, QTextInlineObject object, int position, const QTextFormat &format)
 {
-    if (handlerForObject(format.objectType())) {
-        QAbstractTextDocumentLayout::drawInlineObject(painter, rect, object, position, format);
-    } else if (format.isImageFormat()) {
+    if (format.isImageFormat()) {
         const auto resource = document()->resource(QTextDocument::ImageResource, QUrl(format.toImageFormat().name()));
-        painter->drawImage(rect, qvariant_cast<QImage>(resource));
+        const QImage image = qvariant_cast<QImage>(resource);
+        if (!image.isNull()) {
+            painter->drawImage(rect, image);
+            return;
+        }
     }
+    if (handlerForObject(format.objectType()))
+        QAbstractTextDocumentLayout::drawInlineObject(painter, rect, object, position, format);
 }
 void RichTextLayout::resizeInlineObject(QTextInlineObject object, int position, const QTextFormat &format)
 {
@@ -142,6 +149,16 @@ void RichTextLayout::resizeInlineObject(QTextInlineObject object, int position, 
         size = image.size() / image.devicePixelRatio();
         if (imageFormat.width() > 0) size.setWidth(imageFormat.width());
         if (imageFormat.height() > 0) size.setHeight(imageFormat.height());
+    }
+    if (format.isImageFormat() && format.doubleProperty(kRelativeImageWidthProperty) > 0) {
+        const auto image = format.toImageFormat();
+        const auto root = document()->rootFrame()->frameFormat();
+        const qreal available = m_inlineWidth > 0 ? m_inlineWidth
+            : qMax(1., document()->pageSize().width() - root.leftMargin() - root.rightMargin());
+        const qreal ratio = image.width() > 0 && image.height() > 0
+            ? image.height() / image.width() : (size.width() > 0 ? size.height() / size.width() : 1);
+        const qreal width = available * format.doubleProperty(kRelativeImageWidthProperty) / 100;
+        size = QSizeF(width, width * ratio);
     }
     const qreal height = qMax(0., size.height());
     qreal ascent = height, descent = 0;
@@ -161,6 +178,23 @@ void RichTextLayout::resizeInlineObject(QTextInlineObject object, int position, 
     object.setAscent(ascent);
     object.setDescent(descent);
 }
+qreal RichTextLayout::documentFontHeight(const QFont &font)
+{
+    const auto cached = m_fontHeights.constFind(font);
+    if (cached != m_fontHeights.cend()) return *cached;
+    const auto raw = QRawFont::fromFont(font);
+    const auto hhea = raw.fontTable("hhea");
+    qreal height = QFontMetricsF(font).lineSpacing();
+    if (hhea.size() >= 10 && raw.unitsPerEm() > 0) {
+        const qreal pixels = font.pixelSize() > 0 ? font.pixelSize() : font.pointSizeF() * 96.0 / 72;
+        const int units = qFromBigEndian<qint16>(hhea.constData() + 4) - qFromBigEndian<qint16>(hhea.constData() + 6)
+            + qFromBigEndian<qint16>(hhea.constData() + 8);
+        if (units > 0 && pixels > 0) height = units * pixels / raw.unitsPerEm();
+    }
+    m_fontHeights.insert(font, height);
+    return height;
+}
+
 bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass &pass, bool first)
 {
     auto *doc = document();
@@ -176,11 +210,16 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
     const bool dirty = pass.full || old.width != box.width || !known || !layout->lineCount() || old.revision != b.revision()
         || (b.position() <= pass.from + pass.added && b.position() + b.length() > pass.from);
     const auto format = b.blockFormat();
-    const auto direction = b.textDirection();
     const auto *list = b.textList();
     const int indent = format.indent() + (list ? list->format().indent() : 0);
+    const qreal indentWidth = list && m_root.boolProperty(kDocumentSpacingProperty) && format.hasProperty(kListTextOffsetProperty)
+        ? format.indent() * doc->indentWidth() + format.doubleProperty(kListTextOffsetProperty)
+        : indent * doc->indentWidth();
     const qreal left = box.left;
-    const qreal available = qMax(1., box.width - quantizedLength(format.leftMargin()) - quantizedLength(format.rightMargin()) - indent * doc->indentWidth());
+    const qreal available = qMax(1., box.width - quantizedLength(format.leftMargin()) - quantizedLength(format.rightMargin()) - indentWidth);
+    // Resolving direction can shape an image at the start of a block as well.
+    m_inlineWidth = available;
+    const auto direction = b.textDirection();
     if (dirty) {
         ++counters.shapedBlocks; counters.shapedCharacters += b.length();
         auto option = doc->defaultTextOption();
@@ -210,17 +249,88 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
     }
     ++counters.placements;
     Cache next; next.id = info->id; next.revision = b.revision(); next.incoming = flow;
+    next.naturalHeights = old.naturalHeights;
+    if (dirty) {
+        next.naturalHeights.clear();
+        if (m_root.boolProperty(kDocumentSpacingProperty)
+            && (format.lineHeightType() == QTextBlockFormat::SingleHeight || format.lineHeightType() == QTextBlockFormat::ProportionalHeight)) {
+            next.naturalHeights.fill(0., layout->lineCount());
+            int lineIndex = 0;
+            for (auto it = b.begin(); !it.atEnd(); ++it) {
+                const auto fragment = it.fragment();
+                const int start = fragment.position() - b.position(), end = start + fragment.length();
+                while (lineIndex < layout->lineCount() && layout->lineAt(lineIndex).textStart() + layout->lineAt(lineIndex).textLength() <= start) ++lineIndex;
+                const bool object = fragment.charFormat().objectType() != QTextFormat::NoObject;
+                const qreal height = object ? -1 : documentFontHeight(fragment.charFormat().font().resolve(doc->defaultFont()));
+                for (int i = lineIndex; i < layout->lineCount() && layout->lineAt(i).textStart() < end; ++i) {
+                    if (object) next.naturalHeights[i] = -1;
+                    else if (next.naturalHeights[i] >= 0) next.naturalHeights[i] = qMax(next.naturalHeights[i], height);
+                }
+            }
+            for (int i = 0; i < layout->lineCount(); ++i) {
+                const auto line = layout->lineAt(i);
+                next.naturalHeights[i] = next.naturalHeights[i] > 0
+                    ? qMax(next.naturalHeights[i], line.ascent() + line.descent()) : line.height();
+            }
+        }
+    }
     if (flow.pageBreak)
         flow.y = (qFloor(flow.y / stride) + 1) * stride + top;
     if (format.pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysBefore))
         flow.y = (qFloor(flow.y / stride) + 1) * stride + top;
-    if (!first) flow.y += qMax(flow.bottom, quantizedLength(format.topMargin()));
+    if (!first) {
+        const qreal beforeSpacing = flow.y;
+        if (m_root.boolProperty(kDocumentSpacingProperty)) {
+            flow.y += flow.bottom + quantizedLength(format.topMargin());
+            // Natural page starts discard inter-paragraph space, including a gap
+            // large enough to cross the page boundary by itself.
+            if (!flow.pageBreak && !format.pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysBefore)
+                && qFloor(flow.y / stride) > qFloor(beforeSpacing / stride))
+                flow.y = (qFloor(beforeSpacing / stride) + 1) * stride + top;
+        } else {
+            flow.y += qMax(flow.bottom, quantizedLength(format.topMargin()));
+        }
+    }
     const qreal origin = flow.y;
     bool sameLines = known && !dirty;
     next.hitRects.reserve(layout->lineCount());
+    const bool protectSplits = m_root.boolProperty(kDocumentSpacingProperty) && m_page.height() > 0;
+    const int widows = format.hasProperty(kWidowsProperty) ? qMax(1, format.intProperty(kWidowsProperty)) : 2;
+    const int orphans = format.hasProperty(kOrphansProperty) ? qMax(1, format.intProperty(kOrphansProperty)) : 2;
+    int plannedBreak = 0;
     for (int index = 0; index < layout->lineCount(); ++index) {
+        if (protectSplits && index == plannedBreak) {
+            if (index > 0) flow.y = (qFloor(flow.y / stride) + 1) * stride + top;
+            flow.y = qMax(flow.y, qFloor(flow.y / stride) * stride + top);
+            // Count each page's candidate lines once. Retry once at a fresh page;
+            // impossible counts/oversized lines fall back to natural splitting.
+            for (int attempt = 0; attempt < 2; ++attempt) {
+                const qreal limit = (qFloor(flow.y / stride) + 1) * stride - bottom;
+                qreal y = flow.y;
+                int fit = 0;
+                for (int i = index; i < layout->lineCount(); ++i) {
+                    const auto candidate = layout->lineAt(i);
+                    const qreal natural = next.naturalHeights.value(i, candidate.height());
+                    const qreal advance = format.lineHeight(natural + (format.lineHeightType() == QTextBlockFormat::MinimumHeight ? candidate.leading() : 0), 1);
+                    if (y + (format.lineHeightType() == QTextBlockFormat::LineDistanceHeight ? natural : qMax(advance, natural)) > limit) break;
+                    y += advance; ++fit;
+                }
+                const int remaining = layout->lineCount() - index;
+                int kept = fit;
+                if (fit < remaining && remaining - fit < widows) kept = qMax(0, remaining - widows);
+                if (fit < remaining && kept < orphans) {
+                    if (attempt == 0 && flow.y > qFloor(flow.y / stride) * stride + top) {
+                        flow.y = (qFloor(flow.y / stride) + 1) * stride + top;
+                        continue;
+                    }
+                    kept = fit;
+                }
+                plannedBreak = index + qMax(1, kept);
+                break;
+            }
+        }
         auto line = layout->lineAt(index);
-        const qreal natural = line.height();
+        const qreal natural = next.naturalHeights.value(index, line.height());
         const qreal advance = format.lineHeight(natural + (format.lineHeightType() == QTextBlockFormat::MinimumHeight ? line.leading() : 0), 1);
         qreal offset = 0;
         if (format.lineHeightType() == QTextBlockFormat::FixedHeight) offset = advance * .8 - line.ascent();
@@ -229,9 +339,12 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
         flow.y = qMax(flow.y, pageTop);
         if (flow.y + (format.lineHeightType() == QTextBlockFormat::LineDistanceHeight ? natural : qMax(advance, natural)) > qFloor(flow.y / stride)*stride + stride-bottom && flow.y > pageTop)
             flow.y = (qFloor(flow.y / stride)+1)*stride + top;
-        const QPointF position(quantizedLength(format.leftMargin()) + (direction == Qt::RightToLeft ? 0 : indent * doc->indentWidth() + (index == 0 ? format.textIndent() : 0)), flow.y-origin+offset);
-        sameLines &= line.position() == position;
+        const QPointF position(quantizedLength(format.leftMargin()) + (direction == Qt::RightToLeft ? 0 : indentWidth + (index == 0 ? format.textIndent() : 0)), flow.y-origin+offset);
+        const QPointF oldPosition = line.position();
         line.setPosition(position);
+        // QTextLine stores positions at Qt's fixed-point precision. Compare
+        // the stored result, not the unrounded fractional font advance.
+        sameLines &= oldPosition == line.position();
         next.hitRects.append(line.naturalTextRect());
         flow.y += advance;
     }
@@ -250,6 +363,7 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
     next.hitVersion=old.hitVersion+(!known || dirty || !sameLines);
     m_blocks.insert(info->lifetime, next);
     pass.changed.append(b);
+    m_inlineWidth = 0;
     return sameLines;
 }
 void RichTextLayout::layoutTable(QTextTable *table, Flow &flow, Pass &pass)
@@ -364,7 +478,7 @@ void RichTextLayout::layoutTable(QTextTable *table, Flow &flow, Pass &pass)
         heights[cell.row()+cell.rowSpan()-1]+=qMax(0.,entry.height-have);
     }
     QVector<qreal> spanEnds(rows), rowStarts(rows), rowEnds(rows);
-    qreal y=flow.y+edge;
+    qreal y=flow.y+edge + (m_root.boolProperty(kDocumentSpacingProperty) ? flow.bottom : 0);
     qreal tableTop=y;
     for (int row=0;row<rows;++row) {
         const qreal textTop=qFloor(y/stride)*stride+m_root.topMargin()+edge;
@@ -460,6 +574,9 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
     if (!full) {
         if (auto *table=QTextCursor(b).currentTable()) b=doc->findBlock(table->firstPosition());
         if (b.previous().isValid()) b=b.previous();
+        if (m_root.boolProperty(kDocumentSpacingProperty))
+            while (b.previous().isValid() && b.previous().blockFormat().boolProperty(kKeepWithNextProperty)
+                   && !QTextCursor(b.previous()).currentTable()) b = b.previous();
         if (auto *table=QTextCursor(b).currentTable()) b=doc->findBlock(table->firstPosition());
     }
     Flow flow{top, 0, false};
@@ -476,6 +593,7 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
     int translatedFrom=-1; qreal translatedY=0;
     qsizetype hitChangedCount=-1;
     Pass pass{full, from, added, changed}; // Handles are transaction-local.
+    QSet<quint64> probed;
     for (; b.isValid(); b = b.next()) {
         if (auto *table=QTextCursor(b).currentTable()) {
             layoutTable(table,flow,pass);
@@ -487,7 +605,57 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
         const bool known = previous != m_blocks.cend();
         const Cache old = known ? *previous : Cache();
         const Flow beforeBlock = flow;
-        const bool sameLines = layoutBlock(b, flow, {root.leftMargin(), width-root.leftMargin()-root.rightMargin(), top, bottom}, pass, b == doc->begin() || (b.previous().isValid() && QTextCursor(b.previous()).currentTable()));
+        const bool sameLines = layoutBlock(b, flow, {root.leftMargin(), width-root.leftMargin()-root.rightMargin(), top, bottom}, pass, b == doc->begin()
+            || (!m_root.boolProperty(kDocumentSpacingProperty) && b.previous().isValid() && QTextCursor(b.previous()).currentTable()));
+        const bool keep = m_root.boolProperty(kDocumentSpacingProperty) && b.blockFormat().boolProperty(kKeepWithNextProperty)
+            && !b.blockFormat().pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysAfter);
+        if (keep && b.next().isValid()) {
+            // Shape a bounded lookahead at a fresh page. Keep whole heading chains
+            // with the next paragraph's first line, but release groups taller than
+            // a page. Probed caches cannot be used as old-state convergence anchors.
+            const qreal capacity = stride - top - bottom;
+            const auto height = [this](const QTextBlock &block, bool firstOnly) {
+                qreal total = 0;
+                const auto format = block.blockFormat();
+                const auto &heights = m_blocks[blockInfo(block)->lifetime].naturalHeights;
+                for (int i = 0; i < block.layout()->lineCount(); ++i) {
+                    const auto line = block.layout()->lineAt(i);
+                    const qreal natural = heights.value(i, line.height());
+                    const qreal advance = format.lineHeight(natural + (format.lineHeightType() == QTextBlockFormat::MinimumHeight ? line.leading() : 0), 1);
+                    total += firstOnly ? qMax(advance, natural) : advance;
+                    const int minimum = format.hasProperty(kOrphansProperty) ? qMax(1, format.intProperty(kOrphansProperty)) : 2;
+                    if (firstOnly && i + 1 >= minimum) break;
+                }
+                return total;
+            };
+            qreal required = height(b, false);
+            auto previous = b;
+            bool complete = false;
+            for (auto next = b.next(); next.isValid() && required <= capacity; next = next.next()) {
+                if (QTextCursor(next).currentTable() || next.blockFormat().pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysBefore)) break;
+                Flow probe{top, 0, false};
+                Pass lookahead{false, from, added, changed};
+                layoutBlock(next, probe, {root.leftMargin(), width-root.leftMargin()-root.rightMargin(), top, bottom}, lookahead, true);
+                probed.insert(blockInfo(next)->lifetime);
+                const bool chained = next.blockFormat().boolProperty(kKeepWithNextProperty)
+                    && !next.blockFormat().pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysAfter);
+                required += previous.blockFormat().bottomMargin() + next.blockFormat().topMargin() + height(next, !chained);
+                if (!chained) { complete = true; break; }
+                previous = next;
+            }
+            const auto firstLine = b.layout()->lineAt(0);
+            const auto format = b.blockFormat();
+            const qreal advance = format.lineHeight(firstLine.height() + (format.lineHeightType() == QTextBlockFormat::MinimumHeight ? firstLine.leading() : 0), 1);
+            const qreal offset = format.lineHeightType() == QTextBlockFormat::FixedHeight ? advance * .8 - firstLine.ascent()
+                : format.lineHeightType() == QTextBlockFormat::MinimumHeight ? advance - firstLine.height() : 0;
+            const qreal firstY = b.layout()->position().y() + firstLine.y() - offset;
+            const qreal page = qFloor(firstY / stride);
+            if (complete && required <= capacity && firstY + required > (page + 1) * stride - bottom
+                && firstY > page * stride + top) {
+                flow = {(page + 1) * stride + top, 0, false};
+                layoutBlock(b, flow, {root.leftMargin(), width-root.leftMargin()-root.rightMargin(), top, bottom}, pass, true);
+            }
+        }
         info = blockInfo(b);
         if (b.text().isEmpty() && b.previous().isValid() && QTextCursor(b.previous()).currentTable()) {
             auto &cache=m_blocks[info->lifetime];
@@ -504,7 +672,7 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
 
         const qreal delta = next.rect.y() - old.rect.y();
         const bool wholePage = delta == qRound64(delta/stride)*stride;
-        if (!full && b.position() > from+added && sameLines && wholePage
+        if (!full && !keep && !probed.contains(info->lifetime) && b.position() > from+added && sameLines && wholePage
             && next.incoming.y-old.incoming.y == delta && next.outgoing.y-old.outgoing.y == delta
             && next.incoming.bottom == old.incoming.bottom && next.incoming.pageBreak == old.incoming.pageBreak
             && next.outgoing.bottom == old.outgoing.bottom && next.outgoing.pageBreak == old.outgoing.pageBreak
@@ -759,7 +927,8 @@ void RichTextLayout::draw(QPainter *painter, const PaintContext &context)
             painter->save(); painter->setFont(b.charFormat().font().resolve(document()->defaultFont()));
             const auto line = layout->lineAt(0);
             QString marker = list->itemText(b);
-            if (list->format().style() == QTextListFormat::ListCircle) marker = QChar(0x25e6);
+            if (list->format().style() == QTextListFormat::ListDisc) marker = QChar(0x2022);
+            else if (list->format().style() == QTextListFormat::ListCircle) marker = QChar(0x25e6);
             else if (list->format().style() == QTextListFormat::ListSquare) marker = QChar(0x25aa);
             else if (marker.isEmpty()) marker = QChar(0x2022);
             if (b.blockFormat().marker() == QTextBlockFormat::MarkerType::Checked) marker = QChar(0x2612);

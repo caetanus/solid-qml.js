@@ -2,6 +2,7 @@
 
 #include <QAbstractTextDocumentLayout>
 #include <QHash>
+#include <QFont>
 #include <QTextBlock>
 #include <QTextFrame>
 #include <QTextTable>
@@ -48,6 +49,7 @@ private:
         Flow incoming, outgoing;
         QRectF rect;
         QList<QRectF> hitRects;
+        QList<qreal> naturalHeights;
         qreal right = 0, width = 0, minimum = 0, preferred = 0;
         int revision = -1;
         quint64 hitVersion = 0;
@@ -69,10 +71,13 @@ private:
                         int translatedFrom, qreal translatedY);
     void rebuildHitIndex();
     QHash<quint64, Cache> m_blocks;
+    QHash<QFont, qreal> m_fontHeights;
+    qreal documentFontHeight(const QFont &);
     QSizeF m_size;
     QSizeF m_page;
     QTextFrameFormat m_root;
     bool m_widthDirty = false;
+    qreal m_inlineWidth = 0; // Current paragraph/cell width while shaping inline objects.
     int m_pages = 1;
 };
 }

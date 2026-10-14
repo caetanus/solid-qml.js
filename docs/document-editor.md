@@ -189,14 +189,15 @@ Style properties (all optional):
 | `lineHeight` | a multiple (`1.5`, `"150%"`) or an exact height (`"18pt"`) | Paragraph styles. |
 | `alignment` | `"left"`, `"center"`, `"right"`, `"justify"` | Paragraph styles. |
 | `keepWithNext` | boolean | Paragraph styles (kept in the file; print / PDF). |
+| `widows`, `orphans` | nonnegative integer | Paragraph minimum lines after/before a page break; preserved in ODF. |
+| `language` | string, e.g. `"en-US"`, `"pt-BR"` | Paragraph or character style; inherited and saved in ODF. |
 | `outlineLevel` | 0–10 | Paragraph styles: `n > 0` makes it a heading style (`doc.heading`, `<text:h>` in the file). |
 
-Default Paragraph Style's `fontFamily` and `fontSize` are the document's base font: kept and
-saved (a LibreOffice file's 12pt Times stays 12pt Times there), but on screen the editor's own
-font stands in for them, so a file's base font never overrides the app's typography. Every other
-style's font shows as defined. The handle's `fontFamily`/`fontSize` (above) still REPORT a
-customized Default Paragraph Style's own value at the caret — only the on-screen render and what
-gets baked into the live document skip it; a reader (an app's own font-name/size box) sees it.
+Default Paragraph Style's `fontFamily` and `fontSize` are the document's base font.
+ODF imports use that font on screen as well as when saving, including inherited text
+inside spans. The base font remains part of the style, rather than direct formatting.
+Fresh app-created documents use the editor's font as their display default. The
+handler's `fontFamily`/`fontSize` report the effective style value at the caret.
 
 ### Starting a document with styles
 
@@ -457,13 +458,13 @@ and selection behave exactly as without marks; the hit test takes the character 
   `zoom` too.
 - ODF coverage is the word-like subset: paragraphs and headings (`text:h` with its outline
   level), spans (nested ones too), bullet and numbered lists (nested by level), tables (merged
-  cells), inline images, a manual page break before a paragraph (`fo:break-before="page"`, from
+  cells), hyperlinks (targets and nested span formatting), inline images, a manual page break before a paragraph (`fo:break-before="page"`, from
   `insertPageBreak()`), and the named paragraph/character styles of `styles.xml` with the
   automatic styles over them as direct formatting. Our writer produces `content.xml`,
   `styles.xml` (the named styles), `meta.xml` and the manifest — LibreOffice 26.8 opens the result
   with every named style, parent, next style and heading level in place. Not kept yet: page SETUP
   (size/margins/printing) and headers/footers, footnotes as footnotes (their text is kept,
-  inline), bookmarks and links (their text is kept), unknown package entries. A paragraph whose
+  inline), bookmarks, unknown package entries. A paragraph whose
   styles give it no vertical
   spacing gets a quarter pixel under it (invisible; it keeps Qt's viewport culling from
   over-drawing). Files saved by the earlier Qt-based writer still open (their headings come back
@@ -492,6 +493,35 @@ unsupported calls; `insertTable`, paste and load through the handler check eligi
 before editing.
 
 ### Differences from Qt's layout
+
+Imported ODF documents add adjacent paragraph bottom/top margins, matching
+LibreOffice. Qt collapses them to the larger margin. On a natural page break,
+the custom engine discards the inter-paragraph gap, including gaps that would
+otherwise extend into the next page. Explicit page breaks retain their spacing.
+Ordinary Qt/HTML documents keep Qt's margin-collapse behavior.
+The preceding paragraph's bottom margin and following paragraph's top margin
+also apply at table boundaries in imported documents.
+For imported documents, `keepWithNext` keeps a paragraph/heading chain with the
+next paragraph's minimum opening lines. Groups taller than one body area are released so
+they cannot force repeated page skips; explicit breaks take precedence.
+Imported paragraphs default to two widow/orphan lines; explicit style values
+override this. Counts that cannot fit in a page fall back to natural splitting.
+Normal/proportional ODF line spacing uses fractional font `hhea` metrics at
+96 dpi (cached per font and shaped line), matching LibreOffice's baseline
+intervals instead of rounding each line to Qt's integer line height. Explicit
+fixed/minimum heights and inline-object lines retain their existing geometry.
+
+The custom engine uses imported per-level list label widths/left margins rather
+than Qt's fixed indent step. These offsets scale with zoom and survive ODF saves.
+List nesting remains independent of the physical text offset.
+
+ODF images with `style:rel-width` and `style:rel-height="scale"` follow the
+available paragraph/cell width in the custom engine and retain the declared
+aspect ratio. The relative size survives saves and updates when page width changes.
+ODF tables use equal default columns, or declared fixed/relative column widths,
+and import uniform cell borders and padding. This avoids imposing the editor's
+new-table border/padding presets on borderless documents. Mixed per-side border
+styles and full column-width round trips are not yet supported.
 
 The phase-2 acceptance policy top-aligns cells in **every fragment of a split
 row**. Middle/bottom alignment applies only when the row fits on one page.
@@ -540,3 +570,37 @@ upgrading Qt:
 
 Tests also inspect QQuickTextEdit's private rendered region to check viewport
 culling; that inspection is not a production dependency.
+
+### Document page geometry
+
+`documentPageWidth`, `documentPageHeight`, and `documentPageMargins` expose the
+first body paragraph's ODF master-page geometry in px at 96 dpi. Margins are
+`[top, right, bottom, left]`, matching `pageMargins`. The reader follows named
+and automatic paragraph-style parents to the master page, falling back to the
+first master when none is assigned. A document without a supported page layout
+reports `0`, `0`, and `[]`. `newDocument()` clears the metadata; a failed load
+that leaves the document untouched preserves it. These are read-only properties;
+`documentPageGeometryChanged` fires only when their values change.
+
+After a successful load, applications can assign these values to `pageWidth`,
+`pageHeight`, and `pageMargins`. This keeps application display settings explicit.
+Mixed page masters within one document are not yet supported by pagination.
+Active headers/footers reserve their declared minimum/fixed band height (which
+includes the body gap in LibreOffice)
+inside these margins. The reservation scales with zoom; `documentPageMargins`
+continues to report the page's declared outer margins. Header/footer content is
+not rendered or round-tripped, and content-dependent heights are not yet measured.
+
+### Document language
+
+`documentLanguage` is the imported default paragraph style's language tag, or
+`""` when unspecified. `documentLanguageChanged` fires only when that value changes,
+including loading, resetting, and editing or undoing the default style.
+`languageAt(pos)` returns the effective language at a text position, including
+character-style and automatic-span overrides, and falls back to the document
+default. Invalid positions return `""`.
+
+`blockLanguage(blockId)` returns the paragraph language; `""` means to use
+`documentLanguage` (and is also returned for an unknown block). It does not combine
+mixed inline languages: use `languageAt` for those. ODF `fo:language` and
+`fo:country` are retained through style inheritance and saving.

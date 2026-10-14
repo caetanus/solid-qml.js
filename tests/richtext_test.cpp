@@ -12,11 +12,14 @@
 #include <QQmlContext>
 
 #include <QClipboard>
+#include <QBuffer>
+#include <QFontDatabase>
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
 #include <QMimeData>
+#include <QPainter>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickItem>
@@ -63,15 +66,19 @@ int countTables(QTextDocument *doc, int *columns = nullptr)
     " xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"" \
     " xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"" \
     " xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\"" \
-    " xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\""
+    " xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\"" \
+    " xmlns:draw=\"urn:oasis:names:tc:opendocument:xmlns:drawing:1.0\"" \
+    " xmlns:svg=\"urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0\"" \
+    " xmlns:xlink=\"http://www.w3.org/1999/xlink\""
 
 // A minimal .odt whose content.xml body is `body`, with optional automatic styles (content.xml)
 // and named styles (styles.xml office:styles).
 void writeOdt(const QString &path, const QByteArray &body, const QByteArray &automaticStyles = {},
-              const QByteArray &namedStyles = {})
+              const QByteArray &namedStyles = {}, const QByteArray &image = {})
 {
     QZipWriter zip(path);
     zip.addFile(QStringLiteral("mimetype"), "application/vnd.oasis.opendocument.text");
+    if (!image.isEmpty()) zip.addFile(QStringLiteral("Pictures/image.png"), image);
     if (!namedStyles.isEmpty())
         zip.addFile(QStringLiteral("styles.xml"),
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-styles" ODF_NS ">"
@@ -264,6 +271,281 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void odfLinksKeepStyleAndTargetThroughNestedSpans()
+    {
+        const QString path = m_dir.filePath("links.odt");
+        writeOdt(path, "<text:p>Before <text:a xlink:href=\"https://example.test/\"><text:span text:style-name=\"Emphasis\">Link</text:span></text:a> after</text:p>", {},
+            "<style:style style:name=\"Internet_20_link\" style:family=\"text\"><style:text-properties fo:color=\"#000080\" style:text-underline-style=\"solid\"/></style:style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        const auto check = [&] {
+            const auto link = charAt(doc(), 7);
+            QCOMPARE(link.anchorHref(), QString("https://example.test/"));
+            QVERIFY(link.isAnchor()); QVERIFY(link.fontUnderline()); QVERIFY(link.fontItalic());
+            QCOMPARE(link.foreground().color(), QColor("#000080"));
+            QVERIFY(!charAt(doc(), 12).isAnchor());
+            QVERIFY(!charAt(doc(), 12).fontUnderline());
+        };
+        check();
+        const QString copy = m_dir.filePath("links-copy.odt");
+        QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(copy)));
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(copy)));
+        check();
+    }
+
+    void odfParagraphSpacingSurvivesTableBoundaries()
+    {
+        const QString path = m_dir.filePath("table-spacing.odt");
+        writeOdt(path, "<text:p text:style-name=\"Before\">Before</text:p><table:table><table:table-column/><table:table-row><table:table-cell><text:p>Cell</text:p></table:table-cell></table:table-row></table:table><text:p text:style-name=\"After\">After</text:p>", {},
+            "<style:default-style style:family=\"paragraph\"><style:paragraph-properties fo:line-height=\"20px\"/></style:default-style>"
+            "<style:style style:name=\"Before\" style:family=\"paragraph\"><style:paragraph-properties fo:margin-bottom=\"6px\"/></style:style>"
+            "<style:style style:name=\"After\" style:family=\"paragraph\"><style:paragraph-properties fo:margin-top=\"6px\"/></style:style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_edit->setProperty("width", 300);
+        m_fmt->configurePages(300, 300, 0, {10,10,10,10});
+        auto table = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        QVERIFY(table);
+        const qreal cellY = table->cellAt(0,0).firstCursorPosition().block().layout()->position().y();
+        QCOMPARE(cellY - doc()->begin().layout()->position().y(), 26.0);
+        QCOMPARE(doc()->lastBlock().layout()->position().y() - cellY, 26.0);
+    }
+
+    void odfNormalLinesUseFractionalFontSpacing()
+    {
+        if (!QFontDatabase::families().contains("Liberation Serif")) QSKIP("Liberation Serif fixture font is unavailable");
+        const QString path = m_dir.filePath("fractional-lines.odt");
+        writeOdt(path, "<text:p>First line<text:line-break/>Second line<text:line-break/>Third line</text:p>", {},
+            "<style:default-style style:family=\"paragraph\"><style:text-properties fo:font-family=\"Liberation Serif\" fo:font-size=\"12pt\"/></style:default-style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_edit->setProperty("width", 300);
+        m_fmt->configurePages(300, 300, 0, {10,10,10,10});
+        const auto layout = doc()->begin().layout();
+        QCOMPARE(layout->lineCount(), 3);
+        // LibreOffice's 12pt Liberation Serif baseline interval at 96 dpi.
+        QVERIFY(qAbs(layout->lineAt(1).y() - layout->lineAt(0).y() - 18.3984375) <= 1.0 / 64);
+        QVERIFY(qAbs(layout->lineAt(2).y() - layout->lineAt(0).y() - 36.796875) <= 1.0 / 64);
+    }
+
+    void odfWidowsAndOrphansProtectPageSplits()
+    {
+        const QString path = m_dir.filePath("widows.odt");
+        for (int lines : {2, 5}) {
+            const QByteArray body = QByteArray("<text:p text:style-name=\"Filler\">First</text:p><text:p text:style-name=\"Protected\">Body")
+                + QByteArray("<text:line-break/>Body").repeated(lines - 1) + "</text:p>";
+            writeOdt(path, body, {}, QByteArray("<style:style style:name=\"Filler\" style:family=\"paragraph\"><style:paragraph-properties fo:line-height=\"")
+                + (lines == 2 ? "50px" : "19px") + "\"/></style:style>"
+                "<style:style style:name=\"Protected\" style:family=\"paragraph\"><style:paragraph-properties fo:line-height=\"20px\" fo:widows=\"2\" fo:orphans=\"2\"/></style:style>");
+            QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+            m_edit->setProperty("width", 300);
+            const int height = lines == 2 ? 100 : 120;
+            m_fmt->configurePages(300, height, 0, {10,10,10,10});
+            const auto block = doc()->findBlockByNumber(1);
+            QCOMPARE(block.layout()->lineCount(), lines);
+            for (int i = 0; i < lines; ++i) {
+                const qreal y = block.layout()->position().y() + block.layout()->lineAt(i).y();
+                QCOMPARE(int(y / height), lines == 2 || i >= 3 ? 1 : 0);
+            }
+            QCOMPARE(m_fmt->styleProperties("Protected").value("widows").toInt(), 2);
+            const QString copy = m_dir.filePath("widows-copy.odt");
+            QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(copy)));
+            QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(copy)));
+            QCOMPARE(m_fmt->styleProperties("Protected").value("orphans").toInt(), 2);
+        }
+    }
+
+    void odfBorderlessTablesUseEqualDefaultColumns()
+    {
+        const QString path = m_dir.filePath("borderless-table.odt");
+        writeOdt(path, "<table:table><table:table-column/><table:table-column/><table:table-row><table:table-cell table:style-name=\"Plain\"><text:p>X</text:p></table:table-cell><table:table-cell table:style-name=\"Plain\"><text:p>A longer cell</text:p></table:table-cell></table:table-row></table:table>",
+            "<style:style style:name=\"Plain\" style:family=\"table-cell\"><style:table-cell-properties fo:border=\"none\" fo:padding=\"0px\"/></style:style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_edit->setProperty("width", 300);
+        m_fmt->configurePages(300, 300, 0, {10,10,10,10});
+        const auto table = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        QVERIFY(table);
+        QCOMPARE(table->format().border(), 0.0);
+        QCOMPARE(table->format().cellPadding(), 0.0);
+        const auto first = table->cellAt(0,0).firstCursorPosition().block();
+        const auto second = table->cellAt(0,1).firstCursorPosition().block();
+        QCOMPARE(second.layout()->position().x() - first.layout()->position().x(), 140.0);
+    }
+
+    void odfKeepWithNextMovesOnlyFittingGroups()
+    {
+        const QString path = m_dir.filePath("keep-next.odt");
+        writeOdt(path, "<text:p text:style-name=\"Tall\">First</text:p><text:p text:style-name=\"Keep\">Heading</text:p><text:p text:style-name=\"Tall\">Body</text:p>", {},
+            "<style:style style:name=\"Tall\" style:family=\"paragraph\"><style:paragraph-properties fo:line-height=\"40px\"/></style:style>"
+            "<style:style style:name=\"Keep\" style:family=\"paragraph\"><style:paragraph-properties fo:line-height=\"20px\" fo:keep-with-next=\"always\"/></style:style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_edit->setProperty("width", 300);
+        m_fmt->configurePages(300, 100, 0, {10,10,10,10});
+        auto heading = [&] { return doc()->findBlockByNumber(1).layout()->position().y(); };
+        QCOMPARE(heading(), 110.0);
+        QTextCursor edit(doc());
+        edit.setPosition(doc()->lastBlock().position());
+        edit.insertText(QStringLiteral("More body text ").repeated(15));
+        QScopedPointer<QTextDocument> cold(doc()->clone());
+        cold->setDocumentLayout(new rt::RichTextLayout(cold.data()));
+        cold->documentLayout()->documentSize();
+        for (auto b = doc()->begin(), expected = cold->begin(); b.isValid(); b = b.next(), expected = expected.next()) {
+            QCOMPARE(b.layout()->lineCount(), expected.layout()->lineCount());
+            for (int i = 0; i < b.layout()->lineCount(); ++i)
+                QCOMPARE(b.layout()->position() + b.layout()->lineAt(i).position(), expected.layout()->position() + expected.layout()->lineAt(i).position());
+        }
+        doc()->undo();
+        // Resizing restores normal flow; an oversized group must never loop or skip pages.
+        m_fmt->configurePages(300, 160, 0, {10,10,10,10});
+        QVERIFY(qAbs(heading() - 50.0) < 1);
+        m_fmt->configurePages(300, 70, 0, {10,10,10,10});
+        QVERIFY(heading() < 150);
+    }
+
+    void odfActiveFooterReservesBodySpace()
+    {
+        const QString path = m_dir.filePath("footer-space.odt");
+        for (bool active : {true, false}) {
+            QZipWriter zip(path);
+            zip.addFile("content.xml", "<office:document-content" ODF_NS "><office:body><office:text><text:p>One</text:p><text:p>Two</text:p><text:p>Three</text:p></office:text></office:body></office:document-content>");
+            zip.addFile("styles.xml", QByteArray("<office:document-styles" ODF_NS "><office:styles><style:default-style style:family=\"paragraph\"><style:paragraph-properties fo:line-height=\"20px\"/></style:default-style></office:styles><office:automatic-styles>"
+                "<style:page-layout style:name=\"Page\"><style:page-layout-properties fo:page-width=\"300px\" fo:page-height=\"100px\" fo:margin=\"10px\"/><style:footer-style><style:header-footer-properties fo:min-height=\"20px\" fo:margin-top=\"10px\"/></style:footer-style></style:page-layout>"
+                "</office:automatic-styles><office:master-styles><style:master-page style:name=\"Standard\" style:page-layout-name=\"Page\">")
+                + (active ? "<style:footer><text:p>Footer</text:p></style:footer>" : "")
+                + "</style:master-page></office:master-styles></office:document-styles>");
+            zip.close();
+            QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+            m_edit->setProperty("width", 300);
+            m_fmt->configurePages(300, 100, 0, {10,10,10,10});
+            QCOMPARE(m_fmt->documentPageMargins(), QVariantList({10,10,10,10}));
+            QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), active ? 30.0 : 10.0);
+        }
+        m_fmt->newDocument();
+        m_fmt->configurePages(300, 100, 0, {10,10,10,10});
+        QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), 10.0);
+    }
+
+    void odfRelativeImagesFollowTextWidthAndAspect()
+    {
+        QImage image(1000, 500, QImage::Format_RGB32); image.fill(Qt::red);
+        QByteArray png; QBuffer buffer(&png); QVERIFY(buffer.open(QIODevice::WriteOnly));
+        QVERIFY(image.save(&buffer, "PNG"));
+        const QString path = m_dir.filePath("relative-image.odt");
+        writeOdt(path, "<text:p><draw:frame text:anchor-type=\"as-char\" svg:width=\"1000px\" svg:height=\"500px\" style:rel-width=\"100%\" style:rel-height=\"scale\"><draw:image xlink:href=\"Pictures/image.png\"/></draw:frame></text:p>", {}, {}, png);
+        m_fmt->setLayoutEngine("custom");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_edit->setProperty("width", 300);
+        m_fmt->configurePages(300, 600, 0, {10,10,10,10});
+        const auto check = [&](qreal width) {
+            doc()->documentLayout()->documentSize();
+            const auto line = doc()->firstBlock().layout()->lineAt(0);
+            QCOMPARE(line.naturalTextWidth(), width);
+            QVERIFY(qAbs(line.ascent() - width / 2) <= 1.0 / 64);
+            QImage rendered(500, 600, QImage::Format_RGB32); rendered.fill(Qt::white);
+            QPainter painter(&rendered);
+            doc()->documentLayout()->draw(&painter, {});
+            painter.end();
+            QCOMPARE(rendered.pixelColor(30, 30), QColor(Qt::red));
+        };
+        check(280);
+        m_edit->setProperty("width", 500);
+        m_fmt->configurePages(500, 600, 0, {10,20,10,20});
+        check(460);
+        const QString copy = m_dir.filePath("relative-image-copy.odt");
+        QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(copy)));
+        keepForInspection(copy);
+        QVERIFY(QZipReader(copy).fileData("content.xml").contains("style:rel-width=\"100%\""));
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(copy)));
+        QCOMPARE(charAt(doc(), 0).doubleProperty(rt::kRelativeImageWidthProperty), 100.0);
+        m_edit->setProperty("width", 300);
+        m_fmt->configurePages(300, 600, 0, {10,10,10,10});
+        check(280);
+    }
+
+    void odfListLabelWidthControlsTextIndent()
+    {
+        const QString path = m_dir.filePath("list-indent.odt");
+        writeOdt(path, "<text:list text:style-name=\"Bullets\"><text:list-item><text:p>Outer</text:p><text:list><text:list-item><text:p>Inner</text:p></text:list-item></text:list></text:list-item></text:list>", {},
+            "<text:list-style style:name=\"Bullets\"><text:list-level-style-bullet text:level=\"1\" text:bullet-char=\"•\"><style:list-level-properties text:space-before=\"0px\" text:min-label-width=\"15px\"/></text:list-level-style-bullet>"
+            "<text:list-level-style-bullet text:level=\"2\" text:bullet-char=\"•\"><style:list-level-properties text:space-before=\"15px\" text:min-label-width=\"15px\"/></text:list-level-style-bullet></text:list-style>");
+        m_fmt->setLayoutEngine("custom");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_fmt->configurePages(300, 300, 0, {10,10,10,10});
+        const auto x = [&](int n) {
+            doc()->documentLayout()->documentSize();
+            const auto block = doc()->findBlockByNumber(n);
+            return block.layout()->position().x() + block.layout()->lineAt(0).x();
+        };
+        QCOMPARE(x(0), 25.0);
+        QCOMPARE(x(1), 40.0);
+        const QString copy = m_dir.filePath("list-indent-copy.odt");
+        QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(copy)));
+        keepForInspection(copy);
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(copy)));
+        m_fmt->configurePages(300, 300, 0, {10,10,10,10});
+        QCOMPARE(doc()->firstBlock().blockFormat().doubleProperty(rt::kListTextOffsetProperty), 15.0);
+        QCOMPARE(doc()->firstBlock().blockFormat().leftMargin(), 0.0);
+        QCOMPARE(x(0), 25.0);
+        QCOMPARE(x(1), 40.0);
+    }
+
+    void odfParagraphSpacingAddsAndResetsAtPageTop()
+    {
+        const QString path = m_dir.filePath("paragraph-spacing.odt");
+        writeOdt(path, "<text:p text:style-name=\"Spaced\">One</text:p><text:p text:style-name=\"Spaced\">Two</text:p><text:p text:style-name=\"LargeGap\">Three</text:p>", {},
+            "<style:style style:name=\"Spaced\" style:family=\"paragraph\"><style:paragraph-properties fo:margin-top=\"6px\" fo:margin-bottom=\"6px\" fo:line-height=\"20px\"/></style:style>"
+            "<style:style style:name=\"LargeGap\" style:family=\"paragraph\"><style:paragraph-properties fo:margin-top=\"60px\" fo:line-height=\"20px\"/></style:style>");
+        m_fmt->setLayoutEngine("custom");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_fmt->configurePages(300, 100, 0, {10,10,10,10});
+        doc()->documentLayout()->documentSize();
+        const auto y = [&](int n) {
+            const auto block = doc()->findBlockByNumber(n);
+            return block.layout()->position().y() + block.layout()->lineAt(0).y();
+        };
+        // Fixed line-height positions include the same baseline offset in both blocks.
+        QCOMPARE(y(1) - y(0), 32.0);
+        QCOMPARE(y(2) - y(0), 100.0);
+    }
+
+    void odfLanguagesSurviveStylesAndRoundTrip()
+    {
+        const QString path = m_dir.filePath("languages.odt");
+        writeOdt(path, "<text:p>Default</text:p><text:p text:style-name=\"AutoPara\">French <text:span text:style-name=\"Portuguese\">BR</text:span><text:span text:style-name=\"AutoChar\">DE</text:span></text:p>",
+            "<style:style style:name=\"AutoPara\" style:family=\"paragraph\" style:parent-style-name=\"French\"/>"
+            "<style:style style:name=\"AutoChar\" style:family=\"text\"><style:text-properties fo:language=\"de\" fo:country=\"DE\"/></style:style>",
+            "<style:default-style style:family=\"paragraph\"><style:text-properties fo:language=\"en\" fo:country=\"US\"/></style:default-style>"
+            "<style:style style:name=\"French\" style:family=\"paragraph\"><style:text-properties fo:language=\"fr\" fo:country=\"FR\"/></style:style>"
+            "<style:style style:name=\"Portuguese\" style:family=\"text\"><style:text-properties fo:language=\"pt\" fo:country=\"BR\"/></style:style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        QCOMPARE(m_fmt->property("documentLanguage").toString(), QString("en-US"));
+        const auto language = [&](int position) {
+            QString value;
+            QMetaObject::invokeMethod(m_fmt, "languageAt", Q_RETURN_ARG(QString, value), Q_ARG(int, position));
+            return value;
+        };
+        const auto blockLanguage = [&](int position) {
+            QString value;
+            QMetaObject::invokeMethod(m_fmt, "blockLanguage", Q_RETURN_ARG(QString, value), Q_ARG(QString, m_fmt->blockIdAt(position)));
+            return value;
+        };
+        QCOMPARE(language(0), QString("en-US"));
+        QCOMPARE(blockLanguage(0), QString());
+        QCOMPARE(language(8), QString("fr-FR"));
+        QCOMPARE(blockLanguage(8), QString("fr-FR"));
+        QCOMPARE(language(15), QString("pt-BR"));
+        QCOMPARE(language(17), QString("de-DE"));
+        QSignalSpy changes(m_fmt, SIGNAL(documentLanguageChanged()));
+        QVERIFY(changes.isValid());
+        const QString copy = m_dir.filePath("languages-copy.odt");
+        QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(copy)));
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(copy)));
+        QCOMPARE(changes.count(), 0);
+        QCOMPARE(language(15), QString("pt-BR"));
+        QCOMPARE(language(17), QString("de-DE"));
+        QCOMPARE(blockLanguage(8), QString("fr-FR"));
+        m_fmt->newDocument();
+        QCOMPARE(changes.count(), 1);
+        QCOMPARE(m_fmt->property("documentLanguage").toString(), QString());
+    }
+
     void initTestCase()
     {
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
@@ -283,6 +565,50 @@ private slots:
         m_fmt->newDocument();
     }
     void cleanup() { m_edit.reset(); }
+
+    void odfUsesDocumentDefaultFont()
+    {
+        const QString path = m_dir.filePath("default-font.odt");
+        writeOdt(path, "<text:p>Body <text:span>span</text:span></text:p>", {},
+            "<style:default-style style:family=\"paragraph\"><style:text-properties fo:font-family=\"Liberation Serif\" fo:font-size=\"12pt\"/></style:default-style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        const auto f = doc()->begin().begin().fragment().charFormat();
+        QCOMPARE(f.font().resolve(doc()->defaultFont()).family(), QString("Liberation Serif"));
+        QCOMPARE(f.font().resolve(doc()->defaultFont()).pointSizeF(), 12.0);
+        for (auto it = doc()->begin().begin(); !it.atEnd(); ++it)
+            QCOMPARE(it.fragment().charFormat().font().resolve(doc()->defaultFont()).family(), QString("Liberation Serif"));
+    }
+
+    void odfDocumentPageGeometry()
+    {
+        const QString path = m_dir.filePath("geometry.odt");
+        QZipWriter zip(path);
+        zip.addFile("content.xml", "<office:document-content" ODF_NS "><office:automatic-styles>"
+            "<style:style style:name=\"First\" style:family=\"paragraph\" style:parent-style-name=\"Body\"/>"
+            "</office:automatic-styles><office:body><office:text><text:p text:style-name=\"First\">Hello</text:p>"
+            "</office:text></office:body></office:document-content>");
+        zip.addFile("styles.xml", "<office:document-styles" ODF_NS "><office:styles>"
+            "<style:style style:name=\"Body\" style:family=\"paragraph\" style:master-page-name=\"Letter\"/>"
+            "</office:styles><office:automatic-styles>"
+            "<style:page-layout style:name=\"unused\"><style:page-layout-properties fo:page-width=\"21cm\" fo:page-height=\"29.7cm\"/></style:page-layout>"
+            "<style:page-layout style:name=\"used\"><style:page-layout-properties fo:page-width=\"8.5in\" fo:page-height=\"11in\" fo:margin=\"1in\" fo:margin-left=\"0.5in\"/></style:page-layout>"
+            "</office:automatic-styles><office:master-styles>"
+            "<style:master-page style:name=\"Standard\" style:page-layout-name=\"unused\"/>"
+            "<style:master-page style:name=\"Letter\" style:page-layout-name=\"used\"/>"
+            "</office:master-styles></office:document-styles>");
+        zip.close();
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        QCOMPARE(m_fmt->property("documentPageWidth").toReal(), 816.0);
+        QCOMPARE(m_fmt->property("documentPageHeight").toReal(), 1056.0);
+        QCOMPARE(m_fmt->property("documentPageMargins").toList(), QVariantList({96,96,96,48}));
+        QSignalSpy changes(m_fmt, SIGNAL(documentPageGeometryChanged()));
+        QVERIFY(changes.isValid());
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        QCOMPARE(changes.count(), 0);
+        m_fmt->newDocument();
+        QCOMPARE(changes.count(), 1);
+        QCOMPARE(m_fmt->property("documentPageWidth").toReal(), 0.0);
+    }
 
     void fontAtCaretOnlyFormatsNewText()
     {
@@ -1169,12 +1495,12 @@ private slots:
         QCOMPARE(h1.value("fontFamily").toString(), QStringLiteral("Arial"));
         QCOMPARE(h1.value("keepWithNext").toBool(), true);
         QCOMPARE(m_fmt->styleProperties(QStringLiteral("Text Body")).value("lineHeight").toDouble(), 1.15);
-        // The document default IS Default Paragraph Style — kept, but the editor's font shows.
+        // Imported body text uses the document default, independently of the editor's font.
         const QVariantMap standard = m_fmt->styleProperties(QStringLiteral("Default Paragraph Style"));
         QCOMPARE(standard.value("fontSize").toDouble(), 12.0);
         QCOMPARE(standard.value("fontFamily").toString(), QStringLiteral("Times New Roman"));
-        QVERIFY(!charAt(doc(), 9).hasProperty(QTextFormat::FontPointSize));
-        QVERIFY(!charAt(doc(), 9).hasProperty(QTextFormat::FontFamilies));
+        QCOMPARE(charAt(doc(), 9).fontPointSize(), 12.0);
+        QCOMPARE(charAt(doc(), 9).fontFamilies().toStringList().value(0), QStringLiteral("Times New Roman"));
         QCOMPARE(charAt(doc(), 2).fontFamilies().toStringList().value(0), QStringLiteral("Arial"));
 
         m_fmt->setCursorPosition(1);
@@ -3071,6 +3397,28 @@ private slots:
         QVERIFY(!hit.isNull());
         QVERIFY(QMetaObject::invokeMethod(w.edit(), "select", Q_ARG(int, hit.selectionStart()), Q_ARG(int, hit.selectionEnd())));
         QTRY_VERIFY(visible());
+    }
+
+    void loadOdfResetsViewportToPageTop()
+    {
+        const QString path = m_dir.filePath("viewport.odt");
+        writeOdt(path, QByteArray("<text:p>Title</text:p>") + QByteArray("<text:p>Body paragraph</text:p>").repeated(150));
+        PageEditor w;
+        QVERIFY(w.root);
+        w.view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        for (int position : {0, 30}) {
+            QVERIFY(w.fmt()->loadOdf(QUrl::fromLocalFile(path)));
+            w.edit()->setProperty("cursorPosition", position);
+            QTest::qWait(30);
+            w.body()->setProperty("contentY", 1400);
+            QVariant result;
+            QVERIFY(QMetaObject::invokeMethod(w.root.data(), "loadOdf", Q_RETURN_ARG(QVariant, result), Q_ARG(QVariant, path)));
+            QVERIFY(result.toMap().value("ok").toBool());
+            QCOMPARE(w.edit()->property("cursorPosition").toInt(), 0);
+            QTest::qWait(50); // Include queued caret following and layout polish.
+            QCOMPARE(w.body()->property("contentY").toReal(), 0.0);
+        }
     }
 
     void pageViewGeometryAndNavigation()

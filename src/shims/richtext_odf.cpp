@@ -44,6 +44,8 @@ struct RawStyle {
     QString parent;       // style:parent-style-name (ODF name)
     QString next;         // style:next-style-name (ODF name)
     int cellAlignment = -1; // Absent until a table-cell style specifies it.
+    qreal cellBorder = qQNaN(), cellPadding = qQNaN();
+    QTextLength columnWidth;
     int outline = 0;      // style:default-outline-level
     QVariantMap props;    // canonical; fontSize may still be a "N%" string (relative to the parent)
 };
@@ -54,7 +56,89 @@ struct OdfStyles {
     RawStyle defaultParagraph;       // <style:default-style style:family="paragraph">
     QHash<QString, QString> fonts;   // style:font-face name → font family
     QHash<QString, QTextListFormat::Style> lists; // text:list-style name → its level-1 kind
+    QHash<QString, QVariantMap> listOffsets;
 };
+
+// Resolve the first body paragraph's master through its style chain. Reading both XML parts
+// also handles automatic paragraph styles and avoids choosing an unrelated first page layout.
+QVariantList documentGeometry(const QByteArray &styles, const QByteArray &content, QVariantList *reserved)
+{
+    QHash<QString, QVariantList> layouts;
+    QHash<QString, QVariantList> reserves;
+    QHash<QString, QSet<int>> active;
+    QHash<QString, QString> masters, parents, styleMasters;
+    QString firstMaster, firstParagraph;
+    bool foundParagraph = false;
+    for (const auto &part : {styles, content}) {
+        QXmlStreamReader xml(part);
+        QString layout, currentMaster;
+        int area = -1;
+        bool body = false;
+        while (!xml.atEnd()) {
+            const auto token = xml.readNext();
+            if (token == QXmlStreamReader::EndElement && xml.name() == QLatin1String("page-layout")) layout.clear();
+            if (token == QXmlStreamReader::EndElement) {
+                if (xml.name() == QLatin1String("master-page")) currentMaster.clear();
+                if (xml.name() == QLatin1String("header-style") || xml.name() == QLatin1String("footer-style")) area = -1;
+            }
+            if (token != QXmlStreamReader::StartElement) continue;
+            const auto a = xml.attributes();
+            const auto val = [&](const char *name) { return a.value(QLatin1String(name)).toString(); };
+            if (xml.name() == QLatin1String("body")) body = true;
+            if (body && !foundParagraph && (xml.name() == QLatin1String("p") || xml.name() == QLatin1String("h"))) {
+                firstParagraph = val("text:style-name");
+                foundParagraph = true;
+            }
+            if (xml.name() == QLatin1String("style")) {
+                const QString name = val("style:name");
+                parents.insert(name, val("style:parent-style-name"));
+                styleMasters.insert(name, val("style:master-page-name"));
+            } else if (xml.name() == QLatin1String("master-page")) {
+                const QString name = val("style:name");
+                currentMaster = name;
+                if (firstMaster.isEmpty()) firstMaster = name;
+                masters.insert(name, val("style:page-layout-name"));
+            } else if (!currentMaster.isEmpty() && (xml.name() == QLatin1String("header") || xml.name() == QLatin1String("footer"))) {
+                active[currentMaster].insert(xml.name() == QLatin1String("header") ? 0 : 1);
+            } else if (xml.name() == QLatin1String("page-layout")) {
+                layout = val("style:name");
+                reserves[layout] = {0., 0.};
+            } else if (!layout.isEmpty() && (xml.name() == QLatin1String("header-style") || xml.name() == QLatin1String("footer-style"))) {
+                area = xml.name() == QLatin1String("header-style") ? 0 : 1;
+            } else if (!layout.isEmpty() && area >= 0 && xml.name() == QLatin1String("header-footer-properties")) {
+                const qreal height = lengthPx(val("svg:height"));
+                const qreal minimum = lengthPx(val("fo:min-height"));
+                const qreal gap = lengthPx(val(area == 0 ? "fo:margin-bottom" : "fo:margin-top"));
+                // LibreOffice's declared minimum is the whole band, including
+                // the body gap (0.4in with a 0.2in gap reserves 0.4in, not 0.6in).
+                reserves[layout][area] = qMax(qMax(qIsFinite(height) ? height : 0., qIsFinite(minimum) ? minimum : 0.),
+                    qIsFinite(gap) ? gap : 0.);
+            } else if (!layout.isEmpty() && xml.name() == QLatin1String("page-layout-properties")) {
+                const qreal w = lengthPx(val("fo:page-width")), h = lengthPx(val("fo:page-height"));
+                if (!(w > 0 && h > 0)) continue;
+                qreal all = lengthPx(val("fo:margin"));
+                if (qIsNaN(all)) all = 0;
+                QVariantList geometry{w,h};
+                for (const char *side : {"fo:margin-top", "fo:margin-right", "fo:margin-bottom", "fo:margin-left"}) {
+                    const qreal margin = lengthPx(val(side));
+                    geometry.append(qIsNaN(margin) ? all : margin);
+                }
+                layouts.insert(layout, geometry);
+            }
+        }
+    }
+    QString master;
+    QSet<QString> seen;
+    for (QString style = firstParagraph; !style.isEmpty() && !seen.contains(style); style = parents.value(style)) {
+        seen.insert(style);
+        master = styleMasters.value(style);
+        if (!master.isEmpty()) break;
+    }
+    if (master.isEmpty()) master = firstMaster;
+    *reserved = reserves.value(masters.value(master), {0., 0.});
+    for (int area = 0; area < 2; ++area) if (!active.value(master).contains(area)) (*reserved)[area] = 0.;
+    return layouts.value(masters.value(master));
+}
 
 QString firstFamily(QStringView v)
 {
@@ -100,6 +184,12 @@ void readTextProps(const QXmlStreamAttributes &a, const QHash<QString, QString> 
         putProp(props, Prop::Color, c.toString());
     if (const auto ls = val("fo:letter-spacing"); !ls.isEmpty())
         putProp(props, Prop::LetterSpacing, ls.toString());
+    if (const auto language = val("fo:language"); !language.isEmpty()) {
+        QString tag = language.toString();
+        const auto country = val("fo:country");
+        if (!country.isEmpty() && country != QLatin1String("none")) tag += QLatin1Char('-') + country.toString();
+        putProp(props, Prop::Language, tag);
+    }
 }
 
 void readParagraphProps(const QXmlStreamAttributes &a, QVariantMap &props)
@@ -125,6 +215,8 @@ void readParagraphProps(const QXmlStreamAttributes &a, QVariantMap &props)
         putProp(props, Prop::Alignment, al.toString());
     if (const auto k = val("fo:keep-with-next"); !k.isEmpty())
         props.insert(QStringLiteral("keepWithNext"), k == QLatin1String("always"));
+    if (const auto n = val("fo:widows"); !n.isEmpty()) putProp(props, Prop::Widows, n.toString());
+    if (const auto n = val("fo:orphans"); !n.isEmpty()) putProp(props, Prop::Orphans, n.toString());
     // insertPageBreak() (item 5): not a rt::Prop — see the matching writer side (writeProps()).
     if (val("fo:break-before") == QLatin1String("page"))
         props.insert(QStringLiteral("__pageBreakBefore"), true);
@@ -153,6 +245,7 @@ void readStyles(QXmlStreamReader &xml, QLatin1String section, OdfStyles &out)
     QString current;          // style:name being read
     bool inDefault = false;   // inside the paragraph default-style
     QString currentList;
+    QString currentLevel;
     while (!xml.atEnd()) {
         const auto tok = xml.readNext();
         if (tok == QXmlStreamReader::EndElement) {
@@ -163,6 +256,7 @@ void readStyles(QXmlStreamReader &xml, QLatin1String section, OdfStyles &out)
                 inDefault = false;
             } else if (xml.name() == QLatin1String("list-style")) {
                 currentList.clear();
+                currentLevel.clear();
             }
             continue;
         }
@@ -196,13 +290,33 @@ void readStyles(QXmlStreamReader &xml, QLatin1String section, OdfStyles &out)
         } else if (!currentList.isEmpty()
                    && (name == QLatin1String("list-level-style-number") || name == QLatin1String("list-level-style-bullet"))) {
             const auto level = a.value(QLatin1String("text:level"));
+            currentLevel = level.isEmpty() ? QStringLiteral("1") : level.toString();
             if ((level.isEmpty() || level == QLatin1String("1")) && !out.lists.contains(currentList))
                 out.lists.insert(currentList, listKind(xml));
+        } else if (!currentList.isEmpty() && name == QLatin1String("list-level-properties")) {
+            if (a.hasAttribute(QLatin1String("text:min-label-width"))) {
+                const qreal before = lengthPx(a.value(QLatin1String("text:space-before")));
+                const qreal width = lengthPx(a.value(QLatin1String("text:min-label-width")));
+                if (qIsFinite(width)) out.listOffsets[currentList][currentLevel] = (qIsFinite(before) ? before : 0) + width;
+            }
+        } else if (!currentList.isEmpty() && name == QLatin1String("list-level-label-alignment")) {
+            const qreal left = lengthPx(a.value(QLatin1String("fo:margin-left")));
+            if (qIsFinite(left)) out.listOffsets[currentList][currentLevel] = left;
         } else if (name == QLatin1String("table-cell-properties") && !current.isEmpty()) {
+            const auto border = a.value(QLatin1String("fo:border"));
+            if (!border.isEmpty()) out.styles[current].cellBorder = border == QLatin1String("none") ? 0
+                : lengthPx(border.toString().section(QLatin1Char(' '), 0, 0));
+            out.styles[current].cellPadding = lengthPx(a.value(QLatin1String("fo:padding")));
             const auto alignment=a.value(QLatin1String("style:vertical-align"));
             if (alignment==QLatin1String("middle")) out.styles[current].cellAlignment=QTextCharFormat::AlignMiddle;
             else if (alignment==QLatin1String("bottom")) out.styles[current].cellAlignment=QTextCharFormat::AlignBottom;
             else if (alignment==QLatin1String("top")) out.styles[current].cellAlignment=QTextCharFormat::AlignTop;
+        } else if (name == QLatin1String("table-column-properties") && !current.isEmpty()) {
+            const auto relative = a.value(QLatin1String("style:rel-column-width"));
+            const qreal width = lengthPx(a.value(QLatin1String("style:column-width")));
+            if (relative.endsWith(QLatin1Char('*')) && relative.chopped(1).toDouble() > 0)
+                out.styles[current].columnWidth = QTextLength(QTextLength::PercentageLength, relative.chopped(1).toDouble());
+            else if (width > 0) out.styles[current].columnWidth = QTextLength(QTextLength::FixedLength, width);
         } else if (name == QLatin1String("text-properties") && (inDefault || !current.isEmpty())) {
             readTextProps(a, out.fonts, inDefault ? out.defaultParagraph.props : out.styles[current].props);
         } else if (name == QLatin1String("paragraph-properties") && (inDefault || !current.isEmpty())) {
@@ -368,11 +482,14 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     StyleSheet sheet = StyleSheet::builtIns();
     SheetBuilder builder(named, sheet);
     builder.build();
+    // Keep the imported base font in the style model, including restyling and saving.
+    sheet.useDocumentFont();
 
     // content.xml's automatic styles: direct formatting over a named style.
     OdfStyles autos;
     autos.fonts = named.fonts;
     autos.lists = named.lists;
+    autos.listOffsets = named.listOffsets;
 
     struct Prepared {
         QString style;             // the named paragraph style
@@ -463,13 +580,19 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     // (re-enabling it starts an empty stack), so Ctrl+Z can't empty the freshly opened document.
     doc->setUndoRedoEnabled(false);
     doc->clear();
+    auto rootFormat = doc->rootFrame()->frameFormat();
+    rootFormat.setProperty(kDocumentSpacingProperty, true);
+    QVariantList reserved;
+    rootFormat.setProperty(kDocumentGeometryProperty, documentGeometry(zip.fileData(QStringLiteral("styles.xml")), content, &reserved));
+    rootFormat.setProperty(kDocumentReservedSpaceProperty, reserved);
+    doc->rootFrame()->setFrameFormat(rootFormat);
     QTextCursor c(doc);
     c.beginEditBlock();
     bool firstBlock = true;
     int paragraphDepth = 0; // text:p inside text:note bodies nest
 
     // Lists: one QTextList per text:list (created on its first item), nested ones indented.
-    struct ListLevel { QTextList *list = nullptr; QTextListFormat::Style style = QTextListFormat::ListDisc; };
+    struct ListLevel { QTextList *list = nullptr; QTextListFormat::Style style = QTextListFormat::ListDisc; QString name; };
     QList<ListLevel> lists;
 
     // Table state (word-like subset: flat tables, spans/images inside cells). Column count comes
@@ -477,6 +600,9 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     // first row and grown with appendRows so the streaming parse never needs a second pass.
     QTextTable *curTable = nullptr;
     int declaredCols = 0;
+    QList<QTextLength> columnWidths;
+    qreal tableBorder = -1, tablePadding = -1;
+    bool uniformBorder = true, uniformPadding = true;
     int tRow = -1;
     int tCol = -1;
     QTextCursor cellCursor;
@@ -491,11 +617,17 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     // insert happens when the frame closes so both are known).
     QString imgHref;
     qreal imgW = -1, imgH = -1;
+    qreal imgRelativeWidth = 0;
 
     // The cursor content lands on: the current cell inside a table, the document elsewhere.
     const auto act = [&]() -> QTextCursor & { return inCell ? cellCursor : c; };
 
-    const auto beginBlock = [&](const QTextBlockFormat &bf, const QTextCharFormat &cf) {
+    const auto beginBlock = [&](QTextBlockFormat bf, const QTextCharFormat &cf) {
+        if (!lists.isEmpty()) {
+            const auto offsets = autos.listOffsets.value(lists.last().name);
+            const auto offset = offsets.constFind(QString::number(lists.size()));
+            if (offset != offsets.cend()) bf.setProperty(kListTextOffsetProperty, *offset);
+        }
         if (inCell) {
             // Every cell is born with one empty block — reuse it for the first paragraph.
             if (cellFirstBlock) {
@@ -520,6 +652,8 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                 QTextListFormat lf;
                 lf.setStyle(l.style);
                 lf.setIndent(int(lists.size()));
+                const auto offsets = autos.listOffsets.value(l.name);
+                if (!offsets.isEmpty()) lf.setProperty(kListOffsetsProperty, offsets);
                 l.list = c.createList(lf);
             } else {
                 l.list->add(c.block());
@@ -541,6 +675,7 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
             } else if (name == QLatin1String("list")) {
                 ListLevel l;
                 const QString ls = attrs.value(QLatin1String("text:style-name")).toString();
+                l.name = ls.isEmpty() && !lists.isEmpty() ? lists.last().name : ls;
                 l.style = autos.lists.value(ls, lists.isEmpty() ? QTextListFormat::ListDisc : lists.last().style);
                 lists << l;
             } else if (name == QLatin1String("p") || name == QLatin1String("h")) {
@@ -560,15 +695,35 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                     act().block().setUserData(new BlockInfo(xmlId.toString()));
                 act().setCharFormat(p.chars);
                 runs << Run { p.style, QString(), p.charDirect, p.chars, true };
-            } else if (name == QLatin1String("span")) {
+            } else if (name == QLatin1String("span") || name == QLatin1String("a")) {
                 if (!runs.isEmpty()) {
                     const Run &outer = runs.last();
-                    const SpanStyle &s = spanStyle(attrs.value(QLatin1String("text:style-name")).toString());
+                    const bool link = name == QLatin1String("a");
+                    QString style = attrs.value(QLatin1String("text:style-name")).toString();
+                    if (link && style.isEmpty()) style = QStringLiteral("Internet_20_link");
+                    const SpanStyle &s = spanStyle(style);
                     Run r { outer.paraStyle, s.named ? s.charStyle : outer.charStyle, outer.direct, {}, false };
                     for (auto it = s.direct.cbegin(); it != s.direct.cend(); ++it)
                         r.direct.insert(it.key(), it.value());
                     r.format = sheet.charFormat(r.paraStyle, r.charStyle);
                     applyProps(r.format, r.direct, false);
+                    if (outer.format.isAnchor()) {
+                        r.format.setAnchor(true);
+                        r.format.setAnchorHref(outer.format.anchorHref());
+                        const auto own = s.named ? sheet.resolved(s.charStyle) : QVariantMap();
+                        if (!s.direct.contains(QStringLiteral("color")) && !own.contains(QStringLiteral("color")))
+                            r.format.setForeground(outer.format.foreground());
+                        if (!s.direct.contains(QStringLiteral("underline")) && !own.contains(QStringLiteral("underline")))
+                            r.format.setFontUnderline(outer.format.fontUnderline());
+                    }
+                    if (link) {
+                        if (!s.named) {
+                            if (!s.direct.contains(QStringLiteral("color"))) r.format.setForeground(QColor(QStringLiteral("#000080")));
+                            if (!s.direct.contains(QStringLiteral("underline"))) r.format.setFontUnderline(true);
+                        }
+                        r.format.setAnchor(true);
+                        r.format.setAnchorHref(attrs.value(QLatin1String("xlink:href")).toString());
+                    }
                     act().setCharFormat(r.format);
                     runs << r;
                 }
@@ -586,6 +741,9 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                 } else {
                     curTable = nullptr;
                     declaredCols = 0;
+                    columnWidths.clear();
+                    tableBorder = tablePadding = -1;
+                    uniformBorder = uniformPadding = true;
                     tRow = -1;
                     merges.clear();
                 }
@@ -594,9 +752,23 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
             } else if (name == QLatin1String("table-column")) {
                 const int rep = attrs.value(QLatin1String("table:number-columns-repeated")).toInt();
                 declaredCols += qMax(1, rep);
+                const auto name = attrs.value(QLatin1String("table:style-name")).toString();
+                const auto style = autos.styles.contains(name) ? autos.styles.value(name) : named.styles.value(name);
+                for (int i = 0; i < qMax(1, rep); ++i) columnWidths.append(style.columnWidth);
             } else if (name == QLatin1String("table-row")) {
                 if (!curTable) {
-                    curTable = c.insertTable(1, qMax(1, declaredCols), wordLikeTableFormat());
+                    auto format = wordLikeTableFormat();
+                    if (!columnWidths.isEmpty()) {
+                        qreal weights = 0; bool fixed = false;
+                        for (const auto &width : columnWidths) {
+                            fixed |= width.type() == QTextLength::FixedLength;
+                            weights += width.type() == QTextLength::VariableLength ? 1 : width.rawValue();
+                        }
+                        if (!fixed) for (auto &width : columnWidths)
+                            width = QTextLength(QTextLength::PercentageLength, 100 * (width.type() == QTextLength::VariableLength ? 1 : width.rawValue()) / weights);
+                        format.setColumnWidthConstraints(columnWidths);
+                    }
+                    curTable = c.insertTable(1, qMax(1, declaredCols), format);
                     tRow = 0;
                 } else {
                     curTable->appendRows(1);
@@ -613,17 +785,28 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                     ? curTable->cellAt(tRow, qMin(++tCol, curTable->columns() - 1)) : QTextTableCell();
                 if (cell.isValid()) {
                     cellAlignment=-1;
+                    qreal border = qQNaN(), padding = qQNaN();
                     QString styleName=attrs.value(QLatin1String("table:style-name")).toString();
                     for (int depth=0;!styleName.isEmpty() && depth<32;++depth) {
                         auto it=autos.styles.constFind(styleName);
                         const RawStyle *style=it==autos.styles.cend() ? nullptr : &*it;
                         if (!style) { auto namedStyle=named.styles.constFind(styleName); if(namedStyle!=named.styles.cend()) style=&*namedStyle; }
                         if (!style || style->family!=QLatin1String("table-cell")) break;
-                        if (style->cellAlignment>=0) {
-                            cellAlignment=style->cellAlignment; break;
-                        }
+                        if (cellAlignment < 0 && style->cellAlignment >= 0) cellAlignment = style->cellAlignment;
+                        if (qIsNaN(border)) border = style->cellBorder;
+                        if (qIsNaN(padding)) padding = style->cellPadding;
                         styleName=style->parent;
                     }
+                    if (qIsNaN(border)) border = 0;
+                    if (qIsNaN(padding)) padding = 0;
+                    if (tableBorder < 0) tableBorder = border;
+                    if (tablePadding < 0) tablePadding = padding;
+                    uniformBorder &= tableBorder == border;
+                    uniformPadding &= tablePadding == padding;
+                    auto cellFormat = cell.format().toTableCellFormat();
+                    cellFormat.setPadding(padding);
+                    auto writableCell = cell;
+                    writableCell.setFormat(cellFormat);
                     cellCursor = cell.firstCursorPosition();
                     inCell = true;
                     cellFirstBlock = true;
@@ -635,6 +818,10 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
             } else if (name == QLatin1String("frame")) {
                 imgW = lengthPx(attrs.value(QLatin1String("svg:width")));
                 imgH = lengthPx(attrs.value(QLatin1String("svg:height")));
+                const auto relative = attrs.value(QLatin1String("style:rel-width"));
+                imgRelativeWidth = relative.endsWith(QLatin1Char('%'))
+                    && attrs.value(QLatin1String("style:rel-height")) == QLatin1String("scale")
+                    ? relative.chopped(1).toDouble() : 0;
                 imgHref.clear();
             } else if (name == QLatin1String("image")) {
                 imgHref = attrs.value(QLatin1String("xlink:href")).toString();
@@ -649,7 +836,7 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                 while (!runs.isEmpty() && !runs.takeLast().paragraph) {}
                 if (!runs.isEmpty())
                     act().setCharFormat(runs.last().format); // back in the paragraph a note sat in
-            } else if (name == QLatin1String("span")) {
+            } else if (name == QLatin1String("span") || name == QLatin1String("a")) {
                 if (runs.size() > 1 && !runs.last().paragraph) {
                     runs.removeLast();
                     act().setCharFormat(runs.last().format);
@@ -668,6 +855,10 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                 inCell = false;
             } else if (name == QLatin1String("table")) {
                 if (curTable) {
+                    auto format = curTable->format();
+                    if (uniformBorder && tableBorder >= 0) format.setBorder(tableBorder);
+                    if (uniformPadding && tablePadding >= 0) format.setCellPadding(tablePadding);
+                    curTable->setFormat(format);
                     for (const Merge &m : std::as_const(merges))
                         if (m.row + m.rows <= curTable->rows() && m.col + m.cols <= curTable->columns())
                             curTable->mergeCells(m.row, m.col, m.rows, m.cols);
@@ -690,6 +881,7 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                         f.setName(resUrl.toString());
                         if (imgW > 0) f.setWidth(imgW);
                         if (imgH > 0) f.setHeight(imgH);
+                        if (imgRelativeWidth > 0) f.setProperty(kRelativeImageWidthProperty, imgRelativeWidth);
                         act().insertImage(f);
                         if (!runs.isEmpty())
                             act().setCharFormat(runs.last().format);
@@ -749,7 +941,7 @@ void writeProps(QXmlStreamWriter &x, const QVariantMap &props, QSet<QString> *fo
     const bool pageBreak = props.value(QStringLiteral("__pageBreakBefore")).toBool();
     bool anyPara = pageBreak;
     for (const char *k : { "marginTop", "marginBottom", "marginLeft", "marginRight", "textIndent", "lineHeight",
-                           "alignment", "keepWithNext" })
+                           "alignment", "keepWithNext", "widows", "orphans" })
         anyPara = anyPara || has(k);
     if (anyPara) {
         x.writeStartElement(QStringLiteral("style:paragraph-properties"));
@@ -773,16 +965,24 @@ void writeProps(QXmlStreamWriter &x, const QVariantMap &props, QSet<QString> *fo
         }
         if (has("keepWithNext"))
             x.writeAttribute(QStringLiteral("fo:keep-with-next"), get("keepWithNext").toBool() ? QStringLiteral("always") : QStringLiteral("auto"));
+        if (has("widows")) x.writeAttribute(QStringLiteral("fo:widows"), QString::number(get("widows").toInt()));
+        if (has("orphans")) x.writeAttribute(QStringLiteral("fo:orphans"), QString::number(get("orphans").toInt()));
         if (pageBreak)
             x.writeAttribute(QStringLiteral("fo:break-before"), QStringLiteral("page"));
         x.writeEndElement();
     }
 
     bool anyText = false;
-    for (const char *k : { "fontFamily", "fontSize", "fontWeight", "italic", "underline", "strike", "color", "letterSpacing" })
+    for (const char *k : { "fontFamily", "fontSize", "fontWeight", "italic", "underline", "strike", "color", "letterSpacing", "language" })
         anyText = anyText || has(k);
     if (anyText) {
         x.writeStartElement(QStringLiteral("style:text-properties"));
+        if (has("language")) {
+            const QString tag = get("language").toString();
+            x.writeAttribute(QStringLiteral("fo:language"), tag.section(QLatin1Char('-'), 0, 0));
+            const QString country = tag.section(QLatin1Char('-'), 1);
+            if (!country.isEmpty()) x.writeAttribute(QStringLiteral("fo:country"), country);
+        }
         if (has("fontFamily")) {
             const QString f = get("fontFamily").toString();
             x.writeAttribute(QStringLiteral("style:font-name"), f);
@@ -931,7 +1131,9 @@ private:
                 m_x.writeStartElement(QStringLiteral("text:list-item")); // holds the nested list
             m_x.writeStartElement(QStringLiteral("text:list"));
             const QTextListFormat::Style kind = level == depth ? l->format().style() : QTextListFormat::ListDisc;
-            m_x.writeAttribute(QStringLiteral("text:style-name"), listStyle(kind));
+            QTextListFormat format = l->format();
+            format.setStyle(kind);
+            m_x.writeAttribute(QStringLiteral("text:style-name"), listStyle(format));
             m_lists << (level == depth ? l : nullptr);
         }
     }
@@ -946,13 +1148,15 @@ private:
         }
     }
 
-    QString listStyle(QTextListFormat::Style kind)
+    QString listStyle(const QTextListFormat &format)
     {
-        if (auto it = m_listStyles.constFind(int(kind)); it != m_listStyles.cend())
+        int key = m_listFormats.indexOf(format);
+        if (key < 0) { key = m_listFormats.size(); m_listFormats.append(format); }
+        if (auto it = m_listStyles.constFind(key); it != m_listStyles.cend())
             return *it;
         const QString name = QStringLiteral("L%1").arg(m_listStyles.size() + 1);
-        m_listStyles.insert(int(kind), name);
-        m_listOrder << int(kind);
+        m_listStyles.insert(key, name);
+        m_listOrder << key;
         return name;
     }
 
@@ -988,10 +1192,12 @@ private:
         m_pendingSpaces = 0;
         QString openKey; // the span(s) open now: "charStyle|autoStyle"
         int openDepth = 0;
+        bool openLink = false;
         const auto closeSpans = [&] {
             flushText();
             for (; openDepth > 0; --openDepth)
                 m_x.writeEndElement();
+            if (openLink) { m_x.writeEndElement(); openLink = false; }
             openKey.clear();
         };
         for (auto it = b.begin(); !it.atEnd(); ++it) {
@@ -1013,9 +1219,16 @@ private:
             const QVariantMap d = directProps(cf, m_sheet.charFormat(style, cs), false);
             const QString autoName = d.isEmpty() ? QString()
                 : autoStyle(m_autoText, "T", QStringLiteral("text"), QString(), d);
-            const QString key = cs + QLatin1Char('|') + autoName;
+            const QString href = cf.isAnchor() ? cf.anchorHref() : QString();
+            const QString key = cs + QLatin1Char('|') + autoName + QLatin1Char('|') + href;
             if (key != openKey) {
                 closeSpans();
+                if (!href.isEmpty()) {
+                    m_x.writeStartElement(QStringLiteral("text:a"));
+                    m_x.writeAttribute(QStringLiteral("xlink:href"), href);
+                    m_x.writeAttribute(QStringLiteral("xlink:type"), QStringLiteral("simple"));
+                    openLink = true;
+                }
                 if (!cs.isEmpty()) {
                     m_x.writeStartElement(QStringLiteral("text:span"));
                     m_x.writeAttribute(QStringLiteral("text:style-name"), odfName(cs));
@@ -1124,6 +1337,10 @@ private:
         m_x.writeAttribute(QStringLiteral("text:anchor-type"), QStringLiteral("as-char"));
         m_x.writeAttribute(QStringLiteral("svg:width"), inches(w));
         m_x.writeAttribute(QStringLiteral("svg:height"), inches(h));
+        if (f.hasProperty(kRelativeImageWidthProperty)) {
+            m_x.writeAttribute(QStringLiteral("style:rel-width"), QString::number(f.doubleProperty(kRelativeImageWidthProperty)) + QLatin1Char('%'));
+            m_x.writeAttribute(QStringLiteral("style:rel-height"), QStringLiteral("scale"));
+        }
         m_x.writeAttribute(QStringLiteral("draw:z-index"), QStringLiteral("0"));
         m_x.writeEmptyElement(QStringLiteral("draw:image"));
         m_x.writeAttribute(QStringLiteral("xlink:href"), path);
@@ -1225,9 +1442,12 @@ private:
                 x.writeEndElement();
                 }
             }
-            for (int kind : std::as_const(m_listOrder)) {
+            for (int key : std::as_const(m_listOrder)) {
+                const auto format = m_listFormats.at(key);
+                const int kind = format.style();
+                const auto offsets = format.property(kListOffsetsProperty).toMap();
                 x.writeStartElement(QStringLiteral("text:list-style"));
-                x.writeAttribute(QStringLiteral("style:name"), m_listStyles.value(kind));
+                x.writeAttribute(QStringLiteral("style:name"), m_listStyles.value(key));
                 for (int level = 1; level <= 10; ++level) {
                     const bool number = kind == QTextListFormat::ListDecimal || kind == QTextListFormat::ListLowerAlpha
                         || kind == QTextListFormat::ListUpperAlpha || kind == QTextListFormat::ListLowerRoman
@@ -1252,7 +1472,7 @@ private:
                     x.writeAttribute(QStringLiteral("text:label-followed-by"), QStringLiteral("listtab"));
                     x.writeAttribute(QStringLiteral("text:list-tab-stop-position"), QString::number(0.25 * level, 'f', 4) + QStringLiteral("in"));
                     x.writeAttribute(QStringLiteral("fo:text-indent"), QStringLiteral("-0.25in"));
-                    x.writeAttribute(QStringLiteral("fo:margin-left"), QString::number(0.25 * level, 'f', 4) + QStringLiteral("in"));
+                    x.writeAttribute(QStringLiteral("fo:margin-left"), inches(offsets.value(QString::number(level), 24.0 * level).toReal()));
                     x.writeEndElement();
                     x.writeEndElement();
                 }
@@ -1340,6 +1560,7 @@ private:
     QHash<QByteArray, QString> m_autoKeys;
     QList<const QTextList *> m_lists; // open text:list per level (null: a wrapper level)
     QHash<int, QString> m_listStyles;
+    QList<QTextListFormat> m_listFormats;
     QList<int> m_listOrder;
     QList<Picture> m_pictures;
     QHash<QString, QString> m_pictureByName;

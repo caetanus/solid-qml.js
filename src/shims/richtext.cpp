@@ -94,6 +94,11 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     m_pendingFont = {};
     m_document = doc;
     m_doc = doc ? doc->textDocument() : nullptr;
+    const auto geometry = m_doc ? m_doc->rootFrame()->frameFormat().property(rt::kDocumentGeometryProperty).toList() : QVariantList();
+    if (geometry != m_documentGeometry) {
+        m_documentGeometry = geometry;
+        emit documentPageGeometryChanged();
+    }
     m_unsupportedHistory = false;
     // The marks overlay: a child of the editor (QQuickTextEdit parents its QQuickTextDocument).
     if (auto *editor = doc ? qobject_cast<QQuickItem *>(doc->parent()) : nullptr) {
@@ -271,9 +276,10 @@ void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const
     if (!m_doc || margins.size() != 4) return;
     m_pageStride = height > 0 ? height + gap : 0;
     auto f = m_doc->rootFrame()->frameFormat();
-    f.setTopMargin(height > 0 ? margins[0].toReal() : 0);
+    const auto reserved = f.property(rt::kDocumentReservedSpaceProperty).toList();
+    f.setTopMargin(height > 0 ? margins[0].toReal() + reserved.value(0).toReal() * m_zoom : 0);
     f.setRightMargin(height > 0 ? margins[1].toReal() : 0);
-    f.setBottomMargin(height > 0 ? margins[2].toReal() + gap : 0);
+    f.setBottomMargin(height > 0 ? margins[2].toReal() + gap + reserved.value(1).toReal() * m_zoom : 0);
     f.setLeftMargin(height > 0 ? margins[3].toReal() : 0);
     const bool marginsChanged = f != m_doc->rootFrame()->frameFormat();
     const bool layoutEnabled = m_doc->isLayoutEnabled();
@@ -707,8 +713,19 @@ QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
     // Undo off: the reset (and styling the first paragraph) leaves no history.
     doc->setUndoRedoEnabled(false);
     doc->clear(); // also drops the image resources
+    auto rootFormat = doc->rootFrame()->frameFormat();
+    rootFormat.clearProperty(rt::kDocumentGeometryProperty);
+    rootFormat.clearProperty(rt::kDocumentSpacingProperty);
+    rootFormat.clearProperty(rt::kDocumentReservedSpaceProperty);
+    doc->rootFrame()->setFrameFormat(rootFormat);
+    if (!m_documentGeometry.isEmpty()) {
+        m_documentGeometry.clear();
+        emit documentPageGeometryChanged();
+    }
+
     m_unsupportedHistory = false;
     m_sheet = sheet;
+    syncDocumentLanguage();
     QTextCursor c(doc);
     c.setBlockFormat(m_sheet.blockFormat(firstStyle));
     c.setBlockCharFormat(m_sheet.charFormat(firstStyle, QString()));
@@ -1479,8 +1496,14 @@ bool RichTextHandler::loadOdf(const QUrl &file)
         setError(why);
         return false;
     }
+    const auto geometry = doc->rootFrame()->frameFormat().property(rt::kDocumentGeometryProperty).toList();
+    if (geometry != m_documentGeometry) {
+        m_documentGeometry = geometry;
+        emit documentPageGeometryChanged();
+    }
     m_unsupportedHistory = !rt::RichTextLayout::supports(doc);
     m_sheet = sheet;
+    syncDocumentLanguage();
     // readOdt materialized at zoom 1 (canonical units): bring the document up to the zoom already
     // in effect (office item 2b, ★2). Undo is briefly disabled around it, as readOdt's own build
     // already was, so this still reads as "the load is not an undo step".
@@ -1540,6 +1563,7 @@ void RichTextHandler::restoreStyle(const QString &name, const std::optional<rt::
         m_sheet.put(*style);
     else
         m_sheet.remove(name);
+    syncDocumentLanguage();
     // Called from inside QTextDocument::undo/redo: tell the bindings once the document is whole.
     QMetaObject::invokeMethod(this, &RichTextHandler::stylesChanged, Qt::QueuedConnection);
     QMetaObject::invokeMethod(this, &RichTextHandler::formatChanged, Qt::QueuedConnection);
@@ -1613,6 +1637,7 @@ QString RichTextHandler::defineStyle(const QString &name, const QVariantMap &pro
 
     const rt::StyleSheet before = m_sheet;
     m_sheet.put(s);
+    syncDocumentLanguage();
     if (QTextDocument *doc = m_document ? m_document->textDocument() : nullptr) {
         QTextCursor edit(doc);
         edit.beginEditBlock();
@@ -2313,6 +2338,36 @@ QString RichTextHandler::blockText(const QString &blockId) const
     if (it == m_blocksById.cend())
         return QString();
     return it->text().replace(QChar::LineSeparator, QLatin1Char('\n')); // same length: offsets hold
+}
+
+void RichTextHandler::syncDocumentLanguage()
+{
+    const QString language = m_sheet.resolved(rt::defaultParagraphStyle()).value(QStringLiteral("language")).toString();
+    if (language == m_documentLanguage) return;
+    m_documentLanguage = language;
+    emit documentLanguageChanged();
+}
+
+QString RichTextHandler::languageAt(int position) const
+{
+    if (!m_doc || position < 0 || position >= m_doc->characterCount()) return {};
+    const QTextBlock block = m_doc->findBlock(position);
+    QTextCharFormat format = block.charFormat();
+    if (position < block.position() + block.length() - 1) {
+        QTextCursor cursor(m_doc);
+        cursor.setPosition(position + 1);
+        format = cursor.charFormat();
+    }
+    const QString language = format.stringProperty(rt::kLanguageProperty);
+    return language.isEmpty() ? m_documentLanguage : language;
+}
+
+QString RichTextHandler::blockLanguage(const QString &blockId) const
+{
+    const auto it = m_blocksById.constFind(blockId);
+    if (it == m_blocksById.cend()) return {};
+    const QString language = it->charFormat().stringProperty(rt::kLanguageProperty);
+    return language == m_documentLanguage ? QString() : language;
 }
 
 // ─── marks (office item 3) ─────────────────────────────────────────────────────────────────────
