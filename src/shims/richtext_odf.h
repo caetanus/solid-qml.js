@@ -26,6 +26,14 @@ constexpr int kDocumentGeometryProperty = QTextFormat::UserProperty + 0x5350;
 constexpr int kDocumentSpacingProperty = QTextFormat::UserProperty + 0x5351;
 constexpr int kDocumentReservedSpaceProperty = QTextFormat::UserProperty + 0x5352; // header/footer px
 
+constexpr int kDocumentPageBandsProperty = QTextFormat::UserProperty + 0x5353;
+constexpr int kDocumentPageStylesProperty = QTextFormat::UserProperty + 0x5354;
+constexpr int kDocumentBandGapsProperty = QTextFormat::UserProperty + 0x5355;
+constexpr int kDocumentBandZoomProperty = QTextFormat::UserProperty + 0x5356;
+
+constexpr int kDocumentMasterNameProperty = QTextFormat::UserProperty + 0x5357;
+constexpr int kDocumentFontFacesProperty = QTextFormat::UserProperty + 0x5358;
+
 // Reads `path` into `doc` (cleared, rebuilt without undo history) and `sheet` (the built-in styles
 // plus the file's). A missing / non-ODF file fails before touching either. false + `error`.
 bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheet, QString *error);

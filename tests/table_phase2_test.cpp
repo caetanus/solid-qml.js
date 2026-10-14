@@ -57,6 +57,15 @@ void artifact(const QImage &image, const QString &name) {
     const auto dir=qEnvironmentVariable("TABLE_ARTIFACT_DIR");
     if(!dir.isEmpty()) QVERIFY(image.save(QDir(dir).filePath(name)));
 }
+void useQtLayoutPolicy(QTextDocument &doc) {
+    // This oracle compares Qt's layout rules, not LibreOffice's imported-ODF
+    // spacing, fractional line metrics, list offsets or widow/keep rules.
+    // Apply to the shared source before cloning either engine. Keep page bands
+    // and their reserved space: both handlers must render those identically.
+    auto root = doc.rootFrame()->frameFormat();
+    root.clearProperty(rt::kDocumentSpacingProperty);
+    doc.rootFrame()->setFrameFormat(root);
+}
 }
 static QTextTable *fixture(QTextDocument &d, int kind) {
     QFont f("DejaVu Sans"); f.setPixelSize(16); d.setDefaultFont(f);
@@ -68,10 +77,15 @@ static QTextTable *fixture(QTextDocument &d, int kind) {
     tf.setCellPadding(4); tf.setCellSpacing(0); tf.setBorderCollapse(true);
     if (kind==1) tf.setColumnWidthConstraints({QTextLength(QTextLength::FixedLength,80),QTextLength(QTextLength::VariableLength,0)});
     if (kind==2) tf.setColumnWidthConstraints({QTextLength(QTextLength::PercentageLength,30),QTextLength(QTextLength::PercentageLength,70)});
+    if (kind==18) {
+        tf.setBorder(0); tf.setCellPadding(0);
+        tf.setColumnWidthConstraints(QList<QTextLength>(3,QTextLength(QTextLength::PercentageLength,100./3)));
+    }
     if (kind==3) { tf.setBorderCollapse(false); tf.setCellSpacing(3); }
     if (kind==4) tf.setWidth(QTextLength(QTextLength::VariableLength,0));
     if (kind==12) c.insertText("before\nbefore\nbefore\nbefore");
-    auto *t=c.insertTable(kind==6 || kind==7 || kind==8 ? 2 : 1,2,tf);
+    if (kind==19) c.insertText("before\nbefore\nbefore");
+    auto *t=c.insertTable(kind==6 || kind==7 || kind==8 ? 2 : 1,kind==18 ? 3 : 2,tf);
     if (kind==6) t->mergeCells(0,0,1,2);
     if (kind==7 || kind==8) t->mergeCells(0,0,2,1);
     for(int r=0;r<t->rows();++r) for(int col=0;col<t->columns();++col) {
@@ -81,6 +95,7 @@ static QTextTable *fixture(QTextDocument &d, int kind) {
         if(kind==5) text=col ? "short" : QString("W").repeated(60);
         if(kind==8 || kind==9 || kind==10 || kind==11) text=QString("cell words ").repeated(col && kind!=10 ? 3 : 55);
         if(kind==13) text.clear();
+        if(kind==19) text=col ? QString("line\nline") : QString("short");
         cell.firstCursorPosition().insertText(text);
         if(kind==9 || kind==11 || kind==16 || kind==17) {
             auto format=cell.format().toTableCellFormat();
@@ -281,9 +296,12 @@ private slots:
         QFETCH(qreal,zoom);
         QTextDocument source; rt::StyleSheet styles; QString error;
         QVERIFY2(rt::readOdt(qEnvironmentVariable("RICHTEXT_BOOK"),&source,&styles,&error),qPrintable(error));
+        useQtLayoutPolicy(source);
         BookView qt,qtFull,custom,customFull;
         QVERIFY(qt.initialize(source,false,zoom,true)); QVERIFY(qtFull.initialize(source,false,zoom,false));
         QVERIFY(custom.initialize(source,true,zoom,true)); QVERIFY(customFull.initialize(source,true,zoom,false));
+        QCOMPARE(custom.doc->rootFrame()->frameFormat(),qt.doc->rootFrame()->frameFormat());
+        QVERIFY(!custom.doc->rootFrame()->frameFormat().boolProperty(rt::kDocumentSpacingProperty));
         if(qEnvironmentVariableIsSet("TABLE_DUMP")) {
             auto a=qt.doc->begin(),b=custom.doc->begin();
             for(int i=0;i<12;++i,a=a.next(),b=b.next()) {
@@ -293,6 +311,7 @@ private slots:
             }
         }
         QCOMPARE(custom.doc->pageCount(),qt.doc->pageCount());
+        qInfo()<<"BOOK PAGES"<<zoom<<custom.doc->pageCount()<<qt.doc->pageCount();
         for(auto a=qt.doc->begin(),b=custom.doc->begin();a.isValid();a=a.next(),b=b.next()) {
             const auto ar=qt.doc->documentLayout()->blockBoundingRect(a),br=custom.layout->blockBoundingRect(b);
             QCOMPARE(a.layout()->lineCount(),b.layout()->lineCount());
@@ -442,6 +461,7 @@ private slots:
         if(!qEnvironmentVariableIsSet("RICHTEXT_BOOK")) QSKIP("Set RICHTEXT_BOOK");
         QTextDocument doc; rt::StyleSheet styles; QString error;
         QVERIFY2(rt::readOdt(qEnvironmentVariable("RICHTEXT_BOOK"),&doc,&styles,&error),qPrintable(error));
+        useQtLayoutPolicy(doc);
         doc.setPageSize({794,1150});
         auto root=doc.rootFrame()->frameFormat(); root.setTopMargin(94); root.setRightMargin(113);
         root.setBottomMargin(126); root.setLeftMargin(113); doc.rootFrame()->setFrameFormat(root);
@@ -501,8 +521,8 @@ private slots:
     }
     void customTableMatrix_data() {
         QTest::addColumn<int>("kind");
-        const char *names[]={"unequal","fixed","percentage","separate","auto","unbreakable","colspan","rowspan","long-rowspan","middle","simultaneous-long","bottom","boundary","empty","padding","oversized","nonsplit-middle","nonsplit-bottom"};
-        for(int k=0;k<18;++k) QTest::newRow(names[k])<<k;
+        const char *names[]={"unequal","fixed","percentage","separate","auto","unbreakable","colspan","rowspan","long-rowspan","middle","simultaneous-long","bottom","boundary","empty","padding","oversized","nonsplit-middle","nonsplit-bottom","percentage-thirds","split-short-row"};
+        for(int k=0;k<20;++k) QTest::newRow(names[k])<<k;
     }
     void customTableMatrix() {
         QFETCH(int,kind);

@@ -1,4 +1,5 @@
 #include "richtext_layout.h"
+#include "richtext_page_bands.h"
 #include "richtext_blocks.h"
 #include "richtext_odf.h"
 
@@ -428,9 +429,14 @@ void RichTextLayout::layoutTable(QTextTable *table, Flow &flow, Pass &pass)
     const auto constraints=format.columnWidthConstraints();
     QVector<bool> fixed(columns,false);
     qreal remaining=contentWidth; int flexible=columns;
+    qreal constrainedBoundary=0;
     for (int col=0;col<columns && col<constraints.size();++col) {
         if (constraints[col].type()==QTextLength::VariableLength) continue;
-        widths[col]=qMax(minimum[col],qRound(constraints[col].value(contentWidth+columns*between))-between);
+        // Round cumulative boundaries, as Qt does, so fractional percentage
+        // columns distribute the remaining pixels instead of losing one each.
+        const qreal previous=qRound(constrainedBoundary);
+        constrainedBoundary+=constraints[col].value(contentWidth+columns*between);
+        widths[col]=qMax(minimum[col],qRound(constrainedBoundary)-previous-between);
         fixed[col]=true; remaining-=widths[col]; --flexible;
     }
     qreal preferredSum=0;
@@ -484,7 +490,19 @@ void RichTextLayout::layoutTable(QTextTable *table, Flow &flow, Pass &pass)
         const qreal textTop=qFloor(y/stride)*stride+m_root.topMargin()+edge;
         const qreal textBottom=(qFloor(y/stride)+1)*stride-m_root.bottomMargin()-edge;
         const qreal capacity=stride-m_root.topMargin()-m_root.bottomMargin()-2*edge;
-        if (heights[row]<=capacity && y+heights[row]>textBottom && y>textTop) {
+        qreal openingHeight=heights[row];
+        if (!m_root.boolProperty(kDocumentSpacingProperty)) {
+            // Qt splits even short rows when at least one cell can start on
+            // this page. Imported documents retain whole-row placement.
+            for (const auto &entry:cells) if (entry.cell.row()==row) {
+                const auto b=entry.cell.firstCursorPosition().block();
+                if (b.layout()->lineCount()) {
+                    const auto line=b.layout()->lineAt(0);
+                    openingHeight=qMin(openingHeight,entry.top+qMax(line.height(),b.blockFormat().lineHeight(line.height(),1)));
+                }
+            }
+        }
+        if (openingHeight<=capacity && y+openingHeight>textBottom && y>textTop) {
             if (row>0) rowEnds[row-1]=qMax(rowEnds[row-1],textBottom);
             y=(qFloor(y/stride)+1)*stride+m_root.topMargin()+edge;
         }
@@ -909,6 +927,7 @@ void RichTextLayout::draw(QPainter *painter, const PaintContext &context)
     painter->save();
     if (!context.clip.isEmpty()) painter->setClipRect(context.clip, Qt::IntersectClip);
     drawTableDecorations(painter,context.clip);
+    drawPageBands(document(), painter, context.clip);
     painter->setPen(context.palette.color(QPalette::Text));
     for (auto b = document()->begin(); b.isValid(); b = b.next()) {
         const auto rect = blockBoundingRect(b);

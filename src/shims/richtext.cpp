@@ -1,5 +1,6 @@
 #include "richtext.h"
 #include "richtext_odf.h"
+#include "richtext_page_bands.h"
 #include "richtext_qt_p.h"
 #include "richtext_layout.h"
 #include "richtext_table_decoration.h"
@@ -50,6 +51,7 @@
 class MarksOverlay; // the marks overlay item (defined with the marks, below)
 namespace {
 QQuickItem *createMarksOverlay(RichTextHandler *handler, QQuickItem *editor);
+QQuickItem *createPageBandsOverlay(RichTextHandler *handler, QQuickItem *editor);
 QQuickItem *createPageBreakOverlay(RichTextHandler *handler, QQuickItem *editor);
 }
 
@@ -66,6 +68,7 @@ RichTextHandler::~RichTextHandler()
     detachBlockInfos();
     delete m_overlay.data();
     delete m_pageBreakOverlay.data();
+    delete m_pageBandsOverlay.data();
 }
 
 rt::BlockInfo::~BlockInfo()
@@ -91,6 +94,7 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     detachBlockInfos();
     delete m_overlay.data();
     delete m_pageBreakOverlay.data();
+    delete m_pageBandsOverlay.data();
     m_pendingFont = {};
     m_document = doc;
     m_doc = doc ? doc->textDocument() : nullptr;
@@ -104,6 +108,7 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     if (auto *editor = doc ? qobject_cast<QQuickItem *>(doc->parent()) : nullptr) {
         m_overlay = createMarksOverlay(this, editor);
         m_pageBreakOverlay = createPageBreakOverlay(this, editor);
+        m_pageBandsOverlay = createPageBandsOverlay(this, editor);
         if (auto *edit = qobject_cast<QQuickTextEdit *>(editor))
             m_pageCursorConn = connect(edit, &QQuickTextEdit::cursorRectangleChanged, this, &RichTextHandler::updateCurrentPage);
     }
@@ -276,6 +281,7 @@ void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const
     if (!m_doc || margins.size() != 4) return;
     m_pageStride = height > 0 ? height + gap : 0;
     auto f = m_doc->rootFrame()->frameFormat();
+    f.setProperty(rt::kDocumentBandZoomProperty, m_zoom);
     const auto reserved = f.property(rt::kDocumentReservedSpaceProperty).toList();
     f.setTopMargin(height > 0 ? margins[0].toReal() + reserved.value(0).toReal() * m_zoom : 0);
     f.setRightMargin(height > 0 ? margins[1].toReal() : 0);
@@ -290,6 +296,7 @@ void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const
     m_doc->setPageSize(QSizeF(width, m_pageStride > 0 ? m_pageStride : -1));
     if (marginsChanged) m_doc->setLayoutEnabled(layoutEnabled);
     selectLayoutEngine();
+    rt::prepareImageSampling(m_doc, m_document->parent());
     if (layoutEnabled)
         rt::refreshTextEditSize(m_document->parent());
     if (layoutEnabled) syncPageCount();
@@ -297,6 +304,7 @@ void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const
         m_pageBreakOverlay->setVisible(height <= 0);
         if (height <= 0) m_pageBreakOverlay->polish();
     }
+    if (m_pageBandsOverlay) m_pageBandsOverlay->polish();
     if (hasMarks()) scheduleMarksRepaint();
     updateCurrentPage();
 }
@@ -712,7 +720,8 @@ QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
     m_bulkReset = true; // every block goes: blocksLoaded below, not one blockRemoved each
     // Undo off: the reset (and styling the first paragraph) leaves no history.
     doc->setUndoRedoEnabled(false);
-    doc->clear(); // also drops the image resources
+    doc->clear();
+    doc->setProperty("_rtImageSampling", QVariant()); // also drops the image resources
     auto rootFormat = doc->rootFrame()->frameFormat();
     rootFormat.clearProperty(rt::kDocumentGeometryProperty);
     rootFormat.clearProperty(rt::kDocumentSpacingProperty);
@@ -1296,6 +1305,7 @@ bool RichTextHandler::insertImage(const QUrl &file)
         fmt.setHeight(img.height() * maxWidth / img.width());
     }
     insertionCursor().insertImage(fmt);
+    rt::prepareImageSampling(doc, m_document->parent());
     setError(QString());
     emit formatChanged();
     return true;
@@ -1417,17 +1427,19 @@ void RichTextHandler::saveOdfCopyAsync(const QUrl &file)
     for (const auto &format : m_doc->allFormats()) {
         if (!format.isImageFormat()) continue;
         const QUrl name(format.toImageFormat().name());
-        QVariant resource = m_doc->resource(QTextDocument::ImageResource, name);
+        QVariant resource = rt::originalImage(m_doc, name);
         if (resource.metaType().id() == QMetaType::QPixmap)
             resource = resource.value<QPixmap>().toImage();
         images.append({name, resource});
     }
-    if (images.isEmpty()) {
+    const auto bands = rootFormat.property(rt::kDocumentPageBandsProperty).toList();
+    const bool hasPageBands = !bands.value(0).toList().isEmpty() || !bands.value(1).toList().isEmpty();
+    if (images.isEmpty() && !hasPageBands) {
         snapshot = QTextDocumentFragment(m_doc);
     } else {
         // Qt lazily creates image handlers in a fragment's internal document when
         // inserting it. That QObject still has UI affinity. Use a detached clone for
-        // image-bearing documents so every resource handler is created on its owner thread.
+        // image-bearing or page-band documents so every resource handler is created on its owner thread.
         imageSnapshot.reset(m_doc->clone());
         for (const auto &image : images)
             imageSnapshot->addResource(QTextDocument::ImageResource, image.first, image.second);
@@ -1818,6 +1830,7 @@ void RichTextHandler::setZoom(qreal z)
         edit.endEditBlock();
     }
     m_zoom = z;
+    if (doc) rt::prepareImageSampling(doc, m_document->parent());
     if (m_selectionStart == m_selectionEnd && !m_pendingFont.isEmpty())
         mergeInsertionFont(m_pendingFont);
     emit zoomChanged();
@@ -2788,6 +2801,87 @@ bool RichTextHandler::replaceRange(const QString &blockId, int start, int end, c
     c.endEditBlock();
     emit formatChanged();
     return true;
+}
+
+// Only visible page bands have textures. Body edits never walk the book to update
+// them; a page-count/viewport change refreshes the nearby page-number fields.
+class PageBandItem final : public QQuickPaintedItem {
+public:
+    explicit PageBandItem(QQuickItem *parent) : QQuickPaintedItem(parent) {
+        setAcceptedMouseButtons(Qt::NoButton); setAntialiasing(true);
+    }
+    void setLines(const QList<rt::PageBandLine> &lines) {
+        if (m_lines == lines) return;
+        m_lines = lines;
+        QRectF bounds;
+        for (const auto &line : lines) bounds |= line.rect;
+        bounds = bounds.adjusted(-2, -2, 2, 2);
+        m_origin = bounds.topLeft();
+        setPosition(m_origin); setSize(bounds.size()); update();
+    }
+    void paint(QPainter *p) override {
+        p->translate(-m_origin); rt::drawPageBandLines(p, m_lines);
+    }
+private:
+    QList<rt::PageBandLine> m_lines;
+    QPointF m_origin;
+};
+class PageBandsOverlay final : public QQuickItem {
+public:
+    PageBandsOverlay(RichTextHandler *handler, QQuickItem *editor) : QQuickItem(editor), m_handler(handler) {
+        setFlag(ItemObservesViewport); setAcceptedMouseButtons(Qt::NoButton); setSize(editor->size());
+        connect(editor, &QQuickItem::widthChanged, this, [this, editor] { setWidth(editor->width()); polish(); });
+        connect(editor, &QQuickItem::heightChanged, this, [this, editor] { setHeight(editor->height()); polish(); });
+        connect(handler, &RichTextHandler::pagesChanged, this, [this] { polish(); });
+        connect(handler, &RichTextHandler::blocksLoaded, this, [this] { polish(); });
+        connect(handler, &RichTextHandler::zoomChanged, this, [this] { polish(); });
+    }
+protected:
+    void itemChange(ItemChange change, const ItemChangeData &data) override {
+        if (change == ItemTransformHasChanged) polish();
+        QQuickItem::itemChange(change, data);
+    }
+    void updatePolish() override {
+        if (!m_handler || !m_handler->document()) return;
+        auto *doc = m_handler->document()->textDocument();
+        const qreal stride = doc->pageSize().height();
+        const auto bands = doc->rootFrame()->frameFormat().property(rt::kDocumentPageBandsProperty).toList();
+        QSet<int> visible;
+        if (stride > 0 && !bands.isEmpty()) {
+            const auto clip = clipRect();
+            const int pages = m_handler->pageCount();
+            const int first = qMax(0, qFloor(clip.top() / stride));
+            const int last = qMin(pages - 1, qCeil(clip.bottom() / stride) - 1);
+            for (int page = first; page <= last; ++page) {
+                const auto lines = rt::pageBandLines(doc, page, pages);
+                for (int area = 0; area < 2; ++area) {
+                    QList<rt::PageBandLine> content;
+                    for (const auto &line : lines) if (line.area == area) content.append(line);
+                    if (content.isEmpty()) continue;
+                    const int key = page * 2 + area; visible.insert(key);
+                    auto *item = m_items.value(key);
+                    if (!item) {
+                        item = new PageBandItem(this); m_items.insert(key, item);
+                        item->setObjectName(area ? QStringLiteral("footerBand") : QStringLiteral("headerBand"));
+                        item->setProperty("page", page + 1);
+                    }
+                    item->setLines(content);
+                }
+            }
+        }
+        for (auto it = m_items.begin(); it != m_items.end();) {
+            if (!visible.contains(it.key())) { delete it.value(); it = m_items.erase(it); }
+            else ++it;
+        }
+    }
+private:
+    QPointer<RichTextHandler> m_handler;
+    QHash<int, PageBandItem *> m_items;
+};
+namespace {
+QQuickItem *createPageBandsOverlay(RichTextHandler *handler, QQuickItem *editor) {
+    return new PageBandsOverlay(handler, editor);
+}
 }
 
 // Page breaks are view decorations: only the nearby marker items exist, and changing

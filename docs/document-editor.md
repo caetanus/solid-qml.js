@@ -264,7 +264,8 @@ Qt's nearest-text hit testing. An inline image taller than the text area is indi
 it to overflow through the bottom margin/gap, rather than splitting or shrinking it. Very large
 unbreakable content or margins that leave no text area have the same Qt layout limitations.
 Page counts reflect this editor's fonts and supported ODF content, not LibreOffice's page count.
-Headers, footers, printed page numbers and PDF export are not part of this feature.
+Imported header/footer text and page fields are rendered in page bands (see below).
+PDF export is not a public widget API.
 
 `pageWidth`/`pageHeight`/`pageGap`/`pageMargins` are view geometry, do not modify document content,
 and do not add undo steps or change saved ODF page setup. `zoom` does: `setZoom()` walks every block and run already in the
@@ -462,8 +463,9 @@ and selection behave exactly as without marks; the hit test takes the character 
   `insertPageBreak()`), and the named paragraph/character styles of `styles.xml` with the
   automatic styles over them as direct formatting. Our writer produces `content.xml`,
   `styles.xml` (the named styles), `meta.xml` and the manifest — LibreOffice 26.8 opens the result
-  with every named style, parent, next style and heading level in place. Not kept yet: page SETUP
-  (size/margins/printing) and headers/footers, footnotes as footnotes (their text is kept,
+  with every named style, parent, next style and heading level in place. Imported page layouts,
+  master pages and their automatic styles are retained on save. Not kept yet:
+  footnotes as footnotes (their text is kept,
   inline), bookmarks, unknown package entries. A paragraph whose
   styles give it no vertical
   spacing gets a quarter pixel under it (invisible; it keeps Qt's viewport culling from
@@ -501,6 +503,9 @@ otherwise extend into the next page. Explicit page breaks retain their spacing.
 Ordinary Qt/HTML documents keep Qt's margin-collapse behavior.
 The preceding paragraph's bottom margin and following paragraph's top margin
 also apply at table boundaries in imported documents.
+Imported documents keep a table row together when it fits a fresh page; Qt
+parity mode allows that row to split if a cell's opening line fits the current
+page. Split-row vertical alignment follows the acceptance policy below.
 For imported documents, `keepWithNext` keeps a paragraph/heading chain with the
 next paragraph's minimum opening lines. Groups taller than one body area are released so
 they cannot force repeated page skips; explicit breaks take precedence.
@@ -514,6 +519,17 @@ fixed/minimum heights and inline-object lines retain their existing geometry.
 The custom engine uses imported per-level list label widths/left margins rather
 than Qt's fixed indent step. These offsets scale with zoom and survive ODF saves.
 List nesting remains independent of the physical text offset.
+
+The phase-2 book Qt oracle explicitly disables `kDocumentSpacingProperty` on
+the shared imported source before cloning either engine. This selects Qt's
+paragraph spacing, line metrics, list offsets and page-splitting rules for both
+documents; it does not change the production ODF import policy described above.
+Header/footer content and reserved space remain present in both live views.
+The oracle still requires identical page counts, line breaks, geometry within
+0.5 px and exact viewport pixels at zoom 1 and 1.5. The article/LibreOffice
+harness separately checks the imported policy and footer placement.
+The handler's book edit checks compare incremental layout with a fresh layout
+using the same engine, retaining the imported policy in custom mode.
 
 ODF images with `style:rel-width` and `style:rel-height="scale"` follow the
 available paragraph/cell width in the custom engine and retain the declared
@@ -588,8 +604,21 @@ Mixed page masters within one document are not yet supported by pagination.
 Active headers/footers reserve their declared minimum/fixed band height (which
 includes the body gap in LibreOffice)
 inside these margins. The reservation scales with zoom; `documentPageMargins`
-continues to report the page's declared outer margins. Header/footer content is
-not rendered or round-tripped, and content-dependent heights are not yet measured.
+continues to report the page's declared outer margins. The active master page's
+header/footer paragraphs render on every page, in both live layout engines and
+the custom engine's QPainter export. Supported content: plain text, explicit
+spaces/line breaks, paragraph font/color/spacing/alignment (including inherited
+and automatic styles), decimal `text:page-number` and `text:page-count` fields.
+They are decorations, outside body selection, editing, word counts and undo.
+Only nearby page bands have live items; page-count changes refresh the fields.
+No new application API is required.
+
+The original page layouts, master-page markup, font aliases and automatic styles
+round-trip on save, including asynchronous copies. The first body's active master
+is reused on all pages; switching masters, first/left/right-page variants, field
+number formats/offsets, inline span formatting, images/tables inside bands and
+content-dependent band heights are not rendered. Their retained XML is not a
+claim of visual support. Header/footer editing is not exposed.
 
 ### Document language
 
@@ -604,3 +633,10 @@ default. Invalid positions return `""`.
 `documentLanguage` (and is also returned for an unknown block). It does not combine
 mixed inline languages: use `languageAt` for those. ODF `fo:language` and
 `fo:country` are retained through style inheritance and saving.
+
+Embedded images are area-sampled with `Qt::SmoothTransformation` to their display
+size times the window device-pixel ratio. The sampled resource is reused while
+that size stays unchanged and refreshed on page resize, zoom or a DPR change;
+scrolling and caret frames do not resample it. Both live layout engines and the
+QPainter fidelity export use these pixels. ODF saves and asynchronous copies keep
+the original full-resolution image.
