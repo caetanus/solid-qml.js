@@ -270,6 +270,23 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void odfBorderlessTablesUseEqualDefaultColumns()
+    {
+        const QString path = m_dir.filePath("borderless-table.odt");
+        writeOdt(path, "<table:table><table:table-column/><table:table-column/><table:table-row><table:table-cell table:style-name=\"Plain\"><text:p>X</text:p></table:table-cell><table:table-cell table:style-name=\"Plain\"><text:p>A longer cell</text:p></table:table-cell></table:table-row></table:table>",
+            "<style:style style:name=\"Plain\" style:family=\"table-cell\"><style:table-cell-properties fo:border=\"none\" fo:padding=\"0px\"/></style:style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_edit->setProperty("width", 300);
+        m_fmt->configurePages(300, 300, 0, {10,10,10,10});
+        const auto table = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        QVERIFY(table);
+        QCOMPARE(table->format().border(), 0.0);
+        QCOMPARE(table->format().cellPadding(), 0.0);
+        const auto first = table->cellAt(0,0).firstCursorPosition().block();
+        const auto second = table->cellAt(0,1).firstCursorPosition().block();
+        QCOMPARE(second.layout()->position().x() - first.layout()->position().x(), 140.0);
+    }
+
     void odfKeepWithNextMovesOnlyFittingGroups()
     {
         const QString path = m_dir.filePath("keep-next.odt");

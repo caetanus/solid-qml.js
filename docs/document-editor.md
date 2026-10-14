@@ -509,6 +509,10 @@ List nesting remains independent of the physical text offset.
 ODF images with `style:rel-width` and `style:rel-height="scale"` follow the
 available paragraph/cell width in the custom engine and retain the declared
 aspect ratio. The relative size survives saves and updates when page width changes.
+ODF tables use equal default columns, or declared fixed/relative column widths,
+and import uniform cell borders and padding. This avoids imposing the editor's
+new-table border/padding presets on borderless documents. Mixed per-side border
+styles and full column-width round trips are not yet supported.
 
 The phase-2 acceptance policy top-aligns cells in **every fragment of a split
 row**. Middle/bottom alignment applies only when the row fits on one page.

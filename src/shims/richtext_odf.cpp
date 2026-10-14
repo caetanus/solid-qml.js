@@ -44,6 +44,8 @@ struct RawStyle {
     QString parent;       // style:parent-style-name (ODF name)
     QString next;         // style:next-style-name (ODF name)
     int cellAlignment = -1; // Absent until a table-cell style specifies it.
+    qreal cellBorder = qQNaN(), cellPadding = qQNaN();
+    QTextLength columnWidth;
     int outline = 0;      // style:default-outline-level
     QVariantMap props;    // canonical; fontSize may still be a "N%" string (relative to the parent)
 };
@@ -299,10 +301,20 @@ void readStyles(QXmlStreamReader &xml, QLatin1String section, OdfStyles &out)
             const qreal left = lengthPx(a.value(QLatin1String("fo:margin-left")));
             if (qIsFinite(left)) out.listOffsets[currentList][currentLevel] = left;
         } else if (name == QLatin1String("table-cell-properties") && !current.isEmpty()) {
+            const auto border = a.value(QLatin1String("fo:border"));
+            if (!border.isEmpty()) out.styles[current].cellBorder = border == QLatin1String("none") ? 0
+                : lengthPx(border.toString().section(QLatin1Char(' '), 0, 0));
+            out.styles[current].cellPadding = lengthPx(a.value(QLatin1String("fo:padding")));
             const auto alignment=a.value(QLatin1String("style:vertical-align"));
             if (alignment==QLatin1String("middle")) out.styles[current].cellAlignment=QTextCharFormat::AlignMiddle;
             else if (alignment==QLatin1String("bottom")) out.styles[current].cellAlignment=QTextCharFormat::AlignBottom;
             else if (alignment==QLatin1String("top")) out.styles[current].cellAlignment=QTextCharFormat::AlignTop;
+        } else if (name == QLatin1String("table-column-properties") && !current.isEmpty()) {
+            const auto relative = a.value(QLatin1String("style:rel-column-width"));
+            const qreal width = lengthPx(a.value(QLatin1String("style:column-width")));
+            if (relative.endsWith(QLatin1Char('*')) && relative.chopped(1).toDouble() > 0)
+                out.styles[current].columnWidth = QTextLength(QTextLength::PercentageLength, relative.chopped(1).toDouble());
+            else if (width > 0) out.styles[current].columnWidth = QTextLength(QTextLength::FixedLength, width);
         } else if (name == QLatin1String("text-properties") && (inDefault || !current.isEmpty())) {
             readTextProps(a, out.fonts, inDefault ? out.defaultParagraph.props : out.styles[current].props);
         } else if (name == QLatin1String("paragraph-properties") && (inDefault || !current.isEmpty())) {
@@ -586,6 +598,9 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     // first row and grown with appendRows so the streaming parse never needs a second pass.
     QTextTable *curTable = nullptr;
     int declaredCols = 0;
+    QList<QTextLength> columnWidths;
+    qreal tableBorder = -1, tablePadding = -1;
+    bool uniformBorder = true, uniformPadding = true;
     int tRow = -1;
     int tCol = -1;
     QTextCursor cellCursor;
@@ -704,6 +719,9 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                 } else {
                     curTable = nullptr;
                     declaredCols = 0;
+                    columnWidths.clear();
+                    tableBorder = tablePadding = -1;
+                    uniformBorder = uniformPadding = true;
                     tRow = -1;
                     merges.clear();
                 }
@@ -712,9 +730,23 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
             } else if (name == QLatin1String("table-column")) {
                 const int rep = attrs.value(QLatin1String("table:number-columns-repeated")).toInt();
                 declaredCols += qMax(1, rep);
+                const auto name = attrs.value(QLatin1String("table:style-name")).toString();
+                const auto style = autos.styles.contains(name) ? autos.styles.value(name) : named.styles.value(name);
+                for (int i = 0; i < qMax(1, rep); ++i) columnWidths.append(style.columnWidth);
             } else if (name == QLatin1String("table-row")) {
                 if (!curTable) {
-                    curTable = c.insertTable(1, qMax(1, declaredCols), wordLikeTableFormat());
+                    auto format = wordLikeTableFormat();
+                    if (!columnWidths.isEmpty()) {
+                        qreal weights = 0; bool fixed = false;
+                        for (const auto &width : columnWidths) {
+                            fixed |= width.type() == QTextLength::FixedLength;
+                            weights += width.type() == QTextLength::VariableLength ? 1 : width.rawValue();
+                        }
+                        if (!fixed) for (auto &width : columnWidths)
+                            width = QTextLength(QTextLength::PercentageLength, 100 * (width.type() == QTextLength::VariableLength ? 1 : width.rawValue()) / weights);
+                        format.setColumnWidthConstraints(columnWidths);
+                    }
+                    curTable = c.insertTable(1, qMax(1, declaredCols), format);
                     tRow = 0;
                 } else {
                     curTable->appendRows(1);
@@ -731,17 +763,28 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                     ? curTable->cellAt(tRow, qMin(++tCol, curTable->columns() - 1)) : QTextTableCell();
                 if (cell.isValid()) {
                     cellAlignment=-1;
+                    qreal border = qQNaN(), padding = qQNaN();
                     QString styleName=attrs.value(QLatin1String("table:style-name")).toString();
                     for (int depth=0;!styleName.isEmpty() && depth<32;++depth) {
                         auto it=autos.styles.constFind(styleName);
                         const RawStyle *style=it==autos.styles.cend() ? nullptr : &*it;
                         if (!style) { auto namedStyle=named.styles.constFind(styleName); if(namedStyle!=named.styles.cend()) style=&*namedStyle; }
                         if (!style || style->family!=QLatin1String("table-cell")) break;
-                        if (style->cellAlignment>=0) {
-                            cellAlignment=style->cellAlignment; break;
-                        }
+                        if (cellAlignment < 0 && style->cellAlignment >= 0) cellAlignment = style->cellAlignment;
+                        if (qIsNaN(border)) border = style->cellBorder;
+                        if (qIsNaN(padding)) padding = style->cellPadding;
                         styleName=style->parent;
                     }
+                    if (qIsNaN(border)) border = 0;
+                    if (qIsNaN(padding)) padding = 0;
+                    if (tableBorder < 0) tableBorder = border;
+                    if (tablePadding < 0) tablePadding = padding;
+                    uniformBorder &= tableBorder == border;
+                    uniformPadding &= tablePadding == padding;
+                    auto cellFormat = cell.format().toTableCellFormat();
+                    cellFormat.setPadding(padding);
+                    auto writableCell = cell;
+                    writableCell.setFormat(cellFormat);
                     cellCursor = cell.firstCursorPosition();
                     inCell = true;
                     cellFirstBlock = true;
@@ -790,6 +833,10 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                 inCell = false;
             } else if (name == QLatin1String("table")) {
                 if (curTable) {
+                    auto format = curTable->format();
+                    if (uniformBorder && tableBorder >= 0) format.setBorder(tableBorder);
+                    if (uniformPadding && tablePadding >= 0) format.setCellPadding(tablePadding);
+                    curTable->setFormat(format);
                     for (const Merge &m : std::as_const(merges))
                         if (m.row + m.rows <= curTable->rows() && m.col + m.cols <= curTable->columns())
                             curTable->mergeCells(m.row, m.col, m.rows, m.cols);
