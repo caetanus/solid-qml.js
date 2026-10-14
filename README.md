@@ -79,7 +79,16 @@ npx solid-qml build --target linux     # dist/linux/<App>-x86_64.AppImage + .tar
 > **Preview: not yet published to npm.** Until the packages are published, install them from
 > tarballs built from this repo: see [docs/sdk.md](docs/sdk.md#installing-from-tarballs-before-the-npm-release).
 
-## Built with solid-qml: SolidTerm
+## Built with solid-qml
+
+Three real desktop apps, each with its whole UI written in Solid TSX + CSS:
+
+| SolidTerm | solid-mail | solid-player |
+|---|---|---|
+| [![SolidTerm](docs/media/solidterm.png)](docs/media/solidterm.png) | [![solid-mail](docs/media/solid-mail.png)](docs/media/solid-mail.png) | [![solid-player](docs/media/solid-player.png)](docs/media/solid-player.png) |
+| GPU terminal: splits, tabs, tmux | Mail client (demo mailbox, fictional data) | Offline-first music player |
+
+### SolidTerm
 
 [`apps/solidterm`](apps/solidterm) is a GPU-accelerated terminal used daily as its author's main
 terminal. Its whole UI (tabs, splits, drag-and-drop between windows, preferences, search, menus,
