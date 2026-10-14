@@ -323,7 +323,7 @@ this table (it omits `flex-wrap`, `flex-shrink`, `flex-basis`, `order`, `grid-te
 | `conic-gradient` | ❌ | |
 | Borders (`solid`/`dotted`/`dashed`), `border-radius`, `outline` | ✅ | |
 | `box-shadow`, `text-shadow`, `opacity` | ✅ | |
-| `transform`: `translate*`, `scale*`, `rotate` | ✅ | no `skew`/`matrix` |
+| `transform`: `translate*`, `scale*`, `rotate`, `rotateX` (in perspective); `transform-origin` (keywords, 0/50/100%) | ✅ | no `skew`/`matrix`/`rotateY`/`perspective()`; `tests/test_qml_css.cpp` `cssRectRotateXRenders` |
 | `filter`, `backdrop-filter` | ❌ | |
 | `transition` (opacity, width/height, background and border colours) | ✅ | `tests/test_qml_css.cpp` `transitionAnimatesItemOpacity`, `transitionAnimatesLayoutWidth` |
 | Text: `font-family/size/weight`, `line-height`, `letter-spacing`, `text-align` (left/center/right), `text-decoration`, `text-transform`, `white-space: nowrap`, `text-overflow: ellipsis` | ✅ | `tests/test_text.cpp` |
