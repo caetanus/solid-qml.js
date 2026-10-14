@@ -16,7 +16,7 @@ QString textBodyStyle() { return QStringLiteral("Text Body"); }
 namespace {
 
 constexpr const char *kPropNames[kPropCount] = {
-    "fontFamily", "fontSize", "fontWeight", "italic", "underline", "strike", "color", "letterSpacing",
+    "fontFamily", "fontSize", "fontWeight", "italic", "underline", "strike", "color", "letterSpacing", "language",
     "marginTop", "marginBottom", "marginLeft", "marginRight", "textIndent", "lineHeight", "alignment",
     "outlineLevel", "keepWithNext",
 };
@@ -26,6 +26,7 @@ QList<int> rawIds(Prop p)
 {
     switch (p) {
     case Prop::FontFamily: return { QTextFormat::FontFamilies, QTextFormat::FontFamily };
+    case Prop::Language: return { kLanguageProperty };
     case Prop::FontSize: return { QTextFormat::FontPointSize };
     case Prop::FontWeight: return { QTextFormat::FontWeight };
     case Prop::Italic: return { QTextFormat::FontItalic };
@@ -71,6 +72,7 @@ QString pxString(qreal px) { return QString::number(px, 'g', 6) + QStringLiteral
 void writeValue(QTextFormat &f, Prop p, const QVariant &v)
 {
     switch (p) {
+    case Prop::Language: f.setProperty(kLanguageProperty, v.toString()); break;
     case Prop::FontFamily:
         f.clearProperty(QTextFormat::FontFamily);
         f.setProperty(QTextFormat::FontFamilies, QStringList { v.toString() });
@@ -210,6 +212,9 @@ bool canonicalValue(Prop p, const QVariant &value, QVariant *out, QString *error
         *out = f;
         return true;
     }
+    case Prop::Language:
+        *out = value.toString().trimmed().replace(QLatin1Char('_'), QLatin1Char('-'));
+        return true;
     case Prop::FontSize: {
         qreal n = 0;
         if (s.endsWith(QLatin1String("px"))) {
@@ -529,6 +534,7 @@ QString charStyleOf(const QTextCharFormat &f)
 QVariant readProp(const QTextFormat &f, Prop p)
 {
     switch (p) {
+    case Prop::Language: return f.stringProperty(kLanguageProperty);
     case Prop::FontFamily:
         if (f.hasProperty(QTextFormat::FontFamilies)) {
             const QStringList l = f.property(QTextFormat::FontFamilies).toStringList();

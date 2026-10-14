@@ -189,6 +189,7 @@ Style properties (all optional):
 | `lineHeight` | a multiple (`1.5`, `"150%"`) or an exact height (`"18pt"`) | Paragraph styles. |
 | `alignment` | `"left"`, `"center"`, `"right"`, `"justify"` | Paragraph styles. |
 | `keepWithNext` | boolean | Paragraph styles (kept in the file; print / PDF). |
+| `language` | string, e.g. `"en-US"`, `"pt-BR"` | Paragraph or character style; inherited and saved in ODF. |
 | `outlineLevel` | 0–10 | Paragraph styles: `n > 0` makes it a heading style (`doc.heading`, `<text:h>` in the file). |
 
 Default Paragraph Style's `fontFamily` and `fontSize` are the document's base font.
@@ -554,3 +555,17 @@ that leaves the document untouched preserves it. These are read-only properties;
 After a successful load, applications can assign these values to `pageWidth`,
 `pageHeight`, and `pageMargins`. This keeps application display settings explicit.
 Mixed page masters within one document are not yet supported by pagination.
+
+### Document language
+
+`documentLanguage` is the imported default paragraph style's language tag, or
+`""` when unspecified. `documentLanguageChanged` fires only when that value changes,
+including loading, resetting, and editing or undoing the default style.
+`languageAt(pos)` returns the effective language at a text position, including
+character-style and automatic-span overrides, and falls back to the document
+default. Invalid positions return `""`.
+
+`blockLanguage(blockId)` returns the paragraph language; `""` means to use
+`documentLanguage` (and is also returned for an unknown block). It does not combine
+mixed inline languages: use `languageAt` for those. ODF `fo:language` and
+`fo:country` are retained through style inheritance and saving.

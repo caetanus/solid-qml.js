@@ -65,6 +65,7 @@ RichText {
     readonly property real _pageZoom: Math.max(0.5, Math.min(3.0, zoom))
     readonly property real _pageStride: (pageHeight + Math.max(0, pageGap)) * _pageZoom
     readonly property real documentPageWidth: fmt ? fmt.documentPageWidth : 0
+    readonly property string documentLanguage: fmt ? fmt.documentLanguage : ""
     readonly property real documentPageHeight: fmt ? fmt.documentPageHeight : 0
     readonly property var documentPageMargins: fmt ? fmt.documentPageMargins : []
     readonly property int pageCount: fmt ? fmt.pageCount : 1
@@ -324,6 +325,8 @@ RichText {
     function blockIdsInRange(from, to) { return fmt ? fmt.blockIdsInRange(from, to) : [] }
     function blockIdAt(pos) { return fmt ? fmt.blockIdAt(pos) : "" }
     function blockText(blockId) { return fmt ? fmt.blockText(blockId) : "" }
+    function blockLanguage(blockId) { return fmt ? fmt.blockLanguage(blockId) : "" }
+    function languageAt(pos) { return fmt ? fmt.languageAt(pos) : "" }
     // Marks are an overlay, not content (not saved, copied, undone, nor `modified`).
     function addMark(kind, blockId, start, end, id) { return fmt ? fmt.addMark(kind, blockId, start, end, id || "") : "" }
     function removeMark(id) { return fmt ? fmt.removeMark(id) : false }

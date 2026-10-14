@@ -264,6 +264,47 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void odfLanguagesSurviveStylesAndRoundTrip()
+    {
+        const QString path = m_dir.filePath("languages.odt");
+        writeOdt(path, "<text:p>Default</text:p><text:p text:style-name=\"AutoPara\">French <text:span text:style-name=\"Portuguese\">BR</text:span><text:span text:style-name=\"AutoChar\">DE</text:span></text:p>",
+            "<style:style style:name=\"AutoPara\" style:family=\"paragraph\" style:parent-style-name=\"French\"/>"
+            "<style:style style:name=\"AutoChar\" style:family=\"text\"><style:text-properties fo:language=\"de\" fo:country=\"DE\"/></style:style>",
+            "<style:default-style style:family=\"paragraph\"><style:text-properties fo:language=\"en\" fo:country=\"US\"/></style:default-style>"
+            "<style:style style:name=\"French\" style:family=\"paragraph\"><style:text-properties fo:language=\"fr\" fo:country=\"FR\"/></style:style>"
+            "<style:style style:name=\"Portuguese\" style:family=\"text\"><style:text-properties fo:language=\"pt\" fo:country=\"BR\"/></style:style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        QCOMPARE(m_fmt->property("documentLanguage").toString(), QString("en-US"));
+        const auto language = [&](int position) {
+            QString value;
+            QMetaObject::invokeMethod(m_fmt, "languageAt", Q_RETURN_ARG(QString, value), Q_ARG(int, position));
+            return value;
+        };
+        const auto blockLanguage = [&](int position) {
+            QString value;
+            QMetaObject::invokeMethod(m_fmt, "blockLanguage", Q_RETURN_ARG(QString, value), Q_ARG(QString, m_fmt->blockIdAt(position)));
+            return value;
+        };
+        QCOMPARE(language(0), QString("en-US"));
+        QCOMPARE(blockLanguage(0), QString());
+        QCOMPARE(language(8), QString("fr-FR"));
+        QCOMPARE(blockLanguage(8), QString("fr-FR"));
+        QCOMPARE(language(15), QString("pt-BR"));
+        QCOMPARE(language(17), QString("de-DE"));
+        QSignalSpy changes(m_fmt, SIGNAL(documentLanguageChanged()));
+        QVERIFY(changes.isValid());
+        const QString copy = m_dir.filePath("languages-copy.odt");
+        QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(copy)));
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(copy)));
+        QCOMPARE(changes.count(), 0);
+        QCOMPARE(language(15), QString("pt-BR"));
+        QCOMPARE(language(17), QString("de-DE"));
+        QCOMPARE(blockLanguage(8), QString("fr-FR"));
+        m_fmt->newDocument();
+        QCOMPARE(changes.count(), 1);
+        QCOMPARE(m_fmt->property("documentLanguage").toString(), QString());
+    }
+
     void initTestCase()
     {
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);

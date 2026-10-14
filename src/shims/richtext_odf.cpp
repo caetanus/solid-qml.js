@@ -158,6 +158,12 @@ void readTextProps(const QXmlStreamAttributes &a, const QHash<QString, QString> 
         putProp(props, Prop::Color, c.toString());
     if (const auto ls = val("fo:letter-spacing"); !ls.isEmpty())
         putProp(props, Prop::LetterSpacing, ls.toString());
+    if (const auto language = val("fo:language"); !language.isEmpty()) {
+        QString tag = language.toString();
+        const auto country = val("fo:country");
+        if (!country.isEmpty() && country != QLatin1String("none")) tag += QLatin1Char('-') + country.toString();
+        putProp(props, Prop::Language, tag);
+    }
 }
 
 void readParagraphProps(const QXmlStreamAttributes &a, QVariantMap &props)
@@ -842,10 +848,16 @@ void writeProps(QXmlStreamWriter &x, const QVariantMap &props, QSet<QString> *fo
     }
 
     bool anyText = false;
-    for (const char *k : { "fontFamily", "fontSize", "fontWeight", "italic", "underline", "strike", "color", "letterSpacing" })
+    for (const char *k : { "fontFamily", "fontSize", "fontWeight", "italic", "underline", "strike", "color", "letterSpacing", "language" })
         anyText = anyText || has(k);
     if (anyText) {
         x.writeStartElement(QStringLiteral("style:text-properties"));
+        if (has("language")) {
+            const QString tag = get("language").toString();
+            x.writeAttribute(QStringLiteral("fo:language"), tag.section(QLatin1Char('-'), 0, 0));
+            const QString country = tag.section(QLatin1Char('-'), 1);
+            if (!country.isEmpty()) x.writeAttribute(QStringLiteral("fo:country"), country);
+        }
         if (has("fontFamily")) {
             const QString f = get("fontFamily").toString();
             x.writeAttribute(QStringLiteral("style:font-name"), f);

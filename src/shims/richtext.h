@@ -64,6 +64,7 @@ class RichTextHandler : public QObject {
     // newDocument; writable so a host can mark its own save points.
     Q_PROPERTY(QString layoutEngine READ layoutEngine WRITE setLayoutEngine NOTIFY layoutEngineChanged)
     Q_PROPERTY(qreal documentPageWidth READ documentPageWidth NOTIFY documentPageGeometryChanged)
+    Q_PROPERTY(QString documentLanguage READ documentLanguage NOTIFY documentLanguageChanged)
     Q_PROPERTY(qreal documentPageHeight READ documentPageHeight NOTIFY documentPageGeometryChanged)
     Q_PROPERTY(QVariantList documentPageMargins READ documentPageMargins NOTIFY documentPageGeometryChanged)
     Q_PROPERTY(int pageCount READ pageCount NOTIFY pagesChanged)
@@ -190,6 +191,9 @@ public:
     QString layoutEngine() const { return m_layoutEngine; }
     void setLayoutEngine(const QString &engine);
     qreal documentPageWidth() const { return m_documentGeometry.value(0).toReal(); }
+    QString documentLanguage() const { return m_documentLanguage; }
+    Q_INVOKABLE QString languageAt(int position) const;
+    Q_INVOKABLE QString blockLanguage(const QString &blockId) const;
     qreal documentPageHeight() const { return m_documentGeometry.value(1).toReal(); }
     QVariantList documentPageMargins() const { return m_documentGeometry.mid(2); }
     int pageCount() const { return m_pageCount; }
@@ -344,6 +348,7 @@ signals:
     void pageBreakLabelChanged();
     void pagesChanged();
     void documentPageGeometryChanged();
+    void documentLanguageChanged();
     void layoutEngineChanged();
     void currentPageChanged();
     void documentChanged();
@@ -449,6 +454,8 @@ private:
     bool m_unsupportedHistory = false;
     QString m_layoutEngine = QStringLiteral("auto");
     QVariantList m_documentGeometry;
+    QString m_documentLanguage;
+    void syncDocumentLanguage();
     int m_pageCount = 1;
     int m_pendingPageCount = 1;
     bool m_pageCountUpdatePending = false;

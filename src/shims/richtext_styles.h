@@ -29,6 +29,7 @@ namespace rt {
 constexpr int kParagraphStyleProperty = QTextFormat::UserProperty + 0x5301; // QString, on block formats
 constexpr int kCharStyleProperty = QTextFormat::UserProperty + 0x5302;      // QString, on char formats
 constexpr int kKeepWithNextProperty = QTextFormat::UserProperty + 0x5303;   // bool, on block formats
+constexpr int kLanguageProperty = QTextFormat::UserProperty + 0x5304;      // language tag, on char formats
 
 // Vertical space (px) under a paragraph whose style chain has none: LibreOffice draws such
 // paragraphs with no gap; a quarter of a CSS pixel is invisible, and any positive value keeps
@@ -44,7 +45,7 @@ QString textBodyStyle();         // "Text Body" (ODF "Text_20_body")
 // Style properties, by their API name. Character ones apply to text runs (a paragraph style may
 // set them too: they style the whole paragraph's text); paragraph ones to blocks.
 enum class Prop {
-    FontFamily, FontSize, FontWeight, Italic, Underline, Strike, Color, LetterSpacing, // character
+    FontFamily, FontSize, FontWeight, Italic, Underline, Strike, Color, LetterSpacing, Language, // character
     MarginTop, MarginBottom, MarginLeft, MarginRight, TextIndent, LineHeight, Alignment,
     OutlineLevel, KeepWithNext,                                                       // paragraph
 };
