@@ -12,11 +12,13 @@
 #include <QQmlContext>
 
 #include <QClipboard>
+#include <QBuffer>
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
 #include <QMimeData>
+#include <QPainter>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickItem>
@@ -63,15 +65,19 @@ int countTables(QTextDocument *doc, int *columns = nullptr)
     " xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"" \
     " xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"" \
     " xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\"" \
-    " xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\""
+    " xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\"" \
+    " xmlns:draw=\"urn:oasis:names:tc:opendocument:xmlns:drawing:1.0\"" \
+    " xmlns:svg=\"urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0\"" \
+    " xmlns:xlink=\"http://www.w3.org/1999/xlink\""
 
 // A minimal .odt whose content.xml body is `body`, with optional automatic styles (content.xml)
 // and named styles (styles.xml office:styles).
 void writeOdt(const QString &path, const QByteArray &body, const QByteArray &automaticStyles = {},
-              const QByteArray &namedStyles = {})
+              const QByteArray &namedStyles = {}, const QByteArray &image = {})
 {
     QZipWriter zip(path);
     zip.addFile(QStringLiteral("mimetype"), "application/vnd.oasis.opendocument.text");
+    if (!image.isEmpty()) zip.addFile(QStringLiteral("Pictures/image.png"), image);
     if (!namedStyles.isEmpty())
         zip.addFile(QStringLiteral("styles.xml"),
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-styles" ODF_NS ">"
@@ -264,6 +270,43 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void odfRelativeImagesFollowTextWidthAndAspect()
+    {
+        QImage image(1000, 500, QImage::Format_RGB32); image.fill(Qt::red);
+        QByteArray png; QBuffer buffer(&png); QVERIFY(buffer.open(QIODevice::WriteOnly));
+        QVERIFY(image.save(&buffer, "PNG"));
+        const QString path = m_dir.filePath("relative-image.odt");
+        writeOdt(path, "<text:p><draw:frame text:anchor-type=\"as-char\" svg:width=\"1000px\" svg:height=\"500px\" style:rel-width=\"100%\" style:rel-height=\"scale\"><draw:image xlink:href=\"Pictures/image.png\"/></draw:frame></text:p>", {}, {}, png);
+        m_fmt->setLayoutEngine("custom");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_edit->setProperty("width", 300);
+        m_fmt->configurePages(300, 600, 0, {10,10,10,10});
+        const auto check = [&](qreal width) {
+            doc()->documentLayout()->documentSize();
+            const auto line = doc()->firstBlock().layout()->lineAt(0);
+            QCOMPARE(line.naturalTextWidth(), width);
+            QVERIFY(qAbs(line.ascent() - width / 2) <= 1.0 / 64);
+            QImage rendered(500, 600, QImage::Format_RGB32); rendered.fill(Qt::white);
+            QPainter painter(&rendered);
+            doc()->documentLayout()->draw(&painter, {});
+            painter.end();
+            QCOMPARE(rendered.pixelColor(30, 30), QColor(Qt::red));
+        };
+        check(280);
+        m_edit->setProperty("width", 500);
+        m_fmt->configurePages(500, 600, 0, {10,20,10,20});
+        check(460);
+        const QString copy = m_dir.filePath("relative-image-copy.odt");
+        QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(copy)));
+        keepForInspection(copy);
+        QVERIFY(QZipReader(copy).fileData("content.xml").contains("style:rel-width=\"100%\""));
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(copy)));
+        QCOMPARE(charAt(doc(), 0).doubleProperty(rt::kRelativeImageWidthProperty), 100.0);
+        m_edit->setProperty("width", 300);
+        m_fmt->configurePages(300, 600, 0, {10,10,10,10});
+        check(280);
+    }
+
     void odfListLabelWidthControlsTextIndent()
     {
         const QString path = m_dir.filePath("list-indent.odt");

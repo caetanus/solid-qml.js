@@ -575,6 +575,7 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     // insert happens when the frame closes so both are known).
     QString imgHref;
     qreal imgW = -1, imgH = -1;
+    qreal imgRelativeWidth = 0;
 
     // The cursor content lands on: the current cell inside a table, the document elsewhere.
     const auto act = [&]() -> QTextCursor & { return inCell ? cellCursor : c; };
@@ -727,6 +728,10 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
             } else if (name == QLatin1String("frame")) {
                 imgW = lengthPx(attrs.value(QLatin1String("svg:width")));
                 imgH = lengthPx(attrs.value(QLatin1String("svg:height")));
+                const auto relative = attrs.value(QLatin1String("style:rel-width"));
+                imgRelativeWidth = relative.endsWith(QLatin1Char('%'))
+                    && attrs.value(QLatin1String("style:rel-height")) == QLatin1String("scale")
+                    ? relative.chopped(1).toDouble() : 0;
                 imgHref.clear();
             } else if (name == QLatin1String("image")) {
                 imgHref = attrs.value(QLatin1String("xlink:href")).toString();
@@ -782,6 +787,7 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                         f.setName(resUrl.toString());
                         if (imgW > 0) f.setWidth(imgW);
                         if (imgH > 0) f.setHeight(imgH);
+                        if (imgRelativeWidth > 0) f.setProperty(kRelativeImageWidthProperty, imgRelativeWidth);
                         act().insertImage(f);
                         if (!runs.isEmpty())
                             act().setCharFormat(runs.last().format);
@@ -1226,6 +1232,10 @@ private:
         m_x.writeAttribute(QStringLiteral("text:anchor-type"), QStringLiteral("as-char"));
         m_x.writeAttribute(QStringLiteral("svg:width"), inches(w));
         m_x.writeAttribute(QStringLiteral("svg:height"), inches(h));
+        if (f.hasProperty(kRelativeImageWidthProperty)) {
+            m_x.writeAttribute(QStringLiteral("style:rel-width"), QString::number(f.doubleProperty(kRelativeImageWidthProperty)) + QLatin1Char('%'));
+            m_x.writeAttribute(QStringLiteral("style:rel-height"), QStringLiteral("scale"));
+        }
         m_x.writeAttribute(QStringLiteral("draw:z-index"), QStringLiteral("0"));
         m_x.writeEmptyElement(QStringLiteral("draw:image"));
         m_x.writeAttribute(QStringLiteral("xlink:href"), path);

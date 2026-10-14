@@ -73,6 +73,7 @@ private:
     QSizeF m_page;
     QTextFrameFormat m_root;
     bool m_widthDirty = false;
+    qreal m_inlineWidth = 0; // Current paragraph/cell width while shaping inline objects.
     int m_pages = 1;
 };
 }

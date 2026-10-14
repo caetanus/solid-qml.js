@@ -124,12 +124,16 @@ QRectF RichTextLayout::blockBoundingRect(const QTextBlock &b) const
 }
 void RichTextLayout::drawInlineObject(QPainter *painter, const QRectF &rect, QTextInlineObject object, int position, const QTextFormat &format)
 {
-    if (handlerForObject(format.objectType())) {
-        QAbstractTextDocumentLayout::drawInlineObject(painter, rect, object, position, format);
-    } else if (format.isImageFormat()) {
+    if (format.isImageFormat()) {
         const auto resource = document()->resource(QTextDocument::ImageResource, QUrl(format.toImageFormat().name()));
-        painter->drawImage(rect, qvariant_cast<QImage>(resource));
+        const QImage image = qvariant_cast<QImage>(resource);
+        if (!image.isNull()) {
+            painter->drawImage(rect, image);
+            return;
+        }
     }
+    if (handlerForObject(format.objectType()))
+        QAbstractTextDocumentLayout::drawInlineObject(painter, rect, object, position, format);
 }
 void RichTextLayout::resizeInlineObject(QTextInlineObject object, int position, const QTextFormat &format)
 {
@@ -143,6 +147,16 @@ void RichTextLayout::resizeInlineObject(QTextInlineObject object, int position, 
         size = image.size() / image.devicePixelRatio();
         if (imageFormat.width() > 0) size.setWidth(imageFormat.width());
         if (imageFormat.height() > 0) size.setHeight(imageFormat.height());
+    }
+    if (format.isImageFormat() && format.doubleProperty(kRelativeImageWidthProperty) > 0) {
+        const auto image = format.toImageFormat();
+        const auto root = document()->rootFrame()->frameFormat();
+        const qreal available = m_inlineWidth > 0 ? m_inlineWidth
+            : qMax(1., document()->pageSize().width() - root.leftMargin() - root.rightMargin());
+        const qreal ratio = image.width() > 0 && image.height() > 0
+            ? image.height() / image.width() : (size.width() > 0 ? size.height() / size.width() : 1);
+        const qreal width = available * format.doubleProperty(kRelativeImageWidthProperty) / 100;
+        size = QSizeF(width, width * ratio);
     }
     const qreal height = qMax(0., size.height());
     qreal ascent = height, descent = 0;
@@ -177,7 +191,6 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
     const bool dirty = pass.full || old.width != box.width || !known || !layout->lineCount() || old.revision != b.revision()
         || (b.position() <= pass.from + pass.added && b.position() + b.length() > pass.from);
     const auto format = b.blockFormat();
-    const auto direction = b.textDirection();
     const auto *list = b.textList();
     const int indent = format.indent() + (list ? list->format().indent() : 0);
     const qreal indentWidth = list && m_root.boolProperty(kDocumentSpacingProperty) && format.hasProperty(kListTextOffsetProperty)
@@ -185,6 +198,9 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
         : indent * doc->indentWidth();
     const qreal left = box.left;
     const qreal available = qMax(1., box.width - quantizedLength(format.leftMargin()) - quantizedLength(format.rightMargin()) - indentWidth);
+    // Resolving direction can shape an image at the start of a block as well.
+    m_inlineWidth = available;
+    const auto direction = b.textDirection();
     if (dirty) {
         ++counters.shapedBlocks; counters.shapedCharacters += b.length();
         auto option = doc->defaultTextOption();
@@ -266,6 +282,7 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
     next.hitVersion=old.hitVersion+(!known || dirty || !sameLines);
     m_blocks.insert(info->lifetime, next);
     pass.changed.append(b);
+    m_inlineWidth = 0;
     return sameLines;
 }
 void RichTextLayout::layoutTable(QTextTable *table, Flow &flow, Pass &pass)

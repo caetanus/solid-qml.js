@@ -503,6 +503,10 @@ The custom engine uses imported per-level list label widths/left margins rather
 than Qt's fixed indent step. These offsets scale with zoom and survive ODF saves.
 List nesting remains independent of the physical text offset.
 
+ODF images with `style:rel-width` and `style:rel-height="scale"` follow the
+available paragraph/cell width in the custom engine and retain the declared
+aspect ratio. The relative size survives saves and updates when page width changes.
+
 The phase-2 acceptance policy top-aligns cells in **every fragment of a split
 row**. Middle/bottom alignment applies only when the row fits on one page.
 This makes placement deterministic when an edit changes where a row splits and
