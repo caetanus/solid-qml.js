@@ -475,7 +475,7 @@ void RichTextLayout::layoutTable(QTextTable *table, Flow &flow, Pass &pass)
         heights[cell.row()+cell.rowSpan()-1]+=qMax(0.,entry.height-have);
     }
     QVector<qreal> spanEnds(rows), rowStarts(rows), rowEnds(rows);
-    qreal y=flow.y+edge;
+    qreal y=flow.y+edge + (m_root.boolProperty(kDocumentSpacingProperty) ? flow.bottom : 0);
     qreal tableTop=y;
     for (int row=0;row<rows;++row) {
         const qreal textTop=qFloor(y/stride)*stride+m_root.topMargin()+edge;
@@ -602,7 +602,8 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
         const bool known = previous != m_blocks.cend();
         const Cache old = known ? *previous : Cache();
         const Flow beforeBlock = flow;
-        const bool sameLines = layoutBlock(b, flow, {root.leftMargin(), width-root.leftMargin()-root.rightMargin(), top, bottom}, pass, b == doc->begin() || (b.previous().isValid() && QTextCursor(b.previous()).currentTable()));
+        const bool sameLines = layoutBlock(b, flow, {root.leftMargin(), width-root.leftMargin()-root.rightMargin(), top, bottom}, pass, b == doc->begin()
+            || (!m_root.boolProperty(kDocumentSpacingProperty) && b.previous().isValid() && QTextCursor(b.previous()).currentTable()));
         const bool keep = m_root.boolProperty(kDocumentSpacingProperty) && b.blockFormat().boolProperty(kKeepWithNextProperty)
             && !b.blockFormat().pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysAfter);
         if (keep && b.next().isValid()) {

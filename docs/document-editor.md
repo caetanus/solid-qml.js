@@ -499,6 +499,8 @@ LibreOffice. Qt collapses them to the larger margin. On a natural page break,
 the custom engine discards the inter-paragraph gap, including gaps that would
 otherwise extend into the next page. Explicit page breaks retain their spacing.
 Ordinary Qt/HTML documents keep Qt's margin-collapse behavior.
+The preceding paragraph's bottom margin and following paragraph's top margin
+also apply at table boundaries in imported documents.
 For imported documents, `keepWithNext` keeps a paragraph/heading chain with the
 next paragraph's minimum opening lines. Groups taller than one body area are released so
 they cannot force repeated page skips; explicit breaks take precedence.

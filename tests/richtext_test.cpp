@@ -271,6 +271,23 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void odfParagraphSpacingSurvivesTableBoundaries()
+    {
+        const QString path = m_dir.filePath("table-spacing.odt");
+        writeOdt(path, "<text:p text:style-name=\"Before\">Before</text:p><table:table><table:table-column/><table:table-row><table:table-cell><text:p>Cell</text:p></table:table-cell></table:table-row></table:table><text:p text:style-name=\"After\">After</text:p>", {},
+            "<style:default-style style:family=\"paragraph\"><style:paragraph-properties fo:line-height=\"20px\"/></style:default-style>"
+            "<style:style style:name=\"Before\" style:family=\"paragraph\"><style:paragraph-properties fo:margin-bottom=\"6px\"/></style:style>"
+            "<style:style style:name=\"After\" style:family=\"paragraph\"><style:paragraph-properties fo:margin-top=\"6px\"/></style:style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_edit->setProperty("width", 300);
+        m_fmt->configurePages(300, 300, 0, {10,10,10,10});
+        auto table = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        QVERIFY(table);
+        const qreal cellY = table->cellAt(0,0).firstCursorPosition().block().layout()->position().y();
+        QCOMPARE(cellY - doc()->begin().layout()->position().y(), 26.0);
+        QCOMPARE(doc()->lastBlock().layout()->position().y() - cellY, 26.0);
+    }
+
     void odfNormalLinesUseFractionalFontSpacing()
     {
         if (!QFontDatabase::families().contains("Liberation Serif")) QSKIP("Liberation Serif fixture font is unavailable");
