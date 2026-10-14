@@ -107,8 +107,10 @@ QVariantList documentGeometry(const QByteArray &styles, const QByteArray &conten
                 const qreal height = lengthPx(val("svg:height"));
                 const qreal minimum = lengthPx(val("fo:min-height"));
                 const qreal gap = lengthPx(val(area == 0 ? "fo:margin-bottom" : "fo:margin-top"));
-                reserves[layout][area] = qMax(qIsFinite(height) ? height : 0., qIsFinite(minimum) ? minimum : 0.)
-                    + (qIsFinite(gap) ? gap : 0.);
+                // LibreOffice's declared minimum is the whole band, including
+                // the body gap (0.4in with a 0.2in gap reserves 0.4in, not 0.6in).
+                reserves[layout][area] = qMax(qMax(qIsFinite(height) ? height : 0., qIsFinite(minimum) ? minimum : 0.),
+                    qIsFinite(gap) ? gap : 0.);
             } else if (!layout.isEmpty() && xml.name() == QLatin1String("page-layout-properties")) {
                 const qreal w = lengthPx(val("fo:page-width")), h = lengthPx(val("fo:page-height"));
                 if (!(w > 0 && h > 0)) continue;

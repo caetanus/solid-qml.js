@@ -498,6 +498,9 @@ LibreOffice. Qt collapses them to the larger margin. On a natural page break,
 the custom engine discards the inter-paragraph gap, including gaps that would
 otherwise extend into the next page. Explicit page breaks retain their spacing.
 Ordinary Qt/HTML documents keep Qt's margin-collapse behavior.
+For imported documents, `keepWithNext` keeps a paragraph/heading chain with the
+next paragraph's first line. Groups taller than one body area are released so
+they cannot force repeated page skips; explicit breaks take precedence.
 
 The custom engine uses imported per-level list label widths/left margins rather
 than Qt's fixed indent step. These offsets scale with zoom and survive ODF saves.
@@ -569,7 +572,8 @@ that leaves the document untouched preserves it. These are read-only properties;
 After a successful load, applications can assign these values to `pageWidth`,
 `pageHeight`, and `pageMargins`. This keeps application display settings explicit.
 Mixed page masters within one document are not yet supported by pagination.
-Active headers/footers reserve their declared minimum/fixed height and body gap
+Active headers/footers reserve their declared minimum/fixed band height (which
+includes the body gap in LibreOffice)
 inside these margins. The reservation scales with zoom; `documentPageMargins`
 continues to report the page's declared outer margins. Header/footer content is
 not rendered or round-tripped, and content-dependent heights are not yet measured.

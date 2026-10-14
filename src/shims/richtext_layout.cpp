@@ -493,6 +493,9 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
     if (!full) {
         if (auto *table=QTextCursor(b).currentTable()) b=doc->findBlock(table->firstPosition());
         if (b.previous().isValid()) b=b.previous();
+        if (m_root.boolProperty(kDocumentSpacingProperty))
+            while (b.previous().isValid() && b.previous().blockFormat().boolProperty(kKeepWithNextProperty)
+                   && !QTextCursor(b.previous()).currentTable()) b = b.previous();
         if (auto *table=QTextCursor(b).currentTable()) b=doc->findBlock(table->firstPosition());
     }
     Flow flow{top, 0, false};
@@ -509,6 +512,7 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
     int translatedFrom=-1; qreal translatedY=0;
     qsizetype hitChangedCount=-1;
     Pass pass{full, from, added, changed}; // Handles are transaction-local.
+    QSet<quint64> probed;
     for (; b.isValid(); b = b.next()) {
         if (auto *table=QTextCursor(b).currentTable()) {
             layoutTable(table,flow,pass);
@@ -521,6 +525,52 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
         const Cache old = known ? *previous : Cache();
         const Flow beforeBlock = flow;
         const bool sameLines = layoutBlock(b, flow, {root.leftMargin(), width-root.leftMargin()-root.rightMargin(), top, bottom}, pass, b == doc->begin() || (b.previous().isValid() && QTextCursor(b.previous()).currentTable()));
+        const bool keep = m_root.boolProperty(kDocumentSpacingProperty) && b.blockFormat().boolProperty(kKeepWithNextProperty)
+            && !b.blockFormat().pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysAfter);
+        if (keep && b.next().isValid()) {
+            // Shape a bounded lookahead at a fresh page. Keep whole heading chains
+            // with the next paragraph's first line, but release groups taller than
+            // a page. Probed caches cannot be used as old-state convergence anchors.
+            const qreal capacity = stride - top - bottom;
+            const auto height = [](const QTextBlock &block, bool firstOnly) {
+                qreal total = 0;
+                const auto format = block.blockFormat();
+                for (int i = 0; i < block.layout()->lineCount(); ++i) {
+                    const auto line = block.layout()->lineAt(i);
+                    const qreal advance = format.lineHeight(line.height() + (format.lineHeightType() == QTextBlockFormat::MinimumHeight ? line.leading() : 0), 1);
+                    total += firstOnly ? qMax(advance, line.height()) : advance;
+                    if (firstOnly) break;
+                }
+                return total;
+            };
+            qreal required = height(b, false);
+            auto previous = b;
+            bool complete = false;
+            for (auto next = b.next(); next.isValid() && required <= capacity; next = next.next()) {
+                if (QTextCursor(next).currentTable() || next.blockFormat().pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysBefore)) break;
+                Flow probe{top, 0, false};
+                Pass lookahead{false, from, added, changed};
+                layoutBlock(next, probe, {root.leftMargin(), width-root.leftMargin()-root.rightMargin(), top, bottom}, lookahead, true);
+                probed.insert(blockInfo(next)->lifetime);
+                const bool chained = next.blockFormat().boolProperty(kKeepWithNextProperty)
+                    && !next.blockFormat().pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysAfter);
+                required += previous.blockFormat().bottomMargin() + next.blockFormat().topMargin() + height(next, !chained);
+                if (!chained) { complete = true; break; }
+                previous = next;
+            }
+            const auto firstLine = b.layout()->lineAt(0);
+            const auto format = b.blockFormat();
+            const qreal advance = format.lineHeight(firstLine.height() + (format.lineHeightType() == QTextBlockFormat::MinimumHeight ? firstLine.leading() : 0), 1);
+            const qreal offset = format.lineHeightType() == QTextBlockFormat::FixedHeight ? advance * .8 - firstLine.ascent()
+                : format.lineHeightType() == QTextBlockFormat::MinimumHeight ? advance - firstLine.height() : 0;
+            const qreal firstY = b.layout()->position().y() + firstLine.y() - offset;
+            const qreal page = qFloor(firstY / stride);
+            if (complete && required <= capacity && firstY + required > (page + 1) * stride - bottom
+                && firstY > page * stride + top) {
+                flow = {(page + 1) * stride + top, 0, false};
+                layoutBlock(b, flow, {root.leftMargin(), width-root.leftMargin()-root.rightMargin(), top, bottom}, pass, true);
+            }
+        }
         info = blockInfo(b);
         if (b.text().isEmpty() && b.previous().isValid() && QTextCursor(b.previous()).currentTable()) {
             auto &cache=m_blocks[info->lifetime];
@@ -537,7 +587,7 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
 
         const qreal delta = next.rect.y() - old.rect.y();
         const bool wholePage = delta == qRound64(delta/stride)*stride;
-        if (!full && b.position() > from+added && sameLines && wholePage
+        if (!full && !keep && !probed.contains(info->lifetime) && b.position() > from+added && sameLines && wholePage
             && next.incoming.y-old.incoming.y == delta && next.outgoing.y-old.outgoing.y == delta
             && next.incoming.bottom == old.incoming.bottom && next.incoming.pageBreak == old.incoming.pageBreak
             && next.outgoing.bottom == old.outgoing.bottom && next.outgoing.pageBreak == old.outgoing.pageBreak

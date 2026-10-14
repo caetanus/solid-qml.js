@@ -270,6 +270,35 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void odfKeepWithNextMovesOnlyFittingGroups()
+    {
+        const QString path = m_dir.filePath("keep-next.odt");
+        writeOdt(path, "<text:p text:style-name=\"Tall\">First</text:p><text:p text:style-name=\"Keep\">Heading</text:p><text:p text:style-name=\"Tall\">Body</text:p>", {},
+            "<style:style style:name=\"Tall\" style:family=\"paragraph\"><style:paragraph-properties fo:line-height=\"40px\"/></style:style>"
+            "<style:style style:name=\"Keep\" style:family=\"paragraph\"><style:paragraph-properties fo:line-height=\"20px\" fo:keep-with-next=\"always\"/></style:style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_edit->setProperty("width", 300);
+        m_fmt->configurePages(300, 100, 0, {10,10,10,10});
+        auto heading = [&] { return doc()->findBlockByNumber(1).layout()->position().y(); };
+        QCOMPARE(heading(), 110.0);
+        QTextCursor edit(doc());
+        edit.setPosition(doc()->lastBlock().position());
+        edit.insertText(QStringLiteral("More body text ").repeated(15));
+        QScopedPointer<QTextDocument> cold(doc()->clone());
+        cold->setDocumentLayout(new rt::RichTextLayout(cold.data()));
+        cold->documentLayout()->documentSize();
+        for (auto b = doc()->begin(), expected = cold->begin(); b.isValid(); b = b.next(), expected = expected.next()) {
+            QCOMPARE(b.layout()->lineCount(), expected.layout()->lineCount());
+            for (int i = 0; i < b.layout()->lineCount(); ++i)
+                QCOMPARE(b.layout()->position() + b.layout()->lineAt(i).position(), expected.layout()->position() + expected.layout()->lineAt(i).position());
+        }
+        // Resizing restores normal flow; an oversized group must never loop or skip pages.
+        m_fmt->configurePages(300, 160, 0, {10,10,10,10});
+        QVERIFY(qAbs(heading() - 50.0) < 1);
+        m_fmt->configurePages(300, 70, 0, {10,10,10,10});
+        QVERIFY(heading() < 150);
+    }
+
     void odfActiveFooterReservesBodySpace()
     {
         const QString path = m_dir.filePath("footer-space.odt");
@@ -286,7 +315,7 @@ private slots:
             m_edit->setProperty("width", 300);
             m_fmt->configurePages(300, 100, 0, {10,10,10,10});
             QCOMPARE(m_fmt->documentPageMargins(), QVariantList({10,10,10,10}));
-            QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), active ? 40.0 : 10.0);
+            QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), active ? 30.0 : 10.0);
         }
         m_fmt->newDocument();
         m_fmt->configurePages(300, 100, 0, {10,10,10,10});
