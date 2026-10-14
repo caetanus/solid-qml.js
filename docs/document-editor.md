@@ -189,6 +189,7 @@ Style properties (all optional):
 | `lineHeight` | a multiple (`1.5`, `"150%"`) or an exact height (`"18pt"`) | Paragraph styles. |
 | `alignment` | `"left"`, `"center"`, `"right"`, `"justify"` | Paragraph styles. |
 | `keepWithNext` | boolean | Paragraph styles (kept in the file; print / PDF). |
+| `widows`, `orphans` | nonnegative integer | Paragraph minimum lines after/before a page break; preserved in ODF. |
 | `language` | string, e.g. `"en-US"`, `"pt-BR"` | Paragraph or character style; inherited and saved in ODF. |
 | `outlineLevel` | 0–10 | Paragraph styles: `n > 0` makes it a heading style (`doc.heading`, `<text:h>` in the file). |
 
@@ -499,8 +500,10 @@ the custom engine discards the inter-paragraph gap, including gaps that would
 otherwise extend into the next page. Explicit page breaks retain their spacing.
 Ordinary Qt/HTML documents keep Qt's margin-collapse behavior.
 For imported documents, `keepWithNext` keeps a paragraph/heading chain with the
-next paragraph's first line. Groups taller than one body area are released so
+next paragraph's minimum opening lines. Groups taller than one body area are released so
 they cannot force repeated page skips; explicit breaks take precedence.
+Imported paragraphs default to two widow/orphan lines; explicit style values
+override this. Counts that cannot fit in a page fall back to natural splitting.
 
 The custom engine uses imported per-level list label widths/left margins rather
 than Qt's fixed indent step. These offsets scale with zoom and survive ODF saves.

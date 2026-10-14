@@ -270,6 +270,33 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void odfWidowsAndOrphansProtectPageSplits()
+    {
+        const QString path = m_dir.filePath("widows.odt");
+        for (int lines : {2, 5}) {
+            const QByteArray body = QByteArray("<text:p text:style-name=\"Filler\">First</text:p><text:p text:style-name=\"Protected\">Body")
+                + QByteArray("<text:line-break/>Body").repeated(lines - 1) + "</text:p>";
+            writeOdt(path, body, {}, QByteArray("<style:style style:name=\"Filler\" style:family=\"paragraph\"><style:paragraph-properties fo:line-height=\"")
+                + (lines == 2 ? "50px" : "19px") + "\"/></style:style>"
+                "<style:style style:name=\"Protected\" style:family=\"paragraph\"><style:paragraph-properties fo:line-height=\"20px\" fo:widows=\"2\" fo:orphans=\"2\"/></style:style>");
+            QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+            m_edit->setProperty("width", 300);
+            const int height = lines == 2 ? 100 : 120;
+            m_fmt->configurePages(300, height, 0, {10,10,10,10});
+            const auto block = doc()->findBlockByNumber(1);
+            QCOMPARE(block.layout()->lineCount(), lines);
+            for (int i = 0; i < lines; ++i) {
+                const qreal y = block.layout()->position().y() + block.layout()->lineAt(i).y();
+                QCOMPARE(int(y / height), lines == 2 || i >= 3 ? 1 : 0);
+            }
+            QCOMPARE(m_fmt->styleProperties("Protected").value("widows").toInt(), 2);
+            const QString copy = m_dir.filePath("widows-copy.odt");
+            QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(copy)));
+            QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(copy)));
+            QCOMPARE(m_fmt->styleProperties("Protected").value("orphans").toInt(), 2);
+        }
+    }
+
     void odfBorderlessTablesUseEqualDefaultColumns()
     {
         const QString path = m_dir.filePath("borderless-table.odt");
@@ -309,6 +336,7 @@ private slots:
             for (int i = 0; i < b.layout()->lineCount(); ++i)
                 QCOMPARE(b.layout()->position() + b.layout()->lineAt(i).position(), expected.layout()->position() + expected.layout()->lineAt(i).position());
         }
+        doc()->undo();
         // Resizing restores normal flow; an oversized group must never loop or skip pages.
         m_fmt->configurePages(300, 160, 0, {10,10,10,10});
         QVERIFY(qAbs(heading() - 50.0) < 1);

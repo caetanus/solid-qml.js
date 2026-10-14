@@ -250,7 +250,41 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
     const qreal origin = flow.y;
     bool sameLines = known && !dirty;
     next.hitRects.reserve(layout->lineCount());
+    const bool protectSplits = m_root.boolProperty(kDocumentSpacingProperty) && m_page.height() > 0;
+    const int widows = format.hasProperty(kWidowsProperty) ? qMax(1, format.intProperty(kWidowsProperty)) : 2;
+    const int orphans = format.hasProperty(kOrphansProperty) ? qMax(1, format.intProperty(kOrphansProperty)) : 2;
+    int plannedBreak = 0;
     for (int index = 0; index < layout->lineCount(); ++index) {
+        if (protectSplits && index == plannedBreak) {
+            if (index > 0) flow.y = (qFloor(flow.y / stride) + 1) * stride + top;
+            flow.y = qMax(flow.y, qFloor(flow.y / stride) * stride + top);
+            // Count each page's candidate lines once. Retry once at a fresh page;
+            // impossible counts/oversized lines fall back to natural splitting.
+            for (int attempt = 0; attempt < 2; ++attempt) {
+                const qreal limit = (qFloor(flow.y / stride) + 1) * stride - bottom;
+                qreal y = flow.y;
+                int fit = 0;
+                for (int i = index; i < layout->lineCount(); ++i) {
+                    const auto candidate = layout->lineAt(i);
+                    const qreal natural = candidate.height();
+                    const qreal advance = format.lineHeight(natural + (format.lineHeightType() == QTextBlockFormat::MinimumHeight ? candidate.leading() : 0), 1);
+                    if (y + (format.lineHeightType() == QTextBlockFormat::LineDistanceHeight ? natural : qMax(advance, natural)) > limit) break;
+                    y += advance; ++fit;
+                }
+                const int remaining = layout->lineCount() - index;
+                int kept = fit;
+                if (fit < remaining && remaining - fit < widows) kept = qMax(0, remaining - widows);
+                if (fit < remaining && kept < orphans) {
+                    if (attempt == 0 && flow.y > qFloor(flow.y / stride) * stride + top) {
+                        flow.y = (qFloor(flow.y / stride) + 1) * stride + top;
+                        continue;
+                    }
+                    kept = fit;
+                }
+                plannedBreak = index + qMax(1, kept);
+                break;
+            }
+        }
         auto line = layout->lineAt(index);
         const qreal natural = line.height();
         const qreal advance = format.lineHeight(natural + (format.lineHeightType() == QTextBlockFormat::MinimumHeight ? line.leading() : 0), 1);
@@ -539,7 +573,8 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
                     const auto line = block.layout()->lineAt(i);
                     const qreal advance = format.lineHeight(line.height() + (format.lineHeightType() == QTextBlockFormat::MinimumHeight ? line.leading() : 0), 1);
                     total += firstOnly ? qMax(advance, line.height()) : advance;
-                    if (firstOnly) break;
+                    const int minimum = format.hasProperty(kOrphansProperty) ? qMax(1, format.intProperty(kOrphansProperty)) : 2;
+                    if (firstOnly && i + 1 >= minimum) break;
                 }
                 return total;
             };

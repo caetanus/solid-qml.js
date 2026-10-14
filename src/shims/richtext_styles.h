@@ -33,6 +33,8 @@ constexpr int kLanguageProperty = QTextFormat::UserProperty + 0x5304;      // la
 constexpr int kListTextOffsetProperty = QTextFormat::UserProperty + 0x5305; // scaled px, on blocks
 constexpr int kListOffsetsProperty = QTextFormat::UserProperty + 0x5306; // canonical offsets by level, on lists
 constexpr int kRelativeImageWidthProperty = QTextFormat::UserProperty + 0x5307; // percent, aspect preserved
+constexpr int kWidowsProperty = QTextFormat::UserProperty + 0x5308;
+constexpr int kOrphansProperty = QTextFormat::UserProperty + 0x5309;
 
 // Vertical space (px) under a paragraph whose style chain has none: LibreOffice draws such
 // paragraphs with no gap; a quarter of a CSS pixel is invisible, and any positive value keeps
@@ -50,7 +52,7 @@ QString textBodyStyle();         // "Text Body" (ODF "Text_20_body")
 enum class Prop {
     FontFamily, FontSize, FontWeight, Italic, Underline, Strike, Color, LetterSpacing, Language, // character
     MarginTop, MarginBottom, MarginLeft, MarginRight, TextIndent, LineHeight, Alignment,
-    OutlineLevel, KeepWithNext,                                                       // paragraph
+    OutlineLevel, Widows, Orphans, KeepWithNext,                                       // paragraph
 };
 constexpr int kPropCount = int(Prop::KeepWithNext) + 1;
 constexpr Prop kFirstBlockProp = Prop::MarginTop;

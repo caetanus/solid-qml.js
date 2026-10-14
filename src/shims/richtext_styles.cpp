@@ -18,7 +18,7 @@ namespace {
 constexpr const char *kPropNames[kPropCount] = {
     "fontFamily", "fontSize", "fontWeight", "italic", "underline", "strike", "color", "letterSpacing", "language",
     "marginTop", "marginBottom", "marginLeft", "marginRight", "textIndent", "lineHeight", "alignment",
-    "outlineLevel", "keepWithNext",
+    "outlineLevel", "widows", "orphans", "keepWithNext",
 };
 
 // The raw Qt properties behind each style property (what a rebase copies from the new base).
@@ -43,6 +43,8 @@ QList<int> rawIds(Prop p)
     case Prop::Alignment: return { QTextFormat::BlockAlignment };
     case Prop::OutlineLevel: return { QTextFormat::HeadingLevel };
     case Prop::KeepWithNext: return { kKeepWithNextProperty };
+    case Prop::Widows: return { kWidowsProperty };
+    case Prop::Orphans: return { kOrphansProperty };
     }
     return {};
 }
@@ -119,6 +121,8 @@ void writeValue(QTextFormat &f, Prop p, const QVariant &v)
         else f.clearProperty(QTextFormat::HeadingLevel);
         break;
     case Prop::KeepWithNext: f.setProperty(kKeepWithNextProperty, v.toBool()); break;
+    case Prop::Widows: f.setProperty(kWidowsProperty, v.toInt()); break;
+    case Prop::Orphans: f.setProperty(kOrphansProperty, v.toInt()); break;
     }
 }
 
@@ -287,6 +291,13 @@ bool canonicalValue(Prop p, const QVariant &value, QVariant *out, QString *error
         else if (s == QLatin1String("justify")) *out = QStringLiteral("justify");
         else return fail("expected \"left\", \"center\", \"right\" or \"justify\"");
         return true;
+    case Prop::Widows:
+    case Prop::Orphans: {
+        qreal n = 0;
+        if (!number(&n) || n < 0 || n > 10000 || n != std::floor(n)) return fail("expected a nonnegative line count <= 10000");
+        *out = int(n);
+        return true;
+    }
     case Prop::OutlineLevel: {
         qreal n = 0;
         if (!number(&n) || n < 0 || n > 10 || n != std::floor(n)) return fail("expected 0..10");
@@ -584,6 +595,8 @@ QVariant readProp(const QTextFormat &f, Prop p)
     }
     case Prop::OutlineLevel: return f.intProperty(QTextFormat::HeadingLevel);
     case Prop::KeepWithNext: return f.boolProperty(kKeepWithNextProperty);
+    case Prop::Widows: return f.hasProperty(kWidowsProperty) ? QVariant(f.intProperty(kWidowsProperty)) : QVariant();
+    case Prop::Orphans: return f.hasProperty(kOrphansProperty) ? QVariant(f.intProperty(kOrphansProperty)) : QVariant();
     }
     return QVariant();
 }

@@ -215,6 +215,8 @@ void readParagraphProps(const QXmlStreamAttributes &a, QVariantMap &props)
         putProp(props, Prop::Alignment, al.toString());
     if (const auto k = val("fo:keep-with-next"); !k.isEmpty())
         props.insert(QStringLiteral("keepWithNext"), k == QLatin1String("always"));
+    if (const auto n = val("fo:widows"); !n.isEmpty()) putProp(props, Prop::Widows, n.toString());
+    if (const auto n = val("fo:orphans"); !n.isEmpty()) putProp(props, Prop::Orphans, n.toString());
     // insertPageBreak() (item 5): not a rt::Prop — see the matching writer side (writeProps()).
     if (val("fo:break-before") == QLatin1String("page"))
         props.insert(QStringLiteral("__pageBreakBefore"), true);
@@ -919,7 +921,7 @@ void writeProps(QXmlStreamWriter &x, const QVariantMap &props, QSet<QString> *fo
     const bool pageBreak = props.value(QStringLiteral("__pageBreakBefore")).toBool();
     bool anyPara = pageBreak;
     for (const char *k : { "marginTop", "marginBottom", "marginLeft", "marginRight", "textIndent", "lineHeight",
-                           "alignment", "keepWithNext" })
+                           "alignment", "keepWithNext", "widows", "orphans" })
         anyPara = anyPara || has(k);
     if (anyPara) {
         x.writeStartElement(QStringLiteral("style:paragraph-properties"));
@@ -943,6 +945,8 @@ void writeProps(QXmlStreamWriter &x, const QVariantMap &props, QSet<QString> *fo
         }
         if (has("keepWithNext"))
             x.writeAttribute(QStringLiteral("fo:keep-with-next"), get("keepWithNext").toBool() ? QStringLiteral("always") : QStringLiteral("auto"));
+        if (has("widows")) x.writeAttribute(QStringLiteral("fo:widows"), QString::number(get("widows").toInt()));
+        if (has("orphans")) x.writeAttribute(QStringLiteral("fo:orphans"), QString::number(get("orphans").toInt()));
         if (pageBreak)
             x.writeAttribute(QStringLiteral("fo:break-before"), QStringLiteral("page"));
         x.writeEndElement();
