@@ -340,8 +340,11 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
         if (flow.y + (format.lineHeightType() == QTextBlockFormat::LineDistanceHeight ? natural : qMax(advance, natural)) > qFloor(flow.y / stride)*stride + stride-bottom && flow.y > pageTop)
             flow.y = (qFloor(flow.y / stride)+1)*stride + top;
         const QPointF position(quantizedLength(format.leftMargin()) + (direction == Qt::RightToLeft ? 0 : indentWidth + (index == 0 ? format.textIndent() : 0)), flow.y-origin+offset);
-        sameLines &= line.position() == position;
+        const QPointF oldPosition = line.position();
         line.setPosition(position);
+        // QTextLine stores positions at Qt's fixed-point precision. Compare
+        // the stored result, not the unrounded fractional font advance.
+        sameLines &= oldPosition == line.position();
         next.hitRects.append(line.naturalTextRect());
         flow.y += advance;
     }

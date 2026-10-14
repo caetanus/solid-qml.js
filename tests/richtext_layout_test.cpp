@@ -460,14 +460,38 @@ private slots:
             for(int i=0;i<40;++i) {
                 int position=scenario==0 ? 0 : scenario==1 ? 10 : scenario==2 ? d.characterCount()/2 : scenario==3 ? tablePosition : d.characterCount()-1;
                 view.edit->setCursorPosition(position); handler.setCursorPosition(position);
+                auto *metrics = dynamic_cast<rt::RichTextLayout *>(d.documentLayout());
+                if (i == 0 && metrics) metrics->counters = {};
                 QElapsedTimer timer; timer.start(); handler.insertText("x");
                 if(queries) { view.edit->setCursorPosition(position+1); const auto rect=view.edit->cursorRectangle(); d.documentLayout()->hitTest(rect.center(),Qt::FuzzyHit); }
                 times.append(timer.nsecsElapsed()/1e6);
+                if (i == 0 && metrics) qInfo() << "HIT_WORK" << queries << scenario << metrics->counters.shapedBlocks
+                    << metrics->counters.placements << metrics->counters.convergences << metrics->counters.translations;
                 QCOMPARE(d.characterAt(position),QChar('x')); d.undo();
             }
             std::sort(times.begin(),times.end());
             qInfo()<<"HIT_BENCH"<<queries<<scenario<<"median"<<times[20]<<"p95"<<times[38]<<"load"<<average;
         }
+    }
+    void fractionalSpacingConvergesAfterEdit() {
+        QTextDocument d;
+        prepare(d);
+        d.setDefaultFont(QFont("Liberation Serif", 12));
+        auto root = d.rootFrame()->frameFormat();
+        root.setProperty(rt::kDocumentSpacingProperty, true);
+        d.setPlainText(QString("A paragraph with enough words to wrap over several lines of fractional spacing. ").repeated(6).append('\n').repeated(100));
+        d.rootFrame()->setFrameFormat(root);
+        auto *layout = new rt::RichTextLayout(&d);
+        d.setDocumentLayout(layout);
+        d.documentLayout()->documentSize();
+        layout->counters = {};
+        QTextCursor cursor(&d); cursor.insertText("x");
+        QVERIFY(layout->counters.convergences > 0);
+        QVERIFY(layout->counters.placements < 10);
+        auto cold = d.clone();
+        cold->setDocumentLayout(new rt::RichTextLayout(cold));
+        compare(*cold, d, true);
+        delete cold;
     }
     void incrementalEdits() {
         QuickView view; RichTextHandler handler; handler.setDocument(view.edit->textDocument());
