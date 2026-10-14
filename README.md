@@ -38,6 +38,9 @@ solid-qml refuses that trade-off:
 - **No browser inside:** one app, one process, one runtime.
 - **One codebase, two targets:** the same `src/main.tsx` runs in the browser (Vite + Solid) and as
   a native app.
+- **Bring your Solid web app:** an existing Solid.js app goes native with minimal effort. The same
+  components and CSS compile to Qt Quick, with no UI rewrite; anything not supported yet is a
+  compile error that points at the exact line to adjust.
 
 ## Hello, native
 
