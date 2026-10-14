@@ -7,13 +7,16 @@
 #include <QTextTable>
 #include <QPen>
 #include <QPointer>
+#include <span>
 
 namespace rt {
 class RichTextLayout final : public QAbstractTextDocumentLayout {
 public:
     struct Counters { quint64 callbacks = 0, shapedBlocks = 0, shapedCharacters = 0,
-                     placements = 0, translations = 0, convergences = 0, tableSolves = 0, cellReplays = 0, hitCandidates = 0; };
+                     placements = 0, translations = 0, convergences = 0, tableSolves = 0, cellReplays = 0, hitCandidates = 0, hitEntries = 0, hitRebuilds = 0; };
     mutable Counters counters;
+    // Diagnostic snapshot in document/line order; never used by layout or queries.
+    QList<QPair<int, QRectF>> hitIndexSnapshot() const;
     struct TableFragment {
         QRectF rect;
         QBrush background;
@@ -47,6 +50,7 @@ private:
         QList<QRectF> hitRects;
         qreal right = 0, width = 0, minimum = 0, preferred = 0;
         int revision = -1;
+        quint64 hitVersion = 0;
     };
     struct Pass { bool full; int from, added; QList<QTextBlock> &changed; };
     struct Box { qreal left, width, top, bottom; };
@@ -55,13 +59,14 @@ private:
     QHash<QTextTable *, QRectF> m_tables;
     QHash<QTextTable *, QList<TableFragment>> m_tableFragments;
     QList<TableFragment> m_fragments;
-    struct HitLine { QRectF rect; int block, line, cell; };
-    QList<HitLine> m_hitLines;
-    QList<int> m_hitOrder, m_cellLineOrder, m_cellOrder;
-    QList<qreal> m_hitBottom, m_cellLineBottom, m_cellBottom;
-    QHash<int,QPair<int,int>> m_cellRanges;
-    QHash<quint64,QPair<int,int>> m_hitBlockRanges;
-    bool updateHitIndex(const QList<QTextBlock> &, int from, int removed, int added);
+    struct HitNode;
+    HitNode *m_hitRoot = nullptr;
+    quint64 m_hitTransaction = 0;
+    QHash<quint64, HitNode *> m_hitBlocks;
+    void removeHitBlock(quint64 lifetime);
+    void insertHitBlock(const QTextBlock &, HitNode *reuse = nullptr);
+    void updateHitIndex(std::span<const QTextBlock>, int from, int removed, int added,
+                        int translatedFrom, qreal translatedY);
     void rebuildHitIndex();
     QHash<quint64, Cache> m_blocks;
     QSizeF m_size;

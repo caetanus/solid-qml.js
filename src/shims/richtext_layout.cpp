@@ -11,13 +11,78 @@
 #include <QtMath>
 #include <limits>
 #include <algorithm>
+#include <vector>
 
 namespace rt {
+// A Cartesian tree in document order. Each node owns one already ordered line
+// run. Subtree bounds also cover out-of-order table cells, so spatial pruning
+// does not depend on document order matching visual order.
+struct RichTextLayout::HitNode {
+    HitNode *left=nullptr, *right=nullptr, *parent=nullptr;
+    quint64 lifetime=0, priority=0, version=0, update=0;
+    int position=0, pendingPosition=0;
+    qreal pendingY=0;
+    QPointF origin;
+    QRectF bounds, ownBounds;
+    std::vector<QRectF> lines;
+    std::vector<qreal> bottoms;
+    ~HitNode() { delete left; delete right; }
+    static void shift(HitNode *n,int positions,qreal y) {
+        if (!n) return;
+        n->position+=positions; n->pendingPosition+=positions; n->pendingY+=y;
+        n->origin.ry()+=y; n->bounds.translate(0,y); n->ownBounds.translate(0,y);
+    }
+    static void push(HitNode *n) {
+        if (!n) return;
+        shift(n->left,n->pendingPosition,n->pendingY); shift(n->right,n->pendingPosition,n->pendingY);
+        n->pendingPosition=0; n->pendingY=0;
+    }
+    static void expose(HitNode *n) {
+        if(n->parent) expose(n->parent);
+        push(n);
+    }
+    static QRectF united(const QRectF &a,const QRectF &b) {
+        // QRectF::united drops zero-width empty-paragraph rectangles.
+        return QRectF(QPointF(qMin(a.left(),b.left()),qMin(a.top(),b.top())),
+                      QPointF(qMax(a.right(),b.right()),qMax(a.bottom(),b.bottom())));
+    }
+    static void pull(HitNode *n) {
+        n->bounds=n->ownBounds;
+        for(auto *child:{n->left,n->right}) if(child) {
+            child->parent=n; n->bounds=united(n->bounds,child->bounds);
+        }
+    }
+    static HitNode *merge(HitNode *a,HitNode *b) {
+        if(!a || !b) { auto *n=a ? a : b; if(n) n->parent=nullptr; return n; }
+        if(a->priority>b->priority) {
+            push(a); a->right=merge(a->right,b); pull(a); a->parent=nullptr; return a;
+        }
+        push(b); b->left=merge(a,b->left); pull(b); b->parent=nullptr; return b;
+    }
+    static void split(HitNode *n,int position,HitNode *&a,HitNode *&b) {
+        if(!n) { a=b=nullptr; return; }
+        push(n);
+        if(n->position<position) { a=n; split(n->right,position,n->right,b); pull(a); a->parent=nullptr; }
+        else { b=n; split(n->left,position,a,n->left); pull(b); b->parent=nullptr; }
+    }
+    static HitNode *erase(HitNode *n,int position,HitNode *&removed) {
+        if(!n) return nullptr;
+        push(n);
+        if(n->position==position) {
+            auto *joined=merge(n->left,n->right); n->left=n->right=n->parent=nullptr; removed=n; return joined;
+        }
+        if(position<n->position) n->left=erase(n->left,position,removed);
+        else n->right=erase(n->right,position,removed);
+        pull(n); n->parent=nullptr; return n;
+    }
+};
+
 // The public oracle rounds format lengths to 1/64 px before width allocation.
 static qreal quantizedLength(qreal value) { return qint64(value*64)/64.; }
 RichTextLayout::RichTextLayout(QTextDocument *d) : QAbstractTextDocumentLayout(d) {}
 RichTextLayout::~RichTextLayout()
 {
+    delete m_hitRoot;
     for (auto b = document()->begin(); b.isValid(); b = b.next())
         if (auto *info = blockInfo(b); info && info->layoutOwner == this) info->layoutOwner = nullptr;
 }
@@ -39,6 +104,7 @@ bool RichTextLayout::supports(const QTextDocument *d)
 }
 void RichTextLayout::forgetBlock(quint64 generation)
 {
+    removeHitBlock(generation);
     const auto it = m_blocks.constFind(generation);
     if (it != m_blocks.cend() && it->right > m_page.width() && it->right >= m_size.width()) m_widthDirty = true;
     m_blocks.remove(generation);
@@ -181,6 +247,7 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
     next.minimum = dirty ? layout->minimumWidth() : old.minimum;
     next.preferred = dirty ? layout->maximumWidth() : old.preferred;
     if (known && old.right >= m_size.width() && next.right < old.right) m_widthDirty = true;
+    next.hitVersion=old.hitVersion+(!known || dirty || !sameLines);
     m_blocks.insert(info->lifetime, next);
     pass.changed.append(b);
     return sameLines;
@@ -406,6 +473,8 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
     const QSizeF oldSize = m_size;
     const int oldPages = m_pages;
     QList<QTextBlock> changed;
+    int translatedFrom=-1; qreal translatedY=0;
+    qsizetype hitChangedCount=-1;
     Pass pass{full, from, added, changed}; // Handles are transaction-local.
     for (; b.isValid(); b = b.next()) {
         if (auto *table=QTextCursor(b).currentTable()) {
@@ -442,6 +511,10 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
             && next.rect.x() == old.rect.x() && next.rect.size() == old.rect.size()) {
             ++counters.convergences;
             if (delta != 0) {
+                if(b.next().isValid()) {
+                    translatedFrom=b.next().position(); translatedY=delta;
+                    hitChangedCount=changed.size();
+                }
                 for (auto tail = b.next(); tail.isValid(); tail = tail.next()) {
                     auto *tailInfo = blockInfo(tail);
                     auto &cache = m_blocks[tailInfo->lifetime];
@@ -475,142 +548,160 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
         const auto found=m_tableFragments.constFind(table);
         if (found!=m_tableFragments.cend()) m_fragments.append(*found);
     }
-    if (full || !updateHitIndex(changed,from,removed,added)) rebuildHitIndex();
+    if (full) rebuildHitIndex();
+    else updateHitIndex({changed.constData(),size_t(hitChangedCount<0 ? changed.size() : hitChangedCount)},
+                        from,removed,added,translatedFrom,translatedY);
     // Publish only after every queried rectangle and live layout agrees.
     for (const auto &block : pass.changed) emit updateBlock(block);
     if (m_size != oldSize) emit documentSizeChanged(m_size);
     if (m_pages != oldPages) emit pageCountChanged(m_pages);
     emit update();
 }
-bool RichTextLayout::updateHitIndex(const QList<QTextBlock> &changed, int from, int removed, int added)
+void RichTextLayout::removeHitBlock(quint64 lifetime)
 {
-    // Preserve spatial order when an edit changes only horizontal extents.
-    // Structural changes or pagination changes rebuild the complete index.
-    if (m_hitBlockRanges.size()!=m_blocks.size()) return false;
-    for (const auto &block:changed) {
-        const auto *info=blockInfo(block);
-        const auto range=m_hitBlockRanges.constFind(info->lifetime);
-        if (range==m_hitBlockRanges.cend() || QTextCursor(block).currentTable()) return false;
-        const auto &cache=m_blocks[info->lifetime];
-        if (range->second-range->first!=cache.hitRects.size()) return false;
-        for(int i=0;i<cache.hitRects.size();++i) {
-            const auto rect=cache.hitRects[i].translated(cache.rect.topLeft());
-            const auto &old=m_hitLines[range->first+i].rect;
-            if(rect.top()!=old.top() || rect.bottom()!=old.bottom() || rect.left()!=old.left()) return false;
+    auto it=m_hitBlocks.find(lifetime);
+    if(it==m_hitBlocks.end()) return;
+    auto *node=*it; HitNode::expose(node);
+    HitNode *removed=nullptr;
+    m_hitRoot=HitNode::erase(m_hitRoot,node->position,removed); m_hitBlocks.erase(it); delete removed;
+}
+void RichTextLayout::insertHitBlock(const QTextBlock &block,HitNode *reuse)
+{
+    const auto lifetime=blockInfo(block)->lifetime;
+    const auto &cache=*m_blocks.constFind(lifetime);
+    auto *node=reuse ? reuse : new HitNode;
+    const auto oldOrigin=node->origin;
+    node->lifetime=lifetime; node->position=block.position(); node->origin=cache.rect.topLeft();
+    // SplitMix64 gives stable, well distributed priorities without global RNG state.
+    quint64 priority=lifetime+0x9e3779b97f4a7c15ULL;
+    priority=(priority^(priority>>30))*0xbf58476d1ce4e5b9ULL;
+    priority=(priority^(priority>>27))*0x94d049bb133111ebULL;
+    node->priority=priority^(priority>>31);
+    if(node->version!=cache.hitVersion) {
+        node->lines.clear(); node->bottoms.clear();
+        node->lines.reserve(cache.hitRects.size());
+        node->bottoms.reserve(cache.hitRects.size());
+        for(const auto &rect:cache.hitRects) {
+            const auto absolute=rect.translated(node->origin);
+            node->ownBounds=node->lines.empty() ? absolute : HitNode::united(node->ownBounds,absolute);
+            node->lines.push_back(rect);
+            node->bottoms.push_back(node->bottoms.empty() ? rect.bottom() : qMax(node->bottoms.back(),rect.bottom()));
+            ++counters.hitEntries;
         }
-    }
-    const int delta=added-removed;
-    if(delta) {
-        for(auto &line:m_hitLines) {
-            if(line.block>=from+removed) line.block+=delta;
-            if(line.cell>=from+removed) line.cell+=delta;
-        }
-        QHash<int,QPair<int,int>> ranges;
-        ranges.reserve(m_cellRanges.size());
-        for(auto it=m_cellRanges.cbegin();it!=m_cellRanges.cend();++it)
-            ranges.insert(it.key()>=from+removed ? it.key()+delta : it.key(),it.value());
-        m_cellRanges.swap(ranges);
-    }
+        node->version=cache.hitVersion;
+    } else node->ownBounds.translate(node->origin-oldOrigin);
+    node->bounds=node->ownBounds;
+    HitNode *left,*right; HitNode::split(m_hitRoot,node->position,left,right);
+    m_hitRoot=HitNode::merge(HitNode::merge(left,node),right); m_hitBlocks.insert(lifetime,node);
+}
+void RichTextLayout::updateHitIndex(std::span<const QTextBlock> changed,int from,int removed,int added,int translatedFrom,qreal translatedY)
+{
+    ++m_hitTransaction;
+    // Detach affected runs before shifting suffix positions. Table solving may
+    // replay a block, so mark nodes with the transaction number to visit once.
+    std::vector<std::pair<QTextBlock,HitNode *>> updates;
+    updates.reserve(changed.size());
     for(const auto &block:changed) {
         const auto lifetime=blockInfo(block)->lifetime;
-        const auto &cache=m_blocks[lifetime]; const int first=m_hitBlockRanges.value(lifetime).first;
-        for(int i=0;i<cache.hitRects.size();++i) {
-            auto &line=m_hitLines[first+i]; line.block=block.position();
-            line.rect=cache.hitRects[i].translated(cache.rect.topLeft());
+        auto *node=m_hitBlocks.value(lifetime,nullptr);
+        if(node && node->update==m_hitTransaction) continue;
+        if(node) {
+            HitNode::expose(node);
+            HitNode *detached=nullptr;
+            m_hitRoot=HitNode::erase(m_hitRoot,node->position,detached);
+        } else {
+            node=new HitNode; m_hitBlocks.insert(lifetime,node);
         }
+        node->update=m_hitTransaction;
+        updates.emplace_back(block,node);
     }
-    return true;
+    HitNode *left,*right;
+    HitNode::split(m_hitRoot,from+removed,left,right);
+    HitNode::shift(right,added-removed,0); m_hitRoot=HitNode::merge(left,right);
+    if(translatedFrom>=0) {
+        HitNode::split(m_hitRoot,translatedFrom,left,right);
+        HitNode::shift(right,0,translatedY); m_hitRoot=HitNode::merge(left,right);
+    }
+    for(const auto &[block,node]:updates) insertHitBlock(block,node);
 }
 void RichTextLayout::rebuildHitIndex()
 {
-    m_hitBlockRanges.clear();
-    m_hitLines.clear(); m_hitOrder.clear(); m_cellLineOrder.clear(); m_cellRanges.clear();
-    m_hitBottom.clear(); m_cellLineBottom.clear(); m_cellOrder.clear(); m_cellBottom.clear();
-    for (auto b=document()->begin();b.isValid();b=b.next()) {
-        const auto *info=blockInfo(b);
-        const auto cache=info ? m_blocks.constFind(info->lifetime) : m_blocks.cend();
-        if(cache==m_blocks.cend()) continue;
-        const auto *table=QTextCursor(b).currentTable();
-        const int cell=table ? table->cellAt(b.position()).firstPosition() : -1;
-        m_hitBlockRanges.insert(info->lifetime,{m_hitLines.size(),m_hitLines.size()+cache->hitRects.size()});
-        for (int line=0;line<cache->hitRects.size();++line) {
-            const int index=m_hitLines.size();
-            m_hitLines.append({cache->hitRects[line].translated(cache->rect.topLeft()),b.position(),line,cell});
-            m_hitOrder.append(index);
-            if (cell>=0) m_cellLineOrder.append(index);
-        }
-    }
-    const auto byY=[&](int a,int b) {
-        const auto &x=m_hitLines[a].rect, &y=m_hitLines[b].rect;
-        return x.top()==y.top() ? x.left()<y.left() : x.top()<y.top();
-    };
-    std::sort(m_hitOrder.begin(),m_hitOrder.end(),byY);
-    qreal bottom=-std::numeric_limits<qreal>::infinity();
-    for (int index:m_hitOrder) { bottom=qMax(bottom,m_hitLines[index].rect.bottom()); m_hitBottom.append(bottom); }
-    std::sort(m_cellLineOrder.begin(),m_cellLineOrder.end(),[&](int a,int b) {
-        return m_hitLines[a].cell==m_hitLines[b].cell ? byY(a,b) : m_hitLines[a].cell<m_hitLines[b].cell;
-    });
-    int previous=-1;
-    for (int i=0;i<m_cellLineOrder.size();++i) {
-        const auto &line=m_hitLines[m_cellLineOrder[i]];
-        if (line.cell!=previous) { previous=line.cell; bottom=-std::numeric_limits<qreal>::infinity(); m_cellRanges.insert(previous,{i,i}); }
-        bottom=qMax(bottom,line.rect.bottom()); m_cellLineBottom.append(bottom);
-        m_cellRanges[previous].second=i+1;
-    }
-    for (int i=0;i<m_fragments.size();++i) if (m_fragments[i].table) m_cellOrder.append(i);
-    std::sort(m_cellOrder.begin(),m_cellOrder.end(),[&](int a,int b) {
-        const auto &x=m_fragments[a].rect,&y=m_fragments[b].rect;
-        return x.top()==y.top() ? x.left()<y.left() : x.top()<y.top();
-    });
-    bottom=-std::numeric_limits<qreal>::infinity();
-    for (int index:m_cellOrder) { bottom=qMax(bottom,m_fragments[index].rect.bottom()); m_cellBottom.append(bottom); }
+    ++counters.hitRebuilds;
+    delete m_hitRoot; m_hitRoot=nullptr; m_hitBlocks.clear();
+    for(auto block=document()->begin();block.isValid();block=block.next()) insertHitBlock(block);
 }
-int RichTextLayout::hitTest(const QPointF &point, Qt::HitTestAccuracy accuracy) const
+QList<QPair<int, QRectF>> RichTextLayout::hitIndexSnapshot() const
 {
-    int cell=-1;
-    const int cellUpper=std::upper_bound(m_cellOrder.cbegin(),m_cellOrder.cend(),point.y(),[&](qreal y,int index) {
-        return y<m_fragments[index].rect.top();
-    })-m_cellOrder.cbegin();
-    for (int i=cellUpper-1;i>=0 && m_cellBottom[i]>=point.y();--i) {
-        const auto &fragment=m_fragments[m_cellOrder[i]];
-        if (fragment.table && fragment.rect.contains(point)) {
-            cell=fragment.table->cellAt(fragment.row,fragment.column).firstPosition(); break;
-        }
-    }
-    const auto range=m_cellRanges.constFind(cell);
-    const auto &order=range==m_cellRanges.cend() ? m_hitOrder : m_cellLineOrder;
-    const auto &bottoms=range==m_cellRanges.cend() ? m_hitBottom : m_cellLineBottom;
-    const int first=range==m_cellRanges.cend() ? 0 : range->first;
-    const int end=range==m_cellRanges.cend() ? order.size() : range->second;
-    const int upper=std::upper_bound(order.cbegin()+first,order.cbegin()+end,point.y(),[&](qreal y,int index) {
-        return y<m_hitLines[index].rect.top();
-    })-order.cbegin();
-    qreal best=std::numeric_limits<qreal>::infinity(); int result=-1;
-    const auto candidate=[&](int index) {
-        ++counters.hitCandidates;
-        const auto &rect=m_hitLines[index].rect;
-        if (accuracy==Qt::ExactHit && !rect.contains(point)) return;
-        const qreal dy=std::max({rect.top()-point.y(),0.,point.y()-rect.bottom()});
-        const qreal dx=std::max({rect.left()-point.x(),0.,point.x()-rect.right()});
-        const qreal distance=dx*dx+dy*dy;
-        if (distance<best) { best=distance; result=index; }
+    QList<QPair<int, QRectF>> result;
+    const auto visit=[&](auto &&self,const HitNode *node,int position,qreal y)->void {
+        if(!node) return;
+        self(self,node->left,position+node->pendingPosition,y+node->pendingY);
+        for(const auto &line:node->lines)
+            result.append({node->position+position,line.translated(node->origin+QPointF(0,y))});
+        self(self,node->right,position+node->pendingPosition,y+node->pendingY);
     };
-    for (int i=upper-1;i>=first;--i) {
-        const qreal dy=qMax(0.,point.y()-bottoms[i]);
-        if (dy*dy>best || (accuracy==Qt::ExactHit && dy>0)) break;
-        candidate(order[i]);
+    visit(visit,m_hitRoot,0,0);
+    return result;
+}
+int RichTextLayout::hitTest(const QPointF &point,Qt::HitTestAccuracy accuracy) const
+{
+    int first=0,last=document()->characterCount();
+    // Cell fragments are already page-local rectangles. Restrict the search to
+    // the containing cell before considering distance to text (including padding).
+    for(const auto &fragment:m_fragments) if(fragment.table && fragment.rect.contains(point)) {
+        const auto cell=fragment.table->cellAt(fragment.row,fragment.column);
+        first=cell.firstPosition(); last=cell.lastPosition()+1; break;
     }
-    for (int i=upper;i<end;++i) {
-        const qreal dy=qMax(0.,m_hitLines[order[i]].rect.top()-point.y());
-        if (dy*dy>best || (accuracy==Qt::ExactHit && dy>0)) break;
-        candidate(order[i]);
-    }
-    if (result<0) return -1;
-    const auto &hit=m_hitLines[result];
-    const auto block=document()->findBlock(hit.block);
-    if (!block.isValid()) return -1;
-    const auto *layout=block.layout();
-    return block.position()+qMin(block.length()-1,layout->lineAt(hit.line).xToCursor(point.x()-layout->position().x()));
+    qreal best=std::numeric_limits<qreal>::infinity();
+    int result=-1,resultLine=0;
+    QPointF resultOrigin;
+    const auto distance=[&](const QRectF &rect) {
+        const qreal dx=std::max({rect.left()-point.x(),0.,point.x()-rect.right()});
+        const qreal dy=std::max({rect.top()-point.y(),0.,point.y()-rect.bottom()});
+        return dx*dx+dy*dy;
+    };
+    const auto visit=[&](auto &&self,const HitNode *node,int offset,qreal y)->void {
+        if(!node) return;
+        const auto bounds=node->bounds.translated(0,y);
+        const qreal lower=distance(bounds);
+        if(lower>best || (accuracy==Qt::ExactHit && lower>0)) return;
+        const int position=node->position+offset;
+        const int childOffset=offset+node->pendingPosition;
+        const qreal childY=y+node->pendingY;
+        const auto origin=node->origin+QPointF(0,y);
+        if(position>=first && position<last) {
+            const auto candidate=[&](int line) {
+                ++counters.hitCandidates;
+                const auto rect=node->lines[line].translated(origin);
+                if(accuracy==Qt::ExactHit && !rect.contains(point)) return;
+                const qreal d=distance(rect);
+                if(d<best || (d==best && (result<0 || position<result || (position==result && line<resultLine)))) {
+                    best=d; result=position; resultLine=line; resultOrigin=origin;
+                }
+            };
+            const qreal localY=point.y()-origin.y();
+            const int upper=std::upper_bound(node->lines.cbegin(),node->lines.cend(),localY,
+                [](qreal y,const QRectF &rect) { return y<rect.top(); })-node->lines.cbegin();
+            for(int line=upper-1;line>=0;--line) {
+                const qreal dy=qMax(0.,localY-node->bottoms[line]);
+                if(dy*dy>best || (accuracy==Qt::ExactHit && dy>0)) break;
+                candidate(line);
+            }
+            for(int line=upper;line<int(node->lines.size());++line) {
+                const qreal dy=qMax(0.,node->lines[line].top()-localY);
+                if(dy*dy>best || (accuracy==Qt::ExactHit && dy>0)) break;
+                candidate(line);
+            }
+        }
+        const auto *a=position>=first ? node->left : nullptr;
+        const auto *b=position<last ? node->right : nullptr;
+        if(a && b && distance(a->bounds.translated(0,childY))>distance(b->bounds.translated(0,childY))) std::swap(a,b);
+        self(self,a,childOffset,childY); self(self,b,childOffset,childY);
+    };
+    visit(visit,m_hitRoot,0,0);
+    if(result<0) return -1;
+    const auto block=document()->findBlock(result);
+    return block.position()+qMin(block.length()-1,block.layout()->lineAt(resultLine).xToCursor(point.x()-resultOrigin.x()));
 }
 void RichTextLayout::drawTableDecorations(QPainter *painter, const QRectF &clip, bool quick) const
 {

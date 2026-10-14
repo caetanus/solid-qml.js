@@ -384,6 +384,91 @@ private slots:
         QCOMPARE(bounds(output,Qt::green),bounds(reference,Qt::green));
         QCOMPARE(bounds(output,Qt::magenta),bounds(reference,Qt::magenta));
     }
+    void incrementalHitWork() {
+        QTextDocument d; prepare(d);
+        d.setPlainText(QString("short paragraph\n").repeated(2000));
+        QTextCursor title(&d); QTextBlockFormat centered; centered.setAlignment(Qt::AlignHCenter);
+        title.setBlockFormat(centered);
+        QTextCursor cell(d.findBlockByNumber(10)); auto *table=cell.insertTable(2,2);
+        table->cellAt(0,0).firstCursorPosition().insertText("cell text");
+        auto *layout=new rt::RichTextLayout(&d); d.setDocumentLayout(layout);
+        for (int scenario=0;scenario<4;++scenario) {
+            QTextCursor c(&d);
+            c.setPosition(scenario==0 ? 0 : scenario==1 ? d.characterCount()/2 : scenario==2 ? table->cellAt(0,0).firstPosition() : 0);
+            if (scenario==3) {
+                QTextCursor barrier(d.findBlockByNumber(50));
+                auto format=barrier.blockFormat(); format.setPageBreakPolicy(QTextFormat::PageBreak_AlwaysBefore); barrier.setBlockFormat(format);
+                c.movePosition(QTextCursor::EndOfBlock);
+                const int lines=c.block().layout()->lineCount();
+                while(c.block().layout()->lineCount()==lines) c.insertText("w");
+                c.deletePreviousChar();
+                QCOMPARE(c.block().layout()->lineCount(),lines);
+            }
+            const int previousLines=c.block().layout()->lineCount();
+            layout->counters={}; c.insertText("w");
+            if(scenario==3) QVERIFY(c.block().layout()->lineCount()>previousLines);
+            const auto rect=c.block().layout()->lineForTextPosition(c.position()-c.block().position()).naturalTextRect().translated(c.block().layout()->position());
+            QVERIFY(layout->hitTest(rect.center(),Qt::FuzzyHit)>=0);
+            qInfo()<<"HIT WORK"<<scenario<<layout->counters.hitEntries<<layout->counters.placements;
+            QVERIFY2(layout->counters.hitEntries<100,"A local edit visited the document's entire hit index");
+            QCOMPARE(layout->counters.hitRebuilds,quint64(0));
+        }
+    }
+    void seededTableHitIndex() {
+        QTextDocument d; prepare(d);
+        d.setPlainText(QString("paragraph before and after table\n").repeated(100));
+        QTextCursor c(d.findBlockByNumber(5)); auto *table=c.insertTable(3,3);
+        for(int row=0;row<3;++row) for(int col=0;col<3;++col)
+            table->cellAt(row,col).firstCursorPosition().insertText(QString("cell words ").repeated(10+row+col));
+        auto *layout=new rt::RichTextLayout(&d); d.setDocumentLayout(layout);
+        QRandomGenerator random(10010);
+        for(int step=0;step<40;++step) {
+            const auto cell=table->cellAt(random.bounded(3),random.bounded(3));
+            QTextCursor edit=cell.firstCursorPosition();
+            edit.setPosition(cell.firstPosition()+random.bounded(qMax(1,cell.lastPosition()-cell.firstPosition())));
+            if(step%5==0) edit.insertBlock();
+            else if(step%5==1) edit.deleteChar();
+            else if(step%5==2) d.undo();
+            else edit.insertText("www");
+            QScopedPointer<QTextDocument> cold(d.clone());
+            cold->setDocumentLayout(new rt::RichTextLayout(cold.data()));
+            compare(*cold,d,true);
+            QCOMPARE(layout->hitIndexSnapshot(),static_cast<rt::RichTextLayout *>(cold->documentLayout())->hitIndexSnapshot());
+            for(auto block=d.begin();block.isValid();block=block.next())
+                for(int line=0;line<block.layout()->lineCount();++line) {
+                    const auto rect=block.layout()->lineAt(line).naturalTextRect().translated(block.layout()->position());
+                    for(const auto point:{rect.center(),rect.topLeft()-QPointF(4,2),rect.bottomRight()+QPointF(4,2)})
+                        for(auto accuracy:{Qt::FuzzyHit,Qt::ExactHit})
+                            QCOMPARE(layout->hitTest(point,accuracy),cold->documentLayout()->hitTest(point,accuracy));
+                }
+        }
+    }
+    void hitBookBenchmark() {
+        if (qEnvironmentVariableIsEmpty("HIT_BENCHMARK")) QSKIP("Opt-in release benchmark");
+        QuickView view; RichTextHandler handler; handler.setDocument(view.edit->textDocument());
+        handler.setLayoutEngine("custom");
+        QVERIFY(handler.loadOdf(QUrl::fromLocalFile(qEnvironmentVariable("RICHTEXT_BOOK"))));
+        handler.configurePages(794,1118,32,{94,113,94,113});
+        auto &d=*view.doc();
+        int tablePosition=-1;
+        for (auto *frame:d.rootFrame()->childFrames()) if (auto *table=qobject_cast<QTextTable *>(frame)) { tablePosition=table->cellAt(0,0).firstPosition(); break; }
+        QVERIFY(tablePosition>=0);
+        for (int queries=0;queries<2;++queries) for(int scenario=0;scenario<5;++scenario) {
+            QFile load("/proc/loadavg"); QVERIFY(load.open(QIODevice::ReadOnly)); const auto average=load.readAll().trimmed();
+            QVERIFY2(average.split(' ').first().toDouble()<6,"Invalid benchmark load");
+            QList<double> times;
+            for(int i=0;i<40;++i) {
+                int position=scenario==0 ? 0 : scenario==1 ? 10 : scenario==2 ? d.characterCount()/2 : scenario==3 ? tablePosition : d.characterCount()-1;
+                view.edit->setCursorPosition(position); handler.setCursorPosition(position);
+                QElapsedTimer timer; timer.start(); handler.insertText("x");
+                if(queries) { view.edit->setCursorPosition(position+1); const auto rect=view.edit->cursorRectangle(); d.documentLayout()->hitTest(rect.center(),Qt::FuzzyHit); }
+                times.append(timer.nsecsElapsed()/1e6);
+                QCOMPARE(d.characterAt(position),QChar('x')); d.undo();
+            }
+            std::sort(times.begin(),times.end());
+            qInfo()<<"HIT_BENCH"<<queries<<scenario<<"median"<<times[20]<<"p95"<<times[38]<<"load"<<average;
+        }
+    }
     void incrementalEdits() {
         QuickView view; RichTextHandler handler; handler.setDocument(view.edit->textDocument());
         QTextDocument &d=*view.doc(); prepare(d);
@@ -410,6 +495,15 @@ private slots:
             QScopedPointer<QTextDocument> cold(d.clone());
             cold->setDocumentLayout(new rt::RichTextLayout(cold.data()));
             compare(*cold,d,true);
+            QCOMPARE(layout->hitIndexSnapshot(),static_cast<rt::RichTextLayout *>(cold->documentLayout())->hitIndexSnapshot());
+            for(auto b=d.begin();b.isValid();b=b.next()) {
+                for(int line=0;line<b.layout()->lineCount();++line) {
+                    const auto rect=b.layout()->lineAt(line).naturalTextRect().translated(b.layout()->position());
+                    for(const auto point:{rect.center(),rect.topLeft()-QPointF(5,3),rect.bottomRight()+QPointF(8,4)})
+                        for(auto accuracy:{Qt::FuzzyHit,Qt::ExactHit})
+                            QCOMPARE(layout->hitTest(point,accuracy),cold->documentLayout()->hitTest(point,accuracy));
+                }
+            }
             if (QTest::currentTestFailed()) { qInfo() << "random step" << step; return; }
         }
         layout->counters={}; QTextCursor c(&d); c.setPosition(d.characterCount()/2); c.insertText("i");
@@ -427,6 +521,9 @@ private slots:
         QScopedPointer<QTextDocument> cold(d.clone()); cold->setDocumentLayout(new rt::RichTextLayout(cold.data())); compare(*cold,d,true);
         QVERIFY(layout->counters.shapedBlocks<=2); QVERIFY(layout->counters.convergences>0);
         QVERIFY(layout->counters.translations>0); QVERIFY(layout->counters.placements<10);
+        QCOMPARE(layout->counters.hitRebuilds,quint64(0));
+        QVERIFY(layout->counters.hitEntries<20);
+        QCOMPARE(layout->hitIndexSnapshot(),static_cast<rt::RichTextLayout *>(cold->documentLayout())->hitIndexSnapshot());
         qInfo()<<"TRANSLATED counters"<<layout->counters.shapedBlocks<<layout->counters.placements<<layout->counters.translations;
         d.undo(); cold.reset(d.clone()); cold->setDocumentLayout(new rt::RichTextLayout(cold.data())); compare(*cold,d,true);
     }
