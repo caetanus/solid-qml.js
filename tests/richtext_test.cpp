@@ -3158,6 +3158,28 @@ private slots:
         QTRY_VERIFY(visible());
     }
 
+    void loadOdfResetsViewportToPageTop()
+    {
+        const QString path = m_dir.filePath("viewport.odt");
+        writeOdt(path, QByteArray("<text:p>Title</text:p>") + QByteArray("<text:p>Body paragraph</text:p>").repeated(150));
+        PageEditor w;
+        QVERIFY(w.root);
+        w.view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        for (int position : {0, 30}) {
+            QVERIFY(w.fmt()->loadOdf(QUrl::fromLocalFile(path)));
+            w.edit()->setProperty("cursorPosition", position);
+            QTest::qWait(30);
+            w.body()->setProperty("contentY", 1400);
+            QVariant result;
+            QVERIFY(QMetaObject::invokeMethod(w.root.data(), "loadOdf", Q_RETURN_ARG(QVariant, result), Q_ARG(QVariant, path)));
+            QVERIFY(result.toMap().value("ok").toBool());
+            QCOMPARE(w.edit()->property("cursorPosition").toInt(), 0);
+            QTest::qWait(50); // Include queued caret following and layout polish.
+            QCOMPARE(w.body()->property("contentY").toReal(), 0.0);
+        }
+    }
+
     void pageViewGeometryAndNavigation()
     {
         PageEditor w;
