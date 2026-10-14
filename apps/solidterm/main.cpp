@@ -475,7 +475,9 @@ int main(int argc, char **argv)
     // (so focus state is real) — to check the fresh terminal grabs keyboard focus on launch.
     const QString plainShot = qEnvironmentVariable("SOLIDTERM_PLAINSHOT");
     if (!plainShot.isEmpty() && window) {
-        QTimer::singleShot(1800, qApp, [plainShot] {
+        // SOLIDTERM_PLAINSHOT_MS overrides the settle (e.g. to let programs started in split panes draw).
+        const int settle = qEnvironmentVariableIsSet("SOLIDTERM_PLAINSHOT_MS") ? qEnvironmentVariableIntValue("SOLIDTERM_PLAINSHOT_MS") : 1800;
+        QTimer::singleShot(settle, qApp, [plainShot] {
             int i = 0;
             for (QWindow *w : QGuiApplication::topLevelWindows())
                 if (auto *qw = qobject_cast<QQuickWindow *>(w))
