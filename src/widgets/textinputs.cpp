@@ -27,7 +27,9 @@ T.TextField {
     maximumLength: root.maximumLength
     readOnly: root.readOnly
     onTextChanged: root.text = text
-    onTextEdited: root.textEdited()
+    // The new text first: an author reading it in onInput (e.currentTarget.value) must see this
+    // edit — T.TextField emits textEdited BEFORE textChanged.
+    onTextEdited: { root.text = text; root.textEdited() }
     onEditingFinished: root.editingFinished()
     Keys.onPressed: (event) => root.keyPressed(event)
 

@@ -813,6 +813,15 @@ test('select-widget',
     dependencies: select_test_deps),
   env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)
 
+# <input>'s SolidWidgets::TextField: onInput (onTextEdited) sees the text WITH the key just typed —
+# T.TextField emits textEdited before textChanged, and the wrapper relayed it before syncing `text`.
+test('widgets-textfield',
+  executable('test-widgets-textfield', files('tests/textfield_test.cpp'),
+    qt6.preprocess(moc_sources: files('tests/textfield_test.cpp'), dependencies: select_test_deps),
+    include_directories: include_directories('src'),
+    dependencies: select_test_deps),
+  env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)
+
 # <RichText>/<DocumentEditor> engine (RichTextHandler): modified tracking, the ODF load/save error
 # contract, content/format state and an .odt round-trip — what an app driving the document uses.
 if build_richtext
