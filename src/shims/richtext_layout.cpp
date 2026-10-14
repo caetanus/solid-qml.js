@@ -1,5 +1,6 @@
 #include "richtext_layout.h"
 #include "richtext_blocks.h"
+#include "richtext_odf.h"
 
 #include <QPainter>
 #include <QFontMetricsF>
@@ -214,7 +215,19 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
         flow.y = (qFloor(flow.y / stride) + 1) * stride + top;
     if (format.pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysBefore))
         flow.y = (qFloor(flow.y / stride) + 1) * stride + top;
-    if (!first) flow.y += qMax(flow.bottom, quantizedLength(format.topMargin()));
+    if (!first) {
+        const qreal beforeSpacing = flow.y;
+        if (m_root.boolProperty(kDocumentSpacingProperty)) {
+            flow.y += flow.bottom + quantizedLength(format.topMargin());
+            // Natural page starts discard inter-paragraph space, including a gap
+            // large enough to cross the page boundary by itself.
+            if (!flow.pageBreak && !format.pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysBefore)
+                && qFloor(flow.y / stride) > qFloor(beforeSpacing / stride))
+                flow.y = (qFloor(beforeSpacing / stride) + 1) * stride + top;
+        } else {
+            flow.y += qMax(flow.bottom, quantizedLength(format.topMargin()));
+        }
+    }
     const qreal origin = flow.y;
     bool sameLines = known && !dirty;
     next.hitRects.reserve(layout->lineCount());

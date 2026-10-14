@@ -714,6 +714,7 @@ QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
     doc->clear(); // also drops the image resources
     auto rootFormat = doc->rootFrame()->frameFormat();
     rootFormat.clearProperty(rt::kDocumentGeometryProperty);
+    rootFormat.clearProperty(rt::kDocumentSpacingProperty);
     doc->rootFrame()->setFrameFormat(rootFormat);
     if (!m_documentGeometry.isEmpty()) {
         m_documentGeometry.clear();

@@ -23,6 +23,7 @@ namespace rt {
 
 // Root-frame metadata in canonical 96 dpi pixels: width, height, top, right, bottom, left.
 constexpr int kDocumentGeometryProperty = QTextFormat::UserProperty + 0x5350;
+constexpr int kDocumentSpacingProperty = QTextFormat::UserProperty + 0x5351;
 
 // Reads `path` into `doc` (cleared, rebuilt without undo history) and `sheet` (the built-in styles
 // plus the file's). A missing / non-ODF file fails before touching either. false + `error`.

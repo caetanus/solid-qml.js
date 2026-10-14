@@ -264,6 +264,25 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void odfParagraphSpacingAddsAndResetsAtPageTop()
+    {
+        const QString path = m_dir.filePath("paragraph-spacing.odt");
+        writeOdt(path, "<text:p text:style-name=\"Spaced\">One</text:p><text:p text:style-name=\"Spaced\">Two</text:p><text:p text:style-name=\"LargeGap\">Three</text:p>", {},
+            "<style:style style:name=\"Spaced\" style:family=\"paragraph\"><style:paragraph-properties fo:margin-top=\"6px\" fo:margin-bottom=\"6px\" fo:line-height=\"20px\"/></style:style>"
+            "<style:style style:name=\"LargeGap\" style:family=\"paragraph\"><style:paragraph-properties fo:margin-top=\"60px\" fo:line-height=\"20px\"/></style:style>");
+        m_fmt->setLayoutEngine("custom");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_fmt->configurePages(300, 100, 0, {10,10,10,10});
+        doc()->documentLayout()->documentSize();
+        const auto y = [&](int n) {
+            const auto block = doc()->findBlockByNumber(n);
+            return block.layout()->position().y() + block.layout()->lineAt(0).y();
+        };
+        // Fixed line-height positions include the same baseline offset in both blocks.
+        QCOMPARE(y(1) - y(0), 32.0);
+        QCOMPARE(y(2) - y(0), 100.0);
+    }
+
     void odfLanguagesSurviveStylesAndRoundTrip()
     {
         const QString path = m_dir.filePath("languages.odt");

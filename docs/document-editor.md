@@ -493,6 +493,12 @@ before editing.
 
 ### Differences from Qt's layout
 
+Imported ODF documents add adjacent paragraph bottom/top margins, matching
+LibreOffice. Qt collapses them to the larger margin. On a natural page break,
+the custom engine discards the inter-paragraph gap, including gaps that would
+otherwise extend into the next page. Explicit page breaks retain their spacing.
+Ordinary Qt/HTML documents keep Qt's margin-collapse behavior.
+
 The phase-2 acceptance policy top-aligns cells in **every fragment of a split
 row**. Middle/bottom alignment applies only when the row fits on one page.
 This makes placement deterministic when an edit changes where a row splits and

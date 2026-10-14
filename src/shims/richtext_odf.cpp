@@ -530,6 +530,7 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     doc->setUndoRedoEnabled(false);
     doc->clear();
     auto rootFormat = doc->rootFrame()->frameFormat();
+    rootFormat.setProperty(kDocumentSpacingProperty, true);
     rootFormat.setProperty(kDocumentGeometryProperty, documentGeometry(zip.fileData(QStringLiteral("styles.xml")), content));
     doc->rootFrame()->setFrameFormat(rootFormat);
     QTextCursor c(doc);
