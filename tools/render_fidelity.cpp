@@ -1,5 +1,6 @@
 // Repeatable 96 dpi render through the same handler and custom engine as DocumentEditor.
 #include "shims/richtext.h"
+#include "shims/richtext_page_bands.h"
 #include <QGuiApplication>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -30,6 +31,8 @@ int main(int argc, char **argv) {
         margins=handler.property("documentPageMargins").toList();
     }
     edit->setWidth(width); handler.configurePages(width,height,0,margins);
+    const auto savePath = qEnvironmentVariable("FIDELITY_SAVE");
+    if (!savePath.isEmpty() && !handler.saveOdfCopy(QUrl::fromLocalFile(savePath))) qFatal("ODF save failed");
     auto *doc=edit->textDocument()->textDocument(); auto *layout=doc->documentLayout();
     const QFontMetricsF fontMetrics(doc->defaultFont());
     layout->documentSize(); const int pages=layout->pageCount();
@@ -46,7 +49,12 @@ int main(int argc, char **argv) {
                 {"text",block.text().mid(line.textStart(),line.textLength())}});
         }
     }
+    QJsonArray bands;
     for (int page=0;page<pages;++page) {
+        for (const auto &line : rt::pageBandLines(doc, page, pages))
+            bands.append(QJsonObject{{"page", page+1}, {"area", line.area ? "footer" : "header"},
+                {"text",line.text}, {"x",line.rect.x()}, {"y",line.rect.y()-page*height},
+                {"baseline",line.baseline.y()-page*height}, {"width",line.rect.width()}});
         QImage image(qCeil(width),qCeil(height),QImage::Format_ARGB32_Premultiplied);
         image.setDotsPerMeterX(3780); image.setDotsPerMeterY(3780); image.fill(Qt::white);
         QPainter painter(&image); painter.translate(0,-page*height);
@@ -56,6 +64,6 @@ int main(int argc, char **argv) {
         if (!image.save(output.filePath(QString("office-%1.png").arg(page+1)))) qFatal("PNG write failed");
     }
     QFile file(output.filePath("office.json")); if (!file.open(QIODevice::WriteOnly)) return 1;
-    file.write(QJsonDocument(QJsonObject{{"pages",pages},{"width",width},{"height",height},{"lines",lines},
+    file.write(QJsonDocument(QJsonObject{{"pages",pages},{"width",width},{"height",height},{"lines",lines},{"bands",bands},
         {"fontHeight",fontMetrics.height()},{"fontLeading",fontMetrics.leading()},{"fontSpacing",fontMetrics.lineSpacing()}}).toJson());
 }

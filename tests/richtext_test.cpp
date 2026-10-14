@@ -7,6 +7,7 @@
 #include "shims/richtext.h"
 #include "shims/richtext_layout.h"
 #include "shims/richtext_odf.h"
+#include "shims/richtext_page_bands.h"
 #include "shims/richtext_qt_p.h"
 #include "qmlcss/QMLCss.h"
 #include <QQmlContext>
@@ -399,6 +400,86 @@ private slots:
         QVERIFY(heading() < 150);
     }
 
+    void odfPageBandsRenderAndRoundTrip()
+    {
+        const QString path = m_dir.filePath("page-bands.odt");
+        QZipWriter zip(path);
+        zip.addFile("content.xml", "<office:document-content" ODF_NS "><office:body><office:text><text:p>Body</text:p></office:text></office:body></office:document-content>");
+        zip.addFile("styles.xml", "<office:document-styles" ODF_NS "><office:styles><style:style style:name=\"Band\" style:family=\"paragraph\"><style:text-properties fo:font-size=\"12pt\" fo:color=\"#cc0000\"/></style:style></office:styles>"
+            "<office:automatic-styles><style:style style:name=\"Centered\" style:family=\"paragraph\" style:parent-style-name=\"Band\"><style:paragraph-properties fo:text-align=\"center\"/></style:style>"
+            "<style:page-layout style:name=\"Page\"><style:page-layout-properties fo:page-width=\"300px\" fo:page-height=\"200px\" fo:margin=\"10px\"/><style:header-style><style:header-footer-properties fo:min-height=\"30px\" fo:margin-bottom=\"10px\"/></style:header-style><style:footer-style><style:header-footer-properties fo:min-height=\"40px\" fo:margin-top=\"10px\"/></style:footer-style></style:page-layout>"
+            "</office:automatic-styles><office:master-styles><style:master-page style:name=\"Standard\" style:page-layout-name=\"Page\"><style:header><text:p text:style-name=\"Centered\">Heading</text:p></style:header>"
+            "<style:footer><text:p text:style-name=\"Centered\">Page <text:page-number>1</text:page-number> of <text:page-count>1</text:page-count></text:p></style:footer></style:master-page></office:master-styles></office:document-styles>");
+        zip.close();
+        m_fmt->setLayoutEngine("custom");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_edit->setProperty("width", 300);
+        m_fmt->configurePages(300, 200, 0, {10,10,10,10});
+        const QString copy = m_dir.filePath("page-bands-copy.odt");
+        QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(copy)));
+        QVERIFY(QZipReader(copy).fileData("styles.xml").contains("text:page-number"));
+        const auto paint = [&] {
+            QImage output(300,200,QImage::Format_RGB32); output.fill(Qt::white);
+            QPainter painter(&output); doc()->documentLayout()->draw(&painter, {}); painter.end();
+            return output;
+        };
+        const QImage before = paint();
+        int footerInk = 0, headerInk = 0;
+        for (int y = 0; y < 200; ++y) for (int x = 80; x < 220; ++x) {
+            const auto c = before.pixelColor(x,y);
+            if (c.red() > c.green() + 80) { if (y < 35) ++headerInk; if (y > 155) ++footerInk; }
+        }
+        QVERIFY(headerInk > 20); QVERIFY(footerInk > 20);
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(copy)));
+        QCOMPARE(m_fmt->documentPageWidth(), 300.);
+        m_fmt->configurePages(300, 200, 0, {10,10,10,10});
+        QCOMPARE(paint(), before);
+        QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(copy)));
+        const QString asyncCopy = m_dir.filePath("page-bands-async.odt");
+        QTest::failOnWarning(QRegularExpression(".*different thread.*"));
+        QSignalSpy saved(m_fmt, &RichTextHandler::saveCopyFinished);
+        m_fmt->saveOdfCopyAsync(QUrl::fromLocalFile(asyncCopy));
+        QTRY_COMPARE(saved.size(), 1);
+        QVERIFY(saved[0][0].toBool());
+        QCOMPARE(QZipReader(asyncCopy).fileData("styles.xml"), QZipReader(copy).fileData("styles.xml"));
+        QTextCursor cursor(doc()); cursor.movePosition(QTextCursor::End);
+        QTextBlockFormat next; next.setPageBreakPolicy(QTextFormat::PageBreak_AlwaysBefore);
+        cursor.insertBlock(next); cursor.insertText("Second page");
+        m_fmt->configurePages(300, 200, 0, {10,10,10,10});
+        QCOMPARE(doc()->documentLayout()->pageCount(), 2);
+        const auto lines = rt::pageBandLines(doc(), 1, 2);
+        QCOMPARE(lines.size(), 2);
+        QCOMPARE(lines[1].text, QStringLiteral("Page 2 of 2"));
+        QCOMPARE(lines[1].color, QColor("#cc0000"));
+        QVERIFY(qAbs(lines[1].rect.center().x() - 150) < 1);
+        QVERIFY(qAbs(lines[1].rect.top() - 360) < 1);
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+        QQuickWindow window; window.setColor(Qt::white); window.resize(300,200);
+        auto *edit = qobject_cast<QQuickItem *>(m_edit.data());
+        edit->setParentItem(window.contentItem());
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        for (const QString &engine : {QStringLiteral("custom"), QStringLiteral("qt")}) {
+            m_fmt->setLayoutEngine(engine);
+            m_fmt->configurePages(300, 200, 0, {10,10,10,10});
+            edit->setY(-200);
+            QTRY_VERIFY(edit->findChild<QQuickItem *>("footerBand"));
+            QTRY_COMPARE(edit->findChild<QQuickItem *>("footerBand")->property("page").toInt(), 2);
+            const auto redPixels = [&] {
+                const auto image = window.grabWindow(); int count = 0;
+                for (int y=155; y<185; ++y) for (int x=80; x<220; ++x) {
+                    const auto c = image.pixelColor(x,y); if (c.red() > c.green()+80) ++count;
+                }
+                return count;
+            };
+            QTRY_VERIFY(redPixels() > 20);
+            edit->setY(0);
+            QTRY_COMPARE(edit->findChild<QQuickItem *>("footerBand")->property("page").toInt(), 1);
+        }
+        edit->setParentItem(nullptr);
+        m_fmt->newDocument();
+        QVERIFY(rt::pageBandLines(doc(), 0, 1).isEmpty());
+    }
+
     void odfActiveFooterReservesBodySpace()
     {
         const QString path = m_dir.filePath("footer-space.odt");
@@ -651,6 +732,11 @@ private slots:
         QCOMPARE(m_fmt->property("documentPageWidth").toReal(), 816.0);
         QCOMPARE(m_fmt->property("documentPageHeight").toReal(), 1056.0);
         QCOMPARE(m_fmt->property("documentPageMargins").toList(), QVariantList({96,96,96,48}));
+        const QString saved = m_dir.filePath("geometry-saved.odt");
+        QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(saved)));
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(saved)));
+        QCOMPARE(m_fmt->documentPageWidth(), 816.0);
+        QCOMPARE(m_fmt->documentPageMargins(), QVariantList({96,96,96,48}));
         QSignalSpy changes(m_fmt, SIGNAL(documentPageGeometryChanged()));
         QVERIFY(changes.isValid());
         QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));

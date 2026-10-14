@@ -1,4 +1,5 @@
 #include "richtext_layout.h"
+#include "richtext_page_bands.h"
 #include "richtext_blocks.h"
 #include "richtext_odf.h"
 
@@ -909,6 +910,7 @@ void RichTextLayout::draw(QPainter *painter, const PaintContext &context)
     painter->save();
     if (!context.clip.isEmpty()) painter->setClipRect(context.clip, Qt::IntersectClip);
     drawTableDecorations(painter,context.clip);
+    drawPageBands(document(), painter, context.clip);
     painter->setPen(context.palette.color(QPalette::Text));
     for (auto b = document()->begin(); b.isValid(); b = b.next()) {
         const auto rect = blockBoundingRect(b);

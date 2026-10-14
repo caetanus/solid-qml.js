@@ -62,10 +62,10 @@ struct OdfStyles {
 
 // Resolve the first body paragraph's master through its style chain. Reading both XML parts
 // also handles automatic paragraph styles and avoids choosing an unrelated first page layout.
-QVariantList documentGeometry(const QByteArray &styles, const QByteArray &content, QVariantList *reserved)
+QVariantList documentGeometry(const QByteArray &styles, const QByteArray &content, QVariantList *reserved, QVariantList *gaps, QString *selectedMaster)
 {
     QHash<QString, QVariantList> layouts;
-    QHash<QString, QVariantList> reserves;
+    QHash<QString, QVariantList> reserves, layoutGaps;
     QHash<QString, QSet<int>> active;
     QHash<QString, QString> masters, parents, styleMasters;
     QString firstMaster, firstParagraph;
@@ -104,12 +104,14 @@ QVariantList documentGeometry(const QByteArray &styles, const QByteArray &conten
             } else if (xml.name() == QLatin1String("page-layout")) {
                 layout = val("style:name");
                 reserves[layout] = {0., 0.};
+                layoutGaps[layout] = {0., 0.};
             } else if (!layout.isEmpty() && (xml.name() == QLatin1String("header-style") || xml.name() == QLatin1String("footer-style"))) {
                 area = xml.name() == QLatin1String("header-style") ? 0 : 1;
             } else if (!layout.isEmpty() && area >= 0 && xml.name() == QLatin1String("header-footer-properties")) {
                 const qreal height = lengthPx(val("svg:height"));
                 const qreal minimum = lengthPx(val("fo:min-height"));
                 const qreal gap = lengthPx(val(area == 0 ? "fo:margin-bottom" : "fo:margin-top"));
+                layoutGaps[layout][area] = qIsFinite(gap) ? gap : 0.;
                 // LibreOffice's declared minimum is the whole band, including
                 // the body gap (0.4in with a 0.2in gap reserves 0.4in, not 0.6in).
                 reserves[layout][area] = qMax(qMax(qIsFinite(height) ? height : 0., qIsFinite(minimum) ? minimum : 0.),
@@ -136,6 +138,8 @@ QVariantList documentGeometry(const QByteArray &styles, const QByteArray &conten
         if (!master.isEmpty()) break;
     }
     if (master.isEmpty()) master = firstMaster;
+    *selectedMaster = master;
+    *gaps = layoutGaps.value(masters.value(master), {0.,0.});
     *reserved = reserves.value(masters.value(master), {0., 0.});
     for (int area = 0; area < 2; ++area) if (!active.value(master).contains(area)) (*reserved)[area] = 0.;
     return layouts.value(masters.value(master));
@@ -452,6 +456,87 @@ private:
     QHash<QString, qreal> m_sizes;
 };
 
+
+// Keep page layouts, master-page markup and their automatic styles together. The
+// named styles are written from StyleSheet; inherited band formatting stays linked.
+QByteArray pageStylesXml(const QByteArray &input)
+{
+    QByteArray out;
+    QXmlStreamReader xml(input);
+    QXmlStreamWriter writer(&out);
+    QXmlStreamNamespaceDeclarations namespaces;
+    int depth = 0;
+    while (!xml.atEnd()) {
+        const auto token = xml.readNext();
+        if (token == QXmlStreamReader::StartElement && xml.name() == QLatin1String("document-styles"))
+            namespaces = xml.namespaceDeclarations();
+        if (!depth && token == QXmlStreamReader::StartElement &&
+            (xml.name() == QLatin1String("automatic-styles") || xml.name() == QLatin1String("master-styles"))) {
+            writer.writeStartElement(xml.qualifiedName().toString());
+            for (const auto &ns : namespaces) writer.writeNamespace(ns.namespaceUri().toString(), ns.prefix().toString());
+            depth = 1;
+        } else if (depth) {
+            writer.writeCurrentToken(xml);
+            if (token == QXmlStreamReader::StartElement) ++depth;
+            if (token == QXmlStreamReader::EndElement) --depth;
+        }
+    }
+    return out;
+}
+
+QVariantList readPageBands(const QByteArray &input, const QString &master, OdfStyles named)
+{
+    QXmlStreamReader styles(input);
+    while (!styles.atEnd()) {
+        if (styles.readNext() == QXmlStreamReader::StartElement && styles.name() == QLatin1String("automatic-styles"))
+            readStyles(styles, QLatin1String("automatic-styles"), named);
+    }
+    auto sheet = StyleSheet::builtIns();
+    SheetBuilder builder(named, sheet); builder.build(); sheet.useDocumentFont();
+    QVariantList bands{QVariantList(), QVariantList()};
+    QXmlStreamReader xml(input);
+    bool selected = false, inParagraph = false;
+    int area = -1;
+    QVariantMap paragraph;
+    QVariantList runs;
+    while (!xml.atEnd()) {
+        const auto token = xml.readNext();
+        if (token == QXmlStreamReader::StartElement) {
+            const auto name = xml.name();
+            if (name == QLatin1String("master-page")) selected = xml.attributes().value("style:name") == master;
+            else if (selected && (name == QLatin1String("header") || name == QLatin1String("footer")))
+                area = name == QLatin1String("header") ? 0 : 1;
+            else if (area >= 0 && name == QLatin1String("p")) {
+                const auto style = builder.apiFor(xml.attributes().value("text:style-name").toString());
+                paragraph = {{"block", QVariant::fromValue(sheet.blockFormat(style))},
+                             {"char", QVariant::fromValue(sheet.charFormat(style, {}))}};
+                runs.clear(); inParagraph = true;
+            } else if (inParagraph && (name == QLatin1String("page-number") || name == QLatin1String("page-count"))) {
+                runs.append(QVariantMap{{"field", name.toString()}});
+                xml.skipCurrentElement(); // cached field text is not the current value
+            } else if (inParagraph && name == QLatin1String("s")) {
+                const int count = qBound(1, xml.attributes().value("text:c").toInt(), 10000);
+                runs.append(QVariantMap{{"text", QString(count, QLatin1Char(' '))}});
+            } else if (inParagraph && name == QLatin1String("line-break")) runs.append(QVariantMap{{"text", QString(QChar::LineSeparator)}});
+            else if (inParagraph && name == QLatin1String("tab")) runs.append(QVariantMap{{"text", QStringLiteral("\t")}});
+        } else if (token == QXmlStreamReader::Characters && inParagraph) {
+            // Ignore XML indentation, retaining deliberate spaces around inline fields.
+            QString text = xml.text().toString();
+            if (text.contains(QLatin1Char('\n')) && text.trimmed().isEmpty()) continue;
+            text.replace(QLatin1Char('\n'), QLatin1Char(' '));
+            if (!text.isEmpty()) runs.append(QVariantMap{{"text", text}});
+        } else if (token == QXmlStreamReader::EndElement) {
+            if (xml.name() == QLatin1String("p") && inParagraph) {
+                paragraph.insert("runs", runs);
+                auto paragraphs = bands[area].toList(); paragraphs.append(paragraph); bands[area] = paragraphs;
+                inParagraph = false;
+            } else if (xml.name() == QLatin1String("header") || xml.name() == QLatin1String("footer")) area = -1;
+            else if (xml.name() == QLatin1String("master-page")) selected = false;
+        }
+    }
+    return bands;
+}
+
 } // namespace
 
 bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QString *error)
@@ -584,8 +669,17 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     doc->setProperty("_rtImageSampling", QVariant());
     auto rootFormat = doc->rootFrame()->frameFormat();
     rootFormat.setProperty(kDocumentSpacingProperty, true);
-    QVariantList reserved;
-    rootFormat.setProperty(kDocumentGeometryProperty, documentGeometry(zip.fileData(QStringLiteral("styles.xml")), content, &reserved));
+    QVariantList reserved, bandGaps;
+    QString master;
+    const auto styleXml = zip.fileData(QStringLiteral("styles.xml"));
+    rootFormat.setProperty(kDocumentGeometryProperty, documentGeometry(styleXml, content, &reserved, &bandGaps, &master));
+    rootFormat.setProperty(kDocumentMasterNameProperty, master);
+    QVariantMap fontFaces;
+    for (auto it = named.fonts.cbegin(); it != named.fonts.cend(); ++it) fontFaces.insert(it.key(), it.value());
+    rootFormat.setProperty(kDocumentFontFacesProperty, fontFaces);
+    rootFormat.setProperty(kDocumentPageBandsProperty, readPageBands(styleXml, master, named));
+    rootFormat.setProperty(kDocumentPageStylesProperty, pageStylesXml(styleXml));
+    rootFormat.setProperty(kDocumentBandGapsProperty, bandGaps);
     rootFormat.setProperty(kDocumentReservedSpaceProperty, reserved);
     doc->rootFrame()->setFrameFormat(rootFormat);
     QTextCursor c(doc);
@@ -1175,6 +1269,8 @@ private:
         const QString style = paragraphStyleOf(bf);
         QVariantMap direct = directProps(bf, m_sheet.blockFormat(style), true);
         direct.remove(QStringLiteral("outlineLevel")); // text:h's text:outline-level says it
+        const auto master = m_doc->rootFrame()->frameFormat().stringProperty(kDocumentMasterNameProperty);
+        if (b == m_doc->begin() && !master.isEmpty()) direct.insert(QStringLiteral("__masterPage"), master);
         // insertPageBreak() (item 5): not a rt::Prop, so directProps() above never sees it —
         // forced into `direct` straight from the live format so writeProps() picks it up.
         if (bf.pageBreakPolicy() & QTextFormat::PageBreak_AlwaysBefore)
@@ -1391,15 +1487,18 @@ private:
     }
 
     // ── package parts ───────────────────────────────────────────────────────────────────────────
-    void writeFontDecls(QXmlStreamWriter &x, const QSet<QString> &fonts)
+    void writeFontDecls(QXmlStreamWriter &x, const QSet<QString> &fonts, bool keepPageAliases = false)
     {
         x.writeStartElement(QStringLiteral("office:font-face-decls"));
-        QStringList sorted(fonts.cbegin(), fonts.cend());
+        auto faces = keepPageAliases ? m_doc->rootFrame()->frameFormat().property(kDocumentFontFacesProperty).toMap() : QVariantMap();
+        for (const auto &font : fonts) if (!faces.contains(font)) faces.insert(font, font);
+        QStringList sorted = faces.keys();
         sorted.sort();
         for (const QString &f : std::as_const(sorted)) {
             x.writeEmptyElement(QStringLiteral("style:font-face"));
             x.writeAttribute(QStringLiteral("style:name"), f);
-            x.writeAttribute(QStringLiteral("svg:font-family"), f.contains(QLatin1Char(' ')) ? QLatin1Char('\'') + f + QLatin1Char('\'') : f);
+            const auto family = faces.value(f).toString();
+            x.writeAttribute(QStringLiteral("svg:font-family"), family.contains(QLatin1Char(' ')) ? QLatin1Char('\'') + family + QLatin1Char('\'') : family);
         }
         x.writeEndElement();
     }
@@ -1417,6 +1516,8 @@ private:
                 x.writeAttribute(QStringLiteral("style:family"), a.family);
                 if (!a.parent.isEmpty())
                     x.writeAttribute(QStringLiteral("style:parent-style-name"), a.parent);
+                const auto master = a.props.value(QStringLiteral("__masterPage")).toString();
+                if (!master.isEmpty()) x.writeAttribute(QStringLiteral("style:master-page-name"), master);
                 writeProps(x, a.props, &fonts);
                 x.writeEndElement();
             };
@@ -1520,14 +1621,18 @@ private:
         QByteArray decls;
         {
             QXmlStreamWriter x(&decls);
-            writeFontDecls(x, fonts);
+            writeFontDecls(x, fonts, true);
         }
         return QByteArrayLiteral("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-styles" ODF_NAMESPACES ">")
             + decls + QByteArrayLiteral("<office:styles>") + styles
             // An office:master-styles element (even empty) is what makes LibreOffice link the
             // styles to their parents (style:parent-style-name is dropped on import without it —
             // verified with LibreOffice 26.8).
-            + QByteArrayLiteral("</office:styles><office:master-styles/></office:document-styles>");
+            + QByteArrayLiteral("</office:styles>")
+            + (m_doc->rootFrame()->frameFormat().property(kDocumentPageStylesProperty).toByteArray().isEmpty()
+                ? QByteArrayLiteral("<office:master-styles/>")
+                : m_doc->rootFrame()->frameFormat().property(kDocumentPageStylesProperty).toByteArray())
+            + QByteArrayLiteral("</office:document-styles>");
     }
 
     QByteArray metaXml() const

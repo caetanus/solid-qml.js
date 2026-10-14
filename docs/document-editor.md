@@ -264,7 +264,8 @@ Qt's nearest-text hit testing. An inline image taller than the text area is indi
 it to overflow through the bottom margin/gap, rather than splitting or shrinking it. Very large
 unbreakable content or margins that leave no text area have the same Qt layout limitations.
 Page counts reflect this editor's fonts and supported ODF content, not LibreOffice's page count.
-Headers, footers, printed page numbers and PDF export are not part of this feature.
+Imported header/footer text and page fields are rendered in page bands (see below).
+PDF export is not a public widget API.
 
 `pageWidth`/`pageHeight`/`pageGap`/`pageMargins` are view geometry, do not modify document content,
 and do not add undo steps or change saved ODF page setup. `zoom` does: `setZoom()` walks every block and run already in the
@@ -462,8 +463,9 @@ and selection behave exactly as without marks; the hit test takes the character 
   `insertPageBreak()`), and the named paragraph/character styles of `styles.xml` with the
   automatic styles over them as direct formatting. Our writer produces `content.xml`,
   `styles.xml` (the named styles), `meta.xml` and the manifest — LibreOffice 26.8 opens the result
-  with every named style, parent, next style and heading level in place. Not kept yet: page SETUP
-  (size/margins/printing) and headers/footers, footnotes as footnotes (their text is kept,
+  with every named style, parent, next style and heading level in place. Imported page layouts,
+  master pages and their automatic styles are retained on save. Not kept yet:
+  footnotes as footnotes (their text is kept,
   inline), bookmarks, unknown package entries. A paragraph whose
   styles give it no vertical
   spacing gets a quarter pixel under it (invisible; it keeps Qt's viewport culling from
@@ -588,8 +590,21 @@ Mixed page masters within one document are not yet supported by pagination.
 Active headers/footers reserve their declared minimum/fixed band height (which
 includes the body gap in LibreOffice)
 inside these margins. The reservation scales with zoom; `documentPageMargins`
-continues to report the page's declared outer margins. Header/footer content is
-not rendered or round-tripped, and content-dependent heights are not yet measured.
+continues to report the page's declared outer margins. The active master page's
+header/footer paragraphs render on every page, in both live layout engines and
+the custom engine's QPainter export. Supported content: plain text, explicit
+spaces/line breaks, paragraph font/color/spacing/alignment (including inherited
+and automatic styles), decimal `text:page-number` and `text:page-count` fields.
+They are decorations, outside body selection, editing, word counts and undo.
+Only nearby page bands have live items; page-count changes refresh the fields.
+No new application API is required.
+
+The original page layouts, master-page markup, font aliases and automatic styles
+round-trip on save, including asynchronous copies. The first body's active master
+is reused on all pages; switching masters, first/left/right-page variants, field
+number formats/offsets, inline span formatting, images/tables inside bands and
+content-dependent band heights are not rendered. Their retained XML is not a
+claim of visual support. Header/footer editing is not exposed.
 
 ### Document language
 

@@ -466,6 +466,7 @@ private:
     QSet<QString> m_pageBreaks;
     QString m_pageBreakLabel = QStringLiteral("Quebra de página");
     QPointer<QQuickItem> m_pageBreakOverlay;
+    QPointer<QQuickItem> m_pageBandsOverlay;
 
     // ── counts (item 7) ───────────────────────────────────────────────────────────────────────
     // One entry per block in the WHOLE document (not just headings), document order, identified by
