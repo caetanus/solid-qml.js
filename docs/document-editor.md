@@ -503,6 +503,9 @@ otherwise extend into the next page. Explicit page breaks retain their spacing.
 Ordinary Qt/HTML documents keep Qt's margin-collapse behavior.
 The preceding paragraph's bottom margin and following paragraph's top margin
 also apply at table boundaries in imported documents.
+Imported documents keep a table row together when it fits a fresh page; Qt
+parity mode allows that row to split if a cell's opening line fits the current
+page. Split-row vertical alignment follows the acceptance policy below.
 For imported documents, `keepWithNext` keeps a paragraph/heading chain with the
 next paragraph's minimum opening lines. Groups taller than one body area are released so
 they cannot force repeated page skips; explicit breaks take precedence.
@@ -516,6 +519,17 @@ fixed/minimum heights and inline-object lines retain their existing geometry.
 The custom engine uses imported per-level list label widths/left margins rather
 than Qt's fixed indent step. These offsets scale with zoom and survive ODF saves.
 List nesting remains independent of the physical text offset.
+
+The phase-2 book Qt oracle explicitly disables `kDocumentSpacingProperty` on
+the shared imported source before cloning either engine. This selects Qt's
+paragraph spacing, line metrics, list offsets and page-splitting rules for both
+documents; it does not change the production ODF import policy described above.
+Header/footer content and reserved space remain present in both live views.
+The oracle still requires identical page counts, line breaks, geometry within
+0.5 px and exact viewport pixels at zoom 1 and 1.5. The article/LibreOffice
+harness separately checks the imported policy and footer placement.
+The handler's book edit checks compare incremental layout with a fresh layout
+using the same engine, retaining the imported policy in custom mode.
 
 ODF images with `style:rel-width` and `style:rel-height="scale"` follow the
 available paragraph/cell width in the custom engine and retain the declared

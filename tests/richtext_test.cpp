@@ -3862,6 +3862,10 @@ private slots:
                 QTextCursor c(d); c.setPosition(pos); c.insertText(text);
                 const int pages = d->pageCount();
                 QScopedPointer<QTextDocument> fresh(d->clone());
+                // clone() defaults to Qt. Compare incremental layout with a
+                // cold layout using the same engine and imported ODF policy.
+                if (dynamic_cast<rt::RichTextLayout *>(d->documentLayout()))
+                    fresh->setDocumentLayout(new rt::RichTextLayout(fresh.data()));
                 QCOMPARE(pages, fresh->pageCount());
                 auto expected = fresh->begin();
                 for (auto b = d->begin(); b.isValid(); b = b.next(), expected = expected.next()) {
@@ -3972,6 +3976,8 @@ private slots:
                 if (perfControl.isOpen()) { perfControl.write("disable\n"); perfControl.flush(); if (perfAck.isOpen()) perfAck.readLine(); }
                 if (pages && scenario == 5) {
                     QScopedPointer<QTextDocument> fresh(d->clone());
+                    if (dynamic_cast<rt::RichTextLayout *>(d->documentLayout()))
+                        fresh->setDocumentLayout(new rt::RichTextLayout(fresh.data()));
                     QCOMPARE(d->pageCount(), fresh->pageCount());
                     for (auto b = d->begin(); b.isValid(); b = b.next()) {
                         const qreal top = d->documentLayout()->blockBoundingRect(b).top();
