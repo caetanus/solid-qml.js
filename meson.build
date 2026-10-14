@@ -817,6 +817,8 @@ test('select-widget',
 # contract, content/format state and an .odt round-trip — what an app driving the document uses.
 if build_richtext
   richtext_test_deps = [solidqml_dep, qt6_templates_private_dep, dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'Test'])] + core_private_deps
+  executable('render-fidelity', files('tools/render_fidelity.cpp'),
+    include_directories: include_directories('src'), dependencies: richtext_test_deps)
   table_probe_deps = dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'Test'])
   table_phase2_test = executable('test-table-phase2', files('tests/table_phase2_test.cpp'),
     qt6.preprocess(moc_sources: files('tests/table_phase2_test.cpp'), dependencies: table_probe_deps),
