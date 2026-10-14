@@ -4,6 +4,8 @@
 
 #include <QPainter>
 #include <QFontMetricsF>
+#include <QRawFont>
+#include <QtEndian>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextImageFormat>
@@ -176,6 +178,23 @@ void RichTextLayout::resizeInlineObject(QTextInlineObject object, int position, 
     object.setAscent(ascent);
     object.setDescent(descent);
 }
+qreal RichTextLayout::documentFontHeight(const QFont &font)
+{
+    const auto cached = m_fontHeights.constFind(font);
+    if (cached != m_fontHeights.cend()) return *cached;
+    const auto raw = QRawFont::fromFont(font);
+    const auto hhea = raw.fontTable("hhea");
+    qreal height = QFontMetricsF(font).lineSpacing();
+    if (hhea.size() >= 10 && raw.unitsPerEm() > 0) {
+        const qreal pixels = font.pixelSize() > 0 ? font.pixelSize() : font.pointSizeF() * 96.0 / 72;
+        const int units = qFromBigEndian<qint16>(hhea.constData() + 4) - qFromBigEndian<qint16>(hhea.constData() + 6)
+            + qFromBigEndian<qint16>(hhea.constData() + 8);
+        if (units > 0 && pixels > 0) height = units * pixels / raw.unitsPerEm();
+    }
+    m_fontHeights.insert(font, height);
+    return height;
+}
+
 bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass &pass, bool first)
 {
     auto *doc = document();
@@ -230,6 +249,31 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
     }
     ++counters.placements;
     Cache next; next.id = info->id; next.revision = b.revision(); next.incoming = flow;
+    next.naturalHeights = old.naturalHeights;
+    if (dirty) {
+        next.naturalHeights.clear();
+        if (m_root.boolProperty(kDocumentSpacingProperty)
+            && (format.lineHeightType() == QTextBlockFormat::SingleHeight || format.lineHeightType() == QTextBlockFormat::ProportionalHeight)) {
+            next.naturalHeights.fill(0., layout->lineCount());
+            int lineIndex = 0;
+            for (auto it = b.begin(); !it.atEnd(); ++it) {
+                const auto fragment = it.fragment();
+                const int start = fragment.position() - b.position(), end = start + fragment.length();
+                while (lineIndex < layout->lineCount() && layout->lineAt(lineIndex).textStart() + layout->lineAt(lineIndex).textLength() <= start) ++lineIndex;
+                const bool object = fragment.charFormat().objectType() != QTextFormat::NoObject;
+                const qreal height = object ? -1 : documentFontHeight(fragment.charFormat().font().resolve(doc->defaultFont()));
+                for (int i = lineIndex; i < layout->lineCount() && layout->lineAt(i).textStart() < end; ++i) {
+                    if (object) next.naturalHeights[i] = -1;
+                    else if (next.naturalHeights[i] >= 0) next.naturalHeights[i] = qMax(next.naturalHeights[i], height);
+                }
+            }
+            for (int i = 0; i < layout->lineCount(); ++i) {
+                const auto line = layout->lineAt(i);
+                next.naturalHeights[i] = next.naturalHeights[i] > 0
+                    ? qMax(next.naturalHeights[i], line.ascent() + line.descent()) : line.height();
+            }
+        }
+    }
     if (flow.pageBreak)
         flow.y = (qFloor(flow.y / stride) + 1) * stride + top;
     if (format.pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysBefore))
@@ -266,7 +310,7 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
                 int fit = 0;
                 for (int i = index; i < layout->lineCount(); ++i) {
                     const auto candidate = layout->lineAt(i);
-                    const qreal natural = candidate.height();
+                    const qreal natural = next.naturalHeights.value(i, candidate.height());
                     const qreal advance = format.lineHeight(natural + (format.lineHeightType() == QTextBlockFormat::MinimumHeight ? candidate.leading() : 0), 1);
                     if (y + (format.lineHeightType() == QTextBlockFormat::LineDistanceHeight ? natural : qMax(advance, natural)) > limit) break;
                     y += advance; ++fit;
@@ -286,7 +330,7 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
             }
         }
         auto line = layout->lineAt(index);
-        const qreal natural = line.height();
+        const qreal natural = next.naturalHeights.value(index, line.height());
         const qreal advance = format.lineHeight(natural + (format.lineHeightType() == QTextBlockFormat::MinimumHeight ? line.leading() : 0), 1);
         qreal offset = 0;
         if (format.lineHeightType() == QTextBlockFormat::FixedHeight) offset = advance * .8 - line.ascent();
@@ -566,13 +610,15 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
             // with the next paragraph's first line, but release groups taller than
             // a page. Probed caches cannot be used as old-state convergence anchors.
             const qreal capacity = stride - top - bottom;
-            const auto height = [](const QTextBlock &block, bool firstOnly) {
+            const auto height = [this](const QTextBlock &block, bool firstOnly) {
                 qreal total = 0;
                 const auto format = block.blockFormat();
+                const auto &heights = m_blocks[blockInfo(block)->lifetime].naturalHeights;
                 for (int i = 0; i < block.layout()->lineCount(); ++i) {
                     const auto line = block.layout()->lineAt(i);
-                    const qreal advance = format.lineHeight(line.height() + (format.lineHeightType() == QTextBlockFormat::MinimumHeight ? line.leading() : 0), 1);
-                    total += firstOnly ? qMax(advance, line.height()) : advance;
+                    const qreal natural = heights.value(i, line.height());
+                    const qreal advance = format.lineHeight(natural + (format.lineHeightType() == QTextBlockFormat::MinimumHeight ? line.leading() : 0), 1);
+                    total += firstOnly ? qMax(advance, natural) : advance;
                     const int minimum = format.hasProperty(kOrphansProperty) ? qMax(1, format.intProperty(kOrphansProperty)) : 2;
                     if (firstOnly && i + 1 >= minimum) break;
                 }

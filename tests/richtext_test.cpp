@@ -13,6 +13,7 @@
 
 #include <QClipboard>
 #include <QBuffer>
+#include <QFontDatabase>
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
@@ -270,6 +271,22 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void odfNormalLinesUseFractionalFontSpacing()
+    {
+        if (!QFontDatabase::families().contains("Liberation Serif")) QSKIP("Liberation Serif fixture font is unavailable");
+        const QString path = m_dir.filePath("fractional-lines.odt");
+        writeOdt(path, "<text:p>First line<text:line-break/>Second line<text:line-break/>Third line</text:p>", {},
+            "<style:default-style style:family=\"paragraph\"><style:text-properties fo:font-family=\"Liberation Serif\" fo:font-size=\"12pt\"/></style:default-style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_edit->setProperty("width", 300);
+        m_fmt->configurePages(300, 300, 0, {10,10,10,10});
+        const auto layout = doc()->begin().layout();
+        QCOMPARE(layout->lineCount(), 3);
+        // LibreOffice's 12pt Liberation Serif baseline interval at 96 dpi.
+        QVERIFY(qAbs(layout->lineAt(1).y() - layout->lineAt(0).y() - 18.3984375) <= 1.0 / 64);
+        QVERIFY(qAbs(layout->lineAt(2).y() - layout->lineAt(0).y() - 36.796875) <= 1.0 / 64);
+    }
+
     void odfWidowsAndOrphansProtectPageSplits()
     {
         const QString path = m_dir.filePath("widows.odt");

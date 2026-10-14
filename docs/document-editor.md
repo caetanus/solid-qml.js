@@ -504,6 +504,10 @@ next paragraph's minimum opening lines. Groups taller than one body area are rel
 they cannot force repeated page skips; explicit breaks take precedence.
 Imported paragraphs default to two widow/orphan lines; explicit style values
 override this. Counts that cannot fit in a page fall back to natural splitting.
+Normal/proportional ODF line spacing uses fractional font `hhea` metrics at
+96 dpi (cached per font and shaped line), matching LibreOffice's baseline
+intervals instead of rounding each line to Qt's integer line height. Explicit
+fixed/minimum heights and inline-object lines retain their existing geometry.
 
 The custom engine uses imported per-level list label widths/left margins rather
 than Qt's fixed indent step. These offsets scale with zoom and survive ODF saves.
