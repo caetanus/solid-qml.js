@@ -276,9 +276,10 @@ void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const
     if (!m_doc || margins.size() != 4) return;
     m_pageStride = height > 0 ? height + gap : 0;
     auto f = m_doc->rootFrame()->frameFormat();
-    f.setTopMargin(height > 0 ? margins[0].toReal() : 0);
+    const auto reserved = f.property(rt::kDocumentReservedSpaceProperty).toList();
+    f.setTopMargin(height > 0 ? margins[0].toReal() + reserved.value(0).toReal() * m_zoom : 0);
     f.setRightMargin(height > 0 ? margins[1].toReal() : 0);
-    f.setBottomMargin(height > 0 ? margins[2].toReal() + gap : 0);
+    f.setBottomMargin(height > 0 ? margins[2].toReal() + gap + reserved.value(1).toReal() * m_zoom : 0);
     f.setLeftMargin(height > 0 ? margins[3].toReal() : 0);
     const bool marginsChanged = f != m_doc->rootFrame()->frameFormat();
     const bool layoutEnabled = m_doc->isLayoutEnabled();
@@ -715,6 +716,7 @@ QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
     auto rootFormat = doc->rootFrame()->frameFormat();
     rootFormat.clearProperty(rt::kDocumentGeometryProperty);
     rootFormat.clearProperty(rt::kDocumentSpacingProperty);
+    rootFormat.clearProperty(rt::kDocumentReservedSpaceProperty);
     doc->rootFrame()->setFrameFormat(rootFormat);
     if (!m_documentGeometry.isEmpty()) {
         m_documentGeometry.clear();

@@ -270,6 +270,29 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void odfActiveFooterReservesBodySpace()
+    {
+        const QString path = m_dir.filePath("footer-space.odt");
+        for (bool active : {true, false}) {
+            QZipWriter zip(path);
+            zip.addFile("content.xml", "<office:document-content" ODF_NS "><office:body><office:text><text:p>One</text:p><text:p>Two</text:p><text:p>Three</text:p></office:text></office:body></office:document-content>");
+            zip.addFile("styles.xml", QByteArray("<office:document-styles" ODF_NS "><office:styles><style:default-style style:family=\"paragraph\"><style:paragraph-properties fo:line-height=\"20px\"/></style:default-style></office:styles><office:automatic-styles>"
+                "<style:page-layout style:name=\"Page\"><style:page-layout-properties fo:page-width=\"300px\" fo:page-height=\"100px\" fo:margin=\"10px\"/><style:footer-style><style:header-footer-properties fo:min-height=\"20px\" fo:margin-top=\"10px\"/></style:footer-style></style:page-layout>"
+                "</office:automatic-styles><office:master-styles><style:master-page style:name=\"Standard\" style:page-layout-name=\"Page\">")
+                + (active ? "<style:footer><text:p>Footer</text:p></style:footer>" : "")
+                + "</style:master-page></office:master-styles></office:document-styles>");
+            zip.close();
+            QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+            m_edit->setProperty("width", 300);
+            m_fmt->configurePages(300, 100, 0, {10,10,10,10});
+            QCOMPARE(m_fmt->documentPageMargins(), QVariantList({10,10,10,10}));
+            QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), active ? 40.0 : 10.0);
+        }
+        m_fmt->newDocument();
+        m_fmt->configurePages(300, 100, 0, {10,10,10,10});
+        QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), 10.0);
+    }
+
     void odfRelativeImagesFollowTextWidthAndAspect()
     {
         QImage image(1000, 500, QImage::Format_RGB32); image.fill(Qt::red);

@@ -569,6 +569,10 @@ that leaves the document untouched preserves it. These are read-only properties;
 After a successful load, applications can assign these values to `pageWidth`,
 `pageHeight`, and `pageMargins`. This keeps application display settings explicit.
 Mixed page masters within one document are not yet supported by pagination.
+Active headers/footers reserve their declared minimum/fixed height and body gap
+inside these margins. The reservation scales with zoom; `documentPageMargins`
+continues to report the page's declared outer margins. Header/footer content is
+not rendered or round-tripped, and content-dependent heights are not yet measured.
 
 ### Document language
 

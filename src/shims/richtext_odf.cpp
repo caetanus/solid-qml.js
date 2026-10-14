@@ -59,19 +59,26 @@ struct OdfStyles {
 
 // Resolve the first body paragraph's master through its style chain. Reading both XML parts
 // also handles automatic paragraph styles and avoids choosing an unrelated first page layout.
-QVariantList documentGeometry(const QByteArray &styles, const QByteArray &content)
+QVariantList documentGeometry(const QByteArray &styles, const QByteArray &content, QVariantList *reserved)
 {
     QHash<QString, QVariantList> layouts;
+    QHash<QString, QVariantList> reserves;
+    QHash<QString, QSet<int>> active;
     QHash<QString, QString> masters, parents, styleMasters;
     QString firstMaster, firstParagraph;
     bool foundParagraph = false;
     for (const auto &part : {styles, content}) {
         QXmlStreamReader xml(part);
-        QString layout;
+        QString layout, currentMaster;
+        int area = -1;
         bool body = false;
         while (!xml.atEnd()) {
             const auto token = xml.readNext();
             if (token == QXmlStreamReader::EndElement && xml.name() == QLatin1String("page-layout")) layout.clear();
+            if (token == QXmlStreamReader::EndElement) {
+                if (xml.name() == QLatin1String("master-page")) currentMaster.clear();
+                if (xml.name() == QLatin1String("header-style") || xml.name() == QLatin1String("footer-style")) area = -1;
+            }
             if (token != QXmlStreamReader::StartElement) continue;
             const auto a = xml.attributes();
             const auto val = [&](const char *name) { return a.value(QLatin1String(name)).toString(); };
@@ -86,10 +93,22 @@ QVariantList documentGeometry(const QByteArray &styles, const QByteArray &conten
                 styleMasters.insert(name, val("style:master-page-name"));
             } else if (xml.name() == QLatin1String("master-page")) {
                 const QString name = val("style:name");
+                currentMaster = name;
                 if (firstMaster.isEmpty()) firstMaster = name;
                 masters.insert(name, val("style:page-layout-name"));
+            } else if (!currentMaster.isEmpty() && (xml.name() == QLatin1String("header") || xml.name() == QLatin1String("footer"))) {
+                active[currentMaster].insert(xml.name() == QLatin1String("header") ? 0 : 1);
             } else if (xml.name() == QLatin1String("page-layout")) {
                 layout = val("style:name");
+                reserves[layout] = {0., 0.};
+            } else if (!layout.isEmpty() && (xml.name() == QLatin1String("header-style") || xml.name() == QLatin1String("footer-style"))) {
+                area = xml.name() == QLatin1String("header-style") ? 0 : 1;
+            } else if (!layout.isEmpty() && area >= 0 && xml.name() == QLatin1String("header-footer-properties")) {
+                const qreal height = lengthPx(val("svg:height"));
+                const qreal minimum = lengthPx(val("fo:min-height"));
+                const qreal gap = lengthPx(val(area == 0 ? "fo:margin-bottom" : "fo:margin-top"));
+                reserves[layout][area] = qMax(qIsFinite(height) ? height : 0., qIsFinite(minimum) ? minimum : 0.)
+                    + (qIsFinite(gap) ? gap : 0.);
             } else if (!layout.isEmpty() && xml.name() == QLatin1String("page-layout-properties")) {
                 const qreal w = lengthPx(val("fo:page-width")), h = lengthPx(val("fo:page-height"));
                 if (!(w > 0 && h > 0)) continue;
@@ -112,6 +131,8 @@ QVariantList documentGeometry(const QByteArray &styles, const QByteArray &conten
         if (!master.isEmpty()) break;
     }
     if (master.isEmpty()) master = firstMaster;
+    *reserved = reserves.value(masters.value(master), {0., 0.});
+    for (int area = 0; area < 2; ++area) if (!active.value(master).contains(area)) (*reserved)[area] = 0.;
     return layouts.value(masters.value(master));
 }
 
@@ -545,7 +566,9 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     doc->clear();
     auto rootFormat = doc->rootFrame()->frameFormat();
     rootFormat.setProperty(kDocumentSpacingProperty, true);
-    rootFormat.setProperty(kDocumentGeometryProperty, documentGeometry(zip.fileData(QStringLiteral("styles.xml")), content));
+    QVariantList reserved;
+    rootFormat.setProperty(kDocumentGeometryProperty, documentGeometry(zip.fileData(QStringLiteral("styles.xml")), content, &reserved));
+    rootFormat.setProperty(kDocumentReservedSpaceProperty, reserved);
     doc->rootFrame()->setFrameFormat(rootFormat);
     QTextCursor c(doc);
     c.beginEditBlock();
