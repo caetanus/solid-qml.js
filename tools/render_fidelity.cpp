@@ -40,6 +40,7 @@ int main(int argc, char **argv) {
             const int page=int(pos.y()/height);
             lines.append(QJsonObject{{"page",page+1},{"block",block.blockNumber()},{"x",pos.x()},
                 {"y",pos.y()-page*height},{"baseline",pos.y()+line.ascent()-page*height},
+                {"height",line.height()},{"ascent",line.ascent()},{"descent",line.descent()},{"leading",line.leading()},
                 {"text",block.text().mid(line.textStart(),line.textLength())}});
         }
     }
@@ -47,6 +48,7 @@ int main(int argc, char **argv) {
         QImage image(qCeil(width),qCeil(height),QImage::Format_ARGB32_Premultiplied);
         image.setDotsPerMeterX(3780); image.setDotsPerMeterY(3780); image.fill(Qt::white);
         QPainter painter(&image); painter.translate(0,-page*height);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
         QAbstractTextDocumentLayout::PaintContext ctx; ctx.clip=QRectF(0,page*height,width,height);
         layout->draw(&painter,ctx); painter.end();
         if (!image.save(output.filePath(QString("office-%1.png").arg(page+1)))) qFatal("PNG write failed");
