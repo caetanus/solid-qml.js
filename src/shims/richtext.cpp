@@ -94,6 +94,11 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     m_pendingFont = {};
     m_document = doc;
     m_doc = doc ? doc->textDocument() : nullptr;
+    const auto geometry = m_doc ? m_doc->rootFrame()->frameFormat().property(rt::kDocumentGeometryProperty).toList() : QVariantList();
+    if (geometry != m_documentGeometry) {
+        m_documentGeometry = geometry;
+        emit documentPageGeometryChanged();
+    }
     m_unsupportedHistory = false;
     // The marks overlay: a child of the editor (QQuickTextEdit parents its QQuickTextDocument).
     if (auto *editor = doc ? qobject_cast<QQuickItem *>(doc->parent()) : nullptr) {
@@ -707,6 +712,14 @@ QVariantMap RichTextHandler::newDocument(const QVariantMap &options)
     // Undo off: the reset (and styling the first paragraph) leaves no history.
     doc->setUndoRedoEnabled(false);
     doc->clear(); // also drops the image resources
+    auto rootFormat = doc->rootFrame()->frameFormat();
+    rootFormat.clearProperty(rt::kDocumentGeometryProperty);
+    doc->rootFrame()->setFrameFormat(rootFormat);
+    if (!m_documentGeometry.isEmpty()) {
+        m_documentGeometry.clear();
+        emit documentPageGeometryChanged();
+    }
+
     m_unsupportedHistory = false;
     m_sheet = sheet;
     QTextCursor c(doc);
@@ -1478,6 +1491,11 @@ bool RichTextHandler::loadOdf(const QUrl &file)
         m_bulkReset = false;
         setError(why);
         return false;
+    }
+    const auto geometry = doc->rootFrame()->frameFormat().property(rt::kDocumentGeometryProperty).toList();
+    if (geometry != m_documentGeometry) {
+        m_documentGeometry = geometry;
+        emit documentPageGeometryChanged();
     }
     m_unsupportedHistory = !rt::RichTextLayout::supports(doc);
     m_sheet = sheet;

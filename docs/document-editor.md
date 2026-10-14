@@ -191,12 +191,11 @@ Style properties (all optional):
 | `keepWithNext` | boolean | Paragraph styles (kept in the file; print / PDF). |
 | `outlineLevel` | 0–10 | Paragraph styles: `n > 0` makes it a heading style (`doc.heading`, `<text:h>` in the file). |
 
-Default Paragraph Style's `fontFamily` and `fontSize` are the document's base font: kept and
-saved (a LibreOffice file's 12pt Times stays 12pt Times there), but on screen the editor's own
-font stands in for them, so a file's base font never overrides the app's typography. Every other
-style's font shows as defined. The handle's `fontFamily`/`fontSize` (above) still REPORT a
-customized Default Paragraph Style's own value at the caret — only the on-screen render and what
-gets baked into the live document skip it; a reader (an app's own font-name/size box) sees it.
+Default Paragraph Style's `fontFamily` and `fontSize` are the document's base font.
+ODF imports use that font on screen as well as when saving, including inherited text
+inside spans. The base font remains part of the style, rather than direct formatting.
+Fresh app-created documents use the editor's font as their display default. The
+handler's `fontFamily`/`fontSize` report the effective style value at the caret.
 
 ### Starting a document with styles
 
@@ -540,3 +539,18 @@ upgrading Qt:
 
 Tests also inspect QQuickTextEdit's private rendered region to check viewport
 culling; that inspection is not a production dependency.
+
+### Document page geometry
+
+`documentPageWidth`, `documentPageHeight`, and `documentPageMargins` expose the
+first body paragraph's ODF master-page geometry in px at 96 dpi. Margins are
+`[top, right, bottom, left]`, matching `pageMargins`. The reader follows named
+and automatic paragraph-style parents to the master page, falling back to the
+first master when none is assigned. A document without a supported page layout
+reports `0`, `0`, and `[]`. `newDocument()` clears the metadata; a failed load
+that leaves the document untouched preserves it. These are read-only properties;
+`documentPageGeometryChanged` fires only when their values change.
+
+After a successful load, applications can assign these values to `pageWidth`,
+`pageHeight`, and `pageMargins`. This keeps application display settings explicit.
+Mixed page masters within one document are not yet supported by pagination.

@@ -64,6 +64,9 @@ RichText {
     readonly property bool _pages: pageView && pageHeight > 0
     readonly property real _pageZoom: Math.max(0.5, Math.min(3.0, zoom))
     readonly property real _pageStride: (pageHeight + Math.max(0, pageGap)) * _pageZoom
+    readonly property real documentPageWidth: fmt ? fmt.documentPageWidth : 0
+    readonly property real documentPageHeight: fmt ? fmt.documentPageHeight : 0
+    readonly property var documentPageMargins: fmt ? fmt.documentPageMargins : []
     readonly property int pageCount: fmt ? fmt.pageCount : 1
     readonly property int currentPage: fmt ? fmt.currentPage : 1
     signal pagesChanged()

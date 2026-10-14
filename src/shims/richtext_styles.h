@@ -95,8 +95,7 @@ public:
     QString validate(const NamedStyle &s) const;
 
     // `name`'s properties along its chain (own values win). `skipDocumentFont`: leave out the
-    // font family/size Default Paragraph Style gives — on screen the editor's font stands in for
-    // the document's base font (a 12pt Times file must not override the app's typography).
+    // font family/size Default Paragraph Style gives for app-created documents.
     QVariantMap resolved(const QString &name, bool skipDocumentFont = false) const;
     // `name` is `ancestor` or inherits from it (paragraph styles all inherit the default one).
     bool inherits(const QString &name, const QString &ancestor) const;
@@ -108,8 +107,10 @@ public:
     // By value: a reference into the cache would dangle when a later lookup grows it.
     QTextBlockFormat blockFormat(const QString &paraStyle) const;
     QTextCharFormat charFormat(const QString &paraStyle, const QString &charStyle) const;
+    void useDocumentFont() { m_useDocumentFont = true; m_charCache.clear(); }
 
 private:
+    bool m_useDocumentFont = false;
     QHash<QString, NamedStyle> m_styles;
     QStringList m_order;
     mutable QHash<QString, QTextBlockFormat> m_blockCache;

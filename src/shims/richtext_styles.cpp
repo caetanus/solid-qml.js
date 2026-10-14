@@ -494,7 +494,7 @@ QTextCharFormat StyleSheet::charFormat(const QString &paraStyle, const QString &
     if (auto it = m_charCache.constFind(key); it != m_charCache.cend())
         return *it;
     const NamedStyle *ps = find(paraStyle);
-    QVariantMap props = resolved(ps && ps->family == Family::Paragraph ? paraStyle : defaultParagraphStyle(), true);
+    QVariantMap props = resolved(ps && ps->family == Family::Paragraph ? paraStyle : defaultParagraphStyle(), !m_useDocumentFont);
     const NamedStyle *cs = charStyle.isEmpty() ? nullptr : find(charStyle);
     if (cs && cs->family == Family::Character) {
         const QVariantMap c = resolved(charStyle);

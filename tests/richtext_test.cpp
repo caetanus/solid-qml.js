@@ -284,6 +284,50 @@ private slots:
     }
     void cleanup() { m_edit.reset(); }
 
+    void odfUsesDocumentDefaultFont()
+    {
+        const QString path = m_dir.filePath("default-font.odt");
+        writeOdt(path, "<text:p>Body <text:span>span</text:span></text:p>", {},
+            "<style:default-style style:family=\"paragraph\"><style:text-properties fo:font-family=\"Liberation Serif\" fo:font-size=\"12pt\"/></style:default-style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        const auto f = doc()->begin().begin().fragment().charFormat();
+        QCOMPARE(f.font().resolve(doc()->defaultFont()).family(), QString("Liberation Serif"));
+        QCOMPARE(f.font().resolve(doc()->defaultFont()).pointSizeF(), 12.0);
+        for (auto it = doc()->begin().begin(); !it.atEnd(); ++it)
+            QCOMPARE(it.fragment().charFormat().font().resolve(doc()->defaultFont()).family(), QString("Liberation Serif"));
+    }
+
+    void odfDocumentPageGeometry()
+    {
+        const QString path = m_dir.filePath("geometry.odt");
+        QZipWriter zip(path);
+        zip.addFile("content.xml", "<office:document-content" ODF_NS "><office:automatic-styles>"
+            "<style:style style:name=\"First\" style:family=\"paragraph\" style:parent-style-name=\"Body\"/>"
+            "</office:automatic-styles><office:body><office:text><text:p text:style-name=\"First\">Hello</text:p>"
+            "</office:text></office:body></office:document-content>");
+        zip.addFile("styles.xml", "<office:document-styles" ODF_NS "><office:styles>"
+            "<style:style style:name=\"Body\" style:family=\"paragraph\" style:master-page-name=\"Letter\"/>"
+            "</office:styles><office:automatic-styles>"
+            "<style:page-layout style:name=\"unused\"><style:page-layout-properties fo:page-width=\"21cm\" fo:page-height=\"29.7cm\"/></style:page-layout>"
+            "<style:page-layout style:name=\"used\"><style:page-layout-properties fo:page-width=\"8.5in\" fo:page-height=\"11in\" fo:margin=\"1in\" fo:margin-left=\"0.5in\"/></style:page-layout>"
+            "</office:automatic-styles><office:master-styles>"
+            "<style:master-page style:name=\"Standard\" style:page-layout-name=\"unused\"/>"
+            "<style:master-page style:name=\"Letter\" style:page-layout-name=\"used\"/>"
+            "</office:master-styles></office:document-styles>");
+        zip.close();
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        QCOMPARE(m_fmt->property("documentPageWidth").toReal(), 816.0);
+        QCOMPARE(m_fmt->property("documentPageHeight").toReal(), 1056.0);
+        QCOMPARE(m_fmt->property("documentPageMargins").toList(), QVariantList({96,96,96,48}));
+        QSignalSpy changes(m_fmt, SIGNAL(documentPageGeometryChanged()));
+        QVERIFY(changes.isValid());
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        QCOMPARE(changes.count(), 0);
+        m_fmt->newDocument();
+        QCOMPARE(changes.count(), 1);
+        QCOMPARE(m_fmt->property("documentPageWidth").toReal(), 0.0);
+    }
+
     void fontAtCaretOnlyFormatsNewText()
     {
         m_fmt->insertText(QStringLiteral("hello"));
@@ -1169,12 +1213,12 @@ private slots:
         QCOMPARE(h1.value("fontFamily").toString(), QStringLiteral("Arial"));
         QCOMPARE(h1.value("keepWithNext").toBool(), true);
         QCOMPARE(m_fmt->styleProperties(QStringLiteral("Text Body")).value("lineHeight").toDouble(), 1.15);
-        // The document default IS Default Paragraph Style — kept, but the editor's font shows.
+        // Imported body text uses the document default, independently of the editor's font.
         const QVariantMap standard = m_fmt->styleProperties(QStringLiteral("Default Paragraph Style"));
         QCOMPARE(standard.value("fontSize").toDouble(), 12.0);
         QCOMPARE(standard.value("fontFamily").toString(), QStringLiteral("Times New Roman"));
-        QVERIFY(!charAt(doc(), 9).hasProperty(QTextFormat::FontPointSize));
-        QVERIFY(!charAt(doc(), 9).hasProperty(QTextFormat::FontFamilies));
+        QCOMPARE(charAt(doc(), 9).fontPointSize(), 12.0);
+        QCOMPARE(charAt(doc(), 9).fontFamilies().toStringList().value(0), QStringLiteral("Times New Roman"));
         QCOMPARE(charAt(doc(), 2).fontFamilies().toStringList().value(0), QStringLiteral("Arial"));
 
         m_fmt->setCursorPosition(1);

@@ -56,6 +56,64 @@ struct OdfStyles {
     QHash<QString, QTextListFormat::Style> lists; // text:list-style name → its level-1 kind
 };
 
+// Resolve the first body paragraph's master through its style chain. Reading both XML parts
+// also handles automatic paragraph styles and avoids choosing an unrelated first page layout.
+QVariantList documentGeometry(const QByteArray &styles, const QByteArray &content)
+{
+    QHash<QString, QVariantList> layouts;
+    QHash<QString, QString> masters, parents, styleMasters;
+    QString firstMaster, firstParagraph;
+    bool foundParagraph = false;
+    for (const auto &part : {styles, content}) {
+        QXmlStreamReader xml(part);
+        QString layout;
+        bool body = false;
+        while (!xml.atEnd()) {
+            const auto token = xml.readNext();
+            if (token == QXmlStreamReader::EndElement && xml.name() == QLatin1String("page-layout")) layout.clear();
+            if (token != QXmlStreamReader::StartElement) continue;
+            const auto a = xml.attributes();
+            const auto val = [&](const char *name) { return a.value(QLatin1String(name)).toString(); };
+            if (xml.name() == QLatin1String("body")) body = true;
+            if (body && !foundParagraph && (xml.name() == QLatin1String("p") || xml.name() == QLatin1String("h"))) {
+                firstParagraph = val("text:style-name");
+                foundParagraph = true;
+            }
+            if (xml.name() == QLatin1String("style")) {
+                const QString name = val("style:name");
+                parents.insert(name, val("style:parent-style-name"));
+                styleMasters.insert(name, val("style:master-page-name"));
+            } else if (xml.name() == QLatin1String("master-page")) {
+                const QString name = val("style:name");
+                if (firstMaster.isEmpty()) firstMaster = name;
+                masters.insert(name, val("style:page-layout-name"));
+            } else if (xml.name() == QLatin1String("page-layout")) {
+                layout = val("style:name");
+            } else if (!layout.isEmpty() && xml.name() == QLatin1String("page-layout-properties")) {
+                const qreal w = lengthPx(val("fo:page-width")), h = lengthPx(val("fo:page-height"));
+                if (!(w > 0 && h > 0)) continue;
+                qreal all = lengthPx(val("fo:margin"));
+                if (qIsNaN(all)) all = 0;
+                QVariantList geometry{w,h};
+                for (const char *side : {"fo:margin-top", "fo:margin-right", "fo:margin-bottom", "fo:margin-left"}) {
+                    const qreal margin = lengthPx(val(side));
+                    geometry.append(qIsNaN(margin) ? all : margin);
+                }
+                layouts.insert(layout, geometry);
+            }
+        }
+    }
+    QString master;
+    QSet<QString> seen;
+    for (QString style = firstParagraph; !style.isEmpty() && !seen.contains(style); style = parents.value(style)) {
+        seen.insert(style);
+        master = styleMasters.value(style);
+        if (!master.isEmpty()) break;
+    }
+    if (master.isEmpty()) master = firstMaster;
+    return layouts.value(masters.value(master));
+}
+
 QString firstFamily(QStringView v)
 {
     const qsizetype comma = v.indexOf(QLatin1Char(','));
@@ -368,6 +426,8 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     StyleSheet sheet = StyleSheet::builtIns();
     SheetBuilder builder(named, sheet);
     builder.build();
+    // Keep the imported base font in the style model, including restyling and saving.
+    sheet.useDocumentFont();
 
     // content.xml's automatic styles: direct formatting over a named style.
     OdfStyles autos;
@@ -463,6 +523,9 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     // (re-enabling it starts an empty stack), so Ctrl+Z can't empty the freshly opened document.
     doc->setUndoRedoEnabled(false);
     doc->clear();
+    auto rootFormat = doc->rootFrame()->frameFormat();
+    rootFormat.setProperty(kDocumentGeometryProperty, documentGeometry(zip.fileData(QStringLiteral("styles.xml")), content));
+    doc->rootFrame()->setFrameFormat(rootFormat);
     QTextCursor c(doc);
     c.beginEditBlock();
     bool firstBlock = true;

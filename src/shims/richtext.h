@@ -63,6 +63,9 @@ class RichTextHandler : public QObject {
     // The document has unsaved edits (QTextDocument::isModified). Cleared by saveOdf/loadOdf/
     // newDocument; writable so a host can mark its own save points.
     Q_PROPERTY(QString layoutEngine READ layoutEngine WRITE setLayoutEngine NOTIFY layoutEngineChanged)
+    Q_PROPERTY(qreal documentPageWidth READ documentPageWidth NOTIFY documentPageGeometryChanged)
+    Q_PROPERTY(qreal documentPageHeight READ documentPageHeight NOTIFY documentPageGeometryChanged)
+    Q_PROPERTY(QVariantList documentPageMargins READ documentPageMargins NOTIFY documentPageGeometryChanged)
     Q_PROPERTY(int pageCount READ pageCount NOTIFY pagesChanged)
     Q_PROPERTY(int currentPage READ currentPage NOTIFY currentPageChanged)
     Q_PROPERTY(QString pageBreakLabel READ pageBreakLabel WRITE setPageBreakLabel NOTIFY pageBreakLabelChanged)
@@ -186,6 +189,9 @@ public:
     Q_INVOKABLE void insertPageBreak();
     QString layoutEngine() const { return m_layoutEngine; }
     void setLayoutEngine(const QString &engine);
+    qreal documentPageWidth() const { return m_documentGeometry.value(0).toReal(); }
+    qreal documentPageHeight() const { return m_documentGeometry.value(1).toReal(); }
+    QVariantList documentPageMargins() const { return m_documentGeometry.mid(2); }
     int pageCount() const { return m_pageCount; }
     int currentPage() const { return m_currentPage; }
     Q_INVOKABLE int pageAt(int position) const;
@@ -337,6 +343,7 @@ signals:
     void saveCopyFinished(bool ok, const QString &error);
     void pageBreakLabelChanged();
     void pagesChanged();
+    void documentPageGeometryChanged();
     void layoutEngineChanged();
     void currentPageChanged();
     void documentChanged();
@@ -441,6 +448,7 @@ private:
     void selectLayoutEngine(bool forceQt = false);
     bool m_unsupportedHistory = false;
     QString m_layoutEngine = QStringLiteral("auto");
+    QVariantList m_documentGeometry;
     int m_pageCount = 1;
     int m_pendingPageCount = 1;
     bool m_pageCountUpdatePending = false;
