@@ -9,6 +9,7 @@
 #include <QTextBlock>
 #include <QTextLayout>
 #include <QPainter>
+#include <QFontMetricsF>
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
@@ -30,6 +31,7 @@ int main(int argc, char **argv) {
     }
     edit->setWidth(width); handler.configurePages(width,height,0,margins);
     auto *doc=edit->textDocument()->textDocument(); auto *layout=doc->documentLayout();
+    const QFontMetricsF fontMetrics(doc->defaultFont());
     layout->documentSize(); const int pages=layout->pageCount();
     QDir output(QString::fromLocal8Bit(argv[2])); QDir().mkpath(output.path());
     QJsonArray lines;
@@ -54,5 +56,6 @@ int main(int argc, char **argv) {
         if (!image.save(output.filePath(QString("office-%1.png").arg(page+1)))) qFatal("PNG write failed");
     }
     QFile file(output.filePath("office.json")); if (!file.open(QIODevice::WriteOnly)) return 1;
-    file.write(QJsonDocument(QJsonObject{{"pages",pages},{"width",width},{"height",height},{"lines",lines}}).toJson());
+    file.write(QJsonDocument(QJsonObject{{"pages",pages},{"width",width},{"height",height},{"lines",lines},
+        {"fontHeight",fontMetrics.height()},{"fontLeading",fontMetrics.leading()},{"fontSpacing",fontMetrics.lineSpacing()}}).toJson());
 }
