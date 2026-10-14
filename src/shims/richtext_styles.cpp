@@ -639,7 +639,7 @@ QTextBlockFormat scaledLengths(const QTextBlockFormat &f, qreal ratio)
         return out;
     for (int id : { int(QTextFormat::BlockTopMargin), int(QTextFormat::BlockBottomMargin),
                     int(QTextFormat::BlockLeftMargin), int(QTextFormat::BlockRightMargin),
-                    int(QTextFormat::TextIndent) })
+                    int(QTextFormat::TextIndent), kListTextOffsetProperty })
         if (out.hasProperty(id))
             out.setProperty(id, out.property(id).toDouble() * ratio);
     if (out.hasProperty(QTextFormat::LineHeight)

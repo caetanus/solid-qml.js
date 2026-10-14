@@ -180,8 +180,11 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
     const auto direction = b.textDirection();
     const auto *list = b.textList();
     const int indent = format.indent() + (list ? list->format().indent() : 0);
+    const qreal indentWidth = list && m_root.boolProperty(kDocumentSpacingProperty) && format.hasProperty(kListTextOffsetProperty)
+        ? format.indent() * doc->indentWidth() + format.doubleProperty(kListTextOffsetProperty)
+        : indent * doc->indentWidth();
     const qreal left = box.left;
-    const qreal available = qMax(1., box.width - quantizedLength(format.leftMargin()) - quantizedLength(format.rightMargin()) - indent * doc->indentWidth());
+    const qreal available = qMax(1., box.width - quantizedLength(format.leftMargin()) - quantizedLength(format.rightMargin()) - indentWidth);
     if (dirty) {
         ++counters.shapedBlocks; counters.shapedCharacters += b.length();
         auto option = doc->defaultTextOption();
@@ -242,7 +245,7 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
         flow.y = qMax(flow.y, pageTop);
         if (flow.y + (format.lineHeightType() == QTextBlockFormat::LineDistanceHeight ? natural : qMax(advance, natural)) > qFloor(flow.y / stride)*stride + stride-bottom && flow.y > pageTop)
             flow.y = (qFloor(flow.y / stride)+1)*stride + top;
-        const QPointF position(quantizedLength(format.leftMargin()) + (direction == Qt::RightToLeft ? 0 : indent * doc->indentWidth() + (index == 0 ? format.textIndent() : 0)), flow.y-origin+offset);
+        const QPointF position(quantizedLength(format.leftMargin()) + (direction == Qt::RightToLeft ? 0 : indentWidth + (index == 0 ? format.textIndent() : 0)), flow.y-origin+offset);
         sameLines &= line.position() == position;
         line.setPosition(position);
         next.hitRects.append(line.naturalTextRect());
@@ -772,7 +775,8 @@ void RichTextLayout::draw(QPainter *painter, const PaintContext &context)
             painter->save(); painter->setFont(b.charFormat().font().resolve(document()->defaultFont()));
             const auto line = layout->lineAt(0);
             QString marker = list->itemText(b);
-            if (list->format().style() == QTextListFormat::ListCircle) marker = QChar(0x25e6);
+            if (list->format().style() == QTextListFormat::ListDisc) marker = QChar(0x2022);
+            else if (list->format().style() == QTextListFormat::ListCircle) marker = QChar(0x25e6);
             else if (list->format().style() == QTextListFormat::ListSquare) marker = QChar(0x25aa);
             else if (marker.isEmpty()) marker = QChar(0x2022);
             if (b.blockFormat().marker() == QTextBlockFormat::MarkerType::Checked) marker = QChar(0x2612);

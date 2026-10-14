@@ -264,6 +264,33 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void odfListLabelWidthControlsTextIndent()
+    {
+        const QString path = m_dir.filePath("list-indent.odt");
+        writeOdt(path, "<text:list text:style-name=\"Bullets\"><text:list-item><text:p>Outer</text:p><text:list><text:list-item><text:p>Inner</text:p></text:list-item></text:list></text:list-item></text:list>", {},
+            "<text:list-style style:name=\"Bullets\"><text:list-level-style-bullet text:level=\"1\" text:bullet-char=\"•\"><style:list-level-properties text:space-before=\"0px\" text:min-label-width=\"15px\"/></text:list-level-style-bullet>"
+            "<text:list-level-style-bullet text:level=\"2\" text:bullet-char=\"•\"><style:list-level-properties text:space-before=\"15px\" text:min-label-width=\"15px\"/></text:list-level-style-bullet></text:list-style>");
+        m_fmt->setLayoutEngine("custom");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        m_fmt->configurePages(300, 300, 0, {10,10,10,10});
+        const auto x = [&](int n) {
+            doc()->documentLayout()->documentSize();
+            const auto block = doc()->findBlockByNumber(n);
+            return block.layout()->position().x() + block.layout()->lineAt(0).x();
+        };
+        QCOMPARE(x(0), 25.0);
+        QCOMPARE(x(1), 40.0);
+        const QString copy = m_dir.filePath("list-indent-copy.odt");
+        QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(copy)));
+        keepForInspection(copy);
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(copy)));
+        m_fmt->configurePages(300, 300, 0, {10,10,10,10});
+        QCOMPARE(doc()->firstBlock().blockFormat().doubleProperty(rt::kListTextOffsetProperty), 15.0);
+        QCOMPARE(doc()->firstBlock().blockFormat().leftMargin(), 0.0);
+        QCOMPARE(x(0), 25.0);
+        QCOMPARE(x(1), 40.0);
+    }
+
     void odfParagraphSpacingAddsAndResetsAtPageTop()
     {
         const QString path = m_dir.filePath("paragraph-spacing.odt");

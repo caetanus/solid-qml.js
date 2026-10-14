@@ -30,6 +30,8 @@ constexpr int kParagraphStyleProperty = QTextFormat::UserProperty + 0x5301; // Q
 constexpr int kCharStyleProperty = QTextFormat::UserProperty + 0x5302;      // QString, on char formats
 constexpr int kKeepWithNextProperty = QTextFormat::UserProperty + 0x5303;   // bool, on block formats
 constexpr int kLanguageProperty = QTextFormat::UserProperty + 0x5304;      // language tag, on char formats
+constexpr int kListTextOffsetProperty = QTextFormat::UserProperty + 0x5305; // scaled px, on blocks
+constexpr int kListOffsetsProperty = QTextFormat::UserProperty + 0x5306; // canonical offsets by level, on lists
 
 // Vertical space (px) under a paragraph whose style chain has none: LibreOffice draws such
 // paragraphs with no gap; a quarter of a CSS pixel is invisible, and any positive value keeps

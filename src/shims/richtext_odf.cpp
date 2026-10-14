@@ -54,6 +54,7 @@ struct OdfStyles {
     RawStyle defaultParagraph;       // <style:default-style style:family="paragraph">
     QHash<QString, QString> fonts;   // style:font-face name → font family
     QHash<QString, QTextListFormat::Style> lists; // text:list-style name → its level-1 kind
+    QHash<QString, QVariantMap> listOffsets;
 };
 
 // Resolve the first body paragraph's master through its style chain. Reading both XML parts
@@ -217,6 +218,7 @@ void readStyles(QXmlStreamReader &xml, QLatin1String section, OdfStyles &out)
     QString current;          // style:name being read
     bool inDefault = false;   // inside the paragraph default-style
     QString currentList;
+    QString currentLevel;
     while (!xml.atEnd()) {
         const auto tok = xml.readNext();
         if (tok == QXmlStreamReader::EndElement) {
@@ -227,6 +229,7 @@ void readStyles(QXmlStreamReader &xml, QLatin1String section, OdfStyles &out)
                 inDefault = false;
             } else if (xml.name() == QLatin1String("list-style")) {
                 currentList.clear();
+                currentLevel.clear();
             }
             continue;
         }
@@ -260,8 +263,18 @@ void readStyles(QXmlStreamReader &xml, QLatin1String section, OdfStyles &out)
         } else if (!currentList.isEmpty()
                    && (name == QLatin1String("list-level-style-number") || name == QLatin1String("list-level-style-bullet"))) {
             const auto level = a.value(QLatin1String("text:level"));
+            currentLevel = level.isEmpty() ? QStringLiteral("1") : level.toString();
             if ((level.isEmpty() || level == QLatin1String("1")) && !out.lists.contains(currentList))
                 out.lists.insert(currentList, listKind(xml));
+        } else if (!currentList.isEmpty() && name == QLatin1String("list-level-properties")) {
+            if (a.hasAttribute(QLatin1String("text:min-label-width"))) {
+                const qreal before = lengthPx(a.value(QLatin1String("text:space-before")));
+                const qreal width = lengthPx(a.value(QLatin1String("text:min-label-width")));
+                if (qIsFinite(width)) out.listOffsets[currentList][currentLevel] = (qIsFinite(before) ? before : 0) + width;
+            }
+        } else if (!currentList.isEmpty() && name == QLatin1String("list-level-label-alignment")) {
+            const qreal left = lengthPx(a.value(QLatin1String("fo:margin-left")));
+            if (qIsFinite(left)) out.listOffsets[currentList][currentLevel] = left;
         } else if (name == QLatin1String("table-cell-properties") && !current.isEmpty()) {
             const auto alignment=a.value(QLatin1String("style:vertical-align"));
             if (alignment==QLatin1String("middle")) out.styles[current].cellAlignment=QTextCharFormat::AlignMiddle;
@@ -439,6 +452,7 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     OdfStyles autos;
     autos.fonts = named.fonts;
     autos.lists = named.lists;
+    autos.listOffsets = named.listOffsets;
 
     struct Prepared {
         QString style;             // the named paragraph style
@@ -539,7 +553,7 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     int paragraphDepth = 0; // text:p inside text:note bodies nest
 
     // Lists: one QTextList per text:list (created on its first item), nested ones indented.
-    struct ListLevel { QTextList *list = nullptr; QTextListFormat::Style style = QTextListFormat::ListDisc; };
+    struct ListLevel { QTextList *list = nullptr; QTextListFormat::Style style = QTextListFormat::ListDisc; QString name; };
     QList<ListLevel> lists;
 
     // Table state (word-like subset: flat tables, spans/images inside cells). Column count comes
@@ -565,7 +579,12 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
     // The cursor content lands on: the current cell inside a table, the document elsewhere.
     const auto act = [&]() -> QTextCursor & { return inCell ? cellCursor : c; };
 
-    const auto beginBlock = [&](const QTextBlockFormat &bf, const QTextCharFormat &cf) {
+    const auto beginBlock = [&](QTextBlockFormat bf, const QTextCharFormat &cf) {
+        if (!lists.isEmpty()) {
+            const auto offsets = autos.listOffsets.value(lists.last().name);
+            const auto offset = offsets.constFind(QString::number(lists.size()));
+            if (offset != offsets.cend()) bf.setProperty(kListTextOffsetProperty, *offset);
+        }
         if (inCell) {
             // Every cell is born with one empty block — reuse it for the first paragraph.
             if (cellFirstBlock) {
@@ -590,6 +609,8 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                 QTextListFormat lf;
                 lf.setStyle(l.style);
                 lf.setIndent(int(lists.size()));
+                const auto offsets = autos.listOffsets.value(l.name);
+                if (!offsets.isEmpty()) lf.setProperty(kListOffsetsProperty, offsets);
                 l.list = c.createList(lf);
             } else {
                 l.list->add(c.block());
@@ -611,6 +632,7 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
             } else if (name == QLatin1String("list")) {
                 ListLevel l;
                 const QString ls = attrs.value(QLatin1String("text:style-name")).toString();
+                l.name = ls.isEmpty() && !lists.isEmpty() ? lists.last().name : ls;
                 l.style = autos.lists.value(ls, lists.isEmpty() ? QTextListFormat::ListDisc : lists.last().style);
                 lists << l;
             } else if (name == QLatin1String("p") || name == QLatin1String("h")) {
@@ -1007,7 +1029,9 @@ private:
                 m_x.writeStartElement(QStringLiteral("text:list-item")); // holds the nested list
             m_x.writeStartElement(QStringLiteral("text:list"));
             const QTextListFormat::Style kind = level == depth ? l->format().style() : QTextListFormat::ListDisc;
-            m_x.writeAttribute(QStringLiteral("text:style-name"), listStyle(kind));
+            QTextListFormat format = l->format();
+            format.setStyle(kind);
+            m_x.writeAttribute(QStringLiteral("text:style-name"), listStyle(format));
             m_lists << (level == depth ? l : nullptr);
         }
     }
@@ -1022,13 +1046,15 @@ private:
         }
     }
 
-    QString listStyle(QTextListFormat::Style kind)
+    QString listStyle(const QTextListFormat &format)
     {
-        if (auto it = m_listStyles.constFind(int(kind)); it != m_listStyles.cend())
+        int key = m_listFormats.indexOf(format);
+        if (key < 0) { key = m_listFormats.size(); m_listFormats.append(format); }
+        if (auto it = m_listStyles.constFind(key); it != m_listStyles.cend())
             return *it;
         const QString name = QStringLiteral("L%1").arg(m_listStyles.size() + 1);
-        m_listStyles.insert(int(kind), name);
-        m_listOrder << int(kind);
+        m_listStyles.insert(key, name);
+        m_listOrder << key;
         return name;
     }
 
@@ -1301,9 +1327,12 @@ private:
                 x.writeEndElement();
                 }
             }
-            for (int kind : std::as_const(m_listOrder)) {
+            for (int key : std::as_const(m_listOrder)) {
+                const auto format = m_listFormats.at(key);
+                const int kind = format.style();
+                const auto offsets = format.property(kListOffsetsProperty).toMap();
                 x.writeStartElement(QStringLiteral("text:list-style"));
-                x.writeAttribute(QStringLiteral("style:name"), m_listStyles.value(kind));
+                x.writeAttribute(QStringLiteral("style:name"), m_listStyles.value(key));
                 for (int level = 1; level <= 10; ++level) {
                     const bool number = kind == QTextListFormat::ListDecimal || kind == QTextListFormat::ListLowerAlpha
                         || kind == QTextListFormat::ListUpperAlpha || kind == QTextListFormat::ListLowerRoman
@@ -1328,7 +1357,7 @@ private:
                     x.writeAttribute(QStringLiteral("text:label-followed-by"), QStringLiteral("listtab"));
                     x.writeAttribute(QStringLiteral("text:list-tab-stop-position"), QString::number(0.25 * level, 'f', 4) + QStringLiteral("in"));
                     x.writeAttribute(QStringLiteral("fo:text-indent"), QStringLiteral("-0.25in"));
-                    x.writeAttribute(QStringLiteral("fo:margin-left"), QString::number(0.25 * level, 'f', 4) + QStringLiteral("in"));
+                    x.writeAttribute(QStringLiteral("fo:margin-left"), inches(offsets.value(QString::number(level), 24.0 * level).toReal()));
                     x.writeEndElement();
                     x.writeEndElement();
                 }
@@ -1416,6 +1445,7 @@ private:
     QHash<QByteArray, QString> m_autoKeys;
     QList<const QTextList *> m_lists; // open text:list per level (null: a wrapper level)
     QHash<int, QString> m_listStyles;
+    QList<QTextListFormat> m_listFormats;
     QList<int> m_listOrder;
     QList<Picture> m_pictures;
     QHash<QString, QString> m_pictureByName;

@@ -499,6 +499,10 @@ the custom engine discards the inter-paragraph gap, including gaps that would
 otherwise extend into the next page. Explicit page breaks retain their spacing.
 Ordinary Qt/HTML documents keep Qt's margin-collapse behavior.
 
+The custom engine uses imported per-level list label widths/left margins rather
+than Qt's fixed indent step. These offsets scale with zoom and survive ODF saves.
+List nesting remains independent of the physical text offset.
+
 The phase-2 acceptance policy top-aligns cells in **every fragment of a split
 row**. Middle/bottom alignment applies only when the row fits on one page.
 This makes placement deterministic when an edit changes where a row splits and
