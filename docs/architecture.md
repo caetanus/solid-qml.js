@@ -134,13 +134,16 @@ The full list is in
 
 ## Virtualization
 
-A `<For>` whose rows are passive (plain elements, classes and text, with no handlers or refs) is
-**certified** at compile time (`transpiler/src/emit/forCertify.ts`), and its repeater is emitted
-with `virtualize: true`. At run time the repeater virtualizes only when its container is a
+A `<For>` whose rows are passive (plain elements, classes, text and inline styles, with no
+handlers or refs) is **certified** at compile time (`transpiler/src/emit/forCertify.ts`), and its
+repeater is emitted with `virtualize: true`. A row's `style` may be an object whose values are
+pure: the row item, the index `i()`, literals, component signals and memos, and operators over
+those (a recycled row re-evaluates them; a signal updates the visible rows live). At run time the repeater virtualizes only when its container is a
 vertical, non-wrapping scroll column: it creates the rows near the viewport and recycles them as
 the list scrolls. Otherwise it creates every row (an eager list). While an assistive technology is
 active (`QAccessible::isActive()`), virtualization is switched off so that a screen reader sees
-every row. Evidence: `tests/c23/run-virtual.sh`, `meson test for-identity-virtual`.
+every row. Evidence: `tests/c23/run-virtual.sh`, `meson test for-identity-virtual`,
+`meson test for-style-virtual`.
 
 ## Accessibility on demand
 
