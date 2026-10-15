@@ -849,13 +849,20 @@ if build_richtext
       include_directories: include_directories('src'),
       dependencies: richtext_test_deps),
     env: ['QT_QPA_PLATFORM=offscreen'], timeout: 120)
-  test('richtext-handler',
-    executable('test-richtext-handler', files('tests/richtext_test.cpp'),
-      qt6.preprocess(moc_sources: files('tests/richtext_test.cpp'), dependencies: richtext_test_deps),
-      cpp_args: richtext_args,
-      include_directories: include_directories('src'),
-      dependencies: richtext_test_deps),
-    env: ['QT_QPA_PLATFORM=offscreen', 'RICHTEXT_BOOK=' + get_option('richtext_book')], timeout: 60)
+  richtext_handler_test = executable('test-richtext-handler', files('tests/richtext_test.cpp'),
+    qt6.preprocess(moc_sources: files('tests/richtext_test.cpp'), dependencies: richtext_test_deps),
+    cpp_args: richtext_args,
+    include_directories: include_directories('src'),
+    dependencies: richtext_test_deps)
+  richtext_handler_env = ['QT_QPA_PLATFORM=offscreen', 'RICHTEXT_BOOK=' + get_option('richtext_book')]
+  test('richtext-handler', richtext_handler_test,
+    args: ['--handler-suite'], env: richtext_handler_env, timeout: 60)
+  # The destructive 88k-replacement workload needs its own pristine document.
+  # Measured at 62.6 s in a debug build, almost entirely in Qt undo; sharing
+  # a loaded fixture cannot remove that cost. Allow 120 s for slower machines.
+  test('richtext-handler-book-search', richtext_handler_test,
+    args: ['editingBookSearchTiming'], env: richtext_handler_env, timeout: 120)
+
 endif
 
 # <Swipe>: a click reaches the child; a sideways drag or touchpad swipe slides the row and acts.
