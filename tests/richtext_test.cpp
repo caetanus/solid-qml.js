@@ -23,6 +23,7 @@
 #include <QMetaMethod>
 #include <QPainter>
 #include <QProcess>
+#include <QXmlStreamReader>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickItem>
@@ -1755,6 +1756,150 @@ private slots:
         QVERIFY(process.waitForFinished());
         QCOMPARE(process.readAllStandardOutput(), baseline);
 
+    }
+
+    void pdfExportFixture_data()
+    {
+        QTest::addColumn<QString>("engine");
+        QTest::newRow("custom") << QString("custom");
+        QTest::newRow("qt") << QString("qt");
+    }
+    void pdfExportFixture()
+    {
+        QFETCH(QString, engine);
+        m_fmt->setLayoutEngine(engine);
+        QQuickView view;
+        view.setColor(Qt::white);
+        view.resize(400, 300);
+        auto *editor = qobject_cast<QQuickItem *>(m_edit.data());
+        editor->setParentItem(view.contentItem());
+        editor->setWidth(400);
+        QString html = "<p>Vector export fixture</p><ul><li>Bullet alpha</li><li>Bullet beta</li></ul>"
+                       "<table border='2' style='border-style:solid' cellspacing='0' cellpadding='4' width='100%' bgcolor='#ddeeff'>";
+        for (int i = 0; i < 18; ++i) html += QString("<tr><td>Table row %1</td></tr>").arg(i);
+        html += "</table><p><span style='color:#cc0000;background-color:#ffff00'>Colour highlight</span> "
+                "<u>Underline</u> <s>Strike</s></p><p>Sub<sub>script</sub> Super<sup>script</sup></p>";
+        doc()->setHtml(html);
+        QImage source(240, 160, QImage::Format_RGB32); source.fill(QColor("#00aa44"));
+        doc()->addResource(QTextDocument::ImageResource, QUrl("fixture-image"), source);
+        QTextCursor cursor(doc()); cursor.movePosition(QTextCursor::End); cursor.insertBlock();
+        QTextImageFormat image; image.setName("fixture-image"); image.setWidth(60); image.setHeight(40);
+        cursor.insertImage(image);
+        cursor.insertBlock();
+        QTextBlockFormat breakFormat; breakFormat.setPageBreakPolicy(QTextFormat::PageBreak_AlwaysBefore);
+        cursor.setBlockFormat(breakFormat); cursor.insertText("Explicit final page");
+        m_fmt->configurePages(400, 300, 20, {20, 20, 20, 20});
+        view.show();
+        QTest::qWait(50);
+        QCOMPARE(bool(dynamic_cast<rt::RichTextLayout *>(doc()->documentLayout())), engine == "custom");
+        const QImage screen = view.grabWindow();
+        QVERIFY(!screen.isNull());
+        const int pages = m_fmt->pageCount();
+        QVERIFY(pages >= 3);
+        struct Line { QString text; int page; qreal y; };
+        QList<Line> expected;
+        for (auto block = doc()->begin(); block.isValid(); block = block.next()) {
+            auto *layout = block.layout();
+            for (int i = 0; i < layout->lineCount(); ++i) {
+                const auto line = layout->lineAt(i);
+                const auto text = block.text().mid(line.textStart(), line.textLength()).simplified();
+                if (text.isEmpty() || text.contains(QChar::ObjectReplacementCharacter)) continue;
+                const auto y = doc()->documentLayout()->blockBoundingRect(block).y() + line.y();
+                expected.append({text, int(y / 320) + 1, y - int(y / 320) * 320});
+            }
+        }
+        QSignalSpy done(m_fmt, &RichTextHandler::pdfExported);
+        const auto path = m_dir.filePath("fixture.pdf");
+        QVERIFY(m_fmt->exportPdfAsync(path));
+        QTRY_COMPARE(done.size(), 1);
+        QVERIFY2(done[0][0].toBool(), qPrintable(done[0][2].toString()));
+        QCOMPARE(done[0][3].toInt(), pages);
+        QProcess process;
+        process.start("pdftotext", {"-bbox-layout", path, "-"});
+        QVERIFY(process.waitForFinished());
+        QXmlStreamReader xml(process.readAllStandardOutput());
+        QList<Line> actual;
+        int page = 0;
+        while (!xml.atEnd()) {
+            xml.readNext();
+            if (!xml.isStartElement()) continue;
+            if (xml.name() == QLatin1String("page")) ++page;
+            if (xml.name() != QLatin1String("line")) continue;
+            const qreal y = xml.attributes().value("yMin").toDouble() * 4 / 3;
+            QStringList words;
+            while (!(xml.isEndElement() && xml.name() == QLatin1String("line")) && !xml.atEnd()) {
+                xml.readNext();
+                if (xml.isStartElement() && xml.name() == QLatin1String("word")) words.append(xml.readElementText());
+            }
+            QString text = words.join(' ').normalized(QString::NormalizationForm_KC);
+            if (text.startsWith(QChar(0x2022))) text = text.mid(1).trimmed();
+            actual.append({text, page, y});
+        }
+        QVERIFY(!xml.hasError());
+        QCOMPARE(actual.size(), expected.size());
+        for (int i = 0; i < expected.size(); ++i) {
+            // Poppler inserts word boundaries at sub/superscript run changes.
+            QCOMPARE(QString(actual[i].text).remove(' '), QString(expected[i].text).remove(' '));
+            QCOMPARE(actual[i].page, expected[i].page);
+            QVERIFY2(qAbs(actual[i].y - expected[i].y) < 2, qPrintable(QString("%1: PDF y=%2, screen y=%3").arg(expected[i].text).arg(actual[i].y).arg(expected[i].y)));
+        }
+        process.start("pdffonts", {path});
+        QVERIFY(process.waitForFinished());
+        const auto fonts = QString::fromUtf8(process.readAllStandardOutput()).split('\n');
+        QVERIFY(fonts.size() > 3);
+        for (const auto &font : fonts.mid(2)) {
+            if (font.trimmed().isEmpty()) continue;
+            const auto columns = font.simplified().split(' ');
+            QCOMPARE(columns[columns.size() - 5], QString("yes"));
+        }
+        process.start("pdfimages", {"-list", path});
+        QVERIFY(process.waitForFinished());
+        const auto images = QString::fromUtf8(process.readAllStandardOutput());
+        QVERIFY(QRegularExpression("image\\s+240\\s+160").match(images).hasMatch());
+        const auto raster = m_dir.filePath("fixture");
+        process.start("pdftoppm", {"-r", "96", "-f", "1", "-singlefile", "-png", path, raster});
+        QVERIFY(process.waitForFinished());
+        const QImage pdf(raster + ".png");
+        QCOMPARE(pdf.size(), screen.size());
+        qint64 difference = 0;
+        for (int y = 0; y < pdf.height(); ++y) for (int x = 0; x < pdf.width(); ++x) {
+            const auto a = pdf.pixelColor(x, y), b = screen.pixelColor(x, y);
+            difference += qAbs(a.red()-b.red()) + qAbs(a.green()-b.green()) + qAbs(a.blue()-b.blue());
+        }
+        const qreal mean = qreal(difference) / (pdf.width() * pdf.height() * 3);
+        qInfo() << "PDF table vs QSG screen mean RGB error" << mean;
+        QVERIFY(mean < 12);
+        auto *table = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        QVERIFY(table);
+        const auto tableRect = doc()->documentLayout()->frameBoundingRect(table);
+        int borderPixels = 0, matchingBorderPixels = 0;
+        // Table frame rectangles include cell padding differently in the two
+        // engines. Find the strongest vertical edge in the narrow left gutter.
+        for (int x = qMax(0, qFloor(tableRect.left()) - 12); x < qMin(screen.width(), qCeil(tableRect.left()) + 4); ++x) {
+            int pixels = 0, matching = 0;
+            for (int y = qCeil(tableRect.top()) + 5; y < screen.height() - 20; ++y) {
+                if (screen.pixelColor(x, y).lightness() > 220) continue;
+                ++pixels;
+                bool matches = false;
+                for (int dx = -1; dx <= 1; ++dx)
+                    if (x + dx >= 0 && x + dx < pdf.width() && pdf.pixelColor(x + dx, y).lightness() < 220) matches = true;
+                if (matches) ++matching;
+            }
+            if (pixels > borderPixels) { borderPixels = pixels; matchingBorderPixels = matching; }
+        }
+        QVERIFY(borderPixels > 100);
+        QVERIFY(matchingBorderPixels > borderPixels * 0.9);
+
+        QVERIFY(!m_fmt->addMark("spelling", m_fmt->blockIdAt(0), 0, 6).isEmpty());
+        QVERIFY(!m_fmt->addMark("llm", m_fmt->blockIdAt(0), 7, 13).isEmpty());
+        QVERIFY(QMetaObject::invokeMethod(m_edit.data(), "select", Q_ARG(int, 0), Q_ARG(int, 13)));
+        QVERIFY(m_fmt->exportPdfAsync(path));
+        QTRY_COMPARE(done.size(), 2);
+        QVERIFY(done[1][0].toBool());
+        process.start("pdftoppm", {"-r", "96", "-f", "1", "-singlefile", "-png", path, raster});
+        QVERIFY(process.waitForFinished());
+        QCOMPARE(QImage(raster + ".png"), pdf);
+        editor->setParentItem(nullptr);
     }
 
     void pdfExportFailure()
