@@ -532,6 +532,10 @@ private:
     bool m_pageCountUpdatePending = false;
     int m_currentPage = 1;
     qreal m_pageStride = 0;
+    void connectOverlayLayout();
+    QMetaObject::Connection m_overlayLayoutConn;
+    QMetaObject::Connection m_overlayUpdateConn;
+    QMetaObject::Connection m_overlaySizeConn;
     QMetaObject::Connection m_pagesConn;
     QMetaObject::Connection m_pageCursorConn;
     QSet<QString> m_pageBreaks;

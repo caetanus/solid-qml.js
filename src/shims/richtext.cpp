@@ -87,6 +87,9 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
 {
     if (m_document == doc)
         return;
+    QObject::disconnect(m_overlayLayoutConn);
+    QObject::disconnect(m_overlayUpdateConn);
+    QObject::disconnect(m_overlaySizeConn);
     QObject::disconnect(m_pagesConn);
     m_pendingPageCount = m_pageCount; // cancel a queued count from the previous document
     QObject::disconnect(m_pageCursorConn);
@@ -117,6 +120,9 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
             m_pageCursorConn = connect(edit, &QQuickTextEdit::cursorRectangleChanged, this, &RichTextHandler::updateCurrentPage);
     }
     if (QTextDocument *td = doc ? doc->textDocument() : nullptr) {
+        m_overlayLayoutConn = connect(td, &QTextDocument::documentLayoutChanged,
+                                      this, &RichTextHandler::connectOverlayLayout);
+        connectOverlayLayout();
         // Synchronous edits can emit documentSizeChanged without scheduling Qt's
         // deferred pageCountChanged signal. Use the size already computed by Qt;
         // querying pageCount() here would force completion of any lazy layout.
@@ -278,6 +284,26 @@ void RichTextHandler::selectLayoutEngine(bool forceQt)
         rt::refreshTextEditSize(editor);
         syncPageCount();
     }
+}
+
+// Layout updates also cover same-size reflow (alignment/font changes) and lazy
+// TextEdit polish after configurePages returns. Rebind when an engine is replaced.
+// Only schedule polish here: never query geometry in a layout signal, and coalesce
+// repeated notifications without walking blocks or marks on the edit path.
+void RichTextHandler::connectOverlayLayout()
+{
+    QObject::disconnect(m_overlayUpdateConn);
+    QObject::disconnect(m_overlaySizeConn);
+    const auto schedule = [this] {
+        if (hasMarks()) scheduleMarksRepaint();
+        if (m_pageBreakOverlay && m_pageBreakOverlay->isVisible() && hasPageBreaks())
+            m_pageBreakOverlay->polish();
+        if (m_pageBandsOverlay) m_pageBandsOverlay->polish();
+    };
+    auto *layout = m_doc->documentLayout();
+    m_overlayUpdateConn = connect(layout, &QAbstractTextDocumentLayout::update, this, schedule);
+    m_overlaySizeConn = connect(layout, &QAbstractTextDocumentLayout::documentSizeChanged, this, schedule);
+    schedule();
 }
 
 void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const QVariantList &margins)
@@ -2766,7 +2792,9 @@ namespace {
 // The squiggle: one tile of a sine wave (period 4px) per colour, repeated by image nodes.
 constexpr qreal kWaveTile = 256.0;
 
-class MarksRootNode final : public QSGNode {
+// A transform node preserves inherited transform/clip state when cached children
+// are replaced (the software renderer does not cache that state on a plain node).
+class MarksRootNode final : public QSGTransformNode {
 public:
     ~MarksRootNode() override { qDeleteAll(m_waves); }
     QSGTexture *wave(QQuickWindow *window, const QColor &color, qreal dpr)
@@ -3293,8 +3321,6 @@ public:
         connect(handler, &RichTextHandler::contentsChanged, this, [this] { polish(); });
         connect(handler, &RichTextHandler::pageBreakLabelChanged, this, [this] { polish(); });
         connect(handler, &RichTextHandler::zoomChanged, this, [this] { polish(); });
-        auto *doc = handler->document()->textDocument();
-        connect(doc->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged, this, [this] { polish(); });
         if (auto *edit = qobject_cast<QQuickTextEdit *>(editor)) {
             connect(edit, &QQuickTextEdit::topPaddingChanged, this, [this] { polish(); });
             connect(edit, &QQuickTextEdit::leftPaddingChanged, this, [this] { polish(); });

@@ -441,7 +441,11 @@ from `QFont::underline()` as straight lines — a `WaveUnderline`/`SpellCheckUnd
 drawn by `TextEdit` at all, and changing layout formats re-lays-out the block. The overlay follows
 the viewport (`ItemObservesViewport`): it only lays out the marks of the visible part plus a
 quarter viewport around it, found by a binary search over the (sorted) marks, and is redone when
-the view scrolls out of that band, the text changes, or the marks change.
+the view scrolls out of that band, the text changes, or the marks change. Layout updates also
+invalidate the cached geometry, including page dimensions/margins, width, fonts, styles and zoom.
+Marks added during deferred layout settle with the text. Page-break and page-band overlays follow
+the same layout notifications, including replacement of the layout engine. Notifications coalesce
+through polish; they do not scan blocks or marks on the edit path.
 
 Interaction: clicks and hover come from passive pointer handlers on the text area, so the caret
 and selection behave exactly as without marks; the hit test takes the character under the pointer
