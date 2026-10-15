@@ -128,6 +128,9 @@ type DocumentEditorProps = {
   onContentChanged?: () => void;
   /** The style table changed (defineStyle, a load, newDocument, an undo of a definition). */
   onStylesChanged?: () => void;
+  onDocumentPageGeometryChanged?: () => void;
+  onPageHeaderChanged?: () => void;
+  onPageFooterChanged?: () => void;
   /** Page width in px (e.g. 794 ≈ A4 at 96dpi). 0/unset = the plain editor's default. The editor
    *  displays paginated sheets by default. */
   pageWidth?: number;
@@ -152,7 +155,9 @@ type DocumentEditorProps = {
    *  a `<Menu ref>`'s open(x, y) takes). */
   onMarkClicked?: (mark: DocumentMark, x: number, y: number, windowX: number, windowY: number) => void;
   /** A right-click on a mark (show suggestions; open a menu right here — a Wayland popup needs
-   *  the click's input serial). A right-click elsewhere is left alone. */
+   *  the click's input serial). Also emitted through onContextMenuRequested. */
+  onTableCellChanged?: (row: number, column: number) => void;
+  onContextMenuRequested?: (info: DocumentContextMenuInfo) => void;
   onMarkContextMenu?: (mark: DocumentMark, x: number, y: number, windowX: number, windowY: number) => void;
   /** The pointer entered a mark, or left it (null). */
   onMarkHovered?: (mark: DocumentMark | null) => void;
@@ -160,6 +165,8 @@ type DocumentEditorProps = {
 
 /** A mark (docs/document-editor.md "Blocks and marks"): [start, end) are UTF-16 offsets in the
  *  block's text (doc.blockText(blockId)). */
+type DocumentContextMenuInfo = { x: number; y: number; windowX: number; windowY: number; position: number; inSelection: boolean; inTable: boolean; mark: DocumentMark | null };
+
 type DocumentMark = { kind: string; id: string; blockId: string; start: number; end: number };
 
 /** How a kind of mark is drawn. Left out: kept; null: removed. Defaults: "spelling" a red wave,
@@ -422,7 +429,40 @@ declare global {
      *  styles and leaves paragraph properties untouched (unlike clearDirectFormatting()). */
     clearFormatting(): void;
     setAlignment(align: "left" | "center" | "right" | "justify"): void;
-    insertTable(rows: number, cols: number): void;
+    insertTable(rows: number, cols: number, options?: { headerRow?: boolean; width?: "full" | number }): void;
+    tableInfo(): { rows: number; columns: number; row: number; column: number; selection: { top: number; left: number; bottom: number; right: number } | null; headerRow: boolean } | null;
+    insertTableRows(where: "above" | "below", count?: number): boolean;
+    insertTableColumns(where: "left" | "right", count?: number): boolean;
+    deleteTableRows(): boolean;
+    deleteTableColumns(): boolean;
+    deleteTable(): boolean;
+    insertTableCells(shift: "right" | "down"): boolean;
+    deleteTableCells(shift: "left" | "up"): boolean;
+    selectTable(): boolean;
+    selectTableRow(): boolean;
+    selectTableColumn(): boolean;
+    mergeTableCells(): boolean;
+    splitTableCell(rows: number, columns: number): boolean;
+    setTableBorders(which: "all" | "outer" | "inner" | "none" | "top" | "bottom" | "left" | "right", style?: { width?: number; color?: string; style?: "solid" | "dashed" | "dotted" | "double" }): boolean;
+    setTableCellBackground(color: string): boolean;
+    setTableCellVerticalAlignment(alignment: "top" | "center" | "bottom"): boolean;
+    distributeTableColumns(): boolean;
+    setTableColumnWidth(width: number): boolean;
+    setTableAlignment(alignment: "left" | "center" | "right"): boolean;
+    setTableHeaderRow(on: boolean): boolean;
+    /** Persisted page setup in canonical 96 dpi pixels; one undo step. */
+    setDocumentPageGeometry(geometry: { width: number; height: number; margins: [number, number, number, number] }): void;
+    setPageHeader(options: { enabled: boolean; text?: string; alignment?: "left" | "center" | "right"; height?: number }): void;
+    setPageFooter(options: { enabled: boolean; text?: string; alignment?: "left" | "center" | "right"; height?: number }): void;
+    readonly pageHeader: { enabled: boolean; text: string; alignment: "left" | "center" | "right"; height: number };
+    readonly pageFooter: { enabled: boolean; text: string; alignment: "left" | "center" | "right"; height: number };
+    readonly documentPageGeometryChanged: {
+      connect(callback: () => void): void;
+      disconnect(callback: () => void): void;
+    };
+    readonly documentPageWidth: number;
+    readonly documentPageHeight: number;
+    readonly documentPageMargins: number[];
     addTableRow(): void;
     addTableColumn(): void;
     removeTableRow(): void;

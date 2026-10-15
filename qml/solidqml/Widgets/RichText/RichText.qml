@@ -29,6 +29,7 @@ Css.CssFill {
     property string html: ""
     // The built-in toolbar (formatting needs the loader's handler either way).
     property bool toolbar: true
+    function _requestContextMenuAtCaret() { return false }
     // What the document variant shows when created. DocumentEditor (the app-driven document,
     // DocumentEditor.qml) starts empty instead.
     property string _initialHtml: "<h1>solid-qml</h1><p>A <b>word-like</b> editor with <i>native</i> " +
@@ -285,6 +286,8 @@ Css.CssFill {
                 // Enter: a new paragraph in the style's next style ("Heading 1" → "Text Body");
                 // Shift+Enter stays a line break. Ctrl+B / Ctrl+I / Ctrl+U, as in every editor.
                 Keys.onPressed: (event) => {
+                    if ((event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && event.modifiers === Qt.ShiftModifier))
+                        && root._requestContextMenuAtCaret()) { event.accepted = true; return }
                     if (root._navigatePage(event)) return
                     if (!root.fmt) return
                     if (!root._mail && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)

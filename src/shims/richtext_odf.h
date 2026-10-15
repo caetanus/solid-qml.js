@@ -34,6 +34,8 @@ constexpr int kDocumentBandZoomProperty = QTextFormat::UserProperty + 0x5356;
 constexpr int kDocumentMasterNameProperty = QTextFormat::UserProperty + 0x5357;
 constexpr int kDocumentFontFacesProperty = QTextFormat::UserProperty + 0x5358;
 
+constexpr int kDocumentPageEditsProperty = QTextFormat::UserProperty + 0x5359;
+
 // Reads `path` into `doc` (cleared, rebuilt without undo history) and `sheet` (the built-in styles
 // plus the file's). A missing / non-ODF file fails before touching either. false + `error`.
 bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheet, QString *error);

@@ -319,7 +319,8 @@ private slots:
                 const auto al=a.layout()->lineAt(n),bl=b.layout()->lineAt(n);
                 QCOMPARE(al.textStart(),bl.textStart()); QCOMPARE(al.textLength(),bl.textLength());
                 const auto ap=ar.topLeft()+al.position(),bp=br.topLeft()+bl.position();
-                QCOMPARE(qFloor(ap.y()/(1150*zoom)),qFloor(bp.y()/(1150*zoom)));
+                QVERIFY2(qFloor(ap.y()/(1150*zoom))==qFloor(bp.y()/(1150*zoom)),
+                    qPrintable(QString("page mismatch block %1 line %2 Qt y=%3 custom y=%4 text=%5").arg(a.blockNumber()).arg(n).arg(ap.y()).arg(bp.y()).arg(b.text())));
                 if(QTextCursor(b).currentTable()) {
                     int local=bl.textStart()+bl.textLength()/2;
                     while(local>bl.textStart() && !b.layout()->isValidCursorPosition(local)) --local;

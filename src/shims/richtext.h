@@ -77,6 +77,8 @@ class RichTextHandler : public QObject {
     // The document has unsaved edits (QTextDocument::isModified). Cleared by saveOdf/loadOdf/
     // newDocument; writable so a host can mark its own save points.
     Q_PROPERTY(QString layoutEngine READ layoutEngine WRITE setLayoutEngine NOTIFY layoutEngineChanged)
+    Q_PROPERTY(QVariantMap pageHeader READ pageHeader NOTIFY pageHeaderChanged)
+    Q_PROPERTY(QVariantMap pageFooter READ pageFooter NOTIFY pageFooterChanged)
     Q_PROPERTY(qreal documentPageWidth READ documentPageWidth NOTIFY documentPageGeometryChanged)
     Q_PROPERTY(QString documentLanguage READ documentLanguage NOTIFY documentLanguageChanged)
     Q_PROPERTY(qreal documentPageHeight READ documentPageHeight NOTIFY documentPageGeometryChanged)
@@ -228,6 +230,12 @@ public:
     Q_INVOKABLE void insertPageBreak();
     QString layoutEngine() const { return m_layoutEngine; }
     void setLayoutEngine(const QString &engine);
+    QVariantMap pageHeader() const;
+    QVariantMap pageFooter() const;
+    Q_INVOKABLE void setPageHeader(const QVariantMap &options) { setPageBand(0, options); }
+    Q_INVOKABLE void setPageFooter(const QVariantMap &options) { setPageBand(1, options); }
+    Q_INVOKABLE void setDocumentPageGeometry(const QVariantMap &geometry);
+    void syncDocumentPageSetup();
     qreal documentPageWidth() const { return m_documentGeometry.value(0).toReal(); }
     QString documentLanguage() const { return m_documentLanguage; }
     Q_INVOKABLE QString languageAt(int position) const;
@@ -292,11 +300,32 @@ public:
     Q_INVOKABLE qreal resizeColumn(qreal delta);
     Q_INVOKABLE void endColumnResize(bool commit = true);
     Q_INVOKABLE bool tableTab(bool backward = false);
-    Q_INVOKABLE void insertTable(int rows, int cols);
+    Q_INVOKABLE void insertTable(int rows, int cols, const QVariantMap &options = {});
+    Q_INVOKABLE QVariant tableInfo() const;
+    Q_INVOKABLE QVariantList _selectedTableCellRects() const;
     Q_INVOKABLE void addTableRow();
     Q_INVOKABLE void addTableColumn();
     Q_INVOKABLE void removeTableRow();
     Q_INVOKABLE void removeTableColumn();
+    Q_INVOKABLE bool insertTableRows(const QString &where, int count = 1);
+    Q_INVOKABLE bool insertTableColumns(const QString &where, int count = 1);
+    Q_INVOKABLE bool deleteTableRows();
+    Q_INVOKABLE bool deleteTableColumns();
+    Q_INVOKABLE bool deleteTable();
+    Q_INVOKABLE bool insertTableCells(const QString &shift);
+    Q_INVOKABLE bool deleteTableCells(const QString &shift);
+    Q_INVOKABLE bool selectTable();
+    Q_INVOKABLE bool selectTableRow();
+    Q_INVOKABLE bool selectTableColumn();
+    Q_INVOKABLE bool mergeTableCells();
+    Q_INVOKABLE bool splitTableCell(int rows, int columns);
+    Q_INVOKABLE bool setTableBorders(const QString &which, const QVariantMap &style = {});
+    Q_INVOKABLE bool setTableCellBackground(const QString &color);
+    Q_INVOKABLE bool setTableCellVerticalAlignment(const QString &alignment);
+    Q_INVOKABLE bool distributeTableColumns();
+    Q_INVOKABLE bool setTableColumnWidth(qreal width);
+    Q_INVOKABLE bool setTableAlignment(const QString &alignment);
+    Q_INVOKABLE bool setTableHeaderRow(bool on);
     bool inTable() const;
 
     QString alignment() const;
@@ -409,6 +438,7 @@ public:
     const QList<Mark> &marks() { ensureMarksSorted(); return m_marks; }
 
 signals:
+    void tableCellChanged(int row, int column);
     void hasCopiedFormatChanged();
     void textColorChanged();
     void highlightColorChanged();
@@ -429,6 +459,8 @@ signals:
     void pageBreakLabelChanged();
     void pagesChanged();
     void documentPageGeometryChanged();
+    void pageHeaderChanged();
+    void pageFooterChanged();
     void documentLanguageChanged();
     void layoutEngineChanged();
     void currentPageChanged();
@@ -511,13 +543,15 @@ private:
     void updateViewportCulling();           // kLargeTextThreshold → the editor's ItemObservesViewport
 
     QTextCursor cursor() const;              // covers the selection, or the word at the cursor
-    QTextCursor insertionCursor() const;     // plain caret position (no word expansion) — inserts
+    QTextCursor insertionCursor() const;
+    QTextCursor tableCursor() const;     // plain caret position (no word expansion) — inserts
     void mergeCharFormat(const QTextCharFormat &fmt);
     void mergeInsertionFont(const QTextCharFormat &fmt);
     void selectEditorCursor(const QTextCursor &c);
     QTextCharFormat editingCharFormat() const;
     void mergeEditingBlock(const QTextBlockFormat &format);
     void updateEditingState();
+    int m_tableRow = -1, m_tableColumn = -1;
     QVariantList m_editingState;
     QString m_findText;
     QVariantMap m_findOptions;
@@ -549,6 +583,12 @@ private:
     void selectLayoutEngine(bool forceQt = false);
     bool m_unsupportedHistory = false;
     QString m_layoutEngine = QStringLiteral("auto");
+    void setPageBand(int area, const QVariantMap &options);
+    QVariantMap pageBand(int area) const;
+    QVariantMap m_pageHeader, m_pageFooter;
+    QVariantList m_documentBands, m_documentBandHeights;
+    QVariantList m_viewMargins;
+    qreal m_viewWidth = 0, m_viewHeight = 0, m_viewGap = 0;
     QVariantList m_documentGeometry;
     QString m_documentLanguage;
     void syncDocumentLanguage();

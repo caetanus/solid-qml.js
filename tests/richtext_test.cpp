@@ -23,6 +23,8 @@
 #include <QMetaMethod>
 #include <QPainter>
 #include <QProcess>
+#include <QProcessEnvironment>
+#include <QStandardPaths>
 #include <QXmlStreamReader>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -763,6 +765,398 @@ private slots:
         QCOMPARE(after.size(), 2);
         document->undo();
         QCOMPARE(table->format().columnWidthConstraints(), before);
+    }
+
+    void tableAlignmentGeometry()
+    {
+        PageEditor w; QVERIFY(w.root);
+        w.fmt()->insertTable(2,2,{{"width",300}});
+        auto *d=w.fmt()->document()->textDocument();
+        auto *t=qobject_cast<QTextTable *>(d->rootFrame()->childFrames().first());
+        d->documentLayout()->documentSize();
+        const qreal left=d->documentLayout()->blockBoundingRect(t->firstCursorPosition().block()).left();
+        QVERIFY(w.fmt()->setTableAlignment("center"));
+        const qreal center=d->documentLayout()->blockBoundingRect(t->firstCursorPosition().block()).left();
+        QVERIFY(center>left+100);
+        QVERIFY(w.fmt()->setTableAlignment("right"));
+        const qreal right=d->documentLayout()->blockBoundingRect(t->firstCursorPosition().block()).left();
+        QVERIFY(qAbs(right-left-2*(center-left))<1);
+    }
+
+    void tableHeaderRepeatsCustom_data()
+    {
+        QTest::addColumn<QString>("engine");
+        QTest::newRow("custom") << QString("custom");
+        QTest::newRow("qt") << QString("qt");
+    }
+    void tableHeaderRepeatsCustom()
+    {
+        QFETCH(QString,engine);
+        PageEditor w; QVERIFY(w.root);
+        w.root->setProperty("layoutEngine",engine);
+        w.root->setProperty("pageHeight",220.);
+        w.root->setProperty("pageMargins",QVariantList{20,20,20,20});
+        w.fmt()->insertTable(30,2,{{"headerRow",true}});
+        auto *d=w.fmt()->document()->textDocument();
+        auto *t=qobject_cast<QTextTable *>(d->rootFrame()->childFrames().first());
+        t->cellAt(0,0).firstCursorPosition().insertText("Repeated header");
+        w.view.show(); QTest::qWait(30);
+        auto *layout=d->documentLayout();
+        QCOMPARE(bool(dynamic_cast<rt::RichTextLayout *>(layout)),engine=="custom");
+        QVERIFY(d->pageCount()>1);
+        QImage image(900,600,QImage::Format_ARGB32_Premultiplied); image.fill(Qt::white);
+        QPainter painter(&image); QAbstractTextDocumentLayout::PaintContext context;
+        context.clip=QRectF(0,0,900,600); layout->draw(&painter,context); painter.end();
+        const qreal stride=220+w.root->property("pageGap").toReal();
+        int ink=0;
+        for(int y=int(stride+23);y<int(stride+40);++y) for(int x=27;x<150;++x)
+            if(image.pixelColor(x,y).lightness()<128) ++ink;
+        QVERIFY2(ink>20,"second page contains repeated header glyphs");
+        auto *overlay=w.root->findChild<QQuickItem *>("tableHeaderRepeats");
+        QVERIFY(overlay && overlay->isVisible());
+        const auto screen=w.view.grabWindow();
+        int screenInk=0;
+        for(int y=int(stride+23);y<int(stride+40);++y) for(int x=27;x<150;++x) {
+            const auto point=w.edit()->mapToScene(QPointF(x,y)).toPoint();
+            if(screen.rect().contains(point) && screen.pixelColor(point).lightness()<128) ++screenInk;
+        }
+        QVERIFY(screenInk>20);
+        const auto pdf=m_dir.filePath("table-headers.pdf");
+        QSignalSpy done(w.fmt(), &RichTextHandler::pdfExported);
+        QVERIFY(w.fmt()->exportPdfAsync(pdf)); QTRY_COMPARE_WITH_TIMEOUT(done.count(),1,10000);
+        QVERIFY(done.first()[0].toBool());
+        QProcess extract; extract.start("pdftotext",{pdf,"-"}); QVERIFY(extract.waitForFinished());
+        QVERIFY(extract.readAllStandardOutput().count("Repeated header")>=2);
+    }
+
+    void tableEditingBookPerformance()
+    {
+        const QString book=qEnvironmentVariable("RICHTEXT_BOOK");
+        if(!QFile::exists(book)) QSKIP("book sample unavailable");
+        PageEditor w; QVERIFY(w.root);
+        w.root->setProperty("layoutEngine","custom");
+        QVERIFY(w.fmt()->loadOdf(QUrl::fromLocalFile(book)));
+        auto *d=w.fmt()->document()->textDocument();
+        d->documentLayout()->documentSize();
+        const int midpoint=d->characterCount()/2;
+        const auto measure=[&](int pos) {
+            QList<double> times;
+            for(int n=0;n<31;++n) {
+                w.edit()->setProperty("cursorPosition",pos);
+                QCoreApplication::processEvents();
+                QElapsedTimer timer; timer.start();
+                w.fmt()->insertText("x");
+                d->documentLayout()->blockBoundingRect(d->findBlock(pos));
+                times.append(timer.nsecsElapsed()/1e6);
+                d->undo(); d->documentLayout()->documentSize();
+            }
+            std::sort(times.begin(),times.end()); return times[15];
+        };
+        const double baseline=measure(midpoint);
+        w.edit()->setProperty("cursorPosition",midpoint);
+        w.fmt()->insertTable(4,3);
+        const int cell=w.edit()->property("cursorPosition").toInt();
+        QVERIFY(w.fmt()->inTable());
+        const double inTable=measure(cell);
+        qInfo("TABLE_EDIT_PERF midpoint_ms=%.3f in_table_ms=%.3f",baseline,inTable);
+        QVERIFY2(baseline<4,qPrintable(QString::number(baseline)));
+    }
+
+    void importedTableBordersStayIntact()
+    {
+        const auto path=m_dir.filePath("imported-table-borders.odt");
+        writeOdt(path,"<table:table table:style-name=\"T\"><table:table-column/><table:table-row><table:table-cell table:style-name=\"C\"><text:p>cell</text:p></table:table-cell></table:table-row></table:table>",
+            "<style:style style:name=\"T\" style:family=\"table\"><style:table-properties table:border-model=\"separating\"/></style:style>"
+            "<style:style style:name=\"C\" style:family=\"table-cell\"><style:table-cell-properties fo:border=\"2pt dashed #ff0000\" fo:padding=\"0.2cm\"/></style:style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        const auto check=[&] {
+            auto *t=qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+            QVERIFY(!t->format().borderCollapse());
+            const auto f=t->cellAt(0,0).format().toTableCellFormat();
+            QCOMPARE(f.topBorderStyle(),QTextFrameFormat::BorderStyle_Dashed);
+            QCOMPARE(f.topBorderBrush().color(),QColor("#ff0000"));
+            QVERIFY(qAbs(f.topBorder()-8./3)<.001);
+        };
+        check();
+        QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(path)));
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path))); check();
+    }
+
+    void tableBordersClearSharedEdges()
+    {
+        m_fmt->insertTable(3,3);
+        auto *t=qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        m_fmt->setCursorPosition(t->cellAt(1,1).firstPosition());
+        QVERIFY(m_fmt->setTableBorders("none"));
+        QCOMPARE(t->cellAt(0,1).format().toTableCellFormat().bottomBorder(),0.);
+        QCOMPARE(t->cellAt(2,1).format().toTableCellFormat().topBorder(),0.);
+        QCOMPARE(t->cellAt(1,0).format().toTableCellFormat().rightBorder(),0.);
+        QCOMPARE(t->cellAt(1,2).format().toTableCellFormat().leftBorder(),0.);
+        QVERIFY(t->cellAt(0,0).format().toTableCellFormat().topBorder()>0);
+        doc()->undo();
+        QVERIFY(t->format().border()>0);
+        QVERIFY(!t->cellAt(0,1).format().hasProperty(QTextFormat::TableCellBottomBorder));
+    }
+
+    void tableBordersNoneClearsFrame()
+    {
+        m_fmt->insertTable(2,2);
+        auto *t=qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        QVERIFY(m_fmt->selectTable());
+        QVERIFY(m_fmt->setTableBorders("none"));
+        QCOMPARE(t->format().border(),0.);
+        for(int i=0;i<2;++i) for(int j=0;j<2;++j) {
+            const auto f=t->cellAt(i,j).format().toTableCellFormat();
+            QCOMPARE(f.topBorder(),0.); QCOMPARE(f.bottomBorder(),0.);
+            QCOMPARE(f.leftBorder(),0.); QCOMPARE(f.rightBorder(),0.);
+        }
+        doc()->undo();
+        QVERIFY(t->format().border()>0);
+    }
+
+    void tableRectangularSelectionAndVerticalShifts()
+    {
+        m_fmt->insertTable(3,3);
+        auto *t=qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        t->cellAt(0,1).firstCursorPosition().insertText("A");
+        t->cellAt(1,1).firstCursorPosition().insertText("B");
+        m_fmt->setCursorPosition(t->cellAt(0,1).firstPosition());
+        QVERIFY(m_fmt->insertTableCells("down")); QCOMPARE(t->rows(),4);
+        QCOMPARE(t->cellAt(1,1).firstCursorPosition().block().text(),QString("A"));
+        QCOMPARE(t->cellAt(2,1).firstCursorPosition().block().text(),QString("B"));
+        doc()->undo(); QCOMPARE(t->rows(),3);
+        m_fmt->setCursorPosition(t->cellAt(0,1).firstPosition());
+        QVERIFY(m_fmt->deleteTableCells("up"));
+        QCOMPARE(t->cellAt(0,1).firstCursorPosition().block().text(),QString("B"));
+        doc()->undo();
+        m_fmt->setCursorPosition(t->cellAt(0,1).firstPosition());
+        QVERIFY(m_fmt->selectTableColumn());
+        const auto selection=m_fmt->tableInfo().toMap().value("selection").toMap();
+        QCOMPARE(selection.value("left").toInt(),1); QCOMPARE(selection.value("right").toInt(),1);
+        QCOMPARE(selection.value("top").toInt(),0); QCOMPARE(selection.value("bottom").toInt(),2);
+        QVERIFY(m_fmt->setTableCellBackground("#00ff00"));
+        for(int i=0;i<3;++i) {
+            QCOMPARE(t->cellAt(i,1).format().background().color(),QColor("#00ff00"));
+            QCOMPARE(t->cellAt(i,0).format().background().style(),Qt::NoBrush);
+        }
+        doc()->undo(); QCOMPARE(t->cellAt(0,1).format().background().style(),Qt::NoBrush);
+        QVERIFY(m_fmt->mergeTableCells()); QCOMPARE(t->cellAt(0,1).rowSpan(),3);
+        QVERIFY(!m_fmt->insertTableCells("down"));
+        QVERIFY(m_fmt->splitTableCell(3,1)); QCOMPARE(t->cellAt(0,1).rowSpan(),1);
+        doc()->undo(); QCOMPARE(t->cellAt(0,1).rowSpan(),3);
+    }
+
+    void tableWholeCellSelection()
+    {
+        PageEditor w;
+        QVERIFY(w.root);
+        w.root->setProperty("layoutEngine","custom");
+        w.fmt()->insertTable(2,2);
+        w.view.show(); QTest::qWait(30);
+        auto *d=w.fmt()->document()->textDocument();
+        auto *t=qobject_cast<QTextTable *>(d->rootFrame()->childFrames().first());
+        QVERIFY(dynamic_cast<rt::RichTextLayout *>(d->documentLayout()));
+        QVERIFY(w.fmt()->selectTableRow());
+        QTest::qWait(30);
+        const auto rects=w.fmt()->_selectedTableCellRects();
+        QCOMPARE(rects.size(),2);
+        for(const auto &value:rects) {
+            const auto rect=value.toRectF();
+            QVERIFY(rect.width()>100); QVERIFY(rect.height()>10);
+            const auto image=w.view.grabWindow();
+            const auto point=w.edit()->mapToScene(rect.center()).toPoint();
+            QVERIFY(image.rect().contains(point));
+            const auto pixel=image.pixelColor(point);
+            QVERIFY(pixel.blue()>pixel.red());
+        }
+        w.edit()->setProperty("cursorPosition",t->firstPosition());
+        QTest::qWait(30);
+        QCOMPARE(w.fmt()->_selectedTableCellRects().size(),0);
+    }
+
+    void tableFormattingOdfRoundTrip()
+    {
+        m_fmt->insertTable(2, 2, {{"headerRow", true}, {"width", 350}});
+        QVERIFY(m_fmt->setTableAlignment("center"));
+        QVERIFY(m_fmt->setTableCellBackground("#abcdef"));
+        QVERIFY(m_fmt->setTableCellVerticalAlignment("bottom"));
+        QVERIFY(m_fmt->setTableBorders("all", {{"width", 1.5}, {"color", "#ff0000"}, {"style", "double"}}));
+        const auto path=QUrl::fromLocalFile(m_dir.filePath("table-editing.odt"));
+        QVERIFY(m_fmt->saveOdfCopy(path));
+        const auto xml=zipEntry(path.toLocalFile(),"content.xml");
+        QVERIFY(xml.contains("table:table-header-rows"));
+        QVERIFY(xml.contains("table:border-model=\"collapsing\""));
+        QVERIFY(m_fmt->loadOdf(path));
+        auto *t=qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        QCOMPARE(t->format().headerRowCount(),1);
+        QCOMPARE(t->format().alignment(),Qt::AlignHCenter);
+        QVERIFY(qAbs(t->format().width().rawValue()-350)<.001);
+        QVERIFY(t->format().borderCollapse());
+        const auto f=t->cellAt(0,0).format().toTableCellFormat();
+        QCOMPARE(f.background().color(),QColor("#abcdef"));
+        QCOMPARE(f.verticalAlignment(),QTextCharFormat::AlignBottom);
+        QCOMPARE(f.topBorderStyle(),QTextFrameFormat::BorderStyle_Double);
+        QCOMPARE(f.topBorderBrush().color(),QColor("#ff0000"));
+        QVERIFY(qAbs(f.topBorder()-2)<.001);
+    }
+
+    void tableCellFormattingAndShifts()
+    {
+        m_fmt->insertTable(2, 2);
+        auto *t = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        t->cellAt(0,0).firstCursorPosition().insertText("A");
+        t->cellAt(0,1).firstCursorPosition().insertText("B");
+        m_fmt->setCursorPosition(t->firstPosition());
+        QVERIFY(m_fmt->insertTableCells("right"));
+        QCOMPARE(t->columns(), 3);
+        QCOMPARE(t->cellAt(0,1).firstCursorPosition().block().text(), QString("A"));
+        QCOMPARE(t->cellAt(0,2).firstCursorPosition().block().text(), QString("B"));
+        doc()->undo(); QCOMPARE(t->columns(), 2);
+        m_fmt->setCursorPosition(t->firstPosition());
+        QVERIFY(m_fmt->deleteTableCells("left"));
+        QCOMPARE(t->cellAt(0,0).firstCursorPosition().block().text(), QString("B"));
+        QCOMPARE(t->cellAt(0,1).firstCursorPosition().block().text(), QString());
+        doc()->undo();
+        m_fmt->setCursorPosition(t->firstPosition());
+        QVERIFY(m_fmt->setTableCellBackground("#123456"));
+        QCOMPARE(t->cellAt(0,0).format().background().color(), QColor("#123456"));
+        doc()->undo(); QVERIFY(t->cellAt(0,0).format().background().style()==Qt::NoBrush);
+        QVERIFY(m_fmt->setTableCellVerticalAlignment("bottom"));
+        QCOMPARE(t->cellAt(0,0).format().verticalAlignment(), QTextCharFormat::AlignBottom);
+        QVERIFY(m_fmt->setTableBorders("all", {{"width", 2}, {"color", "#ff0000"}, {"style", "dashed"}}));
+        QCOMPARE(t->cellAt(0,0).format().toTableCellFormat().topBorderStyle(), QTextFrameFormat::BorderStyle_Dashed);
+        QVERIFY(m_fmt->setTableColumnWidth(120));
+        QCOMPARE(t->format().columnWidthConstraints()[0].rawValue(), 120.);
+        QVERIFY(m_fmt->distributeTableColumns());
+        QCOMPARE(t->format().columnWidthConstraints()[0].rawValue(), 50.);
+        QVERIFY(m_fmt->setTableAlignment("right"));
+        QCOMPARE(t->format().alignment(), Qt::AlignRight);
+        QVERIFY(m_fmt->setTableHeaderRow(true)); QCOMPARE(t->format().headerRowCount(), 1);
+        doc()->undo(); QCOMPARE(t->format().headerRowCount(), 0);
+        QVERIFY(m_fmt->splitTableCell(2,2));
+        QCOMPARE(t->rows(), 3); QCOMPARE(t->columns(), 3);
+        doc()->undo(); QCOMPARE(t->rows(), 2); QCOMPARE(t->columns(), 2);
+    }
+
+    void tableEditingApi()
+    {
+        QVERIFY(m_fmt->tableInfo().isNull());
+        QVERIFY(!m_fmt->insertTableRows("above"));
+        QVERIFY(!m_fmt->deleteTable());
+        m_fmt->insertTable(2, 3, {{"headerRow", true}, {"width", 300}});
+        auto *table = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        QVERIFY(table);
+        QCOMPARE(table->format().headerRowCount(), 1);
+        QCOMPARE(table->format().width().rawValue(), 300.);
+        QVERIFY(table->format().borderCollapse());
+        QCOMPARE(table->format().cellSpacing(), 0.);
+        QVERIFY(qAbs(table->format().border() - 2./3) < .001);
+        QVERIFY(qAbs(table->format().cellPadding() - 96./25.4) < .001);
+        QVERIFY(table->cellAt(0, 0).firstCursorPosition().charFormat().fontWeight() >= QFont::Bold);
+        QCOMPARE(m_fmt->tableInfo().toMap().value("columns").toInt(), 3);
+        QSignalSpy changed(m_fmt, SIGNAL(tableCellChanged(int,int)));
+        QVERIFY(m_fmt->insertTableRows("below", 2));
+        QCOMPARE(table->rows(), 4);
+        doc()->undo(); QCOMPARE(table->rows(), 2);
+        QVERIFY(m_fmt->insertTableColumns("right", 2));
+        QCOMPARE(table->columns(), 5);
+        doc()->undo(); QCOMPARE(table->columns(), 3);
+        QVERIFY(m_fmt->selectTableRow());
+        QCOMPARE(m_fmt->tableInfo().toMap().value("selection").toMap().value("right").toInt(), 2);
+        QVERIFY(m_fmt->mergeTableCells());
+        QCOMPARE(table->cellAt(0, 0).columnSpan(), 3);
+        doc()->undo(); QCOMPARE(table->cellAt(0, 0).columnSpan(), 1);
+        m_fmt->setSelectionStart(0); m_fmt->setSelectionEnd(0);
+        m_fmt->setCursorPosition(table->cellAt(1, 1).firstPosition());
+        QVERIFY(changed.count() > 0);
+        QVERIFY(m_fmt->deleteTableRows()); QCOMPARE(table->rows(), 1);
+        doc()->undo(); QCOMPARE(table->rows(), 2);
+        m_fmt->setCursorPosition(table->cellAt(0, 1).firstPosition());
+        QVERIFY(m_fmt->deleteTableColumns()); QCOMPARE(table->columns(), 2);
+        doc()->undo(); QCOMPARE(table->columns(), 3);
+        m_fmt->setCursorPosition(table->firstPosition());
+        QVERIFY(m_fmt->deleteTable()); QCOMPARE(countTables(doc()), 0);
+        doc()->undo(); QCOMPARE(countTables(doc()), 1);
+    }
+
+    void documentEditorContextMenu()
+    {
+        PageEditor widget;
+        QVERIFY(widget.root);
+        widget.fmt()->insertText("alpha beta gamma");
+        widget.view.show();
+        widget.edit()->forceActiveFocus();
+        QTest::qWait(30);
+        QSignalSpy requested(widget.root.data(), SIGNAL(contextMenuRequested(QVariant)));
+        QVERIFY(requested.isValid());
+        QSignalSpy marked(widget.root.data(), SIGNAL(markContextMenu(QVariant,double,double,double,double)));
+        widget.fmt()->addMark("spelling", widget.fmt()->blockIdAt(0), 0, 5, "word");
+        QVERIFY(QMetaObject::invokeMethod(widget.edit(), "select", Q_ARG(int, 0), Q_ARG(int, 5)));
+        const auto click = [&](int position) {
+            const auto r = caretRect(widget.edit(), position);
+            QTest::mouseClick(&widget.view, Qt::RightButton, Qt::NoModifier,
+                widget.edit()->mapToScene(r.center()).toPoint());
+        };
+        click(2);
+        QCOMPARE(requested.count(), 1);
+        auto info = requested.takeFirst().first().toMap();
+        QVERIFY(info.value("inSelection").toBool());
+        QCOMPARE(widget.edit()->property("selectedText").toString(), QString("alpha"));
+        QCOMPARE(marked.count(), 1);
+        QVERIFY(!info.value("mark").toMap().isEmpty());
+        QVERIFY(!info.value("inTable").toBool());
+        const QPointF local(info.value("x").toDouble(), info.value("y").toDouble());
+        const auto window = widget.root->mapToScene(local);
+        QCOMPARE(window.x(), info.value("windowX").toDouble());
+        QCOMPARE(window.y(), info.value("windowY").toDouble());
+        click(8);
+        QCOMPARE(requested.count(), 1);
+        info = requested.takeFirst().first().toMap();
+        QVERIFY(!info.value("inSelection").toBool());
+        QCOMPARE(widget.edit()->property("selectionStart"), widget.edit()->property("selectionEnd"));
+        QCOMPARE(widget.edit()->property("cursorPosition").toInt(), info.value("position").toInt());
+        QTest::keyClick(&widget.view, Qt::Key_Menu);
+        QCOMPARE(requested.count(), 1);
+        requested.clear();
+        QTest::keyClick(&widget.view, Qt::Key_F10, Qt::ShiftModifier);
+        QCOMPARE(requested.count(), 1);
+        requested.clear();
+        widget.fmt()->insertTable(1, 1);
+        QTest::keyClick(&widget.view, Qt::Key_Menu);
+        QCOMPARE(requested.count(), 1);
+        QVERIFY(requested.first().first().toMap().value("inTable").toBool());
+    }
+
+    void documentEditorTableKeys()
+    {
+        PageEditor widget;
+        QVERIFY(widget.root);
+        QQmlComponent controls(widget.view.engine());
+        controls.setData("import QtQuick\nimport QtQuick.Controls\nRow { Button { text: \"Before\" } ComboBox { model: [\"After\"] } }", QUrl());
+        QScopedPointer<QQuickItem> surrounding(qobject_cast<QQuickItem *>(controls.create()));
+        QVERIFY2(surrounding, qPrintable(controls.errorString()));
+        surrounding->setParentItem(widget.view.contentItem());
+        widget.root->setProperty("layoutEngine", "custom");
+        widget.root->setProperty("pageView", true);
+        widget.view.show();
+        QVERIFY(QMetaObject::invokeMethod(widget.root.data(), "insertTable", Q_ARG(QVariant, 2), Q_ARG(QVariant, 2), Q_ARG(QVariant, QVariant())));
+        QTest::qWait(30);
+        auto *document = widget.fmt()->document()->textDocument();
+        auto *table = qobject_cast<QTextTable *>(document->rootFrame()->childFrames().first());
+        QVERIFY(table);
+        QTest::keyClick(&widget.view, Qt::Key_Tab);
+        QCOMPARE(widget.edit()->property("cursorPosition").toInt(), table->cellAt(0, 1).firstPosition());
+        QVERIFY(widget.edit()->hasActiveFocus());
+        QTest::keyClick(&widget.view, Qt::Key_Backtab, Qt::ShiftModifier);
+        QCOMPARE(widget.edit()->property("cursorPosition").toInt(), table->cellAt(0, 0).firstPosition());
+        QTest::keyClick(&widget.view, Qt::Key_Tab, Qt::ControlModifier);
+        QCOMPARE(table->cellAt(0, 0).firstCursorPosition().block().text(), QString("\t"));
+        widget.edit()->setProperty("cursorPosition", table->cellAt(1, 1).firstPosition());
+        QTest::keyClick(&widget.view, Qt::Key_Tab);
+        QCOMPARE(table->rows(), 3);
+        QCOMPARE(widget.edit()->property("cursorPosition").toInt(), table->cellAt(2, 0).firstPosition());
+        document->undo();
+        QCOMPARE(table->rows(), 2);
     }
 
     void tableTabNavigation()
@@ -2379,6 +2773,7 @@ private slots:
         // Saving again writes the same document.
         const QString again = m_dir.filePath(QStringLiteral("styled-again.odt"));
         QVERIFY(m_fmt->saveOdf(QUrl(again)));
+        keepForInspection(again);
         QCOMPARE(QZipReader(again).fileData(QStringLiteral("content.xml")), rawContent); // block ids included
     }
 
@@ -4866,6 +5261,224 @@ private slots:
         QObject futureEditor;
         QTest::ignoreMessage(QtWarningMsg, "RichText: Qt TextEdit updateSize() is unavailable; view size may be stale");
         QVERIFY(!rt::refreshTextEditSize(&futureEditor));
+    }
+
+    void pageSetupInLegacyDocumentWithoutMaster()
+    {
+        const auto path = QUrl::fromLocalFile(m_dir.filePath("legacy-page.odt"));
+        QZipWriter zip(path.toLocalFile());
+        zip.addFile("content.xml", "<office:document-content" ODF_NS "><office:body><office:text><text:p>Legacy</text:p></office:text></office:body></office:document-content>");
+        zip.addFile("styles.xml", "<office:document-styles" ODF_NS "><office:styles/><office:automatic-styles><style:page-layout style:name=\"Unused\"><style:page-layout-properties fo:page-width=\"10in\" fo:page-height=\"12in\"/></style:page-layout></office:automatic-styles><office:master-styles/></office:document-styles>");
+        zip.close();
+        QVERIFY(m_fmt->loadOdf(path));
+        m_fmt->setDocumentPageGeometry({{"width", 640.}, {"height", 480.}, {"margins", QVariantList{20.,30.,40.,50.}}});
+        m_fmt->setPageHeader({{"enabled", true}, {"text", "Legacy {page}"}});
+        QVERIFY(m_fmt->saveOdf(path));
+        QVERIFY(zipEntry(path.toLocalFile(), "styles.xml").contains("style:name=\"Unused\""));
+        QVERIFY(m_fmt->loadOdf(path));
+        QCOMPARE(m_fmt->documentPageWidth(), 640.);
+        QCOMPARE(m_fmt->pageHeader().value("text").toString(), QStringLiteral("Legacy {page}"));
+    }
+
+    void documentPageSetupRoundTripAndUndo()
+    {
+        m_fmt->newDocument();
+        const auto original = m_fmt->documentPageMargins();
+        QSignalSpy changed(m_fmt, &RichTextHandler::documentPageGeometryChanged);
+        const QVariantMap geometry{{"width", 640.}, {"height", 480.}, {"margins", QVariantList{20.,30.,40.,50.}}};
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setDocumentPageGeometry", Q_ARG(QVariantMap, geometry)));
+        QCOMPARE(m_fmt->documentPageWidth(), 640.);
+        QCOMPARE(m_fmt->documentPageHeight(), 480.);
+        QCOMPARE(changed.count(), 1);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setDocumentPageGeometry", Q_ARG(QVariantMap, geometry)));
+        QCOMPARE(changed.count(), 1);
+        doc()->undo();
+        QCOMPARE(m_fmt->documentPageMargins(), original);
+        QVERIFY(!doc()->isUndoAvailable());
+        doc()->redo();
+        QCOMPARE(m_fmt->documentPageWidth(), 640.);
+        const auto path = QUrl::fromLocalFile(m_dir.filePath("saved-page.odt"));
+        QVERIFY(m_fmt->saveOdf(path));
+        const auto xml = zipEntry(path.toLocalFile(), "styles.xml");
+        QVERIFY(xml.contains("fo:page-width=\""));
+        QVERIFY(xml.contains("style:print-orientation=\"landscape\""));
+        if (!QStandardPaths::findExecutable("soffice").isEmpty()) {
+            QProcess convert;
+            convert.start("soffice", {"-env:UserInstallation=" + QUrl::fromLocalFile(m_dir.filePath("lo-profile")).toString(),
+                "--headless", "--convert-to", "pdf", "--outdir", m_dir.path(), path.toLocalFile()});
+            QVERIFY(convert.waitForFinished(30000));
+            if (convert.exitCode() == 0 && QFile::exists(m_dir.filePath("saved-page.pdf"))) {
+                QProcess info;
+                auto environment = QProcessEnvironment::systemEnvironment();
+                environment.insert(QStringLiteral("LC_ALL"), QStringLiteral("C"));
+                info.setProcessEnvironment(environment);
+                info.start("pdfinfo", {m_dir.filePath("saved-page.pdf")});
+                QVERIFY(info.waitForFinished());
+                QCOMPARE(info.exitCode(), 0);
+                const auto output = QString::fromUtf8(info.readAllStandardOutput());
+                const auto pageSize = QRegularExpression(QStringLiteral(
+                    "^Page size:\\s+([0-9]+(?:\\.[0-9]+)?)\\s+x\\s+([0-9]+(?:\\.[0-9]+)?)\\s+pts"),
+                    QRegularExpression::MultilineOption).match(output);
+                QVERIFY2(pageSize.hasMatch(), qPrintable(output));
+                // LibreOffice rounds page dimensions to 1/100 mm.
+                QVERIFY2(qAbs(pageSize.captured(1).toDouble() - 480.) <= 0.1, qPrintable(output));
+                QVERIFY2(qAbs(pageSize.captured(2).toDouble() - 360.) <= 0.1, qPrintable(output));
+            } else {
+                qWarning() << "LibreOffice conversion unavailable in this environment; using XML and reload assertions"
+                           << convert.exitCode() << convert.readAllStandardError();
+                QVERIFY(xml.contains("fo:page-height=\"5in\""));
+            }
+        }
+        QVERIFY(m_fmt->loadOdf(path));
+        QCOMPARE(m_fmt->documentPageWidth(), 640.);
+        QCOMPARE(m_fmt->documentPageHeight(), 480.);
+        QCOMPARE(m_fmt->documentPageMargins(), geometry.value("margins").toList());
+        m_fmt->newDocument();
+        QVERIFY(m_fmt->saveOdf(path));
+        QVERIFY(m_fmt->loadOdf(path));
+        QVERIFY(qAbs(m_fmt->documentPageWidth() - 210. * 96 / 25.4) < .001);
+        QVERIFY(qAbs(m_fmt->documentPageMargins()[0].toReal() - 20. * 96 / 25.4) < .001);
+    }
+
+    void editablePageBands_data()
+    {
+        QTest::addColumn<QString>("engine");
+        QTest::newRow("custom") << QStringLiteral("custom");
+        QTest::newRow("qt") << QStringLiteral("qt");
+    }
+    void editablePageBands()
+    {
+        QFETCH(QString, engine);
+        PageEditor w;
+        QVERIFY(w.root);
+        w.root->setProperty("pageWidth", 300.);
+        w.root->setProperty("pageHeight", 200.);
+        w.root->setProperty("pageGap", 0.);
+        w.root->setProperty("pageMargins", QVariantList{10.,10.,10.,10.});
+        w.root->setProperty("layoutEngine", engine);
+        auto *m_fmt = w.fmt();
+        const auto doc = [m_fmt] { return m_fmt->document()->textDocument(); };
+        w.view.show();
+        QCoreApplication::processEvents();
+        m_fmt->configurePages(300, 200, 0, {10.,10.,10.,10.});
+        m_fmt->insertText(QStringLiteral("Body\n").repeated(60));
+        doc()->clearUndoRedoStacks();
+        QSignalSpy headerChanges(m_fmt, SIGNAL(pageHeaderChanged()));
+        QSignalSpy footerChanges(m_fmt, SIGNAL(pageFooterChanged()));
+        const QVariantMap header{{"enabled", true}, {"text", "Chapter {page}/{pages}"}, {"alignment", "center"}, {"height", 30.}};
+        const QVariantMap footer{{"enabled", true}, {"text", "Footer {page}"}, {"alignment", "right"}, {"height", 25.}};
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setPageHeader", Q_ARG(QVariantMap, header)));
+        QCOMPARE(m_fmt->property("pageHeader").toMap().value("text").toString(), QStringLiteral("Chapter {page}/{pages}"));
+        QCOMPARE(doc()->rootFrame()->frameFormat().topMargin(), 40.);
+        doc()->undo();
+        QVERIFY(!m_fmt->property("pageHeader").toMap().value("enabled").toBool());
+        QCOMPARE(doc()->rootFrame()->frameFormat().topMargin(), 10.);
+        QVERIFY(!doc()->isUndoAvailable());
+        doc()->redo();
+        QCOMPARE(doc()->rootFrame()->frameFormat().topMargin(), 40.);
+        const int steps = doc()->availableUndoSteps();
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setPageHeader", Q_ARG(QVariantMap, header)));
+        QCOMPARE(doc()->availableUndoSteps(), steps);
+        QCOMPARE(headerChanges.count(), 3);
+        QCOMPARE(footerChanges.count(), 0);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setPageFooter", Q_ARG(QVariantMap, footer)));
+        QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), 35.);
+        const int pages = doc()->pageCount();
+        QVERIFY(pages > 2);
+        for (int page = 0; page < pages; ++page) {
+            const auto lines = rt::pageBandLines(doc(), page, pages);
+            QCOMPARE(lines.size(), 2);
+            QCOMPARE(lines[0].text, QString("Chapter %1/%2").arg(page+1).arg(pages));
+            QCOMPARE(lines[1].text, QString("Footer %1").arg(page+1));
+            QVERIFY(lines[0].rect.x() > 10.);
+            QVERIFY(lines[1].rect.x() > lines[0].rect.x());
+        }
+        const auto pdf = m_dir.filePath("edited-bands-" + engine + ".pdf");
+        QSignalSpy done(m_fmt, &RichTextHandler::pdfExported);
+        QVERIFY(m_fmt->exportPdfAsync(pdf));
+        QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 10000);
+        QVERIFY(done[0][0].toBool());
+        QProcess extract;
+        extract.start("pdftotext", {"-layout", pdf, "-"});
+        QVERIFY(extract.waitForFinished());
+        const auto text = extract.readAllStandardOutput();
+        for (int page = 1; page <= pages; ++page) {
+            QVERIFY(text.contains(QString("Chapter %1/%2").arg(page).arg(pages).toUtf8()));
+            QVERIFY2(text.contains(QString("Footer %1").arg(page).toUtf8()), text.constData());
+        }
+        const auto path = QUrl::fromLocalFile(m_dir.filePath("edited-bands.odt"));
+        QVERIFY(m_fmt->saveOdf(path));
+        const auto xml = zipEntry(path.toLocalFile(), "styles.xml");
+        QVERIFY(xml.contains("text:page-number"));
+        QVERIFY(xml.contains("text:page-count"));
+        QVERIFY(m_fmt->loadOdf(path));
+        QCOMPARE(m_fmt->property("pageHeader").toMap().value("text").toString(), header.value("text").toString());
+        QCOMPARE(m_fmt->property("pageFooter").toMap().value("alignment").toString(), QStringLiteral("right"));
+        m_fmt->configurePages(300, 200, 0, {10.,10.,10.,10.});
+        QCOMPARE(doc()->rootFrame()->frameFormat().topMargin(), 40.);
+        QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), 35.);
+        const QVariantMap disabled{{"enabled", false}};
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setPageHeader", Q_ARG(QVariantMap, disabled)));
+        QCOMPARE(doc()->rootFrame()->frameFormat().topMargin(), 10.);
+        QVERIFY(m_fmt->saveOdf(path));
+        QVERIFY(m_fmt->loadOdf(path));
+        QVERIFY(!m_fmt->property("pageHeader").toMap().value("enabled").toBool());
+        QVERIFY(m_fmt->property("pageFooter").toMap().value("enabled").toBool());
+    }
+
+    void bookPageBandsUndoPreservesBreakOffsets()
+    {
+        const auto book = qEnvironmentVariable("RICHTEXT_BOOK");
+        if (!QFile::exists(book)) QSKIP("book sample unavailable");
+        PageEditor w;
+        QVERIFY(w.root);
+        w.root->setProperty("pageGap", 0.);
+        auto *m_fmt = w.fmt();
+        const auto doc = [m_fmt] { return m_fmt->document()->textDocument(); };
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(book)));
+        m_fmt->setLayoutEngine("custom");
+        m_fmt->configurePages(794, 1123, 0, {94.,113.,94.,113.});
+        m_fmt->setPageHeader({{"enabled", false}});
+        m_fmt->setPageFooter({{"enabled", false}});
+        const auto breaks = [&] {
+            QList<int> result;
+            int previous = -1;
+            doc()->documentLayout()->documentSize();
+            for (auto b = doc()->begin(); b.isValid(); b = b.next()) {
+                for (int i = 0; i < b.layout()->lineCount(); ++i) {
+                    const auto line = b.layout()->lineAt(i);
+                    const int page = int((b.layout()->position().y() + line.y()) / 1123.);
+                    if (page != previous) { result.append(b.position() + line.textStart()); previous = page; }
+                }
+            }
+            return result;
+        };
+        const auto before = breaks();
+        QVERIFY(before.size() > 100);
+        m_fmt->setPageHeader({{"enabled", true}, {"text", "Book {page} / {pages}"}, {"height", 40.}});
+        QVERIFY(breaks() != before);
+        doc()->undo();
+        QCOMPARE(breaks(), before);
+        const auto path = QUrl::fromLocalFile(m_dir.filePath("book-no-bands.odt"));
+        QVERIFY(m_fmt->saveOdf(path));
+        QVERIFY(m_fmt->loadOdf(path));
+        m_fmt->configurePages(794, 1123, 0, {94.,113.,94.,113.});
+        QCOMPARE(breaks(), before);
+    }
+
+    void pageSetupUndoKeepsCurrentViewMargins()
+    {
+        m_fmt->configurePages(300, 200, 0, {10.,10.,10.,10.});
+        m_fmt->setDocumentPageGeometry({{"width", 640.}, {"height", 480.}, {"margins", QVariantList{20.,30.,40.,50.}}});
+        m_fmt->configurePages(700, 800, 24, {33.,34.,35.,36.});
+        doc()->undo();
+        QCOMPARE(m_fmt->documentPageWidth(), 0.);
+        QCOMPARE(doc()->rootFrame()->frameFormat().topMargin(), 33.);
+        QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), 59.);
+        doc()->redo();
+        QCOMPARE(m_fmt->documentPageWidth(), 640.);
+        QCOMPARE(doc()->rootFrame()->frameFormat().topMargin(), 33.);
+        QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), 59.);
     }
 
     void pageGeometryIsNotAnEdit()

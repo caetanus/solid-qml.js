@@ -65,6 +65,24 @@ RichText {
     readonly property int selectionCharCount: fmt ? fmt.selectionCharCount : 0
     readonly property string selectedText: fmt ? fmt.selectedText : ""
 
+    property var _tableSelectionRects: {
+        var start = fmt ? fmt.selectionStart : 0, end = fmt ? fmt.selectionEnd : 0
+        var width = _editor.width, height = _editor.height
+        return fmt && start !== end ? fmt._selectedTableCellRects() : []
+    }
+    Repeater {
+        parent: root._editor
+        model: root._tableSelectionRects
+        delegate: Rectangle {
+            required property var modelData
+            objectName: "tableCellSelection"
+            z: -0.5
+            x: modelData.x; y: modelData.y
+            width: modelData.width; height: modelData.height
+            color: root._editor.selectionColor
+        }
+    }
+
     MouseArea {
         id: columnHandle
         objectName: "tableColumnHandle"
@@ -118,12 +136,15 @@ RichText {
     readonly property bool _pages: pageView && pageHeight > 0
     readonly property real _pageZoom: Math.max(0.5, Math.min(3.0, zoom))
     readonly property real _pageStride: (pageHeight + Math.max(0, pageGap)) * _pageZoom
+    readonly property var pageHeader: fmt ? fmt.pageHeader : ({enabled: false, text: "", alignment: "left"})
+    readonly property var pageFooter: fmt ? fmt.pageFooter : ({enabled: false, text: "", alignment: "left"})
     readonly property real documentPageWidth: fmt ? fmt.documentPageWidth : 0
     readonly property string documentLanguage: fmt ? fmt.documentLanguage : ""
     readonly property real documentPageHeight: fmt ? fmt.documentPageHeight : 0
     readonly property var documentPageMargins: fmt ? fmt.documentPageMargins : []
     readonly property int pageCount: fmt ? fmt.pageCount : 1
     readonly property int currentPage: fmt ? fmt.currentPage : 1
+    signal documentPageGeometryChanged()
     signal pagesChanged()
     function pageAt(position) { return fmt ? fmt.pageAt(position) : 1 }
     // App overlays use editor-item coordinates, already zoomed (device-independent px).
@@ -284,6 +305,7 @@ RichText {
         function onHeadingsChanged() { headingsDebounce.restart() }
         function onBlocksLoaded() { root._configurePages(); root.blocksLoaded() }
         function onDocumentChanged() { root._configurePages() }
+        function onDocumentPageGeometryChanged() { root.documentPageGeometryChanged() }
         function onPagesChanged() { root.pagesChanged() }
         function onBlockChanged(blockId) { root.blockChanged(blockId) }
         function onBlockRemoved(blockId) { root.blockRemoved(blockId) }
@@ -378,8 +400,33 @@ RichText {
     // styles. Reuses the engine's clearFormatting() — paragraph properties are untouched, unlike
     // clearDirectFormatting().
     function clearFormatting() { if (fmt) fmt.clearFormatting(); _editor.forceActiveFocus() }
+    function setPageHeader(options) { if (fmt) fmt.setPageHeader(options) }
+    function setPageFooter(options) { if (fmt) fmt.setPageFooter(options) }
+    function setDocumentPageGeometry(geometry) { if (fmt) fmt.setDocumentPageGeometry(geometry) }
     function setAlignment(align) { if (fmt) fmt.setAlignment(align); _editor.forceActiveFocus() }
-    function insertTable(rows, cols) { if (fmt) fmt.insertTable(rows, cols); _editor.forceActiveFocus() }
+    function insertTable(rows, cols, options) { if (fmt) fmt.insertTable(rows, cols, options || {}); _editor.forceActiveFocus() }
+    signal tableCellChanged(int row, int column)
+    Connections { target: root.fmt; function onTableCellChanged(row, column) { root.tableCellChanged(row, column) } }
+    function tableInfo() { return fmt ? (fmt.tableInfo() || null) : null }
+    function insertTableRows(where, count) { return fmt ? fmt.insertTableRows(where, count === undefined ? 1 : count) : false }
+    function insertTableColumns(where, count) { return fmt ? fmt.insertTableColumns(where, count === undefined ? 1 : count) : false }
+    function deleteTableRows() { return fmt ? fmt.deleteTableRows() : false }
+    function deleteTableColumns() { return fmt ? fmt.deleteTableColumns() : false }
+    function deleteTable() { return fmt ? fmt.deleteTable() : false }
+    function insertTableCells(shift) { return fmt ? fmt.insertTableCells(shift) : false }
+    function deleteTableCells(shift) { return fmt ? fmt.deleteTableCells(shift) : false }
+    function selectTable() { return fmt ? fmt.selectTable() : false }
+    function selectTableRow() { return fmt ? fmt.selectTableRow() : false }
+    function selectTableColumn() { return fmt ? fmt.selectTableColumn() : false }
+    function mergeTableCells() { return fmt ? fmt.mergeTableCells() : false }
+    function splitTableCell(rows, columns) { return fmt ? fmt.splitTableCell(rows, columns) : false }
+    function setTableBorders(which, style) { return fmt ? fmt.setTableBorders(which, style || {}) : false }
+    function setTableCellBackground(color) { return fmt ? fmt.setTableCellBackground(color) : false }
+    function setTableCellVerticalAlignment(alignment) { return fmt ? fmt.setTableCellVerticalAlignment(alignment) : false }
+    function distributeTableColumns() { return fmt ? fmt.distributeTableColumns() : false }
+    function setTableColumnWidth(width) { return fmt ? fmt.setTableColumnWidth(width) : false }
+    function setTableAlignment(alignment) { return fmt ? fmt.setTableAlignment(alignment) : false }
+    function setTableHeaderRow(on) { return fmt ? fmt.setTableHeaderRow(on) : false }
     function addTableRow() { if (fmt) fmt.addTableRow() }
     function addTableColumn() { if (fmt) fmt.addTableColumn() }
     function removeTableRow() { if (fmt) fmt.removeTableRow() }
@@ -426,6 +473,7 @@ RichText {
     // `mark`: {kind, id, blockId, start, end}; x, y in this item's coordinates; windowX/windowY
     // the same point in the window's (what <Menu ref> open(x, y) takes).
     signal markClicked(var mark, real x, real y, real windowX, real windowY)
+    signal contextMenuRequested(var info)
     signal markContextMenu(var mark, real x, real y, real windowX, real windowY)
     signal markHovered(var mark) // null when the pointer leaves a mark
 
@@ -462,18 +510,39 @@ RichText {
         var m = fmt.markAt(at)
         return m ? m : null
     }
-    // Passive (DragThreshold): the editor still gets the press — the caret and selection behave
-    // as without marks; a right-click outside any mark is left alone.
+    function _requestContextMenu(x, y, keyboard) {
+        var position = keyboard ? _editor.cursorPosition : _editor.positionAt(x, y)
+        var inside = _editor.selectionStart <= position && position < _editor.selectionEnd
+        var mark = keyboard ? markAt(position) : _markAtPoint(x, y)
+        if (!keyboard && !inside) _editor.cursorPosition = position
+        _editor.forceActiveFocus()
+        var p = root.mapFromItem(_editor, x, y)
+        var w = _editor.mapToItem(null, x, y)
+        contextMenuRequested({ x: p.x, y: p.y, windowX: w.x, windowY: w.y,
+            position: position, inSelection: inside, inTable: !!fmt && fmt.inTable, mark: mark })
+        if (mark) markContextMenu(mark, p.x, p.y, w.x, w.y)
+    }
+    function _requestContextMenuAtCaret() {
+        var r = _editor.cursorRectangle
+        _requestContextMenu(r.x, r.y + r.height, true)
+        return true
+    }
+    MouseArea {
+        parent: root._editor
+        anchors.fill: parent
+        z: 11
+        acceptedButtons: Qt.RightButton
+        onPressed: (mouse) => root._requestContextMenu(mouse.x, mouse.y, false)
+    }
     TapHandler {
         parent: root._editor
-        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        acceptedButtons: Qt.LeftButton
         onTapped: (eventPoint, button) => {
             var m = root._markAtPoint(eventPoint.position.x, eventPoint.position.y)
             if (!m) return
             var p = root.mapFromItem(root._editor, eventPoint.position.x, eventPoint.position.y)
             var w = root._editor.mapToItem(null, eventPoint.position.x, eventPoint.position.y)
-            if (button === Qt.RightButton) root.markContextMenu(m, p.x, p.y, w.x, w.y)
-            else root.markClicked(m, p.x, p.y, w.x, w.y)
+            root.markClicked(m, p.x, p.y, w.x, w.y)
         }
     }
     property var _hoveredMark: null

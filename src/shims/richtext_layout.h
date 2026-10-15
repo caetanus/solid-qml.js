@@ -28,6 +28,9 @@ public:
     };
     const QList<TableFragment> &tableFragments() const { return m_fragments; }
     void drawTableDecorations(QPainter *, const QRectF &clip, bool quick = false) const;
+    struct HeaderRepeat { QPointer<QTextTable> table; qreal offset; QRectF rect; };
+    const QList<HeaderRepeat> &headerRepeats() const { return m_headerRepeats; }
+    void drawRepeatedTableHeaders(QPainter *, const QRectF &clip) const;
     explicit RichTextLayout(QTextDocument *document);
     ~RichTextLayout() override;
     static bool supports(const QTextDocument *document);
@@ -63,6 +66,8 @@ private:
     QHash<QTextTable *, QRectF> m_tables;
     QHash<QTextTable *, QList<TableFragment>> m_tableFragments;
     QList<TableFragment> m_fragments;
+    QHash<QTextTable *, QList<HeaderRepeat>> m_tableHeaderRepeats;
+    QList<HeaderRepeat> m_headerRepeats;
     struct HitNode;
     HitNode *m_hitRoot = nullptr;
     quint64 m_hitTransaction = 0;

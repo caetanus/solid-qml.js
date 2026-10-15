@@ -65,8 +65,11 @@ QQuickItem *createFormattingMarksOverlay(RichTextHandler *handler, QQuickItem *e
 
 RichTextHandler::RichTextHandler(QObject *parent) : QObject(parent)
 {
+    m_pageHeader = pageHeader();
+    m_pageFooter = pageFooter();
     connect(this, &RichTextHandler::formatChanged, this, &RichTextHandler::updateEditingState);
     connect(this, &RichTextHandler::contentsChanged, this, &RichTextHandler::updateEditingState);
+    connect(this, &RichTextHandler::contentsChanged, this, &RichTextHandler::syncDocumentPageSetup);
     connect(this, &RichTextHandler::zoomChanged, this, &RichTextHandler::updateEditingState);
     // The system clipboard, not this document: canPaste must track another app copying something
     // too (office item 2b, item 6).
@@ -228,8 +231,15 @@ void RichTextHandler::selectLayoutEngine(bool forceQt)
     if (!supported) m_unsupportedHistory = true;
     const bool custom = !forceQt && m_pageStride > 0 && m_layoutEngine != QLatin1String("qt")
         && supported && !m_unsupportedHistory;
-    if (custom == isCustom) return;
     auto *editor = m_document->parent();
+    if (custom == isCustom) {
+        if(!custom && !current->property("_rtHeadersAttached").toBool()) {
+            auto *headers=new rt::TableDecoration(current,qobject_cast<QQuickItem *>(editor),true);
+            headers->setObjectName("tableHeaderRepeats");
+            current->setProperty("_rtHeadersAttached",true);
+        }
+        return;
+    }
     // Check the meta-object boundary while the working Qt engine is still installed.
     // No edits or layout replacement happen if this check fails.
     if (custom && !rt::attachCustomLayoutToTextEdit(editor, m_doc, false)) return;
@@ -287,6 +297,12 @@ void RichTextHandler::selectLayoutEngine(bool forceQt)
     if (auto *customLayout=dynamic_cast<rt::RichTextLayout *>(layout)) {
         auto *decoration=new rt::NodeTableDecoration(customLayout,qobject_cast<QQuickItem *>(editor));
         decoration->setObjectName("tableDecoration");
+        auto *headers=new rt::TableDecoration(customLayout,qobject_cast<QQuickItem *>(editor),true);
+        headers->setObjectName("tableHeaderRepeats");
+    } else {
+        auto *headers=new rt::TableDecoration(layout,qobject_cast<QQuickItem *>(editor),true);
+        headers->setObjectName("tableHeaderRepeats");
+        layout->setProperty("_rtHeadersAttached",true);
     }
     m_doc->markContentsDirty(0, m_doc->characterCount());
     m_doc->setLayoutEnabled(layoutWasEnabled);
@@ -317,9 +333,148 @@ void RichTextHandler::connectOverlayLayout()
     schedule();
 }
 
+QVariantMap RichTextHandler::pageBand(int area) const
+{
+    const auto root = m_doc ? m_doc->rootFrame()->frameFormat() : QTextFrameFormat();
+    const auto paragraphs = root.property(rt::kDocumentPageBandsProperty).toList().value(area).toList();
+    QStringList text;
+    QString alignment = QStringLiteral("left");
+    for (const auto &value : paragraphs) {
+        const auto paragraph = value.toMap();
+        const auto flags = paragraph.value("block").value<QTextBlockFormat>().alignment();
+        if (text.isEmpty()) alignment = flags & Qt::AlignHCenter ? "center" : flags & Qt::AlignRight ? "right" : "left";
+        QString line;
+        for (const auto &run : paragraph.value("runs").toList()) {
+            const auto token = run.toMap();
+            const auto field = token.value("field").toString();
+            line += field.isEmpty() ? token.value("text").toString() : field == QLatin1String("page-number") ? "{page}" : "{pages}";
+        }
+        text.append(line);
+    }
+    return {{"enabled", !paragraphs.isEmpty()}, {"text", text.join('\n')}, {"alignment", alignment},
+        {"height", root.property(rt::kDocumentReservedSpaceProperty).toList().value(area, 0.)}};
+}
+
+QVariantMap RichTextHandler::pageHeader() const { return pageBand(0); }
+QVariantMap RichTextHandler::pageFooter() const { return pageBand(1); }
+
+void RichTextHandler::setPageBand(int area, const QVariantMap &options)
+{
+    if (!m_doc || !options.contains("enabled")) return;
+    auto band = pageBand(area);
+    for (const auto &key : {"enabled", "text", "alignment", "height"})
+        if (options.contains(key)) band.insert(key, options.value(key));
+    const auto alignment = band.value("alignment").toString();
+    if (alignment != "left" && alignment != "center" && alignment != "right") return;
+    qreal height = band.value("height").toDouble();
+    if (!qIsFinite(height) || height < 0) return;
+    if (band.value("enabled").toBool() && !options.contains("height") && height == 0) height = 32.;
+    band["height"] = band.value("enabled").toBool() ? height : 0.;
+    if (!band.value("enabled").toBool()) { band["text"] = QString(); band["alignment"] = QStringLiteral("left"); }
+    if (band == pageBand(area)) return;
+    QVariantList paragraphs;
+    if (band.value("enabled").toBool()) {
+        QTextBlockFormat block;
+        QTextCharFormat chars;
+        QFont font = m_doc->defaultFont();
+        // Store canonical, explicit font metrics. An unresolved QFont lets QPainter
+        // substitute its PDF default font after alignment was measured on screen.
+        if (font.pixelSize() > 0) font.setPointSizeF(font.pixelSize() * 72. / 96.);
+        chars.setFont(font);
+        block.setAlignment(alignment == "center" ? Qt::AlignHCenter : alignment == "right" ? Qt::AlignRight : Qt::AlignLeft);
+        for (const auto &line : band.value("text").toString().split('\n')) {
+            QVariantList runs;
+            static const QRegularExpression fields(QStringLiteral("\\{(page|pages)\\}"));
+            auto matches = fields.globalMatch(line);
+            qsizetype end = 0;
+            while (matches.hasNext()) {
+                const auto match = matches.next();
+                if (match.capturedStart() > end) runs.append(QVariantMap{{"text", line.mid(end, match.capturedStart() - end)}});
+                runs.append(QVariantMap{{"field", match.captured(1) == "page" ? "page-number" : "page-count"}});
+                end = match.capturedEnd();
+            }
+            if (end < line.size()) runs.append(QVariantMap{{"text", line.mid(end)}});
+            paragraphs.append(QVariantMap{{"runs", runs}, {"block", QVariant::fromValue(block)}, {"char", QVariant::fromValue(chars)}});
+        }
+    }
+    auto root = m_doc->rootFrame()->frameFormat();
+    auto bands = root.property(rt::kDocumentPageBandsProperty).toList();
+    while (bands.size() < 2) bands.append(QVariant(QVariantList()));
+    bands[area] = paragraphs;
+    root.setProperty(rt::kDocumentPageBandsProperty, bands);
+    auto reserved = root.property(rt::kDocumentReservedSpaceProperty).toList();
+    auto gaps = root.property(rt::kDocumentBandGapsProperty).toList();
+    while (reserved.size() < 2) reserved.append(0.);
+    while (gaps.size() < 2) gaps.append(0.);
+    reserved[area] = band.value("height"); gaps[area] = 0.;
+    root.setProperty(rt::kDocumentReservedSpaceProperty, reserved);
+    root.setProperty(rt::kDocumentBandGapsProperty, gaps);
+    auto edits = root.property(rt::kDocumentPageEditsProperty).toMap();
+    edits.insert(area ? "footer" : "header", band);
+    root.setProperty(rt::kDocumentPageEditsProperty, edits);
+    QTextCursor edit(m_doc);
+    edit.beginEditBlock();
+    m_doc->rootFrame()->setFrameFormat(root);
+    edit.endEditBlock();
+}
+
+void RichTextHandler::syncDocumentPageSetup()
+{
+    if (!m_doc || m_bulkReset) return;
+    const auto geometry = m_doc->rootFrame()->frameFormat().property(rt::kDocumentGeometryProperty).toList();
+    const bool geometryChanged = geometry != m_documentGeometry;
+    if (geometryChanged) {
+        m_documentGeometry = geometry;
+        emit documentPageGeometryChanged();
+    }
+    const auto root = m_doc->rootFrame()->frameFormat();
+    const auto bands = root.property(rt::kDocumentPageBandsProperty).toList();
+    const auto heights = root.property(rt::kDocumentReservedSpaceProperty).toList();
+    if (bands == m_documentBands && heights == m_documentBandHeights) {
+        // Native root-frame undo also restores its old view-only margins. Keep
+        // the latest view configuration while replaying persisted metadata.
+        if (geometryChanged && m_viewMargins.size() == 4)
+            configurePages(m_viewWidth, m_viewHeight, m_viewGap, m_viewMargins);
+        return;
+    }
+    m_documentBands = bands; m_documentBandHeights = heights;
+    const auto header = pageHeader(), footer = pageFooter();
+    const bool headerChanged = header != m_pageHeader, footerChanged = footer != m_pageFooter;
+    m_pageHeader = header; m_pageFooter = footer;
+    if ((geometryChanged || headerChanged || footerChanged) && m_viewMargins.size() == 4)
+        configurePages(m_viewWidth, m_viewHeight, m_viewGap, m_viewMargins);
+    if (headerChanged) emit pageHeaderChanged();
+    if (footerChanged) emit pageFooterChanged();
+}
+
+void RichTextHandler::setDocumentPageGeometry(const QVariantMap &options)
+{
+    if (!m_doc) return;
+    const double width = options.value("width").toDouble(), height = options.value("height").toDouble();
+    const auto margins = options.value("margins").toList();
+    if (!qIsFinite(width) || !qIsFinite(height) || width <= 0 || height <= 0 || margins.size() != 4) return;
+    for (const auto &margin : margins)
+        if (!qIsFinite(margin.toDouble()) || margin.toDouble() < 0) return;
+    if (margins[0].toDouble() + margins[2].toDouble() >= height
+        || margins[1].toDouble() + margins[3].toDouble() >= width) return;
+    QVariantList geometry{width, height};
+    geometry.append(margins);
+    auto format = m_doc->rootFrame()->frameFormat();
+    if (format.property(rt::kDocumentGeometryProperty).toList() == geometry) return;
+    format.setProperty(rt::kDocumentGeometryProperty, geometry);
+    auto edits = format.property(rt::kDocumentPageEditsProperty).toMap();
+    edits.insert("geometry", true);
+    format.setProperty(rt::kDocumentPageEditsProperty, edits);
+    QTextCursor edit(m_doc);
+    edit.beginEditBlock();
+    m_doc->rootFrame()->setFrameFormat(format);
+    edit.endEditBlock();
+}
+
 void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const QVariantList &margins)
 {
     if (!m_doc || margins.size() != 4) return;
+    m_viewWidth = width; m_viewHeight = height; m_viewGap = gap; m_viewMargins = margins;
     m_pdfPageHeight = height;
     m_pageStride = height > 0 ? height + gap : 0;
     auto f = m_doc->rootFrame()->frameFormat();
@@ -1511,6 +1666,15 @@ void RichTextHandler::setTabStops(const QVariantList &stops)
 void RichTextHandler::updateEditingState()
 {
     if (m_changingZoom) return;
+    const auto caret = insertionCursor();
+    const auto *table = caret.isNull() ? nullptr : caret.currentTable();
+    const auto cell = table ? table->cellAt(caret) : QTextTableCell();
+    const int row = cell.isValid() ? cell.row() : -1;
+    const int column = cell.isValid() ? cell.column() : -1;
+    if (row != m_tableRow || column != m_tableColumn) {
+        m_tableRow = row; m_tableColumn = column;
+        emit tableCellChanged(row, column);
+    }
     const QVariantList state{textColor(), highlightColor(), subscript(), superscript(), leftIndent(), rightIndent(),
         firstLineIndent(), lineSpacing(), spaceBefore(), spaceAfter(), QVariant(tabStops())};
     const auto previous = m_editingState;
@@ -1765,7 +1929,7 @@ bool RichTextHandler::tableTab(bool backward)
     return true;
 }
 
-void RichTextHandler::insertTable(int rows, int cols)
+void RichTextHandler::insertTable(int rows, int cols, const QVariantMap &options)
 {
     QTextCursor c = insertionCursor();
     if (c.isNull() || rows < 1 || cols < 1)
@@ -1775,8 +1939,311 @@ void RichTextHandler::insertTable(int rows, int cols)
         selectLayoutEngine(true);
     }
     // Our ODF writer closes a list before a table, so a table may follow a list item directly.
-    c.insertTable(rows, cols, rt::wordLikeTableFormat());
+    const bool header = options.value("headerRow").toBool();
+    auto format = rt::wordLikeTableFormat();
+    format.setBorder(2. / 3 * m_zoom); // 0.5 pt, stored in document pixels.
+    format.setBorderBrush(Qt::black);
+    format.setCellPadding(96. / 25.4 * m_zoom); // 0.1 cm.
+    format.setColumnWidthConstraints(QList<QTextLength>(cols, QTextLength(QTextLength::PercentageLength, 100. / cols)));
+    if (options.value("width").toDouble() > 0)
+        format.setWidth(options.value("width").toDouble() * m_zoom);
+    format.setHeaderRowCount(header ? 1 : 0);
+    c.beginEditBlock();
+    auto *table = c.insertTable(rows, cols, format);
+    if (header) for (int col = 0; col < cols; ++col) {
+        auto first = table->cellAt(0, col).firstCursorPosition();
+        QTextCharFormat bold; bold.setFontWeight(QFont::Bold); first.mergeCharFormat(bold); first.mergeBlockCharFormat(bold);
+    }
+    c.endEditBlock();
+    selectEditorCursor(table->cellAt(0, 0).firstCursorPosition());
     emit formatChanged();
+}
+
+QTextCursor RichTextHandler::tableCursor() const
+{
+    auto c=insertionCursor();
+    if (!c.isNull() && m_selectionStart!=m_selectionEnd) {
+        const int last=c.document()->characterCount()-1;
+        c.setPosition(qBound(0,m_selectionStart,last));
+        c.setPosition(qBound(0,m_selectionEnd,last),QTextCursor::KeepAnchor);
+    }
+    return c;
+}
+
+namespace {
+struct TableRange {
+    int top, left, rows, columns;
+    explicit TableRange(const QTextCursor &c) {
+        const auto cell = c.currentTable()->cellAt(c);
+        top = cell.row(); left = cell.column(); rows = cell.rowSpan(); columns = cell.columnSpan();
+        if (c.hasComplexSelection()) c.selectedTableCells(&top, &rows, &left, &columns);
+    }
+};
+}
+QVariant RichTextHandler::tableInfo() const
+{
+    const auto c = tableCursor();
+    const auto *t = c.isNull() ? nullptr : c.currentTable();
+    if (!t) return {};
+    const auto cell = t->cellAt(c);
+    QVariant selection;
+    if (c.hasComplexSelection()) {
+        const TableRange r(c);
+        selection = QVariantMap{{"top", r.top}, {"left", r.left}, {"bottom", r.top+r.rows-1}, {"right", r.left+r.columns-1}};
+    }
+    return QVariantMap{{"rows", t->rows()}, {"columns", t->columns()}, {"row", cell.row()},
+        {"column", cell.column()}, {"selection", selection}, {"headerRow", t->format().headerRowCount() > 0}};
+}
+QVariantList RichTextHandler::_selectedTableCellRects() const
+{
+    const auto c=tableCursor();
+    if(c.isNull() || !c.currentTable() || !c.hasComplexSelection()) return {};
+    const auto *layout=dynamic_cast<rt::RichTextLayout *>(c.document()->documentLayout());
+    if(!layout) return {}; // Qt renders its own whole-cell selection.
+    const TableRange r(c); QVariantList rectangles;
+    for(const auto &fragment:layout->tableFragments())
+        if(fragment.table==c.currentTable() && fragment.row>=r.top && fragment.row<r.top+r.rows &&
+            fragment.column>=r.left && fragment.column<r.left+r.columns) rectangles.append(fragment.rect);
+    return rectangles;
+}
+
+bool RichTextHandler::insertTableRows(const QString &where, int count)
+{
+    auto c = tableCursor(); auto *t = c.isNull() ? nullptr : c.currentTable();
+    if (!t || count < 1 || (where != "above" && where != "below")) return false;
+    const TableRange r(c); c.beginEditBlock();
+    t->insertRows(r.top + (where == "below" ? r.rows : 0), count);
+    c.endEditBlock(); selectEditorCursor(c); emit formatChanged(); return true;
+}
+bool RichTextHandler::insertTableColumns(const QString &where, int count)
+{
+    auto c = tableCursor(); auto *t = c.isNull() ? nullptr : c.currentTable();
+    if (!t || count < 1 || (where != "left" && where != "right")) return false;
+    const TableRange r(c); c.beginEditBlock();
+    t->insertColumns(r.left + (where == "right" ? r.columns : 0), count);
+    c.endEditBlock(); selectEditorCursor(c); emit formatChanged(); return true;
+}
+bool RichTextHandler::deleteTable()
+{
+    auto c = tableCursor(); auto *t = c.isNull() ? nullptr : c.currentTable();
+    if (!t) return false;
+    c.setPosition(t->firstPosition()-1); c.setPosition(t->lastPosition()+1, QTextCursor::KeepAnchor);
+    c.beginEditBlock(); c.removeSelectedText(); c.endEditBlock();
+    selectEditorCursor(c); emit formatChanged(); return true;
+}
+bool RichTextHandler::deleteTableRows()
+{
+    auto c = tableCursor(); auto *t = c.isNull() ? nullptr : c.currentTable();
+    if (!t) return false;
+    const TableRange r(c); if (r.rows == t->rows()) return deleteTable();
+    c.beginEditBlock(); t->removeRows(r.top, r.rows); c.endEditBlock();
+    selectEditorCursor(t->cellAt(qMin(r.top,t->rows()-1),qMin(r.left,t->columns()-1)).firstCursorPosition());
+    emit formatChanged(); return true;
+}
+bool RichTextHandler::deleteTableColumns()
+{
+    auto c = tableCursor(); auto *t = c.isNull() ? nullptr : c.currentTable();
+    if (!t) return false;
+    const TableRange r(c); if (r.columns == t->columns()) return deleteTable();
+    c.beginEditBlock(); t->removeColumns(r.left, r.columns); c.endEditBlock();
+    selectEditorCursor(t->cellAt(qMin(r.top,t->rows()-1),qMin(r.left,t->columns()-1)).firstCursorPosition());
+    emit formatChanged(); return true;
+}
+bool RichTextHandler::selectTable()
+{
+    auto c = tableCursor(); auto *t = c.isNull() ? nullptr : c.currentTable();
+    if (!t) return false;
+    c = t->firstCursorPosition(); c.setPosition(t->lastPosition(), QTextCursor::KeepAnchor);
+    selectEditorCursor(c); return true;
+}
+bool RichTextHandler::selectTableRow()
+{
+    auto c = tableCursor(); auto *t = c.isNull() ? nullptr : c.currentTable();
+    if (!t) return false;
+    const TableRange r(c); c = t->cellAt(r.top,0).firstCursorPosition();
+    c.setPosition(t->cellAt(r.top+r.rows-1,t->columns()-1).lastPosition(),QTextCursor::KeepAnchor);
+    selectEditorCursor(c); return true;
+}
+bool RichTextHandler::selectTableColumn()
+{
+    auto c = tableCursor(); auto *t = c.isNull() ? nullptr : c.currentTable();
+    if (!t) return false;
+    const TableRange r(c); c = t->cellAt(0,r.left).firstCursorPosition();
+    c.setPosition(t->cellAt(t->rows()-1,r.left+r.columns-1).lastPosition(),QTextCursor::KeepAnchor);
+    selectEditorCursor(c); return true;
+}
+bool RichTextHandler::mergeTableCells()
+{
+    auto c = tableCursor(); auto *t = c.isNull() ? nullptr : c.currentTable();
+    if (!t || !c.hasComplexSelection()) return false;
+    const TableRange r(c); c.beginEditBlock(); t->mergeCells(r.top,r.left,r.rows,r.columns); c.endEditBlock();
+    selectEditorCursor(t->cellAt(r.top,r.left).firstCursorPosition()); emit formatChanged(); return true;
+}
+bool RichTextHandler::splitTableCell(int rows, int columns)
+{
+    auto c = tableCursor(); auto *t = c.isNull() ? nullptr : c.currentTable();
+    if (!t || rows < 1 || columns < 1) return false;
+    const auto cell = t->cellAt(c); const int row = cell.row(), col = cell.column();
+    // QTextTable splits a span on the existing grid. Extend that grid for an
+    // ordinary cell, merging the surrounding cells back across the new tracks.
+    if ((cell.rowSpan() > 1 || cell.columnSpan() > 1) && (rows > cell.rowSpan() || columns > cell.columnSpan())) return false;
+    c.beginEditBlock();
+    if (cell.rowSpan() == 1 && cell.columnSpan() == 1) {
+        if (rows > 1) { t->insertRows(row+1,rows-1); for (int j=0;j<t->columns();++j) if (j!=col) t->mergeCells(row,j,rows,1); }
+        if (columns > 1) { t->insertColumns(col+1,columns-1); for (int i=0;i<t->rows();++i) if (i<row || i>=row+rows) t->mergeCells(i,col,1,columns); }
+    } else {
+        const int rowSpan=cell.rowSpan(), columnSpan=cell.columnSpan();
+        t->splitCell(row,col,1,1);
+        for(int i=0;i<rows;++i) for(int j=0;j<columns;++j) {
+            const int top=i*rowSpan/rows, left=j*columnSpan/columns;
+            t->mergeCells(row+top,col+left,(i+1)*rowSpan/rows-top,(j+1)*columnSpan/columns-left);
+        }
+    }
+    c.endEditBlock(); selectEditorCursor(t->cellAt(row,col).firstCursorPosition()); emit formatChanged(); return true;
+}
+
+// QTextTable has no sparse cells. Shift rich fragments on an unmerged grid;
+// insertion grows the rectangular grid, deletion pads its trailing cells.
+static bool shiftTableCells(QTextCursor c, const QString &shift, bool insert)
+{
+    auto *t = c.isNull() ? nullptr : c.currentTable();
+    if (!t || (insert ? shift!="right" && shift!="down" : shift!="left" && shift!="up")) return false;
+    for (int i=0;i<t->rows();++i) for (int j=0;j<t->columns();++j)
+        if (t->cellAt(i,j).rowSpan()!=1 || t->cellAt(i,j).columnSpan()!=1) return false;
+    const TableRange r(c); const bool horizontal = shift=="right" || shift=="left";
+    const int oldRows=t->rows(), oldCols=t->columns();
+    c.beginEditBlock();
+    if (insert) { if (horizontal) t->appendColumns(r.columns); else t->appendRows(r.rows); }
+    const auto copy = [&](int row,int col,int fromRow,int fromCol) {
+        auto target=t->cellAt(row,col); auto out=target.firstCursorPosition();
+        out.setPosition(target.lastPosition(),QTextCursor::KeepAnchor);
+        QTextDocumentFragment fragment; QTextTableCellFormat format;
+        if (fromRow>=0 && fromRow<oldRows && fromCol>=0 && fromCol<oldCols) {
+            const auto source=t->cellAt(fromRow,fromCol); auto in=source.firstCursorPosition();
+            in.setPosition(source.lastPosition(),QTextCursor::KeepAnchor); fragment=QTextDocumentFragment(in); format=source.format().toTableCellFormat();
+        }
+        out.removeSelectedText(); out.insertFragment(fragment); target.setFormat(format);
+    };
+    if (horizontal) for (int i=r.top;i<r.top+r.rows;++i) {
+        if (insert) for (int j=t->columns()-1;j>=r.left;--j) copy(i,j,i,j>=r.left+r.columns ? j-r.columns : -1);
+        else for (int j=r.left;j<t->columns();++j) copy(i,j,i,j+r.columns);
+    } else for (int j=r.left;j<r.left+r.columns;++j) {
+        if (insert) for (int i=t->rows()-1;i>=r.top;--i) copy(i,j,i>=r.top+r.rows ? i-r.rows : -1,j);
+        else for (int i=r.top;i<t->rows();++i) copy(i,j,i+r.rows,j);
+    }
+    c.endEditBlock(); return true;
+}
+bool RichTextHandler::insertTableCells(const QString &shift) { const bool ok=shiftTableCells(tableCursor(),shift,true); if(ok) emit formatChanged(); return ok; }
+bool RichTextHandler::deleteTableCells(const QString &shift) { const bool ok=shiftTableCells(tableCursor(),shift,false); if(ok) emit formatChanged(); return ok; }
+
+bool RichTextHandler::setTableCellBackground(const QString &color)
+{
+    auto c=tableCursor(); auto *t=c.isNull()?nullptr:c.currentTable();
+    if (!t || (!color.isEmpty() && !QColor(color).isValid())) return false;
+    const TableRange r(c); c.beginEditBlock();
+    for(int i=r.top;i<r.top+r.rows;++i) for(int j=r.left;j<r.left+r.columns;++j) {
+        auto cell=t->cellAt(i,j); auto f=cell.format();
+        if(color.isEmpty()) f.clearBackground(); else f.setBackground(QColor(color));
+        cell.setFormat(f);
+    }
+    c.endEditBlock(); emit formatChanged(); return true;
+}
+bool RichTextHandler::setTableCellVerticalAlignment(const QString &alignment)
+{
+    auto c=tableCursor(); auto *t=c.isNull()?nullptr:c.currentTable();
+    if (!t || (alignment!="top" && alignment!="center" && alignment!="bottom")) return false;
+    const TableRange r(c); c.beginEditBlock();
+    for(int i=r.top;i<r.top+r.rows;++i) for(int j=r.left;j<r.left+r.columns;++j) {
+        auto cell=t->cellAt(i,j); auto f=cell.format();
+        f.setVerticalAlignment(alignment=="top"?QTextCharFormat::AlignTop:alignment=="center"?QTextCharFormat::AlignMiddle:QTextCharFormat::AlignBottom);
+        cell.setFormat(f);
+    }
+    c.endEditBlock(); emit formatChanged(); return true;
+}
+bool RichTextHandler::distributeTableColumns()
+{
+    auto c=tableCursor(); auto *t=c.isNull()?nullptr:c.currentTable(); if(!t) return false;
+    auto f=t->format(); f.setColumnWidthConstraints(QList<QTextLength>(t->columns(),QTextLength(QTextLength::PercentageLength,100./t->columns())));
+    c.beginEditBlock(); t->setFormat(f); c.endEditBlock(); emit formatChanged(); return true;
+}
+bool RichTextHandler::setTableColumnWidth(qreal width)
+{
+    auto c=tableCursor(); auto *t=c.isNull()?nullptr:c.currentTable(); if(!t || !qIsFinite(width) || width<=0) return false;
+    const auto bounds=tableBoundaries(t); QList<QTextLength> widths;
+    for(int col=0;col<t->columns();++col) widths.append(QTextLength(QTextLength::FixedLength,
+        col==t->cellAt(c).column()?width*m_zoom:qMax(1.,bounds[col+1]-bounds[col])));
+    auto f=t->format(); f.setColumnWidthConstraints(widths);
+    c.beginEditBlock(); t->setFormat(f); c.endEditBlock(); emit formatChanged(); return true;
+}
+bool RichTextHandler::setTableAlignment(const QString &alignment)
+{
+    auto c=tableCursor(); auto *t=c.isNull()?nullptr:c.currentTable();
+    if(!t || (alignment!="left" && alignment!="center" && alignment!="right")) return false;
+    auto f=t->format(); f.setAlignment(alignment=="left"?Qt::AlignLeft:alignment=="center"?Qt::AlignHCenter:Qt::AlignRight);
+    c.beginEditBlock(); t->setFormat(f); c.endEditBlock(); emit formatChanged(); return true;
+}
+bool RichTextHandler::setTableHeaderRow(bool on)
+{
+    auto c=tableCursor(); auto *t=c.isNull()?nullptr:c.currentTable(); if(!t) return false;
+    auto f=t->format(); f.setHeaderRowCount(on?1:0);
+    c.beginEditBlock(); t->setFormat(f); c.endEditBlock(); emit formatChanged(); return true;
+}
+bool RichTextHandler::setTableBorders(const QString &which, const QVariantMap &style)
+{
+    auto c=tableCursor(); auto *t=c.isNull()?nullptr:c.currentTable();
+    if(!t || !QStringList{"all","outer","inner","none","top","bottom","left","right"}.contains(which)) return false;
+    const qreal width=style.value("width",.5).toDouble()*4./3*m_zoom;
+    const QColor color(style.value("color","#000000").toString());
+    const QString line=style.value("style","solid").toString();
+    if(!qIsFinite(width) || width<0 || !color.isValid() || !QStringList{"solid","dashed","dotted","double"}.contains(line)) return false;
+    const auto pen=line=="dashed"?QTextFrameFormat::BorderStyle_Dashed:line=="dotted"?QTextFrameFormat::BorderStyle_Dotted:line=="double"?QTextFrameFormat::BorderStyle_Double:QTextFrameFormat::BorderStyle_Solid;
+    const auto setSide=[&](QTextTableCellFormat &f,int side,qreal w) {
+        switch(side) {
+        case 0: f.setTopBorder(w); f.setTopBorderStyle(pen); f.setTopBorderBrush(color); break;
+        case 1: f.setBottomBorder(w); f.setBottomBorderStyle(pen); f.setBottomBorderBrush(color); break;
+        case 2: f.setLeftBorder(w); f.setLeftBorderStyle(pen); f.setLeftBorderBrush(color); break;
+        case 3: f.setRightBorder(w); f.setRightBorderStyle(pen); f.setRightBorderBrush(color); break;
+        }
+    };
+    const TableRange r(c);
+    // Qt's fallback handles independent side styles, including double borders.
+    selectLayoutEngine(true);
+    c.beginEditBlock();
+    const auto inherited=t->format();
+    for(int i=0;i<t->rows();++i) for(int j=0;j<t->columns();++j) {
+        auto cell=t->cellAt(i,j); if(cell.row()!=i || cell.column()!=j) continue;
+        auto f=cell.format().toTableCellFormat();
+        if(!f.hasProperty(QTextFormat::TableCellTopBorder)) { f.setTopBorder(inherited.border()); f.setTopBorderStyle(inherited.borderStyle()); f.setTopBorderBrush(inherited.borderBrush()); }
+        if(!f.hasProperty(QTextFormat::TableCellBottomBorder)) { f.setBottomBorder(inherited.border()); f.setBottomBorderStyle(inherited.borderStyle()); f.setBottomBorderBrush(inherited.borderBrush()); }
+        if(!f.hasProperty(QTextFormat::TableCellLeftBorder)) { f.setLeftBorder(inherited.border()); f.setLeftBorderStyle(inherited.borderStyle()); f.setLeftBorderBrush(inherited.borderBrush()); }
+        if(!f.hasProperty(QTextFormat::TableCellRightBorder)) { f.setRightBorder(inherited.border()); f.setRightBorderStyle(inherited.borderStyle()); f.setRightBorderBrush(inherited.borderBrush()); }
+        cell.setFormat(f);
+    }
+    auto tableFormat=inherited; tableFormat.setBorder(0); t->setFormat(tableFormat);
+    for(int i=r.top;i<r.top+r.rows;++i) for(int j=r.left;j<r.left+r.columns;++j) {
+        auto cell=t->cellAt(i,j); if(cell.row()!=i || cell.column()!=j) continue;
+        auto f=cell.format().toTableCellFormat();
+        const bool edges[]={i==r.top,i+cell.rowSpan()==r.top+r.rows,j==r.left,j+cell.columnSpan()==r.left+r.columns};
+        const QString names[]={"top","bottom","left","right"};
+        for(int side=0;side<4;++side) {
+            if(which!="all" && which!="none" && !(which=="outer" && edges[side]) && !(which=="inner" && !edges[side]) && !(which==names[side] && edges[side])) continue;
+            const qreal w=which=="none"?0:width;
+            setSide(f,side,w);
+            // A collapsed edge belongs to both cells. Mirror the opposite side
+            // so an unselected neighbor cannot keep a removed edge visible.
+            const int length=inherited.borderCollapse() ? (side<2 ? cell.columnSpan() : cell.rowSpan()) : 0;
+            for(int n=0;n<length;++n) {
+                const int row=side==0 ? i-1 : side==1 ? i+cell.rowSpan() : i+n;
+                const int col=side==2 ? j-1 : side==3 ? j+cell.columnSpan() : j+n;
+                auto neighbor=t->cellAt(row,col);
+                if(!neighbor.isValid()) continue;
+                auto nf=neighbor.format().toTableCellFormat();
+                setSide(nf,side^1,w); neighbor.setFormat(nf);
+            }
+        }
+        cell.setFormat(f);
+    }
+    c.endEditBlock(); emit formatChanged(); return true;
 }
 
 bool RichTextHandler::inTable() const
@@ -1785,49 +2252,10 @@ bool RichTextHandler::inTable() const
     return !c.isNull() && c.currentTable() != nullptr;
 }
 
-void RichTextHandler::addTableRow()
-{
-    QTextCursor c = insertionCursor();
-    QTextTable *t = c.isNull() ? nullptr : c.currentTable();
-    if (!t)
-        return;
-    t->insertRows(t->cellAt(c).row() + 1, 1);
-    emit formatChanged();
-}
-
-void RichTextHandler::addTableColumn()
-{
-    QTextCursor c = insertionCursor();
-    QTextTable *t = c.isNull() ? nullptr : c.currentTable();
-    if (!t)
-        return;
-    t->insertColumns(t->cellAt(c).column() + 1, 1);
-    emit formatChanged();
-}
-
-void RichTextHandler::removeTableRow()
-{
-    QTextCursor c = insertionCursor();
-    QTextTable *t = c.isNull() ? nullptr : c.currentTable();
-    if (!t)
-        return;
-    if (t->rows() <= 1)
-        return; // removing the last row would leave a degenerate frame
-    t->removeRows(t->cellAt(c).row(), 1);
-    emit formatChanged();
-}
-
-void RichTextHandler::removeTableColumn()
-{
-    QTextCursor c = insertionCursor();
-    QTextTable *t = c.isNull() ? nullptr : c.currentTable();
-    if (!t)
-        return;
-    if (t->columns() <= 1)
-        return;
-    t->removeColumns(t->cellAt(c).column(), 1);
-    emit formatChanged();
-}
+void RichTextHandler::addTableRow() { insertTableRows("below"); }
+void RichTextHandler::addTableColumn() { insertTableColumns("right"); }
+void RichTextHandler::removeTableRow() { deleteTableRows(); }
+void RichTextHandler::removeTableColumn() { deleteTableColumns(); }
 
 bool RichTextHandler::writeOdf(const QUrl &file)
 {

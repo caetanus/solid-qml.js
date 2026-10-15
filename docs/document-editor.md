@@ -603,7 +603,15 @@ reports `0`, `0`, and `[]`. `newDocument()` clears the metadata; a failed load
 that leaves the document untouched preserves it. These are read-only properties;
 `documentPageGeometryChanged` fires only when their values change.
 
-After a successful load, applications can assign these values to `pageWidth`,
+`setDocumentPageGeometry({width, height, margins: [top, right, bottom, left]})`
+persists the selected default master page's dimensions, orientation and margins.
+Lengths use px at 96 dpi. Positive finite dimensions and nonnegative margins
+leaving a positive body area are required; invalid inputs and identical values
+are no-ops. Each change is one undo step, including notification on undo/redo.
+New documents write A4 with 2 cm margins on first save unless explicitly set.
+Imported unrelated page layouts and master-page content are preserved.
+
+After a successful load or a geometry edit, applications can assign these values to `pageWidth`,
 `pageHeight`, and `pageMargins`. This keeps application display settings explicit.
 Mixed page masters within one document are not yet supported by pagination.
 Active headers/footers reserve their declared minimum/fixed band height (which
@@ -614,9 +622,22 @@ header/footer paragraphs render on every page, in both live layout engines and
 the custom engine's QPainter export. Supported content: plain text, explicit
 spaces/line breaks, paragraph font/color/spacing/alignment (including inherited
 and automatic styles), decimal `text:page-number` and `text:page-count` fields.
-They are decorations, outside body selection, editing, word counts and undo.
+They are decorations, outside body selection and word counts.
 Only nearby page bands have live items; page-count changes refresh the fields.
-No new application API is required.
+`setPageHeader({enabled, text?, alignment?, height?})` and `setPageFooter(...)`
+edit these bands on the selected default master page. `text` supports `{page}`
+and `{pages}`, saved as ODF fields and resolved for every rendered/exported page.
+Alignment is `left`, `center`, or `right`. Height is in canonical 96 dpi pixels;
+newly enabled bands default to 32 px. Set a larger height for multiline text.
+Omitted options keep their current values. Disabling clears the band and its
+reserved space. `pageHeader` and `pageFooter` report enabled, text, alignment,
+and height; their change signals fire only on actual changes, including undo/redo.
+Each setter is one undo step; identical or invalid requests do nothing. These
+edits also persist through synchronous and asynchronous ODF copies.
+
+The dialog API does not support editing bands in place, first-page-different
+bands, or inserting page fields in body text. Imported first-page variants are
+preserved in ODF but are not selected by the renderer.
 
 The original page layouts, master-page markup, font aliases and automatic styles
 round-trip on save, including asynchronous copies. The first body's active master
@@ -752,3 +773,62 @@ visible lines. They never alter line wrapping, document content, selection/copy,
 word counts, undo, saved files, or PDF output. Turning marks off removes their
 overlay. The earlier `pageBreakLabel` continuous-view marker remains available
 when formatting marks are off.
+
+### General context menu
+
+`onContextMenuRequested(info)` fires for every right press in the text area and
+for Menu / Shift+F10 at the caret. `info` contains `x`, `y` in DocumentEditor
+coordinates, `windowX`, `windowY` in window coordinates, UTF-16 `position`,
+`inSelection`, `inTable`, and `mark` (a DocumentMark or null). A pointer press
+outside the selection moves the caret first; inside preserves the selection.
+Keyboard requests preserve the selection. Open the app's menu synchronously
+from this signal. `markContextMenu` also fires when a mark is present.
+
+### Editing tables
+
+`insertTable(rows, columns, options?)` places the caret in the first cell.
+Options are `{headerRow?: boolean, width?: "full" | number}`. Width defaults to
+100% of the text area; numbers are unzoomed pixels. Columns start equal, with
+collapsed black 0.5 pt borders, zero spacing, and 0.1 cm cell padding. A header
+option makes the first row bold and repeats it on later pages. Imported tables
+retain their formatting.
+
+`tableInfo()` returns null outside a table, otherwise
+`{rows, columns, row, column, selection, headerRow}`. Coordinates are zero-based;
+`selection` is null or an inclusive `{top,left,bottom,right}` cell rectangle.
+`inTable` is reactive. `onTableCellChanged(row,column)` reports caret cell changes
+(and `-1,-1` when leaving tables).
+
+These commands return false outside a table or for invalid arguments. Mutating
+commands make one undo step and use the caret cell or selected cell rectangle:
+
+- `insertTableRows("above" | "below", count = 1)` and
+  `insertTableColumns("left" | "right", count = 1)`.
+- `deleteTableRows()`, `deleteTableColumns()`, `deleteTable()`. Deleting every row
+  or column removes the table.
+- `insertTableCells("right" | "down")`, `deleteTableCells("left" | "up")`.
+  QTextTable requires a rectangular grid: insertion grows it, shifts rich cell
+  contents and cell formatting, and leaves the other new cells empty. Deletion
+  shifts contents back and leaves empty trailing cells. Merged grids return false.
+- `selectTable()`, `selectTableRow()`, `selectTableColumn()`.
+- `mergeTableCells()` merges the selected rectangle. `splitTableCell(rows, columns)`
+  divides a merged span into the requested number of rows and columns on its existing grid. For an ordinary cell it extends the
+  grid and merges the surrounding cells across the new tracks. A merged cell
+  cannot split into more tracks than its existing span; that returns false.
+- `setTableBorders(which, style?)`: `which` is `all`, `outer`, `inner`, `none`,
+  `top`, `bottom`, `left`, or `right`, relative to the selected rectangle.
+  Style defaults to `{width: 0.5, color: "#000000", style: "solid"}`; width is in
+  points, and styles are `solid`, `dashed`, `dotted`, or `double`.
+- `setTableCellBackground(color)`; an empty string clears the background.
+- `setTableCellVerticalAlignment("top" | "center" | "bottom")`.
+- `distributeTableColumns()`, `setTableColumnWidth(width)` in unzoomed pixels,
+  `setTableAlignment("left" | "center" | "right")`, `setTableHeaderRow(on)`.
+
+The existing add/remove row/column methods remain aliases. Tab selects the next
+cell, Shift+Tab the previous; Tab in the last cell appends a row. Ctrl+Tab inserts
+a literal tab. Column-border dragging commits once on release and undoes once.
+Text header rows repeat in the custom paginated layout and PDF export.
+Independent cell-side border styles use the Qt layout fallback. The widget also
+paints repeated headers in that fallback, where Qt Quick otherwise leaves the
+reserved header area empty. Header rows are saved as `table:table-header-rows`;
+ODF preserves table width/alignment, collapsing borders, and cell formatting.
