@@ -426,6 +426,7 @@ RichText {
     // `mark`: {kind, id, blockId, start, end}; x, y in this item's coordinates; windowX/windowY
     // the same point in the window's (what <Menu ref> open(x, y) takes).
     signal markClicked(var mark, real x, real y, real windowX, real windowY)
+    signal contextMenuRequested(var info)
     signal markContextMenu(var mark, real x, real y, real windowX, real windowY)
     signal markHovered(var mark) // null when the pointer leaves a mark
 
@@ -462,18 +463,39 @@ RichText {
         var m = fmt.markAt(at)
         return m ? m : null
     }
-    // Passive (DragThreshold): the editor still gets the press — the caret and selection behave
-    // as without marks; a right-click outside any mark is left alone.
+    function _requestContextMenu(x, y, keyboard) {
+        var position = keyboard ? _editor.cursorPosition : _editor.positionAt(x, y)
+        var inside = _editor.selectionStart <= position && position < _editor.selectionEnd
+        var mark = keyboard ? markAt(position) : _markAtPoint(x, y)
+        if (!keyboard && !inside) _editor.cursorPosition = position
+        _editor.forceActiveFocus()
+        var p = root.mapFromItem(_editor, x, y)
+        var w = _editor.mapToItem(null, x, y)
+        contextMenuRequested({ x: p.x, y: p.y, windowX: w.x, windowY: w.y,
+            position: position, inSelection: inside, inTable: !!fmt && fmt.inTable, mark: mark })
+        if (mark) markContextMenu(mark, p.x, p.y, w.x, w.y)
+    }
+    function _requestContextMenuAtCaret() {
+        var r = _editor.cursorRectangle
+        _requestContextMenu(r.x, r.y + r.height, true)
+        return true
+    }
+    MouseArea {
+        parent: root._editor
+        anchors.fill: parent
+        z: 11
+        acceptedButtons: Qt.RightButton
+        onPressed: (mouse) => root._requestContextMenu(mouse.x, mouse.y, false)
+    }
     TapHandler {
         parent: root._editor
-        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        acceptedButtons: Qt.LeftButton
         onTapped: (eventPoint, button) => {
             var m = root._markAtPoint(eventPoint.position.x, eventPoint.position.y)
             if (!m) return
             var p = root.mapFromItem(root._editor, eventPoint.position.x, eventPoint.position.y)
             var w = root._editor.mapToItem(null, eventPoint.position.x, eventPoint.position.y)
-            if (button === Qt.RightButton) root.markContextMenu(m, p.x, p.y, w.x, w.y)
-            else root.markClicked(m, p.x, p.y, w.x, w.y)
+            root.markClicked(m, p.x, p.y, w.x, w.y)
         }
     }
     property var _hoveredMark: null

@@ -765,6 +765,54 @@ private slots:
         QCOMPARE(table->format().columnWidthConstraints(), before);
     }
 
+    void documentEditorContextMenu()
+    {
+        PageEditor widget;
+        QVERIFY(widget.root);
+        widget.fmt()->insertText("alpha beta gamma");
+        widget.view.show();
+        widget.edit()->forceActiveFocus();
+        QTest::qWait(30);
+        QSignalSpy requested(widget.root.data(), SIGNAL(contextMenuRequested(QVariant)));
+        QVERIFY(requested.isValid());
+        QSignalSpy marked(widget.root.data(), SIGNAL(markContextMenu(QVariant,double,double,double,double)));
+        widget.fmt()->addMark("spelling", widget.fmt()->blockIdAt(0), 0, 5, "word");
+        QVERIFY(QMetaObject::invokeMethod(widget.edit(), "select", Q_ARG(int, 0), Q_ARG(int, 5)));
+        const auto click = [&](int position) {
+            const auto r = caretRect(widget.edit(), position);
+            QTest::mouseClick(&widget.view, Qt::RightButton, Qt::NoModifier,
+                widget.edit()->mapToScene(r.center()).toPoint());
+        };
+        click(2);
+        QCOMPARE(requested.count(), 1);
+        auto info = requested.takeFirst().first().toMap();
+        QVERIFY(info.value("inSelection").toBool());
+        QCOMPARE(widget.edit()->property("selectedText").toString(), QString("alpha"));
+        QCOMPARE(marked.count(), 1);
+        QVERIFY(!info.value("mark").toMap().isEmpty());
+        QVERIFY(!info.value("inTable").toBool());
+        const QPointF local(info.value("x").toDouble(), info.value("y").toDouble());
+        const auto window = widget.root->mapToScene(local);
+        QCOMPARE(window.x(), info.value("windowX").toDouble());
+        QCOMPARE(window.y(), info.value("windowY").toDouble());
+        click(8);
+        QCOMPARE(requested.count(), 1);
+        info = requested.takeFirst().first().toMap();
+        QVERIFY(!info.value("inSelection").toBool());
+        QCOMPARE(widget.edit()->property("selectionStart"), widget.edit()->property("selectionEnd"));
+        QCOMPARE(widget.edit()->property("cursorPosition").toInt(), info.value("position").toInt());
+        QTest::keyClick(&widget.view, Qt::Key_Menu);
+        QCOMPARE(requested.count(), 1);
+        requested.clear();
+        QTest::keyClick(&widget.view, Qt::Key_F10, Qt::ShiftModifier);
+        QCOMPARE(requested.count(), 1);
+        requested.clear();
+        widget.fmt()->insertTable(1, 1);
+        QTest::keyClick(&widget.view, Qt::Key_Menu);
+        QCOMPARE(requested.count(), 1);
+        QVERIFY(requested.first().first().toMap().value("inTable").toBool());
+    }
+
     void documentEditorTableKeys()
     {
         PageEditor widget;

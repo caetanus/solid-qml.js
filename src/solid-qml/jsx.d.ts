@@ -152,7 +152,8 @@ type DocumentEditorProps = {
    *  a `<Menu ref>`'s open(x, y) takes). */
   onMarkClicked?: (mark: DocumentMark, x: number, y: number, windowX: number, windowY: number) => void;
   /** A right-click on a mark (show suggestions; open a menu right here — a Wayland popup needs
-   *  the click's input serial). A right-click elsewhere is left alone. */
+   *  the click's input serial). Also emitted through onContextMenuRequested. */
+  onContextMenuRequested?: (info: DocumentContextMenuInfo) => void;
   onMarkContextMenu?: (mark: DocumentMark, x: number, y: number, windowX: number, windowY: number) => void;
   /** The pointer entered a mark, or left it (null). */
   onMarkHovered?: (mark: DocumentMark | null) => void;
@@ -160,6 +161,8 @@ type DocumentEditorProps = {
 
 /** A mark (docs/document-editor.md "Blocks and marks"): [start, end) are UTF-16 offsets in the
  *  block's text (doc.blockText(blockId)). */
+type DocumentContextMenuInfo = { x: number; y: number; windowX: number; windowY: number; position: number; inSelection: boolean; inTable: boolean; mark: DocumentMark | null };
+
 type DocumentMark = { kind: string; id: string; blockId: string; start: number; end: number };
 
 /** How a kind of mark is drawn. Left out: kept; null: removed. Defaults: "spelling" a red wave,

@@ -752,3 +752,13 @@ visible lines. They never alter line wrapping, document content, selection/copy,
 word counts, undo, saved files, or PDF output. Turning marks off removes their
 overlay. The earlier `pageBreakLabel` continuous-view marker remains available
 when formatting marks are off.
+
+### General context menu
+
+`onContextMenuRequested(info)` fires for every right press in the text area and
+for Menu / Shift+F10 at the caret. `info` contains `x`, `y` in DocumentEditor
+coordinates, `windowX`, `windowY` in window coordinates, UTF-16 `position`,
+`inSelection`, `inTable`, and `mark` (a DocumentMark or null). A pointer press
+outside the selection moves the caret first; inside preserves the selection.
+Keyboard requests preserve the selection. Open the app's menu synchronously
+from this signal. `markContextMenu` also fires when a mark is present.
