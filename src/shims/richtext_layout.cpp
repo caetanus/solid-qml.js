@@ -97,7 +97,7 @@ bool RichTextLayout::supports(const QTextDocument *d)
         auto *table=qobject_cast<QTextTable *>(frame);
         if (!table || !table->childFrames().isEmpty()) return false;
         const auto format=table->format();
-        if (format.headerRowCount() || format.position()!=QTextFrameFormat::InFlow) return false;
+        if (format.position()!=QTextFrameFormat::InFlow) return false;
         if (format.border()>0 && format.borderStyle()!=QTextFrameFormat::BorderStyle_Solid) return false;
         for(int row=0;row<table->rows();++row) for(int column=0;column<table->columns();++column) {
             const auto f=table->cellAt(row,column).format().toTableCellFormat();
@@ -438,6 +438,7 @@ void RichTextLayout::layoutTable(QTextTable *table, Flow &flow, Pass &pass)
     qreal intrinsic=2*edge+(columns-1)*between;
     for (qreal value:preferred) intrinsic+=value;
     qreal tableWidth=format.width().type()==QTextLength::VariableLength ? qMin(outerWidth,intrinsic) : format.width().value(outerWidth);
+    const qreal alignmentOffset=qMax(0.,outerWidth-tableWidth)*(format.alignment() & Qt::AlignHCenter ? .5 : format.alignment() & Qt::AlignRight ? 1. : 0.);
     const qreal contentWidth=qMax(1.,tableWidth-2*edge-(columns-1)*between);
     const auto constraints=format.columnWidthConstraints();
     QVector<bool> fixed(columns,false);
@@ -496,11 +497,15 @@ void RichTextLayout::layoutTable(QTextTable *table, Flow &flow, Pass &pass)
         for (int row=cell.row();row<cell.row()+cell.rowSpan();++row) have+=heights[row];
         heights[cell.row()+cell.rowSpan()-1]+=qMax(0.,entry.height-have);
     }
+    const int headerRows=qMin(format.headerRowCount(),rows);
+    qreal headerHeight=0;
+    for(int row=0;row<headerRows;++row) headerHeight+=heights[row]+between;
     QVector<qreal> spanEnds(rows), rowStarts(rows), rowEnds(rows);
     qreal y=flow.y+edge + (m_root.boolProperty(kDocumentSpacingProperty) ? flow.bottom : 0);
     qreal tableTop=y;
     for (int row=0;row<rows;++row) {
-        const qreal textTop=qFloor(y/stride)*stride+m_root.topMargin()+edge;
+        const qreal repeatSpace=row>=headerRows ? headerHeight : 0;
+        const qreal textTop=qFloor(y/stride)*stride+m_root.topMargin()+edge+repeatSpace;
         const qreal textBottom=(qFloor(y/stride)+1)*stride-m_root.bottomMargin()-edge;
         const qreal capacity=stride-m_root.topMargin()-m_root.bottomMargin()-2*edge;
         qreal openingHeight=heights[row];
@@ -515,22 +520,33 @@ void RichTextLayout::layoutTable(QTextTable *table, Flow &flow, Pass &pass)
                 }
             }
         }
+        // Keep the header group with the opening of the first body row.
+        // Otherwise a header can be stranded at the foot of the preceding page.
+        if(row==0 && headerRows>0 && headerRows<rows) {
+            qreal firstBody=heights[headerRows];
+            if(!m_root.boolProperty(kDocumentSpacingProperty))
+                for(const auto &entry:cells) if(entry.cell.row()==headerRows) {
+                    const auto b=entry.cell.firstCursorPosition().block();
+                    if(b.layout()->lineCount()) firstBody=qMin(firstBody,entry.top+b.layout()->lineAt(0).height());
+                }
+            openingHeight=qMax(openingHeight,headerHeight+firstBody);
+        }
         if (openingHeight<=capacity && y+openingHeight>textBottom && y>textTop) {
             if (row>0) rowEnds[row-1]=qMax(rowEnds[row-1],textBottom);
-            y=(qFloor(y/stride)+1)*stride+m_root.topMargin()+edge;
+            y=(qFloor(y/stride)+1)*stride+m_root.topMargin()+edge+repeatSpace;
         }
         if (row==0) tableTop=y;
         rowStarts[row]=y;
         qreal end=y+heights[row];
         for (const auto &entry:cells) if (entry.cell.row()==row) {
             const auto cell=entry.cell;
-            qreal x=m_root.leftMargin()+edge, cellWidth=(cell.columnSpan()-1)*between;
+            qreal x=m_root.leftMargin()+alignmentOffset+edge, cellWidth=(cell.columnSpan()-1)*between;
             for (int col=0;col<cell.column();++col) x+=widths[col]+between;
             for (int col=cell.column();col<cell.column()+cell.columnSpan();++col) cellWidth+=widths[col];
             Flow cellFlow{y+entry.top,0,false}; bool first=true;
             for (auto it=cell.begin();it!=cell.end();++it) {
                 auto b=it.currentBlock(); if (!b.isValid()) continue;
-                layoutBlock(b,cellFlow,{x+entry.left,cellWidth-entry.left-entry.right,m_root.topMargin()+edge,m_root.bottomMargin()+edge},settled,first); first=false;
+                layoutBlock(b,cellFlow,{x+entry.left,cellWidth-entry.left-entry.right,m_root.topMargin()+edge+repeatSpace,m_root.bottomMargin()+edge},settled,first); first=false;
             }
             if(cell.rowSpan()==1) end=qMax(end,cellFlow.y+entry.bottom);
             else spanEnds[row+cell.rowSpan()-1]=qMax(spanEnds[row+cell.rowSpan()-1],cellFlow.y+entry.bottom);
@@ -554,7 +570,7 @@ void RichTextLayout::layoutTable(QTextTable *table, Flow &flow, Pass &pass)
         y=end+(row+1<rows ? between : edge);
     }
     if (!m_tables.contains(table)) connect(table,&QObject::destroyed,this,[this,table] {
-        m_tables.remove(table); m_tableFragments.remove(table);
+        m_tables.remove(table); m_tableFragments.remove(table); m_tableHeaderRepeats.remove(table);
     });
     // Qt exposes the first cell's aligned content origin, with the outer size.
     const auto firstBlock=cells.first().cell.firstCursorPosition().block();
@@ -563,22 +579,37 @@ void RichTextLayout::layoutTable(QTextTable *table, Flow &flow, Pass &pass)
     QPen pen(format.borderBrush(),border);
     if (border<=0 || format.borderStyle()==QTextFrameFormat::BorderStyle_None) pen.setStyle(Qt::NoPen);
     if (!format.borderCollapse()) {
-        fragments.append({{m_root.leftMargin(),tableTop-edge,tableWidth-border,y-(tableTop-edge)-border},format.background(),pen,true,true,false});
+        fragments.append({{m_root.leftMargin()+alignmentOffset,tableTop-edge,tableWidth-border,y-(tableTop-edge)-border},format.background(),pen,true,true,false});
     }
     for (const auto &entry:cells) {
         const auto cell=entry.cell;
-        qreal x=m_root.leftMargin()+edge-padding-border, cellWidth=(cell.columnSpan()-1)*between+2*padding+border;
+        qreal x=m_root.leftMargin()+alignmentOffset+edge-padding-border, cellWidth=(cell.columnSpan()-1)*between+2*padding+border;
         for (int col=0;col<cell.column();++col) x+=widths[col]+between;
         for (int col=cell.column();col<cell.column()+cell.columnSpan();++col) cellWidth+=widths[col];
         const qreal first=rowStarts[cell.row()]-padding-border;
         const qreal last=rowEnds[cell.row()+cell.rowSpan()-1]+padding;
         for (int page=qFloor(first/stride);page<=qFloor(last/stride);++page) {
-            const qreal pageTop=page*stride+m_root.topMargin()+border;
+            const qreal pageTop=page*stride+m_root.topMargin()+border+(cell.row()>=headerRows && page>qFloor(tableTop/stride) ? headerHeight : 0);
             const qreal pageBottom=(page+1)*stride-m_root.bottomMargin()-border;
             const qreal fragmentTop=qMax(first,pageTop), fragmentBottom=qMin(last,pageBottom);
             if (fragmentBottom<fragmentTop) continue;
             const auto background=cell.format().background().style()==Qt::NoBrush ? format.background() : cell.format().background();
             fragments.append({{x,fragmentTop,cellWidth,fragmentBottom-fragmentTop},background,pen,first>=pageTop,last<=pageBottom,format.borderCollapse(),table,cell.row(),cell.column()});
+        }
+    }
+    auto &repeats=m_tableHeaderRepeats[table]; repeats.clear();
+    if(headerRows>0 && headerHeight>0) {
+        const int firstPage=qFloor(tableTop/stride), lastPage=qFloor((rowEnds.last()-.01)/stride);
+        const int originalFragments=fragments.size();
+        for(int page=firstPage+1;page<=lastPage;++page) {
+            const qreal offset=page*stride+m_root.topMargin()+edge-rowStarts[0];
+            const QRectF area(m_root.leftMargin()+alignmentOffset,page*stride+m_root.topMargin(),tableWidth,headerHeight+edge);
+            repeats.append({table,offset,area});
+            for(int index=0;index<originalFragments;++index) {
+                auto fragment=fragments[index];
+                if(fragment.table!=table || fragment.row>=headerRows) continue;
+                fragment.rect.translate(0,offset); fragments.append(fragment);
+            }
         }
     }
     flow={y,format.bottomMargin(),false};
@@ -727,6 +758,7 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
                 if (!table || table->firstPosition()<=b.position()) continue;
                 m_tables[table].translate(0,delta);
                 for (auto &fragment:m_tableFragments[table]) fragment.rect.translate(0,delta);
+                for (auto &repeat:m_tableHeaderRepeats[table]) repeat.rect.translate(0,delta);
             }
             if (auto *last = blockInfo(doc->lastBlock())) flow = m_blocks.value(last->lifetime).outgoing;
             break;
@@ -742,10 +774,12 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
     }
     m_size = QSizeF(documentWidth, page.height() > 0 ? m_pages*stride : flow.y+bottom);
     m_fragments.clear();
+    m_headerRepeats.clear();
     for (auto *frame:doc->rootFrame()->childFrames()) {
         auto *table=qobject_cast<QTextTable *>(frame);
         const auto found=m_tableFragments.constFind(table);
         if (found!=m_tableFragments.cend()) m_fragments.append(*found);
+        m_headerRepeats.append(m_tableHeaderRepeats.value(table));
     }
     if (full) rebuildHitIndex();
     else updateHitIndex({changed.constData(),size_t(hitChangedCount<0 ? changed.size() : hitChangedCount)},
@@ -951,11 +985,31 @@ void RichTextLayout::drawTableDecorations(QPainter *painter, const QRectF &clip,
     }
     painter->restore();
 }
+void RichTextLayout::drawRepeatedTableHeaders(QPainter *painter, const QRectF &clip) const
+{
+    for(const auto &repeat:m_headerRepeats) {
+        if(!repeat.table || (!clip.isEmpty() && !repeat.rect.intersects(clip))) continue;
+        painter->save(); painter->setClipRect(repeat.rect,Qt::IntersectClip);
+        painter->translate(0,repeat.offset); painter->setPen(Qt::black);
+        auto *table=repeat.table.data();
+        for(int row=0;row<table->format().headerRowCount();++row) for(int col=0;col<table->columns();++col) {
+            const auto cell=table->cellAt(row,col);
+            if(cell.row()!=row || cell.column()!=col) continue;
+            for(auto it=cell.begin();it!=cell.end();++it) {
+                const auto block=it.currentBlock(); if(!block.isValid()) continue;
+                blockBoundingRect(block); // Apply lazy table translations before painting.
+                block.layout()->draw(painter,QPointF());
+            }
+        }
+        painter->restore();
+    }
+}
 void RichTextLayout::draw(QPainter *painter, const PaintContext &context)
 {
     painter->save();
     if (!context.clip.isEmpty()) painter->setClipRect(context.clip, Qt::IntersectClip);
     drawTableDecorations(painter,context.clip);
+    drawRepeatedTableHeaders(painter,context.clip);
     drawPageBands(document(), painter, context.clip);
     painter->setPen(context.palette.color(QPalette::Text));
     for (auto b = document()->begin(); b.isValid(); b = b.next()) {

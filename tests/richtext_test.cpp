@@ -765,6 +765,121 @@ private slots:
         QCOMPARE(table->format().columnWidthConstraints(), before);
     }
 
+    void tableAlignmentGeometry()
+    {
+        PageEditor w; QVERIFY(w.root);
+        w.fmt()->insertTable(2,2,{{"width",300}});
+        auto *d=w.fmt()->document()->textDocument();
+        auto *t=qobject_cast<QTextTable *>(d->rootFrame()->childFrames().first());
+        d->documentLayout()->documentSize();
+        const qreal left=d->documentLayout()->blockBoundingRect(t->firstCursorPosition().block()).left();
+        QVERIFY(w.fmt()->setTableAlignment("center"));
+        const qreal center=d->documentLayout()->blockBoundingRect(t->firstCursorPosition().block()).left();
+        QVERIFY(center>left+100);
+        QVERIFY(w.fmt()->setTableAlignment("right"));
+        const qreal right=d->documentLayout()->blockBoundingRect(t->firstCursorPosition().block()).left();
+        QVERIFY(qAbs(right-left-2*(center-left))<1);
+    }
+
+    void tableHeaderRepeatsCustom_data()
+    {
+        QTest::addColumn<QString>("engine");
+        QTest::newRow("custom") << QString("custom");
+        QTest::newRow("qt") << QString("qt");
+    }
+    void tableHeaderRepeatsCustom()
+    {
+        QFETCH(QString,engine);
+        PageEditor w; QVERIFY(w.root);
+        w.root->setProperty("layoutEngine",engine);
+        w.root->setProperty("pageHeight",220.);
+        w.root->setProperty("pageMargins",QVariantList{20,20,20,20});
+        w.fmt()->insertTable(30,2,{{"headerRow",true}});
+        auto *d=w.fmt()->document()->textDocument();
+        auto *t=qobject_cast<QTextTable *>(d->rootFrame()->childFrames().first());
+        t->cellAt(0,0).firstCursorPosition().insertText("Repeated header");
+        w.view.show(); QTest::qWait(30);
+        auto *layout=d->documentLayout();
+        QCOMPARE(bool(dynamic_cast<rt::RichTextLayout *>(layout)),engine=="custom");
+        QVERIFY(d->pageCount()>1);
+        QImage image(900,600,QImage::Format_ARGB32_Premultiplied); image.fill(Qt::white);
+        QPainter painter(&image); QAbstractTextDocumentLayout::PaintContext context;
+        context.clip=QRectF(0,0,900,600); layout->draw(&painter,context); painter.end();
+        const qreal stride=220+w.root->property("pageGap").toReal();
+        int ink=0;
+        for(int y=int(stride+23);y<int(stride+40);++y) for(int x=27;x<150;++x)
+            if(image.pixelColor(x,y).lightness()<128) ++ink;
+        QVERIFY2(ink>20,"second page contains repeated header glyphs");
+        auto *overlay=w.root->findChild<QQuickItem *>("tableHeaderRepeats");
+        QVERIFY(overlay && overlay->isVisible());
+        const auto screen=w.view.grabWindow();
+        int screenInk=0;
+        for(int y=int(stride+23);y<int(stride+40);++y) for(int x=27;x<150;++x) {
+            const auto point=w.edit()->mapToScene(QPointF(x,y)).toPoint();
+            if(screen.rect().contains(point) && screen.pixelColor(point).lightness()<128) ++screenInk;
+        }
+        QVERIFY(screenInk>20);
+        const auto pdf=m_dir.filePath("table-headers.pdf");
+        QSignalSpy done(w.fmt(), &RichTextHandler::pdfExported);
+        QVERIFY(w.fmt()->exportPdfAsync(pdf)); QTRY_COMPARE_WITH_TIMEOUT(done.count(),1,10000);
+        QVERIFY(done.first()[0].toBool());
+        QProcess extract; extract.start("pdftotext",{pdf,"-"}); QVERIFY(extract.waitForFinished());
+        QVERIFY(extract.readAllStandardOutput().count("Repeated header")>=2);
+    }
+
+    void tableEditingBookPerformance()
+    {
+        const QString book=qEnvironmentVariable("RICHTEXT_BOOK");
+        if(!QFile::exists(book)) QSKIP("book sample unavailable");
+        PageEditor w; QVERIFY(w.root);
+        w.root->setProperty("layoutEngine","custom");
+        QVERIFY(w.fmt()->loadOdf(QUrl::fromLocalFile(book)));
+        auto *d=w.fmt()->document()->textDocument();
+        d->documentLayout()->documentSize();
+        const int midpoint=d->characterCount()/2;
+        const auto measure=[&](int pos) {
+            QList<double> times;
+            for(int n=0;n<31;++n) {
+                w.edit()->setProperty("cursorPosition",pos);
+                QCoreApplication::processEvents();
+                QElapsedTimer timer; timer.start();
+                w.fmt()->insertText("x");
+                d->documentLayout()->blockBoundingRect(d->findBlock(pos));
+                times.append(timer.nsecsElapsed()/1e6);
+                d->undo(); d->documentLayout()->documentSize();
+            }
+            std::sort(times.begin(),times.end()); return times[15];
+        };
+        const double baseline=measure(midpoint);
+        w.edit()->setProperty("cursorPosition",midpoint);
+        w.fmt()->insertTable(4,3);
+        const int cell=w.edit()->property("cursorPosition").toInt();
+        QVERIFY(w.fmt()->inTable());
+        const double inTable=measure(cell);
+        qInfo("TABLE_EDIT_PERF midpoint_ms=%.3f in_table_ms=%.3f",baseline,inTable);
+        QVERIFY2(baseline<4,qPrintable(QString::number(baseline)));
+    }
+
+    void importedTableBordersStayIntact()
+    {
+        const auto path=m_dir.filePath("imported-table-borders.odt");
+        writeOdt(path,"<table:table table:style-name=\"T\"><table:table-column/><table:table-row><table:table-cell table:style-name=\"C\"><text:p>cell</text:p></table:table-cell></table:table-row></table:table>",
+            "<style:style style:name=\"T\" style:family=\"table\"><style:table-properties table:border-model=\"separating\"/></style:style>"
+            "<style:style style:name=\"C\" style:family=\"table-cell\"><style:table-cell-properties fo:border=\"2pt dashed #ff0000\" fo:padding=\"0.2cm\"/></style:style>");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        const auto check=[&] {
+            auto *t=qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+            QVERIFY(!t->format().borderCollapse());
+            const auto f=t->cellAt(0,0).format().toTableCellFormat();
+            QCOMPARE(f.topBorderStyle(),QTextFrameFormat::BorderStyle_Dashed);
+            QCOMPARE(f.topBorderBrush().color(),QColor("#ff0000"));
+            QVERIFY(qAbs(f.topBorder()-8./3)<.001);
+        };
+        check();
+        QVERIFY(m_fmt->saveOdfCopy(QUrl::fromLocalFile(path)));
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path))); check();
+    }
+
     void tableBordersNoneClearsFrame()
     {
         m_fmt->insertTable(2,2);

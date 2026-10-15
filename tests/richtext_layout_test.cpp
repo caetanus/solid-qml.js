@@ -680,7 +680,7 @@ private slots:
         auto *table=c.insertTable(2,2,plain);
         QVERIFY(rt::RichTextLayout::supports(&d));
         auto format=table->format(); format.setHeaderRowCount(1); table->setFormat(format);
-        QVERIFY(!rt::RichTextLayout::supports(&d));
+        QVERIFY(rt::RichTextLayout::supports(&d));
         format.setHeaderRowCount(0); table->setFormat(format);
         table->cellAt(0,0).firstCursorPosition().insertTable(1,1);
         QVERIFY(!rt::RichTextLayout::supports(&d));

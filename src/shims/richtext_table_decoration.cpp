@@ -4,9 +4,35 @@
 #include <QSGRectangleNode>
 #include <QSGRenderNode>
 #include <QSGRendererInterface>
+#include <QTextTable>
+#include <QTextDocument>
+#include <QTextBlock>
 
 namespace rt {
 namespace {
+QList<QRectF> qtHeaderAreas(QAbstractTextDocumentLayout *layout)
+{
+    QList<QRectF> areas;
+    const auto *doc=layout->document(); const qreal stride=doc->pageSize().height();
+    if(stride<=0) return areas;
+    const auto root=doc->rootFrame()->frameFormat();
+    for(auto *frame:doc->rootFrame()->childFrames()) {
+        auto *table=qobject_cast<QTextTable *>(frame);
+        if(!table || table->format().headerRowCount()==0) continue;
+        const auto format=table->format(); const auto bounds=layout->frameBoundingRect(table);
+        qreal top=1e20,bottom=0;
+        for(int row=0;row<qMin(format.headerRowCount(),table->rows());++row) for(int col=0;col<table->columns();++col) {
+            const auto cell=table->cellAt(row,col);
+            top=qMin(top,layout->blockBoundingRect(cell.firstCursorPosition().block()).top());
+            bottom=qMax(bottom,layout->blockBoundingRect(cell.lastCursorPosition().block()).bottom());
+        }
+        const qreal height=bottom-top+2*format.cellPadding()+3*format.border();
+        for(int page=qFloor(bounds.top()/stride)+1;page<=qFloor((bounds.bottom()-.01)/stride);++page)
+            areas.append(QRectF(root.leftMargin(),page*stride+root.topMargin(),
+                doc->pageSize().width()-root.leftMargin()-root.rightMargin(),height));
+    }
+    return areas;
+}
 class SoftwareTableNode final : public QSGRenderNode {
 public:
     struct Band { QRectF rect; QColor color; };
@@ -31,10 +57,10 @@ public:
     }
 };
 }
-TableDecoration::TableDecoration(RichTextLayout *layout, QQuickItem *editor)
-    : QQuickPaintedItem(editor), m_layout(layout), m_editor(editor)
+TableDecoration::TableDecoration(QAbstractTextDocumentLayout *layout, QQuickItem *editor, bool headersOnly)
+    : QQuickPaintedItem(editor), m_layout(layout), m_editor(editor), m_headersOnly(headersOnly)
 {
-    setZ(-1);
+    setZ(headersOnly ? 0 : -1);
     setAcceptedMouseButtons(Qt::NoButton);
     setFlag(ItemObservesViewport, true);
     connect(layout, &QAbstractTextDocumentLayout::update, this, [this] { refreshViewport(); update(); });
@@ -61,6 +87,9 @@ TableDecoration::TableDecoration(RichTextLayout *layout, QQuickItem *editor)
 void TableDecoration::refreshViewport()
 {
     if (!m_layout || !m_editor || !window()) return;
+    const auto *custom=dynamic_cast<RichTextLayout *>(m_layout.data());
+    setVisible(!m_headersOnly || (custom ? !custom->headerRepeats().isEmpty() : !qtHeaderAreas(m_layout).isEmpty()));
+    if (!isVisible()) return;
     auto *viewport=viewportItem();
     if (!viewport) viewport=window()->contentItem();
     const QRectF visible=m_editor->mapRectFromItem(viewport,viewport->clipRect())
@@ -73,7 +102,19 @@ void TableDecoration::paint(QPainter *painter)
 {
     if (!m_layout) return;
     painter->translate(-m_origin);
-    m_layout->drawTableDecorations(painter,QRectF(m_origin,size()),true);
+    if(auto *custom=dynamic_cast<RichTextLayout *>(m_layout.data())) {
+        if(m_headersOnly) custom->drawRepeatedTableHeaders(painter,QRectF(m_origin,size()));
+        else custom->drawTableDecorations(painter,QRectF(m_origin,size()),true);
+    } else if(m_headersOnly) {
+        const QRectF viewport(m_origin,size());
+        for(const auto &area:qtHeaderAreas(m_layout)) {
+            if(!area.intersects(viewport)) continue;
+            painter->save(); painter->setClipRect(area,Qt::IntersectClip);
+            QAbstractTextDocumentLayout::PaintContext context;
+            context.clip=area.intersected(viewport);
+            m_layout->draw(painter,context); painter->restore();
+        }
+    }
 }
 NodeTableDecoration::NodeTableDecoration(RichTextLayout *layout, QQuickItem *editor)
     : QQuickItem(editor), m_layout(layout), m_editor(editor)

@@ -228,8 +228,15 @@ void RichTextHandler::selectLayoutEngine(bool forceQt)
     if (!supported) m_unsupportedHistory = true;
     const bool custom = !forceQt && m_pageStride > 0 && m_layoutEngine != QLatin1String("qt")
         && supported && !m_unsupportedHistory;
-    if (custom == isCustom) return;
     auto *editor = m_document->parent();
+    if (custom == isCustom) {
+        if(!custom && !current->property("_rtHeadersAttached").toBool()) {
+            auto *headers=new rt::TableDecoration(current,qobject_cast<QQuickItem *>(editor),true);
+            headers->setObjectName("tableHeaderRepeats");
+            current->setProperty("_rtHeadersAttached",true);
+        }
+        return;
+    }
     // Check the meta-object boundary while the working Qt engine is still installed.
     // No edits or layout replacement happen if this check fails.
     if (custom && !rt::attachCustomLayoutToTextEdit(editor, m_doc, false)) return;
@@ -287,6 +294,12 @@ void RichTextHandler::selectLayoutEngine(bool forceQt)
     if (auto *customLayout=dynamic_cast<rt::RichTextLayout *>(layout)) {
         auto *decoration=new rt::NodeTableDecoration(customLayout,qobject_cast<QQuickItem *>(editor));
         decoration->setObjectName("tableDecoration");
+        auto *headers=new rt::TableDecoration(customLayout,qobject_cast<QQuickItem *>(editor),true);
+        headers->setObjectName("tableHeaderRepeats");
+    } else {
+        auto *headers=new rt::TableDecoration(layout,qobject_cast<QQuickItem *>(editor),true);
+        headers->setObjectName("tableHeaderRepeats");
+        layout->setProperty("_rtHeadersAttached",true);
     }
     m_doc->markContentsDirty(0, m_doc->characterCount());
     m_doc->setLayoutEnabled(layoutWasEnabled);
@@ -1785,7 +1798,6 @@ void RichTextHandler::insertTable(int rows, int cols, const QVariantMap &options
     }
     // Our ODF writer closes a list before a table, so a table may follow a list item directly.
     const bool header = options.value("headerRow").toBool();
-    if (header) selectLayoutEngine(true);
     auto format = rt::wordLikeTableFormat();
     format.setBorder(2. / 3 * m_zoom); // 0.5 pt, stored in document pixels.
     format.setBorderBrush(Qt::black);
@@ -2031,7 +2043,6 @@ bool RichTextHandler::setTableAlignment(const QString &alignment)
 bool RichTextHandler::setTableHeaderRow(bool on)
 {
     auto c=tableCursor(); auto *t=c.isNull()?nullptr:c.currentTable(); if(!t) return false;
-    if(on) selectLayoutEngine(true);
     auto f=t->format(); f.setHeaderRowCount(on?1:0);
     c.beginEditBlock(); t->setFormat(f); c.endEditBlock(); emit formatChanged(); return true;
 }

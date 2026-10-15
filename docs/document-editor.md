@@ -806,6 +806,8 @@ commands make one undo step and use the caret cell or selected cell rectangle:
 The existing add/remove row/column methods remain aliases. Tab selects the next
 cell, Shift+Tab the previous; Tab in the last cell appends a row. Ctrl+Tab inserts
 a literal tab. Column-border dragging commits once on release and undoes once.
-Repeated headers and independent cell-side border styles use the Qt layout
-fallback, including PDF export. Header rows are saved as `table:table-header-rows`;
+Text header rows repeat in the custom paginated layout and PDF export.
+Independent cell-side border styles use the Qt layout fallback. The widget also
+paints repeated headers in that fallback, where Qt Quick otherwise leaves the
+reserved header area empty. Header rows are saved as `table:table-header-rows`;
 ODF preserves table width/alignment, collapsing borders, and cell formatting.
