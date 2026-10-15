@@ -737,3 +737,18 @@ it changes the PDF paint device, never the document's layout width or pagination
 The snapshot is copied with layout suspended on the GUI thread. A worker owns
 the detached document, its layout and image handlers, and the PDF writer. The
 export continues if the editor is destroyed; its signals are then disconnected.
+
+### Formatting marks
+
+Set `showFormattingMarks={true}` (default false), or press Ctrl+F10, to show
+paragraph ends (¶), soft line breaks (↵), tabs (→), spaces (·), non-breaking spaces
+(°), and manual page-break lines. Localize the latter with
+`formattingMarksLabels={{ pageBreak: "Quebra de página" }}`; the default is
+"Page Break". These properties are also available on the editor handle.
+
+Marks use soft grey-blue ink and the existing text layout's glyph advances.
+They follow zoom, include empty paragraphs and table cells, and decorate only
+visible lines. They never alter line wrapping, document content, selection/copy,
+word counts, undo, saved files, or PDF output. Turning marks off removes their
+overlay. The earlier `pageBreakLabel` continuous-view marker remains available
+when formatting marks are off.

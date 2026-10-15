@@ -60,6 +60,7 @@ namespace {
 QQuickItem *createMarksOverlay(RichTextHandler *handler, QQuickItem *editor);
 QQuickItem *createPageBandsOverlay(RichTextHandler *handler, QQuickItem *editor);
 QQuickItem *createPageBreakOverlay(RichTextHandler *handler, QQuickItem *editor);
+QQuickItem *createFormattingMarksOverlay(RichTextHandler *handler, QQuickItem *editor);
 }
 
 RichTextHandler::RichTextHandler(QObject *parent) : QObject(parent)
@@ -77,6 +78,7 @@ RichTextHandler::~RichTextHandler()
     // The document may outlive us (its blocks' BlockInfo must not report to a dead handler).
     detachBlockInfos();
     delete m_overlay.data();
+    delete m_formattingMarksOverlay.data();
     delete m_pageBreakOverlay.data();
     delete m_pageBandsOverlay.data();
 }
@@ -106,6 +108,7 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
     QObject::disconnect(m_undoAddedConn);
     detachBlockInfos();
     delete m_overlay.data();
+    delete m_formattingMarksOverlay.data();
     delete m_pageBreakOverlay.data();
     delete m_pageBandsOverlay.data();
     m_pendingFont = {};
@@ -122,6 +125,7 @@ void RichTextHandler::setDocument(QQuickTextDocument *doc)
         m_overlay = createMarksOverlay(this, editor);
         m_pageBreakOverlay = createPageBreakOverlay(this, editor);
         m_pageBandsOverlay = createPageBandsOverlay(this, editor);
+        if (m_showFormattingMarks) m_formattingMarksOverlay = createFormattingMarksOverlay(this, editor);
         if (auto *edit = qobject_cast<QQuickTextEdit *>(editor))
             m_pageCursorConn = connect(edit, &QQuickTextEdit::cursorRectangleChanged, this, &RichTextHandler::updateCurrentPage);
     }
@@ -301,6 +305,7 @@ void RichTextHandler::connectOverlayLayout()
     QObject::disconnect(m_overlayUpdateConn);
     QObject::disconnect(m_overlaySizeConn);
     const auto schedule = [this] {
+        if (m_formattingMarksOverlay) m_formattingMarksOverlay->polish();
         if (hasMarks()) scheduleMarksRepaint();
         if (m_pageBreakOverlay && m_pageBreakOverlay->isVisible() && hasPageBreaks())
             m_pageBreakOverlay->polish();
@@ -338,7 +343,7 @@ void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const
         rt::refreshTextEditSize(m_document->parent());
     if (layoutEnabled) syncPageCount();
     if (m_pageBreakOverlay) {
-        m_pageBreakOverlay->setVisible(height <= 0);
+        m_pageBreakOverlay->setVisible(height <= 0 && !m_showFormattingMarks);
         if (height <= 0) m_pageBreakOverlay->polish();
     }
     if (m_pageBandsOverlay) m_pageBandsOverlay->polish();
@@ -3636,4 +3641,164 @@ void RichTextHandler::setPageBreakLabel(const QString &label)
     if (m_pageBreakLabel == label) return;
     m_pageBreakLabel = label;
     emit pageBreakLabelChanged();
+}
+
+// Formatting marks live exclusively in the screen overlay, never in the document.
+class FormattingMarksCanvas final : public QQuickPaintedItem {
+public:
+    explicit FormattingMarksCanvas(QQuickItem *parent) : QQuickPaintedItem(parent) {
+        setAcceptedMouseButtons(Qt::NoButton); setAntialiasing(true);
+    }
+    QList<RichTextHandler::FormattingMarkSegment> m_marks;
+    void paint(QPainter *p) override {
+        p->translate(-position());
+        p->setPen(QColor(QStringLiteral("#8aa4c8")));
+        for (const auto &mark : m_marks) {
+            p->setFont(mark.font);
+            if (mark.pageBreak) {
+                const QFontMetricsF metrics(mark.font);
+                const qreal gap = metrics.horizontalAdvance(mark.text) + 12;
+                const qreal center = mark.rect.center().x();
+                p->save();
+                p->setPen(QPen(QColor(QStringLiteral("#8aa4c8")), 1, Qt::DashLine));
+                p->drawLine(QPointF(mark.rect.left(),mark.rect.center().y()),
+                            QPointF(qMax(mark.rect.left(),center-gap/2),mark.rect.center().y()));
+                p->drawLine(QPointF(qMin(mark.rect.right(),center+gap/2),mark.rect.center().y()),
+                            QPointF(mark.rect.right(),mark.rect.center().y()));
+                p->drawText(mark.rect, Qt::AlignCenter, mark.text);
+                p->restore();
+            } else p->drawText(mark.baseline, mark.text);
+        }
+    }
+};
+class FormattingMarksOverlay final : public QQuickItem {
+public:
+    FormattingMarksOverlay(RichTextHandler *handler, QQuickItem *editor)
+        : QQuickItem(editor), m_handler(handler), m_canvas(new FormattingMarksCanvas(this)) {
+        setObjectName(QStringLiteral("formattingMarksOverlay"));
+        setFlag(ItemObservesViewport);
+        setAcceptedMouseButtons(Qt::NoButton);
+        setSize(editor->size());
+        connect(editor, &QQuickItem::widthChanged, this, [this,editor] { setWidth(editor->width()); polish(); });
+        connect(editor, &QQuickItem::heightChanged, this, [this,editor] { setHeight(editor->height()); polish(); });
+        connect(handler, &RichTextHandler::contentsChanged, this, [this] { polish(); });
+        connect(handler, &RichTextHandler::zoomChanged, this, [this] { polish(); });
+        connect(handler, &RichTextHandler::formattingMarksLabelsChanged, this, [this] { polish(); });
+        if (auto *edit = qobject_cast<QQuickTextEdit *>(editor)) {
+            connect(edit, &QQuickTextEdit::topPaddingChanged, this, [this] { polish(); });
+            connect(edit, &QQuickTextEdit::leftPaddingChanged, this, [this] { polish(); });
+        }
+        polish();
+    }
+protected:
+    void itemChange(ItemChange change, const ItemChangeData &data) override {
+        if (change == ItemTransformHasChanged) polish();
+        QQuickItem::itemChange(change, data);
+    }
+    void updatePolish() override {
+        // Only the viewport has a texture, even for a book-sized editor.
+        const QRectF band = clipRect().intersected(boundingRect());
+        m_canvas->m_marks = m_handler->formattingMarkSegments(band);
+        m_canvas->setPosition(band.topLeft());
+        m_canvas->setSize(band.size());
+        m_canvas->update();
+    }
+private:
+    RichTextHandler *m_handler;
+    FormattingMarksCanvas *m_canvas;
+};
+
+namespace {
+QQuickItem *createFormattingMarksOverlay(RichTextHandler *handler, QQuickItem *editor) {
+    return new FormattingMarksOverlay(handler, editor);
+}
+}
+
+void RichTextHandler::setShowFormattingMarks(bool show)
+{
+    if (m_showFormattingMarks == show) return;
+    m_showFormattingMarks = show;
+    delete m_formattingMarksOverlay.data();
+    if (show && m_document)
+        if (auto *editor = qobject_cast<QQuickItem *>(m_document->parent()))
+            m_formattingMarksOverlay = createFormattingMarksOverlay(this, editor);
+    if (m_pageBreakOverlay)
+        m_pageBreakOverlay->setVisible(!show && m_doc && m_doc->pageSize().height() <= 0);
+    emit showFormattingMarksChanged();
+}
+
+void RichTextHandler::setFormattingMarksLabels(const QVariantMap &labels)
+{
+    QVariantMap resolved{{QStringLiteral("pageBreak"), QStringLiteral("Page Break")}};
+    if (labels.contains(QStringLiteral("pageBreak")))
+        resolved[QStringLiteral("pageBreak")] = labels.value(QStringLiteral("pageBreak")).toString();
+    if (m_formattingMarksLabels == resolved) return;
+    m_formattingMarksLabels = resolved;
+    emit formattingMarksLabelsChanged();
+}
+
+QList<RichTextHandler::FormattingMarkSegment> RichTextHandler::formattingMarkSegments(const QRectF &band) const
+{
+    QList<FormattingMarkSegment> out;
+    if (!m_showFormattingMarks || !m_doc || band.isEmpty()) return out;
+    auto *edit = qobject_cast<QQuickTextEdit *>(m_document->parent());
+    if (!edit) return out;
+    auto *layout = m_doc->documentLayout();
+    const auto first = m_doc->begin();
+    const auto firstRect = layout->blockBoundingRect(first);
+    if (!first.layout()->lineCount()) return out;
+    const auto firstLine = first.layout()->lineAt(0);
+    const QPointF offset = edit->positionToRectangle(0).topLeft() - firstRect.topLeft()
+        - QPointF(firstLine.cursorToX(0), firstLine.y());
+    const QRectF localBand = band.translated(-offset);
+    QList<QPair<int,int>> lines;
+    if (auto *custom = dynamic_cast<rt::RichTextLayout *>(layout))
+        lines = custom->visibleLines(localBand.top(), localBand.bottom()+16*m_zoom);
+    else {
+        for (auto b=m_doc->begin(); b.isValid(); b=b.next()) {
+            const auto rect = layout->blockBoundingRect(b);
+            if (rect.bottom() < localBand.top() || rect.top() > localBand.bottom()+16*m_zoom) continue;
+            for (int i=0; i<b.layout()->lineCount(); ++i) {
+                const auto line=b.layout()->lineAt(i);
+                if (rect.y()+line.y()+line.height() >= localBand.top()
+                    && rect.y()+line.y() <= localBand.bottom()+16*m_zoom) lines.append({b.position(),i});
+            }
+        }
+    }
+    for (const auto &[position,index] : lines) {
+        const auto block=m_doc->findBlock(position);
+        const auto line=block.layout()->lineAt(index);
+        const QPointF origin=layout->blockBoundingRect(block).topLeft()+offset;
+        const QString text=block.text();
+        const auto append=[&](const QString &glyph,int at,qreal x,bool center) {
+            QTextCursor cursor(m_doc); cursor.setPosition(position+qMin(at+1,text.size()));
+            const QFont font=cursor.charFormat().font().resolve(m_doc->defaultFont());
+            if (center) x-=QFontMetricsF(font).horizontalAdvance(glyph)/2;
+            out.append({glyph,origin+QPointF(x,line.y()+line.ascent()),font,position+at,{},false});
+        };
+        if (origin.y()+line.y()+line.height() >= band.top() && origin.y()+line.y() <= band.bottom()) {
+            for (int i=line.textStart(); i<qMin(text.size(),line.textStart()+line.textLength()); ++i) {
+                QString glyph;
+                switch (text[i].unicode()) {
+                case ' ': glyph=QStringLiteral("·"); break;
+                case 0xa0: glyph=QStringLiteral("°"); break;
+                case '\t': glyph=QStringLiteral("→"); break;
+                case 0x2028: glyph=QStringLiteral("↵"); break;
+                default: continue;
+                }
+                append(glyph,i,(line.cursorToX(i)+line.cursorToX(i+1))/2,true);
+            }
+            if (index==block.layout()->lineCount()-1)
+                append(QStringLiteral("¶"),text.size(),line.naturalTextRect().right(),false);
+        }
+        if (index==0 && block.blockFormat().pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysBefore)) {
+            const QRectF rect(origin.x()+line.x(),origin.y()-14*m_zoom,line.width(),14*m_zoom);
+            if (rect.intersects(band)) {
+                QFont font=m_doc->defaultFont(); font.setPixelSize(qMax(1,qRound(10*m_zoom)));
+                out.append({m_formattingMarksLabels.value(QStringLiteral("pageBreak")).toString(),
+                            {},font,position,rect,true});
+            }
+        }
+    }
+    return out;
 }

@@ -214,6 +214,9 @@ RichText {
         }
     }
     // Explicit breaks retain their draft marker in continuous view.
+    property bool showFormattingMarks: false
+    property var formattingMarksLabels: ({})
+    Shortcut { sequence: "Ctrl+F10"; onActivated: root.showFormattingMarks = !root.showFormattingMarks }
     property string pageBreakLabel: "Quebra de página"
     property real pageWidth: 0
     implicitWidth: pageWidth > 0 ? pageWidth : 560
@@ -290,6 +293,8 @@ RichText {
     onFmtChanged: if (fmt) {
         fmt._attachZoomInput(root)
         fmt.zoom = _pageZoom
+        fmt.showFormattingMarks = Qt.binding(function() { return root.showFormattingMarks })
+        fmt.formattingMarksLabels = Qt.binding(function() { return root.formattingMarksLabels })
         fmt.pageBreakLabel = Qt.binding(function() { return root.pageBreakLabel })
         fmt.newDocument()
         debounce.stop()

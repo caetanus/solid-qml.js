@@ -832,6 +832,22 @@ QList<QPair<int, QRectF>> RichTextLayout::hitIndexSnapshot() const
     visit(visit,m_hitRoot,0,0);
     return result;
 }
+QList<QPair<int,int>> RichTextLayout::visibleLines(qreal top, qreal bottom) const
+{
+    QList<QPair<int,int>> result;
+    const auto visit = [&](auto &&self, const HitNode *node, int offset, qreal y) -> void {
+        if (!node || node->bounds.bottom()+y < top || node->bounds.top()+y > bottom) return;
+        self(self,node->left,offset+node->pendingPosition,y+node->pendingY);
+        const qreal origin = node->origin.y()+y;
+        const int start = std::lower_bound(node->bottoms.begin(),node->bottoms.end(),top-origin)-node->bottoms.begin();
+        for (int i=start; i<int(node->lines.size()) && node->lines[i].top()+origin<=bottom; ++i)
+            if (node->lines[i].bottom()+origin>=top) result.append({node->position+offset,i});
+        self(self,node->right,offset+node->pendingPosition,y+node->pendingY);
+    };
+    visit(visit,m_hitRoot,0,0);
+    return result;
+}
+
 int RichTextLayout::hitTest(const QPointF &point,Qt::HitTestAccuracy accuracy) const
 {
     int first=0,last=document()->characterCount();

@@ -1892,6 +1892,7 @@ private slots:
 
         QVERIFY(!m_fmt->addMark("spelling", m_fmt->blockIdAt(0), 0, 6).isEmpty());
         QVERIFY(!m_fmt->addMark("llm", m_fmt->blockIdAt(0), 7, 13).isEmpty());
+        QVERIFY(m_fmt->setProperty("showFormattingMarks", true));
         QVERIFY(QMetaObject::invokeMethod(m_edit.data(), "select", Q_ARG(int, 0), Q_ARG(int, 13)));
         QVERIFY(m_fmt->exportPdfAsync(path));
         QTRY_COMPARE(done.size(), 2);
@@ -3585,6 +3586,180 @@ private slots:
         QCOMPARE(m_fmt->plainText(), QStringLiteral("keep me"));
     }
     // ── office item 3: stable block ids ─────────────────────────────────────────────────────────
+
+    void formattingMarksGeometry_data()
+    {
+        QTest::addColumn<bool>("fallback");
+        QTest::addColumn<qreal>("zoom");
+        QTest::addColumn<bool>("pages");
+        for (bool fallback : {false,true}) for (qreal zoom : {1.,1.5}) for (bool pages : {false,true})
+            QTest::newRow(qPrintable(QString("%1-%2-%3").arg(fallback ? "qt" : "custom").arg(zoom).arg(pages)))
+                << fallback << zoom << pages;
+    }
+    void formattingMarksGeometry()
+    {
+        QFETCH(bool, fallback);
+        QFETCH(qreal, zoom);
+        QFETCH(bool, pages);
+        PageEditor w(zoom);
+        QVERIFY(w.root);
+        w.root->setProperty("pageView", pages);
+        if (fallback) w.fmt()->setProperty("layoutEngine", "qt");
+        auto *d = w.fmt()->document()->textDocument();
+        d->setPlainText(QString::fromUtf8("A B\u00a0C\tD\u2028E\n\n"));
+        QTextCursor c(d); c.movePosition(QTextCursor::End);
+        c.insertTable(1,1); c.insertText("cell");
+        c.movePosition(QTextCursor::End); c.insertText("end");
+        auto f = c.blockFormat(); f.setPageBreakPolicy(QTextFormat::PageBreak_AlwaysBefore); c.setBlockFormat(f);
+        w.view.show(); QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        QTest::qWait(30);
+        w.edit()->setProperty("cursorPosition", 0);
+        w.body()->setProperty("contentY", 0);
+        QTest::qWait(30);
+        const auto before = d->toHtml();
+        const auto size = d->size();
+        const int words = w.fmt()->wordCount(), chars = w.fmt()->charCount();
+        const int undo = d->availableUndoSteps();
+        const auto savedOff = m_dir.filePath("marks-off.odt");
+        const auto savedOn = m_dir.filePath("marks-on.odt");
+        QVERIFY(w.fmt()->saveOdfCopy(QUrl::fromLocalFile(savedOff)));
+        QVERIFY(w.root->setProperty("showFormattingMarks", true));
+        QTest::qWait(30);
+        QVERIFY(w.fmt()->property("showFormattingMarks").toBool());
+        QCOMPARE(d->toHtml(), before);
+        QCOMPARE(d->size(), size);
+        QCOMPARE(w.fmt()->wordCount(), words);
+        QCOMPARE(w.fmt()->charCount(), chars);
+        QCOMPARE(d->availableUndoSteps(), undo);
+        QVERIFY(w.fmt()->saveOdfCopy(QUrl::fromLocalFile(savedOn)));
+        QCOMPARE(zipEntry(savedOn,"content.xml"), zipEntry(savedOff,"content.xml"));
+        auto *overlay = w.edit()->findChild<QQuickItem *>("formattingMarksOverlay");
+        QVERIFY(overlay);
+        const auto marks = w.fmt()->formattingMarkSegments(QRectF(0, 0, 900, 10000));
+        QSet<QString> glyphs;
+        int paragraphs = 0;
+        for (const auto &mark : marks) {
+            glyphs.insert(mark.text);
+            if (mark.text == QString::fromUtf8("¶")) {
+                ++paragraphs;
+                const auto b = d->findBlock(mark.position);
+                const auto line = b.layout()->lineAt(b.layout()->lineCount()-1);
+                const auto origin = d->documentLayout()->blockBoundingRect(b).topLeft();
+                const auto offset = caretRect(w.edit(), 0).topLeft()
+                    - d->documentLayout()->blockBoundingRect(d->begin()).topLeft()
+                    - QPointF(d->begin().layout()->lineAt(0).cursorToX(0), d->begin().layout()->lineAt(0).y());
+                QCOMPARE(mark.baseline.x(), origin.x()+offset.x()+line.naturalTextRect().right());
+            } else if (mark.pageBreak) {
+                const qreal offset = caretRect(w.edit(),0).y()
+                    - d->documentLayout()->blockBoundingRect(d->begin()).y()
+                    - d->begin().layout()->lineAt(0).y();
+                QCOMPARE(mark.rect.top(), d->documentLayout()->blockBoundingRect(d->findBlock(mark.position)).top()
+                    +offset-14*zoom);
+            } else {
+                const auto b = d->findBlock(mark.position);
+                const int at = mark.position-b.position();
+                const auto line = b.layout()->lineForTextPosition(at);
+                const qreal offset = caretRect(w.edit(),0).x()
+                    - d->documentLayout()->blockBoundingRect(d->begin()).x()
+                    - d->begin().layout()->lineAt(0).cursorToX(0);
+                const qreal center = d->documentLayout()->blockBoundingRect(b).x()+offset
+                    +(line.cursorToX(at)+line.cursorToX(at+1))/2;
+                QVERIFY(qAbs(mark.baseline.x()+QFontMetricsF(mark.font).horizontalAdvance(mark.text)/2-center)<0.01);
+            }
+        }
+        QCOMPARE(paragraphs, d->blockCount());
+        for (const auto &glyph : {"¶", "↵", "→", "·", "°", "Page Break"})
+            QVERIFY2(glyphs.contains(QString::fromUtf8(glyph)), glyph);
+        const auto on = w.view.grabWindow();
+        QVERIFY(!on.isNull());
+        w.root->setProperty("formattingMarksLabels", QVariantMap{{"pageBreak", "Quebra de página"}});
+        QCOMPARE(w.fmt()->formattingMarksLabels().value("pageBreak").toString(), QString("Quebra de página"));
+        w.root->setProperty("showFormattingMarks", false);
+        QTest::qWait(30);
+        const auto off = w.view.grabWindow();
+        int blue = 0;
+        for (int y=0; y<on.height(); ++y) for (int x=0; x<on.width(); ++x) {
+            const auto color = on.pixelColor(x,y);
+            if (color != off.pixelColor(x,y) && qAbs(color.red()-138)<15
+                && qAbs(color.green()-164)<15 && qAbs(color.blue()-200)<15) ++blue;
+        }
+        QVERIFY2(blue > 10, qPrintable(QString("marker pixels: %1").arg(blue)));
+        QVERIFY(QMetaObject::invokeMethod(w.edit(), "selectAll"));
+        QVERIFY(QMetaObject::invokeMethod(w.edit(), "copy"));
+        const QString copied = QGuiApplication::clipboard()->text();
+        const int selectionStart = w.edit()->property("selectionStart").toInt();
+        const int selectionEnd = w.edit()->property("selectionEnd").toInt();
+        w.root->setProperty("showFormattingMarks", true);
+        QVERIFY(QMetaObject::invokeMethod(w.edit(), "copy"));
+        QCOMPARE(QGuiApplication::clipboard()->text(), copied);
+        QCOMPARE(w.edit()->property("selectionStart").toInt(), selectionStart);
+        QCOMPARE(w.edit()->property("selectionEnd").toInt(), selectionEnd);
+        const auto firstDot = [](const auto &segments) {
+            for (const auto &mark : segments) if (mark.text == QString::fromUtf8("·")) return mark.baseline.x();
+            return qreal(-1);
+        };
+        const qreal oldDot = firstDot(w.fmt()->formattingMarkSegments(QRectF(0,0,900,10000)));
+        QTextCursor edit(d); edit.insertText("XX");
+        const qreal newDot = firstDot(w.fmt()->formattingMarkSegments(QRectF(0,0,900,10000)));
+        QVERIFY(newDot > oldDot);
+        w.edit()->forceActiveFocus();
+        QTest::keyClick(&w.view, Qt::Key_F10, Qt::ControlModifier);
+        QTRY_VERIFY(!w.root->property("showFormattingMarks").toBool());
+        QVERIFY(w.fmt()->formattingMarkSegments(QRectF(0,0,900,10000)).isEmpty());
+        QVERIFY(!w.edit()->findChild<QQuickItem *>("formattingMarksOverlay"));
+    }
+
+    void formattingMarksBook()
+    {
+        const auto book = qEnvironmentVariable("RICHTEXT_BOOK");
+        if (!QFile::exists(book)) QSKIP("book sample unavailable");
+        PageEditor w;
+        QVERIFY(w.root);
+        QVERIFY(w.fmt()->loadOdf(QUrl::fromLocalFile(book)));
+        w.view.show(); QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        QTest::qWait(50);
+        auto *d = w.fmt()->document()->textDocument();
+        const auto breaks = [&] {
+            QList<QPair<int,int>> out;
+            for (auto b=d->begin(); b.isValid(); b=b.next())
+                for (int i=0; i<b.layout()->lineCount(); ++i) {
+                    const auto line=b.layout()->lineAt(i);
+                    out.append({b.position()+line.textStart(),line.textLength()});
+                }
+            return out;
+        };
+        const auto before = breaks();
+        for (bool enabled : {false, true}) {
+            w.root->setProperty("showFormattingMarks", enabled);
+            QTest::qWait(30);
+            QCOMPARE(breaks(), before);
+            QList<double> times;
+            QTextCursor c(d); c.setPosition(d->characterCount()/2);
+            for (int i=0; i<31; ++i) {
+                QElapsedTimer t; t.start(); c.insertText("x");
+                times.append(t.nsecsElapsed()/1e6); c.deletePreviousChar();
+            }
+            std::sort(times.begin(),times.end());
+            qInfo("formatting marks %d: midpoint keystroke %.3f ms", enabled, times[15]);
+            if (enabled) QVERIFY(times[15] < 4);
+            QElapsedTimer t; t.start();
+            for (int i=0; i<20; ++i) {
+                w.body()->setProperty("contentY", i*250.);
+                w.view.grabWindow();
+            }
+            qInfo("formatting marks %d: scroll grab frame %.3f ms", enabled, t.nsecsElapsed()/20e6);
+        }
+    }
+
+    void formattingMarksDefaults()
+    {
+        QVERIFY(m_fmt->metaObject()->indexOfProperty("showFormattingMarks") >= 0);
+        QVERIFY(!m_fmt->property("showFormattingMarks").toBool());
+        QVERIFY(m_fmt->setProperty("showFormattingMarks", true));
+        QVERIFY(m_fmt->property("showFormattingMarks").toBool());
+        QCOMPARE(m_fmt->property("formattingMarksLabels").toMap().value("pageBreak").toString(),
+                 QString("Page Break"));
+    }
 
     void blockPositionsFollowEditsAndTableCells()
     {

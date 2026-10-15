@@ -33,6 +33,8 @@ public:
     static bool supports(const QTextDocument *document);
     void forgetBlock(quint64 generation);
     void draw(QPainter *, const PaintContext &) override;
+    // Visible (block position, line index) pairs, including empty paragraphs and table cells.
+    QList<QPair<int,int>> visibleLines(qreal top, qreal bottom) const;
     int hitTest(const QPointF &, Qt::HitTestAccuracy) const override;
     int pageCount() const override { return m_pages; }
     QSizeF documentSize() const override { return m_size; }
