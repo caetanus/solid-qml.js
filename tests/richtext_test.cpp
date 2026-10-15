@@ -765,6 +765,85 @@ private slots:
         QCOMPARE(table->format().columnWidthConstraints(), before);
     }
 
+    void tableCellFormattingAndShifts()
+    {
+        m_fmt->insertTable(2, 2);
+        auto *t = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        t->cellAt(0,0).firstCursorPosition().insertText("A");
+        t->cellAt(0,1).firstCursorPosition().insertText("B");
+        m_fmt->setCursorPosition(t->firstPosition());
+        QVERIFY(m_fmt->insertTableCells("right"));
+        QCOMPARE(t->columns(), 3);
+        QCOMPARE(t->cellAt(0,1).firstCursorPosition().block().text(), QString("A"));
+        QCOMPARE(t->cellAt(0,2).firstCursorPosition().block().text(), QString("B"));
+        doc()->undo(); QCOMPARE(t->columns(), 2);
+        m_fmt->setCursorPosition(t->firstPosition());
+        QVERIFY(m_fmt->deleteTableCells("left"));
+        QCOMPARE(t->cellAt(0,0).firstCursorPosition().block().text(), QString("B"));
+        QCOMPARE(t->cellAt(0,1).firstCursorPosition().block().text(), QString());
+        doc()->undo();
+        m_fmt->setCursorPosition(t->firstPosition());
+        QVERIFY(m_fmt->setTableCellBackground("#123456"));
+        QCOMPARE(t->cellAt(0,0).format().background().color(), QColor("#123456"));
+        doc()->undo(); QVERIFY(t->cellAt(0,0).format().background().style()==Qt::NoBrush);
+        QVERIFY(m_fmt->setTableCellVerticalAlignment("bottom"));
+        QCOMPARE(t->cellAt(0,0).format().verticalAlignment(), QTextCharFormat::AlignBottom);
+        QVERIFY(m_fmt->setTableBorders("all", {{"width", 2}, {"color", "#ff0000"}, {"style", "dashed"}}));
+        QCOMPARE(t->cellAt(0,0).format().toTableCellFormat().topBorderStyle(), QTextFrameFormat::BorderStyle_Dashed);
+        QVERIFY(m_fmt->setTableColumnWidth(120));
+        QCOMPARE(t->format().columnWidthConstraints()[0].rawValue(), 120.);
+        QVERIFY(m_fmt->distributeTableColumns());
+        QCOMPARE(t->format().columnWidthConstraints()[0].rawValue(), 50.);
+        QVERIFY(m_fmt->setTableAlignment("right"));
+        QCOMPARE(t->format().alignment(), Qt::AlignRight);
+        QVERIFY(m_fmt->setTableHeaderRow(true)); QCOMPARE(t->format().headerRowCount(), 1);
+        doc()->undo(); QCOMPARE(t->format().headerRowCount(), 0);
+        QVERIFY(m_fmt->splitTableCell(2,2));
+        QCOMPARE(t->rows(), 3); QCOMPARE(t->columns(), 3);
+        doc()->undo(); QCOMPARE(t->rows(), 2); QCOMPARE(t->columns(), 2);
+    }
+
+    void tableEditingApi()
+    {
+        QVERIFY(m_fmt->tableInfo().isNull());
+        QVERIFY(!m_fmt->insertTableRows("above"));
+        QVERIFY(!m_fmt->deleteTable());
+        m_fmt->insertTable(2, 3, {{"headerRow", true}, {"width", 300}});
+        auto *table = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        QVERIFY(table);
+        QCOMPARE(table->format().headerRowCount(), 1);
+        QCOMPARE(table->format().width().rawValue(), 300.);
+        QVERIFY(table->format().borderCollapse());
+        QCOMPARE(table->format().cellSpacing(), 0.);
+        QVERIFY(qAbs(table->format().border() - 2./3) < .001);
+        QVERIFY(qAbs(table->format().cellPadding() - 96./25.4) < .001);
+        QVERIFY(table->cellAt(0, 0).firstCursorPosition().charFormat().fontWeight() >= QFont::Bold);
+        QCOMPARE(m_fmt->tableInfo().toMap().value("columns").toInt(), 3);
+        QSignalSpy changed(m_fmt, SIGNAL(tableCellChanged(int,int)));
+        QVERIFY(m_fmt->insertTableRows("below", 2));
+        QCOMPARE(table->rows(), 4);
+        doc()->undo(); QCOMPARE(table->rows(), 2);
+        QVERIFY(m_fmt->insertTableColumns("right", 2));
+        QCOMPARE(table->columns(), 5);
+        doc()->undo(); QCOMPARE(table->columns(), 3);
+        QVERIFY(m_fmt->selectTableRow());
+        QCOMPARE(m_fmt->tableInfo().toMap().value("selection").toMap().value("right").toInt(), 2);
+        QVERIFY(m_fmt->mergeTableCells());
+        QCOMPARE(table->cellAt(0, 0).columnSpan(), 3);
+        doc()->undo(); QCOMPARE(table->cellAt(0, 0).columnSpan(), 1);
+        m_fmt->setSelectionStart(0); m_fmt->setSelectionEnd(0);
+        m_fmt->setCursorPosition(table->cellAt(1, 1).firstPosition());
+        QVERIFY(changed.count() > 0);
+        QVERIFY(m_fmt->deleteTableRows()); QCOMPARE(table->rows(), 1);
+        doc()->undo(); QCOMPARE(table->rows(), 2);
+        m_fmt->setCursorPosition(table->cellAt(0, 1).firstPosition());
+        QVERIFY(m_fmt->deleteTableColumns()); QCOMPARE(table->columns(), 2);
+        doc()->undo(); QCOMPARE(table->columns(), 3);
+        m_fmt->setCursorPosition(table->firstPosition());
+        QVERIFY(m_fmt->deleteTable()); QCOMPARE(countTables(doc()), 0);
+        doc()->undo(); QCOMPARE(countTables(doc()), 1);
+    }
+
     void documentEditorContextMenu()
     {
         PageEditor widget;
@@ -825,7 +904,7 @@ private slots:
         widget.root->setProperty("layoutEngine", "custom");
         widget.root->setProperty("pageView", true);
         widget.view.show();
-        QVERIFY(QMetaObject::invokeMethod(widget.root.data(), "insertTable", Q_ARG(QVariant, 2), Q_ARG(QVariant, 2)));
+        QVERIFY(QMetaObject::invokeMethod(widget.root.data(), "insertTable", Q_ARG(QVariant, 2), Q_ARG(QVariant, 2), Q_ARG(QVariant, QVariant())));
         QTest::qWait(30);
         auto *document = widget.fmt()->document()->textDocument();
         auto *table = qobject_cast<QTextTable *>(document->rootFrame()->childFrames().first());

@@ -762,3 +762,50 @@ coordinates, `windowX`, `windowY` in window coordinates, UTF-16 `position`,
 outside the selection moves the caret first; inside preserves the selection.
 Keyboard requests preserve the selection. Open the app's menu synchronously
 from this signal. `markContextMenu` also fires when a mark is present.
+
+### Editing tables
+
+`insertTable(rows, columns, options?)` places the caret in the first cell.
+Options are `{headerRow?: boolean, width?: "full" | number}`. Width defaults to
+100% of the text area; numbers are unzoomed pixels. Columns start equal, with
+collapsed black 0.5 pt borders, zero spacing, and 0.1 cm cell padding. A header
+option makes the first row bold and repeats it on later pages. Imported tables
+retain their formatting.
+
+`tableInfo()` returns null outside a table, otherwise
+`{rows, columns, row, column, selection, headerRow}`. Coordinates are zero-based;
+`selection` is null or an inclusive `{top,left,bottom,right}` cell rectangle.
+`inTable` is reactive. `onTableCellChanged(row,column)` reports caret cell changes
+(and `-1,-1` when leaving tables).
+
+These commands return false outside a table or for invalid arguments. Mutating
+commands make one undo step and use the caret cell or selected cell rectangle:
+
+- `insertTableRows("above" | "below", count = 1)` and
+  `insertTableColumns("left" | "right", count = 1)`.
+- `deleteTableRows()`, `deleteTableColumns()`, `deleteTable()`. Deleting every row
+  or column removes the table.
+- `insertTableCells("right" | "down")`, `deleteTableCells("left" | "up")`.
+  QTextTable requires a rectangular grid: insertion grows it, shifts rich cell
+  contents and cell formatting, and leaves the other new cells empty. Deletion
+  shifts contents back and leaves empty trailing cells. Merged grids return false.
+- `selectTable()`, `selectTableRow()`, `selectTableColumn()`.
+- `mergeTableCells()` merges the selected rectangle. `splitTableCell(rows, columns)`
+  splits a merged span on its existing grid. For an ordinary cell it extends the
+  grid and merges the surrounding cells across the new tracks. A merged cell
+  cannot split into more tracks than its existing span; that returns false.
+- `setTableBorders(which, style?)`: `which` is `all`, `outer`, `inner`, `none`,
+  `top`, `bottom`, `left`, or `right`, relative to the selected rectangle.
+  Style defaults to `{width: 0.5, color: "#000000", style: "solid"}`; width is in
+  points, and styles are `solid`, `dashed`, `dotted`, or `double`.
+- `setTableCellBackground(color)`; an empty string clears the background.
+- `setTableCellVerticalAlignment("top" | "center" | "bottom")`.
+- `distributeTableColumns()`, `setTableColumnWidth(width)` in unzoomed pixels,
+  `setTableAlignment("left" | "center" | "right")`, `setTableHeaderRow(on)`.
+
+The existing add/remove row/column methods remain aliases. Tab selects the next
+cell, Shift+Tab the previous; Tab in the last cell appends a row. Ctrl+Tab inserts
+a literal tab. Column-border dragging commits once on release and undoes once.
+Repeated headers and independent cell-side border styles use the Qt layout
+fallback, including PDF export. Header rows are saved as `table:table-header-rows`;
+ODF preserves table width/alignment, collapsing borders, and cell formatting.

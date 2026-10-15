@@ -153,6 +153,7 @@ type DocumentEditorProps = {
   onMarkClicked?: (mark: DocumentMark, x: number, y: number, windowX: number, windowY: number) => void;
   /** A right-click on a mark (show suggestions; open a menu right here — a Wayland popup needs
    *  the click's input serial). Also emitted through onContextMenuRequested. */
+  onTableCellChanged?: (row: number, column: number) => void;
   onContextMenuRequested?: (info: DocumentContextMenuInfo) => void;
   onMarkContextMenu?: (mark: DocumentMark, x: number, y: number, windowX: number, windowY: number) => void;
   /** The pointer entered a mark, or left it (null). */
@@ -425,7 +426,27 @@ declare global {
      *  styles and leaves paragraph properties untouched (unlike clearDirectFormatting()). */
     clearFormatting(): void;
     setAlignment(align: "left" | "center" | "right" | "justify"): void;
-    insertTable(rows: number, cols: number): void;
+    insertTable(rows: number, cols: number, options?: { headerRow?: boolean; width?: "full" | number }): void;
+    tableInfo(): { rows: number; columns: number; row: number; column: number; selection: { top: number; left: number; bottom: number; right: number } | null; headerRow: boolean } | null;
+    insertTableRows(where: "above" | "below", count?: number): boolean;
+    insertTableColumns(where: "left" | "right", count?: number): boolean;
+    deleteTableRows(): boolean;
+    deleteTableColumns(): boolean;
+    deleteTable(): boolean;
+    insertTableCells(shift: "right" | "down"): boolean;
+    deleteTableCells(shift: "left" | "up"): boolean;
+    selectTable(): boolean;
+    selectTableRow(): boolean;
+    selectTableColumn(): boolean;
+    mergeTableCells(): boolean;
+    splitTableCell(rows: number, columns: number): boolean;
+    setTableBorders(which: "all" | "outer" | "inner" | "none" | "top" | "bottom" | "left" | "right", style?: { width?: number; color?: string; style?: "solid" | "dashed" | "dotted" | "double" }): boolean;
+    setTableCellBackground(color: string): boolean;
+    setTableCellVerticalAlignment(alignment: "top" | "center" | "bottom"): boolean;
+    distributeTableColumns(): boolean;
+    setTableColumnWidth(width: number): boolean;
+    setTableAlignment(alignment: "left" | "center" | "right"): boolean;
+    setTableHeaderRow(on: boolean): boolean;
     addTableRow(): void;
     addTableColumn(): void;
     removeTableRow(): void;

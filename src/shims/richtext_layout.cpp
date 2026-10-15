@@ -99,6 +99,16 @@ bool RichTextLayout::supports(const QTextDocument *d)
         const auto format=table->format();
         if (format.headerRowCount() || format.position()!=QTextFrameFormat::InFlow) return false;
         if (format.border()>0 && format.borderStyle()!=QTextFrameFormat::BorderStyle_Solid) return false;
+        for(int row=0;row<table->rows();++row) for(int column=0;column<table->columns();++column) {
+            const auto f=table->cellAt(row,column).format().toTableCellFormat();
+            const int properties[]={QTextFormat::TableCellTopBorder,QTextFormat::TableCellBottomBorder,QTextFormat::TableCellLeftBorder,QTextFormat::TableCellRightBorder};
+            const qreal widths[]={f.topBorder(),f.bottomBorder(),f.leftBorder(),f.rightBorder()};
+            const auto styles=QList<QTextFrameFormat::BorderStyle>{f.topBorderStyle(),f.bottomBorderStyle(),f.leftBorderStyle(),f.rightBorderStyle()};
+            const QBrush brushes[]={f.topBorderBrush(),f.bottomBorderBrush(),f.leftBorderBrush(),f.rightBorderBrush()};
+            for(int side=0;side<4;++side) if(f.hasProperty(properties[side]) &&
+                (qAbs(widths[side]-format.border())>.001 || (widths[side]>0 &&
+                (styles[side]!=format.borderStyle() || brushes[side].color()!=format.borderBrush().color())))) return false;
+        }
     }
     const auto root = d->rootFrame()->frameFormat();
     if (root.border() != 0 || root.padding() != 0 || root.background().style() != Qt::NoBrush) return false;

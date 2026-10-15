@@ -292,11 +292,31 @@ public:
     Q_INVOKABLE qreal resizeColumn(qreal delta);
     Q_INVOKABLE void endColumnResize(bool commit = true);
     Q_INVOKABLE bool tableTab(bool backward = false);
-    Q_INVOKABLE void insertTable(int rows, int cols);
+    Q_INVOKABLE void insertTable(int rows, int cols, const QVariantMap &options = {});
+    Q_INVOKABLE QVariant tableInfo() const;
     Q_INVOKABLE void addTableRow();
     Q_INVOKABLE void addTableColumn();
     Q_INVOKABLE void removeTableRow();
     Q_INVOKABLE void removeTableColumn();
+    Q_INVOKABLE bool insertTableRows(const QString &where, int count = 1);
+    Q_INVOKABLE bool insertTableColumns(const QString &where, int count = 1);
+    Q_INVOKABLE bool deleteTableRows();
+    Q_INVOKABLE bool deleteTableColumns();
+    Q_INVOKABLE bool deleteTable();
+    Q_INVOKABLE bool insertTableCells(const QString &shift);
+    Q_INVOKABLE bool deleteTableCells(const QString &shift);
+    Q_INVOKABLE bool selectTable();
+    Q_INVOKABLE bool selectTableRow();
+    Q_INVOKABLE bool selectTableColumn();
+    Q_INVOKABLE bool mergeTableCells();
+    Q_INVOKABLE bool splitTableCell(int rows, int columns);
+    Q_INVOKABLE bool setTableBorders(const QString &which, const QVariantMap &style = {});
+    Q_INVOKABLE bool setTableCellBackground(const QString &color);
+    Q_INVOKABLE bool setTableCellVerticalAlignment(const QString &alignment);
+    Q_INVOKABLE bool distributeTableColumns();
+    Q_INVOKABLE bool setTableColumnWidth(qreal width);
+    Q_INVOKABLE bool setTableAlignment(const QString &alignment);
+    Q_INVOKABLE bool setTableHeaderRow(bool on);
     bool inTable() const;
 
     QString alignment() const;
@@ -409,6 +429,7 @@ public:
     const QList<Mark> &marks() { ensureMarksSorted(); return m_marks; }
 
 signals:
+    void tableCellChanged(int row, int column);
     void hasCopiedFormatChanged();
     void textColorChanged();
     void highlightColorChanged();
@@ -511,13 +532,15 @@ private:
     void updateViewportCulling();           // kLargeTextThreshold → the editor's ItemObservesViewport
 
     QTextCursor cursor() const;              // covers the selection, or the word at the cursor
-    QTextCursor insertionCursor() const;     // plain caret position (no word expansion) — inserts
+    QTextCursor insertionCursor() const;
+    QTextCursor tableCursor() const;     // plain caret position (no word expansion) — inserts
     void mergeCharFormat(const QTextCharFormat &fmt);
     void mergeInsertionFont(const QTextCharFormat &fmt);
     void selectEditorCursor(const QTextCursor &c);
     QTextCharFormat editingCharFormat() const;
     void mergeEditingBlock(const QTextBlockFormat &format);
     void updateEditingState();
+    int m_tableRow = -1, m_tableColumn = -1;
     QVariantList m_editingState;
     QString m_findText;
     QVariantMap m_findOptions;

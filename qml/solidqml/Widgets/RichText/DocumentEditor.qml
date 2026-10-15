@@ -379,7 +379,29 @@ RichText {
     // clearDirectFormatting().
     function clearFormatting() { if (fmt) fmt.clearFormatting(); _editor.forceActiveFocus() }
     function setAlignment(align) { if (fmt) fmt.setAlignment(align); _editor.forceActiveFocus() }
-    function insertTable(rows, cols) { if (fmt) fmt.insertTable(rows, cols); _editor.forceActiveFocus() }
+    function insertTable(rows, cols, options) { if (fmt) fmt.insertTable(rows, cols, options || {}); _editor.forceActiveFocus() }
+    signal tableCellChanged(int row, int column)
+    Connections { target: root.fmt; function onTableCellChanged(row, column) { root.tableCellChanged(row, column) } }
+    function tableInfo() { return fmt ? (fmt.tableInfo() || null) : null }
+    function insertTableRows(where, count) { return fmt ? fmt.insertTableRows(where, count === undefined ? 1 : count) : false }
+    function insertTableColumns(where, count) { return fmt ? fmt.insertTableColumns(where, count === undefined ? 1 : count) : false }
+    function deleteTableRows() { return fmt ? fmt.deleteTableRows() : false }
+    function deleteTableColumns() { return fmt ? fmt.deleteTableColumns() : false }
+    function deleteTable() { return fmt ? fmt.deleteTable() : false }
+    function insertTableCells(shift) { return fmt ? fmt.insertTableCells(shift) : false }
+    function deleteTableCells(shift) { return fmt ? fmt.deleteTableCells(shift) : false }
+    function selectTable() { return fmt ? fmt.selectTable() : false }
+    function selectTableRow() { return fmt ? fmt.selectTableRow() : false }
+    function selectTableColumn() { return fmt ? fmt.selectTableColumn() : false }
+    function mergeTableCells() { return fmt ? fmt.mergeTableCells() : false }
+    function splitTableCell(rows, columns) { return fmt ? fmt.splitTableCell(rows, columns) : false }
+    function setTableBorders(which, style) { return fmt ? fmt.setTableBorders(which, style || {}) : false }
+    function setTableCellBackground(color) { return fmt ? fmt.setTableCellBackground(color) : false }
+    function setTableCellVerticalAlignment(alignment) { return fmt ? fmt.setTableCellVerticalAlignment(alignment) : false }
+    function distributeTableColumns() { return fmt ? fmt.distributeTableColumns() : false }
+    function setTableColumnWidth(width) { return fmt ? fmt.setTableColumnWidth(width) : false }
+    function setTableAlignment(alignment) { return fmt ? fmt.setTableAlignment(alignment) : false }
+    function setTableHeaderRow(on) { return fmt ? fmt.setTableHeaderRow(on) : false }
     function addTableRow() { if (fmt) fmt.addTableRow() }
     function addTableColumn() { if (fmt) fmt.addTableColumn() }
     function removeTableRow() { if (fmt) fmt.removeTableRow() }
