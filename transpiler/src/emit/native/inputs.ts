@@ -21,7 +21,7 @@ import * as t from "@babel/types";
 import { registerNativeTags, type NativeEmit } from "./index.ts";
 import { emitExpr, type Scope } from "../expr.ts";
 import { boolAttrExpr, buildCssClassLine, guardLine, INDENT } from "../qml.ts";
-import { safeName } from "../../names/safe.ts";
+import { safeName, memberName } from "../../names/safe.ts";
 import { isHCall } from "../../ast/h.ts";
 
 type Fn = t.ArrowFunctionExpression | t.FunctionExpression;
@@ -116,7 +116,7 @@ export function translateArgsHandler(fn: Fn, argExprs: string[], scope: Scope): 
 function emitEventHandler(node: t.Node | undefined, scope: Scope, argExprs: string[] = []): string | null {
   if (!node) return null;
   if (t.isArrowFunctionExpression(node) || t.isFunctionExpression(node)) return translateArgsHandler(node, argExprs, scope);
-  if (t.isIdentifier(node) && scope.helpers?.has(node.name)) return `${safeName(node.name)}()`;
+  if (t.isIdentifier(node) && scope.helpers?.has(node.name)) return `${memberName(node.name)}()`;
   throw new Error("only inline arrow handlers (or a local helper reference) are supported for native widget events");
 }
 

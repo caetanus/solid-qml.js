@@ -1,7 +1,7 @@
 import _traverse from "@babel/traverse";
 import * as t from "@babel/types";
 import { hParts, isHCall } from "../ast/h.ts";
-import { safeName } from "../names/safe.ts";
+import { safeName, memberName } from "../names/safe.ts";
 
 const traverse: typeof _traverse = (_traverse as any).default ?? _traverse;
 
@@ -689,6 +689,8 @@ export interface EffectDepsContext {
  *   - a call to a local helper (component.ts's `helpers`/`analyzeHelpers`) is followed into the
  *     helper's own body (one level of indirection, cycle-guarded) — the helper closes over the same
  *     component state, so a read inside it is exactly as live as one written inline.
+ *  A member that is only the operand of `typeof` (a feature check: `typeof x.m === "function"`)
+ *  is never a dependency, at any of the levels above; a call through `?.()` is a call too.
  *  NOT analyzable (documented, not attempted): a module-level helper function's body (a different,
  *  shared lexical scope — see component.ts's moduleFnDecls comment), a computed member (`obj[x]`),
  *  or a chain whose root isn't a plain identifier (`f().x`). */
@@ -728,7 +730,7 @@ export function effectDeps(body: t.Node, table: SymbolTable, extra: EffectDepsCo
         const name = path.node.name;
         if (shadowed.has(name)) return; // a helper-local shadows any same-named component state
         const sym = table.get(name);
-        if (sym && (sym.kind === "signal" || sym.kind === "memo" || sym.kind === "store")) add("__self", name);
+        if (sym && (sym.kind === "signal" || sym.kind === "memo" || sym.kind === "store")) add("__self", memberName(name));
         // A selector call `isSel(k)` reads its source.
         if (sym?.kind === "selector" && !visitedHelpers.has(`selector:${name}`)) {
           visitedHelpers.add(`selector:${name}`);
@@ -739,7 +741,12 @@ export function effectDeps(body: t.Node, table: SymbolTable, extra: EffectDepsCo
         const { object, property, computed } = path.node;
         if (computed || !t.isIdentifier(property)) return;
         const prop = property.name;
-        const calledAsFn = t.isCallExpression(path.parent) && path.parent.callee === path.node;
+        const calledAsFn = (t.isCallExpression(path.parent) || t.isOptionalCallExpression(path.parent)) && path.parent.callee === path.node;
+        // `typeof doc.setCursorPosition === "function"` asks whether a member EXISTS (a feature
+        // check before calling a method): not a reactive read. Tracking it emitted
+        // `function onSetCursorPositionChanged()` — a method has no change signal, so QML warned
+        // "no signal of the target matches".
+        if (t.isUnaryExpression(path.parent, { operator: "typeof" })) return;
 
         if (t.isIdentifier(object)) {
           const objName = object.name;
@@ -747,12 +754,12 @@ export function effectDeps(body: t.Node, table: SymbolTable, extra: EffectDepsCo
 
           // props.x / alias.x (one level — matches cellRef's resolution). Skip a CALL
           // (`props.onClick()`) — that's an action/callback prop, not a reactive value read.
-          if (objName === propsParam || propAliases?.has(objName)) { if (!calledAsFn) add("__self", prop); return; }
+          if (objName === propsParam || propAliases?.has(objName)) { if (!calledAsFn) add("__self", memberName(prop)); return; }
 
           // useContext member — skip pure-action members.
           if (ctxBindings && objName in ctxBindings) {
             const ctxName = ctxBindings[objName];
-            if (ctxValueShape?.[ctxName]?.[prop] !== "fn") add(`__ctx_${safeName(ctxName)}`, prop);
+            if (ctxValueShape?.[ctxName]?.[prop] !== "fn") add(`__ctx_${safeName(ctxName)}`, memberName(prop));
             return;
           }
 

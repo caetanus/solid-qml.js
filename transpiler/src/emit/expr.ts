@@ -1,5 +1,5 @@
 import * as t from "@babel/types";
-import { safeName } from "../names/safe.ts";
+import { safeName, memberName } from "../names/safe.ts";
 import type { SymbolTable } from "../model/symbols.ts";
 import { emitStatements } from "./stmt.ts";
 
@@ -117,7 +117,7 @@ function cellRef(name: string, _scope: Scope): string {
   // A component's reactive cells / locals are properties on its QML root object; any closure in the
   // component's object tree (onCompleted, nested callbacks, Connections handlers) resolves them by
   // BARE name through QML's object scope chain. No `__self.` qualification — the object IS the class.
-  return safeName(name);
+  return memberName(name);
 }
 
 /** A function/arrow's own identifier params shadow any same-named entry inherited from the
@@ -339,7 +339,7 @@ export function emitExpr(node: t.Node, scope: Scope): string {
     const ctx = scope.ctxBindings[node.callee.object.name];
     const member = node.callee.property.name;
     if (scope.ctxValueShape?.[ctx]?.[member] === "accessor")
-      return `__ctx_${safeName(ctx)}.${safeName(member)}`;
+      return `__ctx_${safeName(ctx)}.${memberName(member)}`;
   }
 
   if (t.isCallExpression(node)) {
@@ -352,7 +352,7 @@ export function emitExpr(node: t.Node, scope: Scope): string {
     // injected provider instance). Used as a value (e.g. `onClick={c.increment}` → a fn ref).
     if (!node.computed && t.isIdentifier(node.object) && t.isIdentifier(node.property)
         && scope.ctxBindings && node.object.name in scope.ctxBindings)
-      return `__ctx_${safeName(scope.ctxBindings[node.object.name])}.${safeName(node.property.name)}`;
+      return `__ctx_${safeName(scope.ctxBindings[node.object.name])}.${memberName(node.property.name)}`;
     if (!node.computed && t.isIdentifier(node.object) && t.isIdentifier(node.property)
         && (node.object.name === scope.propsParam || scope.propAliases?.has(node.object.name)))
       return cellRef(node.property.name, scope); // props.X / merged.X / local.X → property X
@@ -488,7 +488,7 @@ function emitArgs(args: t.Node[], scope: Scope): string {
  *  can't track in-place mutation). Handles the forms used in practice: a (predicate, "key", updater)
  *  path setter; `produce(draft => mutate)`; a functional `(list) => newList`; and a plain replace. */
 function emitStoreSetter(store: string, args: t.Node[], scope: Scope): string {
-  const g = safeName(store);
+  const g = memberName(store);
   // path setter: set(pred, "key", updater) → map, immutably replacing the key on matching items.
   if (args.length >= 3 && t.isStringLiteral(args[1])) {
     const pred = args[0], upd = args[args.length - 1];
@@ -515,7 +515,7 @@ function emitSetter(signal: string, arg: t.Node | undefined, scope: Scope): stri
   // Qualify the write target with the component root id when set — a handler nested inside a
   // Template control (e.g. T.Dial's onMoved) resolves a bare `angle` to the CONTROL's read-only
   // `angle`, not the component's `angle` signal. Reads elsewhere stay bare (tracking).
-  const target = scope.selfId ? `${scope.selfId}.${safeName(signal)}` : cellRef(signal, scope);
+  const target = scope.selfId ? `${scope.selfId}.${memberName(signal)}` : cellRef(signal, scope);
   if (arg && (t.isArrowFunctionExpression(arg) || t.isFunctionExpression(arg))) {
     const param = arg.params[0];
     const inner: Scope = { ...scope, locals: { ...(scope.locals ?? {}) } };

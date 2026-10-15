@@ -1,7 +1,7 @@
 import * as t from "@babel/types";
 import { emitExpr, shadowOwnParams, type Scope } from "./expr.ts";
 import { emitStmt, emitStatements } from "./stmt.ts";
-import { safeName } from "../names/safe.ts";
+import { safeName, memberName } from "../names/safe.ts";
 import { CONTROL_TAGS, hParts, isFragmentTag, isHCall } from "../ast/h.ts";
 import { nativeTags, requireImport } from "./native/index.ts";
 import { translateArgsHandler } from "./native/inputs.ts";
@@ -485,7 +485,7 @@ function instanceProps(name: string, propsArg: t.Node | undefined, scope: Scope)
     const out: string[] = [];
     for (const src of sources) for (const p of (src as { props: t.ObjectProperty[] }).props) {
       const k = keyOf(p);
-      if (k && k !== "children" && t.isExpression(p.value) && (!declared || declared.has(k))) out.push(`${safeName(k)}: ${emitExpr(p.value, bind)}`);
+      if (k && k !== "children" && t.isExpression(p.value) && (!declared || declared.has(k))) out.push(`${memberName(k)}: ${emitExpr(p.value, bind)}`);
     }
     return out;
   }
@@ -518,7 +518,7 @@ function instanceProps(name: string, propsArg: t.Node | undefined, scope: Scope)
     if (!cands.length) continue;
     const value = cands.length === 1 ? cands[0].expr
       : `(function() { var __v; ${cands.slice(0, -1).map((c) => `__v = ${c.expr}; if (__v !== undefined) return __v;`).join(" ")} return ${cands.at(-1)!.expr}; })()`;
-    out.push(`${safeName(k)}: ${value}`);
+    out.push(`${memberName(k)}: ${value}`);
   }
   return out;
 }
@@ -914,7 +914,7 @@ function emitInput(propsArg: t.Node | undefined, props: Props, scope: Scope, lev
   // `text` on the instance resolves via the component's two-way `text` alias.
   const textEditedBody = onInputFn
     ? translateInputHandler(onInputFn, scope)
-    : signalName ? `${safeName(signalName)} = text` : "";
+    : signalName ? `${memberName(signalName)} = text` : "";
   const editingFinishedBody = onChangeFn ? translateInputHandler(onChangeFn, scope) : "";
   const keyBody = onKeyDownFn ? translateInputHandler(onKeyDownFn, scope) : "";
 
@@ -981,7 +981,7 @@ function emitTextarea(propsArg: t.Node | undefined, props: Props, scope: Scope, 
   const fn = onInputFn ?? onChangeFn;
   const textChangedBody = fn
     ? translateInputHandler(fn, scope)
-    : signalName ? `${safeName(signalName)} = text` : "";
+    : signalName ? `${memberName(signalName)} = text` : "";
 
   const lines: string[] = [
     `${pad}W.TextArea {`,
@@ -1905,7 +1905,7 @@ function emitHandler(node: t.Node | undefined, scope: Scope): string | null {
   // A helper identifier as a handler — `onClick={add}` where `add` is a local helper function:
   // emit as `add()` (the handler calls the method). The method lives on the QML object.
   if (t.isIdentifier(node) && scope.helpers?.has(node.name)) {
-    return `${safeName(node.name)}()`;
+    return `${memberName(node.name)}()`;
   }
   // A bare function reference as a handler — `onClick={counter.increment}` where counter ∈ ctxBindings:
   // resolve to the injected provider's fn member and CALL it (the handler invokes the ref).
@@ -2124,7 +2124,7 @@ function publishLazyRefs(lines: string[], scope: Scope): string[] {
  *  (`!(<r>_loading || …)`) and the fallback on the inverse (loading). Reuses the Show guard helpers.
  *  The tracked resource set comes from scope.resources (the component's createResource decls). */
 function emitSuspense(propsArg: t.Node | undefined, children: t.Node[], scope: Scope, level: number, outerGuard?: string): string[] {
-  const loading = (scope.resources ?? []).map((r) => `${safeName(r)}_loading`);
+  const loading = (scope.resources ?? []).map((r) => `${memberName(r)}_loading`);
   // "ready" = no tracked resource loading. With no resources, Suspense degenerates to always-ready.
   const when = loading.length ? `!(${loading.join(" || ")})` : "true";
   const guard = outerGuard ? `(${outerGuard}) && (${when})` : when;

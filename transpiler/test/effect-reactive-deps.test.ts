@@ -47,7 +47,9 @@ test("createEffect reading props.x gets a Connections on __self (the prop IS a s
     }
   `;
   const app = await generate(src, "props-eff.tsx");
-  assert.match(app.entry, /Connections \{\s*target: __self\s*function onXChanged\(\)/);
+  // `x` is reserved: the prop property is `x_`, and the handler must name IT, not the Item's own `x`.
+  assert.match(app.entry, /property var x_\b/);
+  assert.match(app.entry, /Connections \{\s*target: __self\s*function onX_Changed\(\)/);
 });
 
 test("createEffect reading a store field gets a Connections on __self for the whole store", async () => {
@@ -81,6 +83,46 @@ test("createEffect that reads a signal and writes a DIFFERENT one does not loop 
   assert.match(app.entry, /function __effect0\(\) \{ if \(!__started\.__effect0\) return; other = count \* 2; \}/);
   assert.match(app.entry, /function onCountChanged\(\) \{ __effect0\(\); \}/);
   assert.doesNotMatch(app.entry, /function onOtherChanged/, "writing `other` must not itself be tracked as a read dep");
+});
+
+test("office app bug, 3rd case: a member only checked with typeof, or only called, is not a dependency", async () => {
+  // The office shape: a helper reached from an effect feature-checks a method on a ref before
+  // calling it. Before the fix this emitted `function onSetCursorPositionChanged()` on the ref and
+  // QML warned "no signal of the target matches".
+  const src = `
+    import { createEffect } from "solid-js";
+    export default function App(props) {
+      let doc;
+      function resetCursor() {
+        if (typeof doc.setCursorPosition === "function") doc.setCursorPosition(0);
+        doc.select?.(0, 0);
+        if (typeof office.reload === "function") office.reload();
+        if (typeof props.onReset === "function") props.onReset?.();
+      }
+      createEffect(() => { if (doc.documentPageMargins) resetCursor(); });
+      return <textarea ref={doc} />;
+    }
+  `;
+  const app = await generate(src, "typeof-dep.tsx");
+  assert.match(app.entry, /target: _ref_doc\s*function onDocumentPageMarginsChanged\(\) \{ __effect0\(\); \}/); // a real read still tracks
+  assert.doesNotMatch(app.entry, /onSetCursorPositionChanged/);
+  assert.doesNotMatch(app.entry, /onSelectChanged/);
+  assert.doesNotMatch(app.entry, /onReloadChanged/);
+  assert.doesNotMatch(app.entry, /onOnResetChanged/);
+  assert.equal([...app.entry.matchAll(/Connections \{/g)].length, 1, "only the documentPageMargins dependency");
+});
+
+test("a member read plainly is still a dependency even when it is also typeof-checked", async () => {
+  const src = `
+    import { createEffect } from "solid-js";
+    export default function App() {
+      function show(v) {}
+      createEffect(() => { if (typeof office.status === "string") show(office.status); });
+      return <div>s</div>;
+    }
+  `;
+  const app = await generate(src, "typeof-and-read.tsx");
+  assert.match(app.entry, /target: office\s*function onStatusChanged\(\)/);
 });
 
 test("a plain component-level value (let array mutated in place, const object, function-local) is never an effect dependency", async () => {

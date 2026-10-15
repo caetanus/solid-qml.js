@@ -8,7 +8,7 @@ import { onDepsCall, type EffectInfo } from "../model/symbols.ts";
 import { BATCH_MODULE_PATH } from "./runtime.ts";
 import { analyzeChildrenAccessors } from "../model/symbols.ts";
 import { analyzeSignals, analyzeProps, analyzeSetup, analyzeResources, analyzeMutableLocals, analyzeRenderLocals, renderLocalLiveTaint, analyzeHelpers, analyzeModuleFunctions, moduleLevelMutableNames, collectModuleFunctionClosure, collectFetcherDeps, effectDeps, type HelperInfo, type ProviderInfo, type UseContextBinding } from "../model/symbols.ts";
-import { safeName } from "../names/safe.ts";
+import { safeName, memberName, changedHandlerName } from "../names/safe.ts";
 import { hParts, isHCall, isFragmentTag } from "../ast/h.ts";
 
 const generate: typeof _generate = (_generate as any).default ?? _generate;
@@ -138,6 +138,16 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     : undefined;
   const constAliases: Record<string, string> = {};
   for (const name of moduleConstDecls.keys()) constAliases[name] = `__const_${safeName(name)}`;
+  // A module helper whose name starts upper-case is a QML method `__uc_Name` (memberName): its
+  // callers — this component AND the other module helpers — reach it through this alias.
+  const moduleFnAliases: Record<string, string> = {};
+  for (const name of moduleFnDecls.keys()) if (memberName(name) !== safeName(name)) moduleFnAliases[name] = memberName(name);
+  // Same for the component-body names promoted to members that a bare identifier reaches (a
+  // render-local const, a mutable let, a local helper — signals/memos/stores/props resolve through
+  // cellRef, which applies memberName itself). `const SIZE_STEPS = […]` → `__uc_SIZE_STEPS`.
+  const memberAliases: Record<string, string> = { ...moduleFnAliases };
+  for (const name of [...renderLocalsMap.keys(), ...mutableLocalsMap.keys(), ...helpersMap.keys()])
+    if (memberName(name) !== safeName(name)) memberAliases[name] = memberName(name);
 
   // Pre-collect ref variables (`ref={x}`) across the render tree. Refs are pushed to
   // collectedRefs during emit (for the id line), but render-tree HANDLERS (a <Shortcut>/menu
@@ -161,10 +171,12 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     };
     walk(render);
   }
-  // Module-const aliases + ref aliases apply in EVERY expression position this component emits —
-  // not just the render tree. ONE place owns the combined map so no Scope built below can forget it.
+  // Module-const aliases + member aliases + ref aliases apply in EVERY expression position this
+  // component emits — not just the render tree. ONE place owns the combined map so no Scope built
+  // below can forget it.
   const baseLocals: Record<string, string> | undefined =
-    (moduleConstDecls.size > 0 || Object.keys(refAliases).length > 0) ? { ...constAliases, ...refAliases } : undefined;
+    (moduleConstDecls.size > 0 || Object.keys(refAliases).length > 0 || Object.keys(memberAliases).length > 0)
+      ? { ...constAliases, ...memberAliases, ...refAliases } : undefined;
   const lazyRefs = new Set<string>();
   const scope: Scope = {
     table, mode: "binding", propsParam: props.param ?? undefined, propAliases, components, contexts, refs: collectedRefs, lazyRefs, foreignQml, foreignImports,
@@ -237,11 +249,11 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   const rootInner = rootName && components?.has(rootName) ? options.componentProps?.get(rootName) : undefined;
   const inherited = new Set<string>();
   if (rootInner) {
-    const rootLine = (k: string) => new RegExp(`^${INDENT}${safeName(k).replace(/\$/g, "\\$")}: `);
+    const rootLine = (k: string) => new RegExp(`^${INDENT}${memberName(k).replace(/\$/g, "\\$")}: `);
     for (const name of new Set([...props.used, ...(options.forwardedProps ?? [])])) {
       if (name === "children" || !rootInner.has(name)) continue;
       const at = lines.findIndex((l, k) => k > openIdx && rootLine(name).test(l));
-      if (at >= 0 && lines[at] !== `${INDENT}${safeName(name)}: ${safeName(name)}`)
+      if (at >= 0 && lines[at] !== `${INDENT}${memberName(name)}: ${memberName(name)}`)
         throw new Error(`<${rootName}> is this component's root and already has a prop \`${name}\`: the component cannot also take its own \`${name}\` and pass something else — rename one, or wrap the root in a <div>`);
       if (at >= 0) lines.splice(at, 1);
       inherited.add(name);
@@ -257,19 +269,19 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     const sameName = table.get(name);
     if (sameName && (sameName.kind === "signal" || sameName.kind === "memo")) continue;
     const def = props.defaults[name];
-    if (inherited.has(name)) { if (def) decls.push(`${INDENT}${safeName(name)}: ${emitExpr(def, initScope)}`); continue; }
+    if (inherited.has(name)) { if (def) decls.push(`${INDENT}${memberName(name)}: ${emitExpr(def, initScope)}`); continue; }
     decls.push(def
-      ? `${INDENT}property var ${safeName(name)}: ${emitExpr(def, initScope)}`
-      : `${INDENT}property var ${safeName(name)}`);
+      ? `${INDENT}property var ${memberName(name)}: ${emitExpr(def, initScope)}`
+      : `${INDENT}property var ${memberName(name)}`);
   }
   for (const sym of table.values()) {
     if (sym.kind === "signal") {
       const init = resolveSignalInit(sym.name, sym.init, props.param ?? null, initScope);
-      decls.push(`${INDENT}property var ${safeName(sym.name)}: ${init}`);
+      decls.push(`${INDENT}property var ${memberName(sym.name)}: ${init}`);
     } else if (sym.kind === "store") {
       // A store is a reactive `property var` holding its array/object; setters reassign it to rebind.
       const init = sym.init ? emitExpr(sym.init, initScope) : "undefined";
-      decls.push(`${INDENT}property var ${safeName(sym.name)}: ${init}`);
+      decls.push(`${INDENT}property var ${memberName(sym.name)}: ${init}`);
     } else if (sym.kind === "memo") {
       // A memo is a QML binding: the engine tracks every read. Same name resolution as the render
       // (props, helpers, context members, mutable locals…).
@@ -290,15 +302,15 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
         } else {
           body = `var __s = ${st}; __s.prev = (${emitValue(sym.fn, memoScope)})(__s.prev); return __s.prev;`;
         }
-        decls.push(`${INDENT}readonly property var ${safeName(sym.name)}: (function() { ${body} })()`);
+        decls.push(`${INDENT}readonly property var ${memberName(sym.name)}: (function() { ${body} })()`);
       } else if (t.isBlockStatement(sym.body)) {
         // Block-bodied memo: emit as an IIFE so the property binding reads reactive cells BARE.
         // `const visible = createMemo(() => { const f = filter(); return items.filter(...) })`
         // →  `readonly property var visible: (function() { var f = filter; return items.filter(...) })()`
         const body = sym.body.body.map((s) => emitBindingStmt(s, memoScope)).join(" ");
-        decls.push(`${INDENT}readonly property var ${safeName(sym.name)}: (function() { ${body} })()`);
+        decls.push(`${INDENT}readonly property var ${memberName(sym.name)}: (function() { ${body} })()`);
       } else {
-        decls.push(`${INDENT}readonly property var ${safeName(sym.name)}: ${emitExpr(sym.body, memoScope)}`);
+        decls.push(`${INDENT}readonly property var ${memberName(sym.name)}: ${emitExpr(sym.body, memoScope)}`);
       }
     }
   }
@@ -309,7 +321,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   // cannot accept at all.
   for (const [name, init] of renderLocalsMap) {
     const kind = renderLocalsLive.has(name) ? "property" : "readonly property";
-    decls.push(`${INDENT}${kind} var ${safeName(name)}: ${emitExpr(init, initScope)}`);
+    decls.push(`${INDENT}${kind} var ${memberName(name)}: ${emitExpr(init, initScope)}`);
   }
   // Module-const data tables (collected above; aliased in scope as __const_NAME).
   for (const [name, init] of moduleConstDecls)
@@ -317,14 +329,14 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   // Mutable locals (`let x = <literal>` mutated in handlers): emit as `property var x: <init>` so
   // handler closures share a persistent slot on the instance rather than a local var in onCompleted.
   for (const [name, init] of mutableLocalsMap) {
-    decls.push(`${INDENT}property var ${safeName(name)}: ${emitExpr(init, initScope)}`);
+    decls.push(`${INDENT}property var ${memberName(name)}: ${emitExpr(init, initScope)}`);
   }
   // A resource owns three properties: the value (`r`), a loading flag (`r_loading`, starts true so
   // the Suspense fallback shows before the first fetch settles), and an error slot (`r_error`). A
   // hidden `__load_<r>` property holds the (re)loader closure so both onCompleted and the source
   // Connections can invoke the same loader.
   for (const r of resources) {
-    const rn = safeName(r.name);
+    const rn = memberName(r.name);
     decls.push(`${INDENT}property var ${rn}`);
     decls.push(`${INDENT}property bool ${rn}_loading: true`);
     decls.push(`${INDENT}property var ${rn}_error`);
@@ -341,7 +353,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   if (provider) {
     const fnScope: Scope = { table, mode: "handler", propsParam: props.param ?? undefined, propAliases, components, jsImports, ...(baseLocals ? { locals: baseLocals } : {}), ...(mutableLocals ? { mutableLocals } : {}) };
     for (const [name, node] of Object.entries(provider.fnMembers))
-      decls.push(`${INDENT}property var ${safeName(name)}: ${emitValue(node, fnScope)}`);
+      decls.push(`${INDENT}property var ${memberName(name)}: ${emitValue(node, fnScope)}`);
   }
   // Local helper functions: `function f(params) { body }` and param/block-bodied `const f = ...` →
   // emitted as QML object methods. Signal reads and mutable-local reads are BARE (QML object scope
@@ -368,7 +380,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   if (moduleFnDecls.size > 0) {
     const moduleFnScope: Scope = {
       table: new Map(), mode: "handler", jsImports,
-      ...(Object.keys(constAliases).length ? { locals: constAliases } : {}),
+      ...(Object.keys(constAliases).length || Object.keys(moduleFnAliases).length ? { locals: { ...constAliases, ...moduleFnAliases } } : {}),
     };
     for (const [name, info] of moduleFnDecls) decls.push(`${INDENT}${emitHelperMethod(name, info, moduleFnScope)}`);
   }
@@ -415,7 +427,7 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   // statements come first, right after the hoisted module-level ones.
   const freezeRenderLocals = [...renderLocalsMap.keys()]
     .filter((name) => renderLocalsLive.has(name))
-    .map((name) => `${safeName(name)} = ${safeName(name)};`);
+    .map((name) => `${memberName(name)} = ${memberName(name)};`);
 
   // Computations (createEffect / createRenderEffect / createComputed): each is ONE method on the
   // root, `__effectN()`, run once at its Solid time and re-run by a `Connections` handler per
@@ -453,9 +465,9 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
     }
     const loaderStmts: string[] = [...inlineDecls];
     for (const r of resources) {
-      const rn = safeName(r.name);
+      const rn = memberName(r.name);
       const srcSym = table.get(r.source);
-      const srcRef = safeName(r.source); // the source signal — bare property read
+      const srcRef = memberName(r.source); // the source signal — bare property read
       loaderStmts.push(
         `__load_${rn} = function() { ${rn}_loading = true; ${rn}_error = undefined; ` +
           `Promise.resolve(${safeName(r.fetcher)}(${srcRef})).then(function(v) { ${rn} = v; ${rn}_loading = false; })` +
@@ -464,11 +476,10 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
       );
       // Reload when the source signal changes (only if the source is a tracked reactive cell).
       if (srcSym && (srcSym.kind === "signal" || srcSym.kind === "memo")) {
-        const cap = r.source.charAt(0).toUpperCase() + r.source.slice(1);
         conns.push(
           `${INDENT}Connections {`,
           `${INDENT}${INDENT}target: __self`,
-          `${INDENT}${INDENT}function on${cap}Changed() { __load_${rn}(); }`,
+          `${INDENT}${INDENT}function ${changedHandlerName(srcRef)}() { __load_${rn}(); }`,
           `${INDENT}}`,
         );
       }
@@ -520,11 +531,10 @@ export function emitComponentType(fn: t.Function, render: t.CallExpression, comp
   // One Connections per dependency, re-running its computations in CREATION order (Solid's order;
   // separate Connections would fire in reverse — QML notifies the newest endpoint first).
   for (const { dep, runs } of depRuns.values()) {
-    const cap = dep.prop.charAt(0).toUpperCase() + dep.prop.slice(1);
     conns.push(
       `${INDENT}Connections {`,
       `${INDENT}${INDENT}target: ${dep.target}`,
-      `${INDENT}${INDENT}function on${cap}Changed() { ${runs.map((r) => `${r}();`).join(" ")} }`,
+      `${INDENT}${INDENT}function ${changedHandlerName(dep.prop)}() { ${runs.map((r) => `${r}();`).join(" ")} }`,
       `${INDENT}}`,
     );
   }
@@ -645,7 +655,7 @@ function emitHelperMethod(name: string, info: HelperInfo, scope: Scope): string 
   const bodyScope = info.params.length
     ? { ...scope, locals: { ...(scope.locals ?? {}), ...Object.fromEntries(info.params.map((p) => [p, safeName(p)])) } }
     : scope;
-  return `function ${safeName(name)}(${paramStr}) { ${emitStatements(info.body.body, bodyScope)} }`;
+  return `function ${memberName(name)}(${paramStr}) { ${emitStatements(info.body.body, bodyScope)} }`;
 }
 
 /** Resolve the initial value for a signal property, handling the same-name prop+signal collision.
