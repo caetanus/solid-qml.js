@@ -1481,9 +1481,13 @@ private:
         closeLists(0);
         const QString name = QStringLiteral("Table%1").arg(++m_tableCount);
         const QTextTableFormat tf = t->format();
-        m_tables << TableStyle { name, tf.border(), tf.cellPadding() };
+        m_tables << TableStyle { name, tf.border(), tf.cellPadding(), 0, {} };
         auto &tableStyle = m_tables.last();
         tableStyle.widths = tf.columnWidthConstraints();
+        // The reader resolves unspecified columns to equal percentages. Emit that
+        // canonical form on the first save too, so save/load/save stays stable.
+        if (tableStyle.widths.isEmpty())
+            tableStyle.widths.fill(QTextLength(QTextLength::PercentageLength, 100. / t->columns()), t->columns());
         for (auto &width : tableStyle.widths) if (width.type() == QTextLength::FixedLength)
             width = QTextLength(QTextLength::FixedLength, width.rawValue() * m_unzoom);
         m_x.writeStartElement(QStringLiteral("table:table"));
