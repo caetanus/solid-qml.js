@@ -640,3 +640,62 @@ that size stays unchanged and refreshed on page resize, zoom or a DPR change;
 scrolling and caret frames do not resample it. Both live layout engines and the
 QPainter fidelity export use these pixels. ODF saves and asynchronous copies keep
 the original full-resolution image.
+
+## Table keyboard navigation
+
+Tab selects the next table cell's content; Shift+Tab selects the previous cell.
+Tab in the final cell appends a row as one undo step. Shift+Tab in the first
+cell stays there. Merged cells are visited once. Ctrl+Tab inserts a literal tab
+inside a cell; Tab outside a table also inserts a tab.
+
+## Editing toolbar API
+
+Character setters act on the exact selection, or on subsequently typed text at
+an empty selection (moving the caret clears that pending format):
+
+- `textColor`, `setTextColor(color)` use a CSS color string.
+- `highlightColor`, `setHighlightColor(color)` use a CSS color string; `""` clears highlight.
+- `subscript`, `superscript`, `toggleSubscript()`, `toggleSuperscript()` are mutually exclusive.
+
+Paragraph getters report the caret paragraph. Setters affect all selected
+paragraphs as one undo step. Lengths are canonical pixels at 96 dpi, independent
+of zoom: `leftIndent`, `rightIndent`, `firstLineIndent`,
+`setParagraphIndents(left, right, firstLine)`, `spaceBefore`, `spaceAfter`,
+`setParagraphSpacing(before, after)`. `lineSpacing` / `setLineSpacing(percent)`
+use proportional percentages (100 means single spacing). `tabStops` /
+`setTabStops([24, 72, ...])` use sorted, nonnegative positions for left tabs.
+New state properties notify only when their reported value changes.
+
+`find(text, options)` selects the next match and returns a boolean. Options are
+`caseSensitive`, `wholeWords`, `regex`, `backward` (all default false), and `wrap`
+(default true). Invalid regular expressions and empty searches return false.
+`replace(text)` replaces the selected current match and finds the next one.
+`replaceAll(find, replacement, options)` returns a count and uses one undo step;
+it always scans forward through the document once. Replacement text is literal,
+including when the search is a regular expression.
+
+`copyFormat()` captures character and paragraph formatting at the caret in
+canonical units without editing the document. `hasCopiedFormat` reports whether
+there is a captured format. `applyCopiedFormat()` applies it to the selection
+(or insertion point and current paragraph) in one undo step. The application
+controls the click-then-select interaction.
+
+## Horizontal ruler and table borders
+
+Set `ruler: true` (default false) to show the horizontal ruler above the viewport.
+It follows page width, margins, zoom and horizontal scrolling. Numbers are in
+locale measurement units (centimetres for metric locales, inches otherwise), with
+half- and quarter-unit ticks and shaded margins. `rulerUnit` defaults to `"auto"`;
+set it to `"cm"` or `"in"` to override. `effectiveRulerUnit` reports the chosen unit.
+Drag the upper triangle for first-line indent, the lower left triangle for
+hanging indent (keeping the first line fixed), and the right triangle for right
+indent. Changes commit on release to the selected paragraphs in one undo step.
+Click to add a left tab stop; drag a tab marker to move it, or off the ruler to
+remove it. The example application enables the ruler.
+
+Hover over an internal table-column border for a horizontal resize cursor.
+The grab zone is ±3 px. Dragging shows a preview line; release adjusts the
+adjacent columns with one layout update and a 24 px minimum width at zoom 1.
+One completed drag is one undo step; cancellation discards the preview. Column constraints
+are stored in the table format and serialized to ODF. Colors, highlighting,
+sub/superscript, indents, spacing and left tab stops also round-trip through ODF.

@@ -40,6 +40,7 @@
 #include <QTextImageFormat>
 #include <QTextList>
 #include <QTextTable>
+#include <QRegularExpression>
 #include <QAbstractUndoItem>
 #include <QPointer>
 #include <private/qtextdocument_p.h>
@@ -57,6 +58,9 @@ QQuickItem *createPageBreakOverlay(RichTextHandler *handler, QQuickItem *editor)
 
 RichTextHandler::RichTextHandler(QObject *parent) : QObject(parent)
 {
+    connect(this, &RichTextHandler::formatChanged, this, &RichTextHandler::updateEditingState);
+    connect(this, &RichTextHandler::contentsChanged, this, &RichTextHandler::updateEditingState);
+    connect(this, &RichTextHandler::zoomChanged, this, &RichTextHandler::updateEditingState);
     // The system clipboard, not this document: canPaste must track another app copying something
     // too (office item 2b, item 6).
     connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, &RichTextHandler::canPasteChanged);
@@ -1259,6 +1263,170 @@ void RichTextHandler::mergeInsertionFont(const QTextCharFormat &fmt)
     emit formatChanged();
 }
 
+QTextCharFormat RichTextHandler::editingCharFormat() const
+{
+    auto c = selectionCursor();
+    if (c.isNull()) c = insertionCursor();
+    return c.charFormat();
+}
+QString RichTextHandler::textColor() const
+{
+    const auto brush = editingCharFormat().foreground();
+    return brush.style() == Qt::NoBrush ? QString() : brush.color().name();
+}
+QString RichTextHandler::highlightColor() const
+{
+    const auto brush = editingCharFormat().background();
+    return brush.style() == Qt::NoBrush ? QString() : brush.color().name();
+}
+bool RichTextHandler::subscript() const { return editingCharFormat().verticalAlignment() == QTextCharFormat::AlignSubScript; }
+bool RichTextHandler::superscript() const { return editingCharFormat().verticalAlignment() == QTextCharFormat::AlignSuperScript; }
+void RichTextHandler::copyFormat()
+{
+    const auto c = insertionCursor();
+    if (c.isNull()) return;
+    m_copiedCharFormat = rt::scaledLengths(c.charFormat(), 1 / m_zoom);
+    m_copiedCharFormat.clearProperty(QTextFormat::ObjectIndex);
+    m_copiedCharFormat.clearProperty(QTextFormat::ObjectType);
+    m_copiedBlockFormat = rt::scaledLengths(c.blockFormat(), 1 / m_zoom);
+    m_copiedBlockFormat.clearProperty(QTextFormat::ObjectIndex);
+    m_copiedBlockFormat.clearProperty(QTextFormat::PageBreakPolicy);
+    if (!m_hasCopiedFormat) { m_hasCopiedFormat = true; emit hasCopiedFormatChanged(); }
+}
+void RichTextHandler::applyCopiedFormat()
+{
+    if (!m_hasCopiedFormat) return;
+    auto c = selectionCursor();
+    if (c.isNull()) c = insertionCursor();
+    if (c.isNull()) return;
+    c.beginEditBlock();
+    const int end = c.selectionEnd();
+    for (auto block = c.document()->findBlock(c.selectionStart()); block.isValid(); block = block.next()) {
+        if (block.position() > end || (c.hasSelection() && block.position() == end)) break;
+        auto format = rt::scaledLengths(m_copiedBlockFormat, m_zoom);
+        const auto old = block.blockFormat();
+        for (int property : {int(QTextFormat::ObjectIndex), int(QTextFormat::PageBreakPolicy)})
+            if (old.hasProperty(property)) format.setProperty(property, old.property(property));
+        QTextCursor paragraph(block);
+        paragraph.setBlockFormat(format);
+    }
+    auto format = rt::scaledLengths(m_copiedCharFormat, m_zoom);
+    if (c.hasSelection()) {
+        m_pendingFont = {};
+        c.setCharFormat(format);
+    } else {
+        // Explicit defaults let the existing insertion-format path clear target overrides.
+        QTextCharFormat defaults;
+        defaults.setFont(c.document()->defaultFont());
+        defaults.setForeground(QBrush(Qt::NoBrush));
+        defaults.setBackground(QBrush(Qt::NoBrush));
+        defaults.setVerticalAlignment(QTextCharFormat::AlignNormal);
+        defaults.merge(format);
+        m_pendingFont = {};
+        mergeInsertionFont(defaults);
+    }
+    c.endEditBlock();
+    emit formatChanged();
+}
+
+void RichTextHandler::setTextColor(const QString &color)
+{
+    const QColor value(color);
+    if (!value.isValid()) return;
+    QTextCharFormat format; format.setForeground(value); mergeInsertionFont(format);
+}
+void RichTextHandler::setHighlightColor(const QString &color)
+{
+    const QColor value(color);
+    if (!color.isEmpty() && !value.isValid()) return;
+    QTextCharFormat format; format.setBackground(color.isEmpty() ? QBrush(Qt::NoBrush) : QBrush(value));
+    mergeInsertionFont(format);
+}
+void RichTextHandler::toggleSubscript()
+{
+    QTextCharFormat format;
+    format.setVerticalAlignment(subscript() ? QTextCharFormat::AlignNormal : QTextCharFormat::AlignSubScript);
+    mergeInsertionFont(format);
+}
+void RichTextHandler::toggleSuperscript()
+{
+    QTextCharFormat format;
+    format.setVerticalAlignment(superscript() ? QTextCharFormat::AlignNormal : QTextCharFormat::AlignSuperScript);
+    mergeInsertionFont(format);
+}
+qreal RichTextHandler::leftIndent() const { return insertionCursor().blockFormat().leftMargin() / m_zoom; }
+qreal RichTextHandler::rightIndent() const { return insertionCursor().blockFormat().rightMargin() / m_zoom; }
+qreal RichTextHandler::firstLineIndent() const { return insertionCursor().blockFormat().textIndent() / m_zoom; }
+qreal RichTextHandler::spaceBefore() const { return insertionCursor().blockFormat().topMargin() / m_zoom; }
+qreal RichTextHandler::spaceAfter() const { return insertionCursor().blockFormat().bottomMargin() / m_zoom; }
+qreal RichTextHandler::lineSpacing() const
+{
+    const auto format = insertionCursor().blockFormat();
+    return format.lineHeightType() == QTextBlockFormat::ProportionalHeight ? format.lineHeight() : 100.;
+}
+QVariantList RichTextHandler::tabStops() const
+{
+    QVariantList stops;
+    for (const auto &tab : insertionCursor().blockFormat().tabPositions()) stops.append(tab.position / m_zoom);
+    return stops;
+}
+void RichTextHandler::mergeEditingBlock(const QTextBlockFormat &format)
+{
+    auto c = selectionCursor();
+    if (c.isNull()) c = insertionCursor();
+    if (c.isNull()) return;
+    c.beginEditBlock(); c.mergeBlockFormat(format); c.endEditBlock();
+    emit formatChanged();
+}
+void RichTextHandler::setParagraphIndents(qreal left, qreal right, qreal firstLine)
+{
+    if (!qIsFinite(left) || !qIsFinite(right) || !qIsFinite(firstLine)) return;
+    QTextBlockFormat format;
+    format.setLeftMargin(left * m_zoom); format.setRightMargin(right * m_zoom); format.setTextIndent(firstLine * m_zoom);
+    mergeEditingBlock(format);
+}
+void RichTextHandler::setLineSpacing(qreal percent)
+{
+    if (!qIsFinite(percent) || percent <= 0) return;
+    QTextBlockFormat format; format.setLineHeight(percent, QTextBlockFormat::ProportionalHeight); mergeEditingBlock(format);
+}
+void RichTextHandler::setParagraphSpacing(qreal before, qreal after)
+{
+    if (!qIsFinite(before) || !qIsFinite(after) || before < 0 || after < 0) return;
+    QTextBlockFormat format; format.setTopMargin(before * m_zoom); format.setBottomMargin(after * m_zoom); mergeEditingBlock(format);
+}
+void RichTextHandler::setTabStops(const QVariantList &stops)
+{
+    QList<QTextOption::Tab> tabs;
+    for (const auto &value : stops) {
+        bool ok = false; const qreal position = value.toDouble(&ok);
+        if (!ok || !qIsFinite(position) || position < 0) return;
+        QTextOption::Tab tab; tab.position = position * m_zoom; tabs.append(tab);
+    }
+    std::sort(tabs.begin(), tabs.end(), [](const auto &a, const auto &b) { return a.position < b.position; });
+    tabs.erase(std::unique(tabs.begin(), tabs.end()), tabs.end());
+    QTextBlockFormat format; format.setTabPositions(tabs); mergeEditingBlock(format);
+}
+void RichTextHandler::updateEditingState()
+{
+    if (m_changingZoom) return;
+    const QVariantList state{textColor(), highlightColor(), subscript(), superscript(), leftIndent(), rightIndent(),
+        firstLineIndent(), lineSpacing(), spaceBefore(), spaceAfter(), QVariant(tabStops())};
+    const auto previous = m_editingState;
+    m_editingState = state;
+    if (previous.size() <= 0 || previous[0] != state[0]) emit textColorChanged();
+    if (previous.size() <= 1 || previous[1] != state[1]) emit highlightColorChanged();
+    if (previous.size() <= 2 || previous[2] != state[2]) emit subscriptChanged();
+    if (previous.size() <= 3 || previous[3] != state[3]) emit superscriptChanged();
+    if (previous.size() <= 4 || previous[4] != state[4]) emit leftIndentChanged();
+    if (previous.size() <= 5 || previous[5] != state[5]) emit rightIndentChanged();
+    if (previous.size() <= 6 || previous[6] != state[6]) emit firstLineIndentChanged();
+    if (previous.size() <= 7 || previous[7] != state[7]) emit lineSpacingChanged();
+    if (previous.size() <= 8 || previous[8] != state[8]) emit spaceBeforeChanged();
+    if (previous.size() <= 9 || previous[9] != state[9]) emit spaceAfterChanged();
+    if (previous.size() <= 10 || previous[10] != state[10]) emit tabStopsChanged();
+}
+
 void RichTextHandler::setFontFamily(const QString &name)
 {
     if (name.trimmed().isEmpty())
@@ -1308,6 +1476,191 @@ bool RichTextHandler::insertImage(const QUrl &file)
     rt::prepareImageSampling(doc, m_document->parent());
     setError(QString());
     emit formatChanged();
+    return true;
+}
+
+namespace {
+QTextCursor findMatch(QTextDocument *document, const QString &text, int from, const QVariantMap &options)
+{
+    if (!document || text.isEmpty()) return {};
+    QTextDocument::FindFlags flags;
+    if (options.value(QStringLiteral("caseSensitive")).toBool()) flags |= QTextDocument::FindCaseSensitively;
+    if (options.value(QStringLiteral("wholeWords")).toBool()) flags |= QTextDocument::FindWholeWords;
+    if (options.value(QStringLiteral("backward")).toBool()) flags |= QTextDocument::FindBackward;
+    if (!options.value(QStringLiteral("regex")).toBool()) return document->find(text, from, flags);
+    QRegularExpression expression(text);
+    if (!(flags & QTextDocument::FindCaseSensitively)) expression.setPatternOptions(QRegularExpression::CaseInsensitiveOption);
+    if (!expression.isValid()) return {};
+    return document->find(expression, from, flags);
+}
+}
+bool RichTextHandler::find(const QString &text, const QVariantMap &options)
+{
+    m_findText = text; m_findOptions = options;
+    auto c = selectionCursor();
+    if (c.isNull()) c = insertionCursor();
+    if (c.isNull()) return false;
+    const bool backward = options.value(QStringLiteral("backward")).toBool();
+    auto match = findMatch(c.document(), text, backward ? c.selectionStart() : c.selectionEnd(), options);
+    if (match.isNull() && options.value(QStringLiteral("wrap"), true).toBool())
+        match = findMatch(c.document(), text, backward ? c.document()->characterCount()-1 : 0, options);
+    m_findMatch = match;
+    if (match.isNull()) return false;
+    selectEditorCursor(match);
+    return true;
+}
+bool RichTextHandler::replace(const QString &text)
+{
+    auto c = selectionCursor();
+    if (!c.isNull() && !m_findMatch.isNull() && c.selectionStart() == m_findMatch.selectionStart()
+        && c.selectionEnd() == m_findMatch.selectionEnd()) {
+        c.beginEditBlock(); c.insertText(text); c.endEditBlock(); selectEditorCursor(c);
+    }
+    return find(m_findText, m_findOptions);
+}
+int RichTextHandler::replaceAll(const QString &text, const QString &replacement, const QVariantMap &options)
+{
+    auto c = insertionCursor();
+    if (c.isNull() || text.isEmpty()) return 0;
+    QVariantMap forward = options; forward.insert(QStringLiteral("backward"), false);
+    int count = 0, from = 0;
+    c.beginEditBlock();
+    while (true) {
+        auto match = findMatch(c.document(), text, from, forward);
+        if (match.isNull()) break;
+        const bool empty = !match.hasSelection();
+        match.insertText(replacement);
+        from = match.position() + (empty ? 1 : 0);
+        ++count;
+        if (from >= c.document()->characterCount()) break;
+    }
+    c.endEditBlock();
+    m_findMatch = {};
+    return count;
+}
+
+void RichTextHandler::selectEditorCursor(const QTextCursor &c)
+{
+    if (c.isNull() || !m_document) return;
+    QMetaObject::invokeMethod(m_document->parent(), "select",
+        Q_ARG(int, c.anchor()), Q_ARG(int, c.position()));
+    setCursorPosition(c.position());
+    setSelectionStart(c.selectionStart());
+    setSelectionEnd(c.selectionEnd());
+}
+
+namespace {
+QList<qreal> tableBoundaries(QTextTable *table)
+{
+    auto *layout = table->document()->documentLayout();
+    const auto bounds = layout->frameBoundingRect(table);
+    QList<qreal> result(table->columns()+1, std::numeric_limits<qreal>::quiet_NaN());
+    result.first() = bounds.left(); result.last() = bounds.right();
+    if (auto *custom = dynamic_cast<rt::RichTextLayout *>(layout)) {
+        for (const auto &fragment : custom->tableFragments()) {
+            if (fragment.table != table) continue;
+            const auto cell = table->cellAt(fragment.row, fragment.column);
+            result[cell.column()] = fragment.rect.left();
+            result[cell.column()+cell.columnSpan()] = fragment.rect.right();
+        }
+    } else {
+        for (int col=1; col<table->columns(); ++col) for (int row=0; row<table->rows(); ++row) {
+            const auto cell = table->cellAt(row,col);
+            if (cell.column()!=col) continue;
+            const auto block = cell.firstCursorPosition().block();
+            result[col] = layout->blockBoundingRect(block).left() - table->format().cellPadding() - table->format().border();
+            break;
+        }
+    }
+    for (int i=1; i<table->columns(); ++i) if (!qIsFinite(result[i]))
+        result[i] = bounds.left() + bounds.width()*i/table->columns();
+    return result;
+}
+}
+QVariantMap RichTextHandler::columnBorderAt(qreal x, qreal y) const
+{
+    if (!m_document) return {};
+    auto *doc = m_document->textDocument();
+    auto *layout = doc->documentLayout();
+    const int position = layout->hitTest({x,y}, Qt::FuzzyHit);
+    if (position < 0) return {};
+    QTextCursor c(doc); c.setPosition(position);
+    auto *table = c.currentTable();
+    if (!table || !layout->frameBoundingRect(table).adjusted(-3,0,3,0).contains({x,y})) return {};
+    const auto boundaries = tableBoundaries(table);
+    for (int col=1; col<table->columns(); ++col) if (qAbs(x-boundaries[col]) <= 3)
+        return {{QStringLiteral("tablePosition"), table->firstPosition()}, {QStringLiteral("border"), col}, {QStringLiteral("x"), boundaries[col]},
+            {QStringLiteral("top"), layout->frameBoundingRect(table).top()},
+            {QStringLiteral("height"), layout->frameBoundingRect(table).height()}};
+    return {};
+}
+bool RichTextHandler::beginColumnResize(int tablePosition, int border)
+{
+    endColumnResize();
+    if (!m_document) return false;
+    auto *doc = m_document->textDocument();
+    if (tablePosition < 0 || tablePosition >= doc->characterCount()) return false;
+    QTextCursor c(doc); c.setPosition(tablePosition);
+    auto *table = c.currentTable();
+    if (!table || border <= 0 || border >= table->columns()) return false;
+    m_resizeTable = table; m_resizeBorder = border; m_resizeDelta = 0;
+    m_resizeWidths = table->format().columnWidthConstraints();
+    bool fixed = m_resizeWidths.size() == table->columns();
+    for (const auto &width : m_resizeWidths) fixed = fixed && width.type() == QTextLength::FixedLength;
+    if (!fixed) {
+        const auto boundaries = tableBoundaries(table);
+        m_resizeWidths.clear();
+        for (int col=0; col<table->columns(); ++col)
+            m_resizeWidths.append(QTextLength(QTextLength::FixedLength, qMax(24. * m_zoom, boundaries[col+1]-boundaries[col])));
+    }
+    return true;
+}
+qreal RichTextHandler::resizeColumn(qreal delta)
+{
+    if (!m_resizeTable || !qIsFinite(delta)) return m_resizeDelta / m_zoom;
+    const qreal left = m_resizeWidths[m_resizeBorder-1].rawValue();
+    const qreal right = m_resizeWidths[m_resizeBorder].rawValue();
+    const qreal minimum = qMin(24. * m_zoom, (left + right)/2);
+    m_resizeDelta = qBound(minimum-left, delta * m_zoom, right-minimum);
+    return m_resizeDelta / m_zoom;
+}
+void RichTextHandler::endColumnResize(bool commit)
+{
+    if (commit && m_resizeTable && !qFuzzyIsNull(m_resizeDelta)) {
+        auto widths = m_resizeWidths;
+        widths[m_resizeBorder-1] = QTextLength(QTextLength::FixedLength,
+            widths[m_resizeBorder-1].rawValue() + m_resizeDelta);
+        widths[m_resizeBorder] = QTextLength(QTextLength::FixedLength,
+            widths[m_resizeBorder].rawValue() - m_resizeDelta);
+        auto format = m_resizeTable->format();
+        auto c = m_resizeTable->firstCursorPosition();
+        c.beginEditBlock();
+        format.setColumnWidthConstraints(widths);
+        m_resizeTable->setFormat(format);
+        c.endEditBlock();
+    }
+    m_resizeTable = nullptr; m_resizeWidths.clear(); m_resizeDelta = 0;
+}
+
+bool RichTextHandler::tableTab(bool backward)
+{
+    auto c = insertionCursor();
+    auto *table = c.isNull() ? nullptr : c.currentTable();
+    if (!table) return false;
+    const auto cell = table->cellAt(c);
+    // Walk document positions, skipping all covered coordinates of merged cells.
+    const int position = backward ? cell.firstPosition() - 1 : cell.lastPosition() + 1;
+    if (backward && position < table->firstPosition()) return true;
+    if (!backward && position > table->lastPosition()) {
+        c.beginEditBlock();
+        table->appendRows(1);
+        c.endEditBlock();
+    }
+    const auto next = table->cellAt(position);
+    if (!next.isValid()) return true;
+    c = next.firstCursorPosition();
+    c.setPosition(next.lastPosition(), QTextCursor::KeepAnchor);
+    selectEditorCursor(c);
     return true;
 }
 
@@ -1805,8 +2158,18 @@ void RichTextHandler::rescaleRange(int from, int to, qreal ratio, bool clipChars
     const std::function<void(QTextFrame::iterator, const QTextFrame::iterator &)> walk =
         [&](QTextFrame::iterator it, const QTextFrame::iterator &end) {
             for (; it != end; ++it) {
-                if (QTextFrame *f = it.currentFrame())
+                if (QTextFrame *f = it.currentFrame()) {
+                    if (from < 0) if (auto *table = qobject_cast<QTextTable *>(f)) {
+                        auto format = table->format();
+                        auto widths = format.columnWidthConstraints();
+                        bool changed = false;
+                        for (auto &width : widths) if (width.type() == QTextLength::FixedLength) {
+                            width = QTextLength(QTextLength::FixedLength, width.rawValue() * ratio); changed = true;
+                        }
+                        if (changed) { format.setColumnWidthConstraints(widths); table->setFormat(format); }
+                    }
                     walk(f->begin(), f->end());
+                }
                 else if (const QTextBlock b = it.currentBlock(); b.isValid())
                     scaleBlock(b);
             }
@@ -1823,6 +2186,7 @@ void RichTextHandler::setZoom(qreal z)
     const qreal ratio = z / m_zoom;
     if (m_pendingFont.hasProperty(QTextFormat::FontPointSize))
         m_pendingFont.setFontPointSize(m_pendingFont.fontPointSize() * ratio);
+    m_changingZoom = true;
     if (doc) {
         QTextCursor edit(doc);
         edit.beginEditBlock(); // one undo step, like any other formatting change
@@ -1833,6 +2197,7 @@ void RichTextHandler::setZoom(qreal z)
     if (doc) rt::prepareImageSampling(doc, m_document->parent());
     if (m_selectionStart == m_selectionEnd && !m_pendingFont.isEmpty())
         mergeInsertionFont(m_pendingFont);
+    m_changingZoom = false;
     emit zoomChanged();
 }
 

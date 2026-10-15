@@ -50,9 +50,9 @@ QString textBodyStyle();         // "Text Body" (ODF "Text_20_body")
 // Style properties, by their API name. Character ones apply to text runs (a paragraph style may
 // set them too: they style the whole paragraph's text); paragraph ones to blocks.
 enum class Prop {
-    FontFamily, FontSize, FontWeight, Italic, Underline, Strike, Color, LetterSpacing, Language, // character
+    FontFamily, FontSize, FontWeight, Italic, Underline, Strike, Color, LetterSpacing, Language, Highlight, VerticalAlignment, // character
     MarginTop, MarginBottom, MarginLeft, MarginRight, TextIndent, LineHeight, Alignment,
-    OutlineLevel, Widows, Orphans, KeepWithNext,                                       // paragraph
+    OutlineLevel, Widows, Orphans, TabStops, KeepWithNext,                                       // paragraph
 };
 constexpr int kPropCount = int(Prop::KeepWithNext) + 1;
 constexpr Prop kFirstBlockProp = Prop::MarginTop;

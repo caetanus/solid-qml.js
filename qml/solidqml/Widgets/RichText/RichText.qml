@@ -25,6 +25,7 @@ Css.CssFill {
     cssPrimitive: "div"
     implicitWidth: 560
     implicitHeight: 380
+    property real _rulerHeight: 0
     property string variant: "document"
     property string html: ""
     // The built-in toolbar (formatting needs the loader's handler either way).
@@ -243,6 +244,7 @@ Css.CssFill {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: bar.bottom
+            anchors.topMargin: root._rulerHeight
             anchors.bottom: parent.bottom
             clip: true
             contentWidth: Math.max(width, root._sheetWidth)
@@ -287,6 +289,14 @@ Css.CssFill {
                 Keys.onPressed: (event) => {
                     if (root._navigatePage(event)) return
                     if (!root.fmt) return
+                    if (!root._mail && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)
+                        && !(event.modifiers & (Qt.AltModifier | Qt.MetaModifier))) {
+                        if (event.modifiers & Qt.ControlModifier) root.fmt.insertText("\t")
+                        else if (!root.fmt.tableTab(event.key === Qt.Key_Backtab || !!(event.modifiers & Qt.ShiftModifier)))
+                            root.fmt.insertText("\t")
+                        event.accepted = true
+                        return
+                    }
                     if (!root._mail && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                         && !(event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) {
                         root.fmt.insertParagraph()

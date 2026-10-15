@@ -30,6 +30,8 @@
 // text run optionally in a character style; what Qt renders is the style chain plus direct
 // formatting. Redefining a style re-applies it everywhere (direct overrides kept) as one undo
 // step; Enter starts the style's next style.
+class QTextTable;
+
 class RichTextHandler : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(RichTextHandler)
@@ -57,6 +59,18 @@ class RichTextHandler : public QObject {
     Q_PROPERTY(QString currentParagraphStyle READ currentParagraphStyle NOTIFY formatChanged)
     Q_PROPERTY(QString currentCharStyle READ currentCharStyle NOTIFY formatChanged)
     // Cursor sits inside a table — gates the row/column toolbar actions.
+    Q_PROPERTY(QString textColor READ textColor NOTIFY textColorChanged)
+    Q_PROPERTY(QString highlightColor READ highlightColor NOTIFY highlightColorChanged)
+    Q_PROPERTY(bool subscript READ subscript NOTIFY subscriptChanged)
+    Q_PROPERTY(bool superscript READ superscript NOTIFY superscriptChanged)
+    Q_PROPERTY(qreal leftIndent READ leftIndent NOTIFY leftIndentChanged)
+    Q_PROPERTY(qreal rightIndent READ rightIndent NOTIFY rightIndentChanged)
+    Q_PROPERTY(qreal firstLineIndent READ firstLineIndent NOTIFY firstLineIndentChanged)
+    Q_PROPERTY(qreal lineSpacing READ lineSpacing NOTIFY lineSpacingChanged)
+    Q_PROPERTY(qreal spaceBefore READ spaceBefore NOTIFY spaceBeforeChanged)
+    Q_PROPERTY(qreal spaceAfter READ spaceAfter NOTIFY spaceAfterChanged)
+    Q_PROPERTY(QVariantList tabStops READ tabStops NOTIFY tabStopsChanged)
+    Q_PROPERTY(bool hasCopiedFormat READ hasCopiedFormat NOTIFY hasCopiedFormatChanged)
     Q_PROPERTY(bool inTable READ inTable NOTIFY formatChanged)
     // Paragraph alignment at the cursor: "left" | "center" | "right" | "justify".
     Q_PROPERTY(QString alignment READ alignment NOTIFY formatChanged)
@@ -127,6 +141,28 @@ public:
     QString fontFamily() const;
     qreal fontSize() const; // pt, canonical (zoom-1) units
 
+    QString textColor() const;
+    QString highlightColor() const;
+    bool subscript() const;
+    bool superscript() const;
+    qreal leftIndent() const;
+    qreal rightIndent() const;
+    qreal firstLineIndent() const;
+    qreal lineSpacing() const;
+    qreal spaceBefore() const;
+    qreal spaceAfter() const;
+    QVariantList tabStops() const;
+    Q_INVOKABLE void setTextColor(const QString &color);
+    Q_INVOKABLE void setHighlightColor(const QString &color);
+    Q_INVOKABLE void toggleSubscript();
+    Q_INVOKABLE void toggleSuperscript();
+    Q_INVOKABLE void setParagraphIndents(qreal left, qreal right, qreal firstLine);
+    Q_INVOKABLE void setLineSpacing(qreal percent);
+    Q_INVOKABLE void setParagraphSpacing(qreal before, qreal after);
+    Q_INVOKABLE void setTabStops(const QVariantList &stops);
+    bool hasCopiedFormat() const { return m_hasCopiedFormat; }
+    Q_INVOKABLE void copyFormat();
+    Q_INVOKABLE void applyCopiedFormat();
     Q_INVOKABLE void toggleBold();
     Q_INVOKABLE void toggleItalic();
     Q_INVOKABLE void toggleUnderline();
@@ -232,6 +268,14 @@ public:
 
     // Tables (owner: "no richtext temos tabela também"): a bordered QTextTable at the cursor,
     // plus row/column edits relative to the current cell.
+    Q_INVOKABLE bool find(const QString &text, const QVariantMap &options = {});
+    Q_INVOKABLE bool replace(const QString &text);
+    Q_INVOKABLE int replaceAll(const QString &text, const QString &replacement, const QVariantMap &options = {});
+    Q_INVOKABLE QVariantMap columnBorderAt(qreal x, qreal y) const;
+    Q_INVOKABLE bool beginColumnResize(int tablePosition, int border);
+    Q_INVOKABLE qreal resizeColumn(qreal delta);
+    Q_INVOKABLE void endColumnResize(bool commit = true);
+    Q_INVOKABLE bool tableTab(bool backward = false);
     Q_INVOKABLE void insertTable(int rows, int cols);
     Q_INVOKABLE void addTableRow();
     Q_INVOKABLE void addTableColumn();
@@ -344,6 +388,18 @@ public:
     const QList<Mark> &marks() { ensureMarksSorted(); return m_marks; }
 
 signals:
+    void hasCopiedFormatChanged();
+    void textColorChanged();
+    void highlightColorChanged();
+    void subscriptChanged();
+    void superscriptChanged();
+    void leftIndentChanged();
+    void rightIndentChanged();
+    void firstLineIndentChanged();
+    void lineSpacingChanged();
+    void spaceBeforeChanged();
+    void spaceAfterChanged();
+    void tabStopsChanged();
     void saveCopyFinished(bool ok, const QString &error);
     void pageBreakLabelChanged();
     void pagesChanged();
@@ -433,6 +489,21 @@ private:
     QTextCursor insertionCursor() const;     // plain caret position (no word expansion) — inserts
     void mergeCharFormat(const QTextCharFormat &fmt);
     void mergeInsertionFont(const QTextCharFormat &fmt);
+    void selectEditorCursor(const QTextCursor &c);
+    QTextCharFormat editingCharFormat() const;
+    void mergeEditingBlock(const QTextBlockFormat &format);
+    void updateEditingState();
+    QVariantList m_editingState;
+    QString m_findText;
+    QVariantMap m_findOptions;
+    QTextCursor m_findMatch;
+    QPointer<QTextTable> m_resizeTable;
+    QList<QTextLength> m_resizeWidths;
+    int m_resizeBorder = 0;
+    qreal m_resizeDelta = 0;
+    bool m_hasCopiedFormat = false;
+    QTextCharFormat m_copiedCharFormat;
+    QTextBlockFormat m_copiedBlockFormat;
     QTextCharFormat m_pendingFont;
 
     // ── outline (★3) ──────────────────────────────────────────────────────────────────────────
@@ -542,5 +613,6 @@ private:
     QMetaObject::Connection m_contentsConn;
     QMetaObject::Connection m_cullingConn;
     QMetaObject::Connection m_headingsConn;
+    bool m_changingZoom = false;
     qreal m_zoom = 1.0; // the live document's CURRENT zoom; m_sheet itself is never scaled
 };

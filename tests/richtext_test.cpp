@@ -272,6 +272,330 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void editingColorsAtInsertionPoint()
+    {
+        m_fmt->insertText("abcd");
+        m_fmt->setCursorPosition(2);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setTextColor", Q_ARG(QString, QString("#ff0000"))));
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setHighlightColor", Q_ARG(QString, QString("#ffff00"))));
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "toggleSuperscript"));
+        QCOMPARE(m_fmt->property("textColor").toString(), QString("#ff0000"));
+        QVERIFY(m_fmt->property("superscript").toBool());
+        m_fmt->insertText("X");
+        QCOMPARE(charAt(doc(), 2).foreground().color(), QColor("#ff0000"));
+        QCOMPARE(charAt(doc(), 2).background().color(), QColor("#ffff00"));
+        QCOMPARE(charAt(doc(), 2).verticalAlignment(), QTextCharFormat::AlignSuperScript);
+        QVERIFY(charAt(doc(), 1).foreground().color() != QColor("#ff0000"));
+    }
+
+    void editingParagraphApi()
+    {
+        m_fmt->insertText("one\ntwo");
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(7);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setParagraphIndents", Q_ARG(qreal, 24.), Q_ARG(qreal, 12.), Q_ARG(qreal, -8.)));
+        for (auto b = doc()->begin(); b.isValid(); b = b.next()) {
+            QCOMPARE(b.blockFormat().leftMargin(), 24.);
+            QCOMPARE(b.blockFormat().rightMargin(), 12.);
+            QCOMPARE(b.blockFormat().textIndent(), -8.);
+        }
+        doc()->undo();
+        QCOMPARE(doc()->begin().blockFormat().leftMargin(), 0.);
+        QCOMPARE(doc()->lastBlock().blockFormat().leftMargin(), 0.);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setLineSpacing", Q_ARG(qreal, 150.)));
+        QCOMPARE(doc()->begin().blockFormat().lineHeight(), 150.);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setParagraphSpacing", Q_ARG(qreal, 9.), Q_ARG(qreal, 13.)));
+        QCOMPARE(doc()->lastBlock().blockFormat().bottomMargin(), 13.);
+        const QVariantList stops{24., 72.};
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setTabStops", Q_ARG(QVariantList, stops)));
+        QCOMPARE(doc()->begin().blockFormat().tabPositions().size(), 2);
+    }
+
+    void editingFindReplace()
+    {
+        m_fmt->insertText("Cat cat scatter cat");
+        m_fmt->setCursorPosition(0);
+        const QVariantMap options{{"wholeWords", true}, {"wrap", true}};
+        bool found = false;
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "find", Q_RETURN_ARG(bool, found), Q_ARG(QString, QString("cat")), Q_ARG(QVariantMap, options)));
+        QVERIFY(found);
+        QCOMPARE(m_edit->property("selectedText").toString(), QString("Cat"));
+        int count = 0;
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "replaceAll", Q_RETURN_ARG(int, count), Q_ARG(QString, QString("cat")), Q_ARG(QString, QString("dog")), Q_ARG(QVariantMap, options)));
+        QCOMPARE(count, 3);
+        QCOMPARE(doc()->toPlainText(), QString("dog dog scatter dog"));
+        doc()->undo();
+        QCOMPARE(doc()->toPlainText(), QString("Cat cat scatter cat"));
+    }
+
+    void editingOdfRoundTrip()
+    {
+        m_fmt->insertText("sample");
+        m_fmt->setSelectionStart(0); m_fmt->setSelectionEnd(6);
+        m_fmt->setTextColor("#aa0000"); m_fmt->setHighlightColor("#ffff00"); m_fmt->toggleSubscript();
+        m_fmt->setParagraphIndents(24, 12, -6); m_fmt->setParagraphSpacing(9, 13);
+        m_fmt->setLineSpacing(150); m_fmt->setTabStops({24.,72.});
+        const auto path = QUrl::fromLocalFile(m_dir.filePath("editing.odt"));
+        QVERIFY(m_fmt->saveOdfCopy(path)); QVERIFY(m_fmt->loadOdf(path));
+        QCOMPARE(charAt(doc(), 0).foreground().color(), QColor("#aa0000"));
+        QCOMPARE(charAt(doc(), 0).background().color(), QColor("#ffff00"));
+        QCOMPARE(charAt(doc(), 0).verticalAlignment(), QTextCharFormat::AlignSubScript);
+        const auto f = doc()->begin().blockFormat();
+        QCOMPARE(f.leftMargin(), 24.); QCOMPARE(f.rightMargin(), 12.); QCOMPARE(f.textIndent(), -6.);
+        QVERIFY(qAbs(f.topMargin() - 9.) < 0.00001); QVERIFY(qAbs(f.bottomMargin() - 13.) < 0.00001); QCOMPARE(f.lineHeight(), 150.);
+        QCOMPARE(f.tabPositions().size(), 2);
+        QCOMPARE(f.tabPositions()[1].position, 72.);
+    }
+
+    void editingFormatPainter()
+    {
+        m_fmt->insertText("one\ntwo");
+        m_fmt->setCursorPosition(1);
+        m_fmt->setSelectionStart(0); m_fmt->setSelectionEnd(3);
+        m_fmt->setTextColor("#aa0000"); m_fmt->setParagraphIndents(24, 12, -6);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "copyFormat"));
+        QVERIFY(m_fmt->property("hasCopiedFormat").toBool());
+        m_fmt->setCursorPosition(5); m_fmt->setSelectionStart(4); m_fmt->setSelectionEnd(7);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "applyCopiedFormat"));
+        QCOMPARE(charAt(doc(), 4).foreground().color(), QColor("#aa0000"));
+        QCOMPARE(doc()->lastBlock().blockFormat().leftMargin(), 24.);
+        doc()->undo();
+        QVERIFY(charAt(doc(), 4).foreground().color() != QColor("#aa0000"));
+        QCOMPARE(doc()->lastBlock().blockFormat().leftMargin(), 0.);
+    }
+
+    void formatPainterClearsTargetFormatting()
+    {
+        m_fmt->insertText("plain\ntarget");
+        m_fmt->setSelectionStart(6); m_fmt->setSelectionEnd(12); m_fmt->setCursorPosition(7);
+        m_fmt->toggleBold(); m_fmt->setHighlightColor("#ffff00");
+        m_fmt->setParagraphIndents(24, 12, 6);
+        m_fmt->setSelectionStart(0); m_fmt->setSelectionEnd(0); m_fmt->setCursorPosition(1);
+        m_fmt->copyFormat();
+        m_fmt->setSelectionStart(6); m_fmt->setSelectionEnd(12); m_fmt->setCursorPosition(7);
+        m_fmt->applyCopiedFormat();
+        QVERIFY(charAt(doc(), 6).fontWeight() != QFont::Bold);
+        QCOMPARE(charAt(doc(), 6).background().style(), Qt::NoBrush);
+        QCOMPARE(doc()->lastBlock().blockFormat().leftMargin(), 0.);
+    }
+
+    void editingNotifyOnlyOnChange()
+    {
+        m_fmt->insertText("word");
+        m_fmt->setCursorPosition(2);
+        QSignalSpy color(m_fmt, &RichTextHandler::textColorChanged);
+        QSignalSpy highlight(m_fmt, &RichTextHandler::highlightColorChanged);
+        QSignalSpy left(m_fmt, &RichTextHandler::leftIndentChanged);
+        m_fmt->setTextColor("#123456");
+        QCOMPARE(color.size(), 1);
+        m_fmt->setTextColor("#123456");
+        QCOMPARE(color.size(), 1);
+        m_fmt->setHighlightColor("#ffff00");
+        QCOMPARE(highlight.size(), 1);
+        m_fmt->setHighlightColor("");
+        QCOMPARE(highlight.size(), 2);
+        m_fmt->setHighlightColor("");
+        QCOMPARE(highlight.size(), 2);
+        m_fmt->setParagraphIndents(24, 0, 0);
+        QCOMPARE(left.size(), 1);
+        m_fmt->setParagraphIndents(24, 0, 0);
+        QCOMPARE(left.size(), 1);
+        m_fmt->setZoom(2);
+        QCOMPARE(left.size(), 1);
+        QCOMPARE(m_fmt->leftIndent(), 24.);
+    }
+
+    void editingSearchOptions()
+    {
+        m_fmt->insertText("Cat cat scatter cat42");
+        m_fmt->setCursorPosition(0);
+        QVERIFY(m_fmt->find("cat", {{"caseSensitive", true}, {"wholeWords", true}}));
+        QCOMPARE(m_fmt->selectionStart(), 4);
+        QVERIFY(!m_fmt->replace("dog"));
+        QVERIFY(doc()->toPlainText().startsWith("Cat dog"));
+        QVERIFY(!m_fmt->find("[", {{"regex", true}}));
+        QCOMPARE(m_fmt->replaceAll("cat[0-9]+", "number", {{"regex", true}}), 1);
+        QVERIFY(doc()->toPlainText().endsWith("number"));
+        m_fmt->setSelectionStart(0); m_fmt->setSelectionEnd(0); m_fmt->setCursorPosition(0);
+        QVERIFY(!m_fmt->find("dog", {{"backward", true}, {"wrap", false}}));
+        QVERIFY(m_fmt->find("dog", {{"backward", true}, {"wrap", true}}));
+        QCOMPARE(m_fmt->selectionStart(), 4);
+    }
+
+    void editingBookSearchTiming()
+    {
+        const auto path = qEnvironmentVariable("RICHTEXT_BOOK");
+        if (!QFile::exists(path)) QSKIP("book sample unavailable");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        QElapsedTimer timer; timer.start();
+        QVERIFY(!m_fmt->find("task13-no-hit-8bc31c64", {{"wrap", false}}));
+        const auto noHit = timer.nsecsElapsed()/1e6;
+        timer.restart();
+        const int count = m_fmt->replaceAll("a", "A", {{"caseSensitive", true}});
+        const auto replaceMs = timer.nsecsElapsed()/1e6;
+        qInfo("SEARCH_BOOK no_hit_ms=%.3f replace_all_ms=%.3f replacements=%d", noHit, replaceMs, count);
+        QVERIFY(count > 0);
+        doc()->undo();
+    }
+
+    void rulerDefaultsAndToggle()
+    {
+        PageEditor widget;
+        QVERIFY(widget.root);
+        QVERIFY(widget.root->property("ruler").isValid());
+        QVERIFY(!widget.root->property("ruler").toBool());
+        QVERIFY(widget.root->setProperty("ruler", true));
+        auto *ruler = widget.root->findChild<QQuickItem *>("documentRuler");
+        QVERIFY(ruler);
+        QVERIFY(ruler->isVisible());
+        QVERIFY(ruler->height() > 0);
+    }
+
+    void rulerLocaleUnits()
+    {
+        const auto previous = QLocale();
+        for (const auto &name : {QString("pt_BR"), QString("en_US")}) {
+            QLocale::setDefault(QLocale(name));
+            PageEditor widget;
+            QVERIFY(widget.root);
+            QCOMPARE(widget.root->property("rulerUnit").toString(), QString("auto"));
+            QCOMPARE(widget.root->property("effectiveRulerUnit").toString(),
+                     name == "pt_BR" ? QString("cm") : QString("in"));
+            widget.root->setProperty("rulerUnit", name == "pt_BR" ? "in" : "cm");
+            QCOMPARE(widget.root->property("effectiveRulerUnit").toString(),
+                     name == "pt_BR" ? QString("in") : QString("cm"));
+        }
+        QLocale::setDefault(previous);
+    }
+
+    void rulerMouseEditsSelectedParagraphs()
+    {
+        PageEditor widget;
+        QVERIFY(widget.root);
+        widget.root->setProperty("ruler", true);
+        widget.fmt()->insertText("one\ntwo");
+        QMetaObject::invokeMethod(widget.edit(), "select", Q_ARG(int, 0), Q_ARG(int, 7));
+        widget.view.show();
+        QTest::qWait(30);
+        auto *strip = widget.root->findChild<QQuickItem *>("documentRuler");
+        QVERIFY(strip && !strip->childItems().isEmpty());
+        auto *canvas = strip->childItems().first();
+        const auto start = canvas->mapToScene(QPointF(113, 3)).toPoint();
+        const auto end = start + QPoint(24, 0);
+        QTest::mousePress(&widget.view, Qt::LeftButton, Qt::NoModifier, start);
+        QTest::mouseMove(&widget.view, end);
+        QTest::mouseRelease(&widget.view, Qt::LeftButton, Qt::NoModifier, end);
+        auto *document = widget.fmt()->document()->textDocument();
+        QCOMPARE(document->begin().blockFormat().textIndent(), 24.);
+        QCOMPARE(document->lastBlock().blockFormat().textIndent(), 24.);
+        document->undo();
+        QCOMPARE(document->begin().blockFormat().textIndent(), 0.);
+        QCOMPARE(document->lastBlock().blockFormat().textIndent(), 0.);
+        const auto tab = canvas->mapToScene(QPointF(173, 25)).toPoint();
+        QTest::mouseClick(&widget.view, Qt::LeftButton, Qt::NoModifier, tab);
+        QCOMPARE(widget.fmt()->tabStops(), QVariantList{60.});
+        QTest::mousePress(&widget.view, Qt::LeftButton, Qt::NoModifier, tab);
+        QTest::mouseMove(&widget.view, tab + QPoint(0, 45));
+        QTest::mouseRelease(&widget.view, Qt::LeftButton, Qt::NoModifier, tab + QPoint(0,45));
+        QVERIFY(widget.fmt()->tabStops().isEmpty());
+    }
+
+    void tableColumnResizeUndoAndOdf()
+    {
+        m_fmt->insertTable(1, 2);
+        auto *table = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        auto format = table->format();
+        format.setColumnWidthConstraints({QTextLength(QTextLength::FixedLength, 100), QTextLength(QTextLength::FixedLength, 100)});
+        table->setFormat(format);
+        bool started = false;
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "beginColumnResize", Q_RETURN_ARG(bool, started), Q_ARG(int, table->firstPosition()), Q_ARG(int, 1)));
+        QVERIFY(started);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "resizeColumn", Q_ARG(qreal, 20.)));
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "resizeColumn", Q_ARG(qreal, 30.)));
+        QCOMPARE(table->format().columnWidthConstraints()[0].rawValue(), 100.);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "endColumnResize"));
+        QCOMPARE(table->format().columnWidthConstraints()[0].rawValue(), 130.);
+        QCOMPARE(table->format().columnWidthConstraints()[1].rawValue(), 70.);
+        doc()->undo();
+        QCOMPARE(table->format().columnWidthConstraints()[0].rawValue(), 100.);
+        doc()->redo();
+        const auto path = QUrl::fromLocalFile(m_dir.filePath("columns.odt"));
+        QVERIFY(m_fmt->saveOdfCopy(path)); QVERIFY(m_fmt->loadOdf(path));
+        table = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        QVERIFY(qAbs(table->format().columnWidthConstraints()[0].rawValue() - 130.) < 0.00001);
+        QVERIFY(qAbs(table->format().columnWidthConstraints()[1].rawValue() - 70.) < 0.00001);
+    }
+
+    void tableColumnPointer_data()
+    {
+        QTest::addColumn<QString>("engine");
+        QTest::newRow("custom") << QString("custom");
+        QTest::newRow("qt") << QString("qt");
+    }
+    void tableColumnPointer()
+    {
+        QFETCH(QString, engine);
+        PageEditor widget;
+        QVERIFY(widget.root);
+        widget.root->setProperty("layoutEngine", engine);
+        widget.fmt()->insertTable(1, 2);
+        widget.view.show(); QTest::qWait(30);
+        auto *document = widget.fmt()->document()->textDocument();
+        auto *table = qobject_cast<QTextTable *>(document->rootFrame()->childFrames().first());
+        const auto bounds = document->documentLayout()->frameBoundingRect(table);
+        const qreal y = document->documentLayout()->blockBoundingRect(table->cellAt(0,0).firstCursorPosition().block()).center().y();
+        QVariantMap border;
+        for (qreal x=bounds.left()+8; x<bounds.right()-8; ++x) {
+            border = widget.fmt()->columnBorderAt(x, y);
+            if (!border.isEmpty()) break;
+        }
+        QVERIFY(!border.isEmpty());
+        const qreal borderX = border.value("x").toDouble();
+        QVERIFY(!widget.fmt()->columnBorderAt(borderX + 2.9, y).isEmpty());
+        QVERIFY(widget.fmt()->columnBorderAt(borderX + 3.1, y).isEmpty());
+        const auto start = widget.edit()->mapToScene({borderX, y}).toPoint();
+        QTest::mouseMove(&widget.view, start);
+        const auto before = table->format().columnWidthConstraints();
+        QTest::mousePress(&widget.view, Qt::LeftButton, Qt::NoModifier, start);
+        QTest::mouseMove(&widget.view, start+QPoint(20,0));
+        QCOMPARE(table->format().columnWidthConstraints(), before);
+        auto *preview = widget.root->findChild<QQuickItem *>("tableColumnPreview");
+        QVERIFY(preview && preview->isVisible());
+        auto *handle = widget.root->findChild<QQuickItem *>("tableColumnHandle");
+        QCOMPARE(handle->property("cursorShape").toInt(), int(Qt::SplitHCursor));
+        QTest::mouseRelease(&widget.view, Qt::LeftButton, Qt::NoModifier, start+QPoint(20,0));
+        const auto after = table->format().columnWidthConstraints();
+        QVERIFY(after != before);
+        QCOMPARE(after.size(), 2);
+        document->undo();
+        QCOMPARE(table->format().columnWidthConstraints(), before);
+    }
+
+    void tableTabNavigation()
+    {
+        m_fmt->insertTable(2, 2);
+        auto *table = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        QVERIFY(table);
+        auto first = table->cellAt(0, 0).firstCursorPosition();
+        first.insertText("one");
+        auto second = table->cellAt(0, 1).firstCursorPosition();
+        second.insertText("two");
+        m_fmt->setCursorPosition(first.position());
+        bool handled = false;
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "tableTab", Q_RETURN_ARG(bool, handled), Q_ARG(bool, false)));
+        QVERIFY(handled);
+        QCOMPARE(m_edit->property("selectedText").toString(), QString("two"));
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "tableTab", Q_RETURN_ARG(bool, handled), Q_ARG(bool, true)));
+        QCOMPARE(m_edit->property("selectedText").toString(), QString("one"));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(0);
+        m_fmt->setCursorPosition(table->cellAt(1, 1).firstPosition());
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "tableTab", Q_RETURN_ARG(bool, handled), Q_ARG(bool, false)));
+        QCOMPARE(table->rows(), 3);
+        doc()->undo();
+        QCOMPARE(table->rows(), 2);
+    }
+
     void odfLinksKeepStyleAndTargetThroughNestedSpans()
     {
         const QString path = m_dir.filePath("links.odt");
@@ -3927,6 +4251,60 @@ private slots:
         if (finalLoad > 6) QSKIP("load average exceeds 6");
         QVERIFY2(medians[1] <= 1.5*medians[0], "page edit exceeds 1.5 times continuous view");
         QVERIFY2(medians[1] < 16, "mid-book page edit exceeds one frame");
+    }
+
+    void bookColumnDragBudget()
+    {
+        if (!qEnvironmentVariableIsSet("RICHTEXT_PERF_BUDGET")) QSKIP("opt-in release gate");
+        const auto book = qEnvironmentVariable("RICHTEXT_BOOK");
+        if (!QFile::exists(book)) QSKIP("book sample unavailable");
+        QFile loadFile("/proc/loadavg");
+        QVERIFY(loadFile.open(QIODevice::ReadOnly));
+        const double load = loadFile.readAll().split(' ').first().toDouble();
+        if (load > 6) QSKIP("load average exceeds 6");
+        for (bool pages : {false, true}) {
+            PageEditor w;
+            QVERIFY(w.root);
+            w.root->setProperty("pageView", pages);
+            QVERIFY(w.fmt()->loadOdf(QUrl::fromLocalFile(book)));
+            auto *d = w.fmt()->document()->textDocument();
+            w.fmt()->setCursorPosition(d->characterCount()-1);
+            w.fmt()->insertTable(1, 2);
+            QTextCursor last(d); last.movePosition(QTextCursor::End); last.movePosition(QTextCursor::PreviousCharacter);
+            auto *table = last.currentTable();
+            QVERIFY(table);
+            d->documentLayout()->documentSize();
+            const auto before = table->format().columnWidthConstraints();
+            QVERIFY(w.fmt()->beginColumnResize(table->firstPosition(), 1));
+            QSignalSpy changes(d, &QTextDocument::contentsChanged);
+            QElapsedTimer timer; timer.start();
+            for (int i=0; i<500; ++i) w.fmt()->resizeColumn(i % 40);
+            const double previewMs = timer.nsecsElapsed()/1e6;
+            QCOMPARE(changes.size(), 0);
+            QCOMPARE(table->format().columnWidthConstraints(), before);
+            QList<double> samples;
+            for (int i=0; i<7; ++i) {
+                const int pos = d->characterCount()/2;
+                w.edit()->setProperty("cursorPosition", pos);
+                w.fmt()->setCursorPosition(pos);
+                QCoreApplication::processEvents();
+                timer.restart();
+                w.fmt()->insertText("x");
+                d->documentLayout()->blockBoundingRect(d->findBlock(pos));
+                samples.append(timer.nsecsElapsed()/1e6);
+                d->undo();
+                d->documentLayout()->documentSize();
+                w.fmt()->resizeColumn(i);
+            }
+            std::sort(samples.begin(), samples.end());
+            w.fmt()->endColumnResize(false);
+            loadFile.seek(0);
+            const double finalLoad = loadFile.readAll().split(' ').first().toDouble();
+            qInfo("DRAG_BUDGET pages=%d preview_500_ms=%.3f edit_median_ms=%.3f load=%.2f/%.2f",
+                  int(pages), previewMs, samples[3], load, finalLoad);
+            if (finalLoad > 6) QSKIP("load average exceeds 6");
+            QVERIFY(samples[3] < 4);
+        }
     }
 
     void bookEditPerformance_data()

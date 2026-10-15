@@ -17,6 +17,7 @@
 #include <QTextImageFormat>
 #include <QTextList>
 #include <QTextTable>
+#include <QJsonDocument>
 #include <QUrl>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
@@ -185,6 +186,11 @@ void readTextProps(const QXmlStreamAttributes &a, const QHash<QString, QString> 
         props.insert(QStringLiteral("underline"), u != QLatin1String("none"));
     if (const auto s = val("style:text-line-through-style"); !s.isEmpty())
         props.insert(QStringLiteral("strike"), s != QLatin1String("none"));
+    if (const auto background = val("fo:background-color"); !background.isEmpty())
+        putProp(props, Prop::Highlight, background.toString());
+    if (const auto position = val("style:text-position"); !position.isEmpty())
+        putProp(props, Prop::VerticalAlignment, position.startsWith(QLatin1String("sub")) ? int(QTextCharFormat::AlignSubScript)
+            : position.startsWith(QLatin1String("super")) ? int(QTextCharFormat::AlignSuperScript) : int(QTextCharFormat::AlignNormal));
     if (const auto c = val("fo:color"); !c.isEmpty())
         putProp(props, Prop::Color, c.toString());
     if (const auto ls = val("fo:letter-spacing"); !ls.isEmpty())
@@ -324,6 +330,15 @@ void readStyles(QXmlStreamReader &xml, QLatin1String section, OdfStyles &out)
             else if (width > 0) out.styles[current].columnWidth = QTextLength(QTextLength::FixedLength, width);
         } else if (name == QLatin1String("text-properties") && (inDefault || !current.isEmpty())) {
             readTextProps(a, out.fonts, inDefault ? out.defaultParagraph.props : out.styles[current].props);
+        } else if (name == QLatin1String("tab-stops") && (inDefault || !current.isEmpty())) {
+            auto &props = inDefault ? out.defaultParagraph.props : out.styles[current].props;
+            props.insert(QStringLiteral("tabStops"), QVariantList{});
+        } else if (name == QLatin1String("tab-stop") && (inDefault || !current.isEmpty())) {
+            auto &props = inDefault ? out.defaultParagraph.props : out.styles[current].props;
+            auto tabs = props.value(QStringLiteral("tabStops")).toList();
+            const auto position = lengthPx(a.value(QLatin1String("style:position")));
+            if (qIsFinite(position) && position >= 0) tabs.append(position);
+            props.insert(QStringLiteral("tabStops"), tabs);
         } else if (name == QLatin1String("paragraph-properties") && (inDefault || !current.isEmpty())) {
             readParagraphProps(a, inDefault ? out.defaultParagraph.props : out.styles[current].props);
         }
@@ -1037,7 +1052,7 @@ void writeProps(QXmlStreamWriter &x, const QVariantMap &props, QSet<QString> *fo
     const bool pageBreak = props.value(QStringLiteral("__pageBreakBefore")).toBool();
     bool anyPara = pageBreak;
     for (const char *k : { "marginTop", "marginBottom", "marginLeft", "marginRight", "textIndent", "lineHeight",
-                           "alignment", "keepWithNext", "widows", "orphans" })
+                           "alignment", "keepWithNext", "widows", "orphans", "tabStops" })
         anyPara = anyPara || has(k);
     if (anyPara) {
         x.writeStartElement(QStringLiteral("style:paragraph-properties"));
@@ -1065,11 +1080,20 @@ void writeProps(QXmlStreamWriter &x, const QVariantMap &props, QSet<QString> *fo
         if (has("orphans")) x.writeAttribute(QStringLiteral("fo:orphans"), QString::number(get("orphans").toInt()));
         if (pageBreak)
             x.writeAttribute(QStringLiteral("fo:break-before"), QStringLiteral("page"));
+        if (has("tabStops")) {
+            x.writeStartElement(QStringLiteral("style:tab-stops"));
+            for (const auto &tab : get("tabStops").toList()) {
+                x.writeEmptyElement(QStringLiteral("style:tab-stop"));
+                x.writeAttribute(QStringLiteral("style:position"), inches(tab.toDouble()));
+                x.writeAttribute(QStringLiteral("style:type"), QStringLiteral("left"));
+            }
+            x.writeEndElement();
+        }
         x.writeEndElement();
     }
 
     bool anyText = false;
-    for (const char *k : { "fontFamily", "fontSize", "fontWeight", "italic", "underline", "strike", "color", "letterSpacing", "language" })
+    for (const char *k : { "fontFamily", "fontSize", "fontWeight", "italic", "underline", "strike", "color", "letterSpacing", "language", "highlight", "verticalAlignment" })
         anyText = anyText || has(k);
     if (anyText) {
         x.writeStartElement(QStringLiteral("style:text-properties"));
@@ -1118,6 +1142,10 @@ void writeProps(QXmlStreamWriter &x, const QVariantMap &props, QSet<QString> *fo
             if (on)
                 x.writeAttribute(QStringLiteral("style:text-line-through-type"), QStringLiteral("single"));
         }
+        if (has("highlight")) x.writeAttribute(QStringLiteral("fo:background-color"), get("highlight").toString().isEmpty() ? QStringLiteral("transparent") : get("highlight").toString());
+        if (has("verticalAlignment")) x.writeAttribute(QStringLiteral("style:text-position"),
+            get("verticalAlignment").toInt() == QTextCharFormat::AlignSubScript ? QStringLiteral("sub 58%")
+            : get("verticalAlignment").toInt() == QTextCharFormat::AlignSuperScript ? QStringLiteral("super 58%") : QStringLiteral("0% 100%"));
         if (has("color"))
             x.writeAttribute(QStringLiteral("fo:color"), get("color").toString());
         if (has("letterSpacing")) {
@@ -1132,7 +1160,7 @@ QByteArray propsKey(const QVariantMap &props)
 {
     QByteArray k;
     for (auto it = props.cbegin(); it != props.cend(); ++it)
-        k += it.key().toUtf8() + '=' + it.value().toString().toUtf8() + ';';
+        k += it.key().toUtf8() + '=' + (it.value().typeId() == QMetaType::QVariantList ? QJsonDocument::fromVariant(it.value()).toJson(QJsonDocument::Compact) : it.value().toString().toUtf8()) + ';';
     return k;
 }
 
@@ -1453,13 +1481,23 @@ private:
         closeLists(0);
         const QString name = QStringLiteral("Table%1").arg(++m_tableCount);
         const QTextTableFormat tf = t->format();
-        m_tables << TableStyle { name, tf.border(), tf.cellPadding() };
+        m_tables << TableStyle { name, tf.border(), tf.cellPadding(), 0, {} };
+        auto &tableStyle = m_tables.last();
+        tableStyle.widths = tf.columnWidthConstraints();
+        // The reader resolves unspecified columns to equal percentages. Emit that
+        // canonical form on the first save too, so save/load/save stays stable.
+        if (tableStyle.widths.isEmpty())
+            tableStyle.widths.fill(QTextLength(QTextLength::PercentageLength, 100. / t->columns()), t->columns());
+        for (auto &width : tableStyle.widths) if (width.type() == QTextLength::FixedLength)
+            width = QTextLength(QTextLength::FixedLength, width.rawValue() * m_unzoom);
         m_x.writeStartElement(QStringLiteral("table:table"));
         m_x.writeAttribute(QStringLiteral("table:name"), name);
         m_x.writeAttribute(QStringLiteral("table:style-name"), name);
-        m_x.writeEmptyElement(QStringLiteral("table:table-column"));
-        if (t->columns() > 1)
-            m_x.writeAttribute(QStringLiteral("table:number-columns-repeated"), QString::number(t->columns()));
+        for (int col=0; col<t->columns(); ++col) {
+            m_x.writeEmptyElement(QStringLiteral("table:table-column"));
+            if (col < tableStyle.widths.size())
+                m_x.writeAttribute(QStringLiteral("table:style-name"), name + QStringLiteral(".Column%1").arg(col));
+        }
         for (int r = 0; r < t->rows(); ++r) {
             m_x.writeStartElement(QStringLiteral("table:table-row"));
             for (int col = 0; col < t->columns(); ++col) {
@@ -1524,6 +1562,16 @@ private:
             for (const AutoStyle &a : std::as_const(m_autoPara)) writeAuto(a);
             for (const AutoStyle &a : std::as_const(m_autoText)) writeAuto(a);
             for (const TableStyle &t : std::as_const(m_tables)) {
+                for (int col=0; col<t.widths.size(); ++col) {
+                    const auto width = t.widths[col];
+                    x.writeStartElement(QStringLiteral("style:style"));
+                    x.writeAttribute(QStringLiteral("style:name"), t.name + QStringLiteral(".Column%1").arg(col));
+                    x.writeAttribute(QStringLiteral("style:family"), QStringLiteral("table-column"));
+                    x.writeEmptyElement(QStringLiteral("style:table-column-properties"));
+                    if (width.type() == QTextLength::FixedLength) x.writeAttribute(QStringLiteral("style:column-width"), inches(width.rawValue()));
+                    else if (width.type() == QTextLength::PercentageLength) x.writeAttribute(QStringLiteral("style:rel-column-width"), QString::number(width.rawValue(), 'g', 12) + QLatin1Char('*'));
+                    x.writeEndElement();
+                }
                 x.writeStartElement(QStringLiteral("style:style"));
                 x.writeAttribute(QStringLiteral("style:name"), t.name);
                 x.writeAttribute(QStringLiteral("style:family"), QStringLiteral("table"));
@@ -1657,7 +1705,7 @@ private:
         return m + QByteArrayLiteral("</manifest:manifest>");
     }
 
-    struct TableStyle { QString name; qreal border; qreal padding; unsigned alignments = 0; };
+    struct TableStyle { QString name; qreal border; qreal padding; unsigned alignments = 0; QList<QTextLength> widths; };
 
     const QTextDocument *m_doc;
     const StyleSheet &m_sheet;

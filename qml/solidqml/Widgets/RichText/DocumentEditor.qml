@@ -38,6 +38,18 @@ RichText {
     readonly property string fontFamily: fmt ? fmt.fontFamily : ""
     readonly property real fontSize: fmt ? fmt.fontSize : 0
     readonly property string alignment: fmt ? fmt.alignment : "left" // left|center|right|justify
+    readonly property string textColor: fmt ? fmt.textColor : ""
+    readonly property string highlightColor: fmt ? fmt.highlightColor : ""
+    readonly property bool subscript: fmt ? fmt.subscript : false
+    readonly property bool superscript: fmt ? fmt.superscript : false
+    readonly property real leftIndent: fmt ? fmt.leftIndent : 0
+    readonly property real rightIndent: fmt ? fmt.rightIndent : 0
+    readonly property real firstLineIndent: fmt ? fmt.firstLineIndent : 0
+    readonly property real lineSpacing: fmt ? fmt.lineSpacing : 100
+    readonly property real spaceBefore: fmt ? fmt.spaceBefore : 0
+    readonly property real spaceAfter: fmt ? fmt.spaceAfter : 0
+    readonly property var tabStops: fmt ? fmt.tabStops : []
+    readonly property bool hasCopiedFormat: !!fmt && fmt.hasCopiedFormat
     readonly property bool inTable: !!fmt && fmt.inTable
     // Named styles at the caret (paragraph style; character style, "" = none).
     readonly property string currentParagraphStyle: fmt ? fmt.currentParagraphStyle : "Default Paragraph Style"
@@ -52,6 +64,160 @@ RichText {
     readonly property int selectionWordCount: fmt ? fmt.selectionWordCount : 0
     readonly property int selectionCharCount: fmt ? fmt.selectionCharCount : 0
     readonly property string selectedText: fmt ? fmt.selectedText : ""
+
+    MouseArea {
+        id: columnHandle
+        objectName: "tableColumnHandle"
+        parent: root._editor
+        anchors.fill: parent
+        z: 10
+        hoverEnabled: true
+        acceptedButtons: Qt.LeftButton
+        property var border: ({})
+        property real startX: 0
+        property real previewDelta: 0
+        property bool resizing: false
+        cursorShape: resizing || border.border !== undefined ? Qt.SplitHCursor : Qt.IBeamCursor
+        preventStealing: resizing
+        onPositionChanged: (mouse) => {
+            if (!root.fmt) return
+            if (resizing) previewDelta = root.fmt.resizeColumn((mouse.x - startX) / root._pageZoom) * root._pageZoom
+            else border = root.fmt.columnBorderAt(mouse.x, mouse.y)
+        }
+        onPressed: (mouse) => {
+            border = root.fmt ? root.fmt.columnBorderAt(mouse.x, mouse.y) : ({})
+            if (border.border === undefined || !root.fmt.beginColumnResize(border.tablePosition, border.border)) {
+                mouse.accepted = false
+                return
+            }
+            startX = mouse.x
+            previewDelta = 0
+            resizing = true
+        }
+        onReleased: { if (resizing) root.fmt.endColumnResize(); resizing = false }
+        onCanceled: { if (resizing) root.fmt.endColumnResize(false); resizing = false }
+        Rectangle {
+            objectName: "tableColumnPreview"
+            visible: columnHandle.resizing
+            x: (columnHandle.border.x || 0) + columnHandle.previewDelta - width / 2
+            y: columnHandle.border.top || 0
+            width: 2
+            height: columnHandle.border.height || 0
+            color: "#3574ae"
+        }
+    }
+
+    property bool ruler: false
+    property string rulerUnit: "auto"
+    readonly property string effectiveRulerUnit: rulerUnit === "cm" || rulerUnit === "in"
+        ? rulerUnit : (Qt.locale().measurementSystem === Locale.MetricSystem ? "cm" : "in")
+    _rulerHeight: ruler ? 32 : 0
+    Rectangle {
+        id: rulerStrip
+        objectName: "documentRuler"
+        parent: root._body.parent
+        x: root._body.x
+        y: root._body.y - height
+        width: root._body.width
+        height: root._rulerHeight
+        visible: root.ruler
+        clip: true
+        color: "#dededb"
+        Canvas {
+            id: rulerCanvas
+            x: root._editor.x - root._body.contentX
+            width: root._editor.width
+            height: rulerStrip.height
+            property real leftMargin: (root.pageMargins ? root.pageMargins[3] : 12)
+            property real rightMargin: (root.pageMargins ? root.pageMargins[1] : 12)
+            property real factor: root._pageZoom
+            property string unit: root.effectiveRulerUnit
+            onUnitChanged: requestPaint()
+            property real leftIndent: root.leftIndent
+            property real firstIndent: root.firstLineIndent
+            property real rightIndent: root.rightIndent
+            property var stops: root.tabStops
+            property string dragging: ""
+            property int tabIndex: -1
+            property real preview: 0
+            onWidthChanged: requestPaint()
+            onFactorChanged: requestPaint()
+            onLeftMarginChanged: requestPaint()
+            onRightMarginChanged: requestPaint()
+            onLeftIndentChanged: requestPaint()
+            onFirstIndentChanged: requestPaint()
+            onRightIndentChanged: requestPaint()
+            onStopsChanged: requestPaint()
+            onPreviewChanged: requestPaint()
+            onDraggingChanged: requestPaint()
+            function markerX(kind) {
+                if (dragging === kind) return preview
+                if (kind === "first") return (leftMargin + leftIndent + firstIndent) * factor
+                if (kind === "left") return (leftMargin + leftIndent) * factor
+                return width - (rightMargin + rightIndent) * factor
+            }
+            onPaint: {
+                var c = getContext("2d")
+                c.clearRect(0, 0, width, height)
+                c.fillStyle = "#fafaf8"
+                c.fillRect(leftMargin * factor, 0, width - (leftMargin + rightMargin) * factor, height)
+                c.strokeStyle = "#646464"; c.fillStyle = "#444444"; c.font = "10px sans-serif"
+                var quarter = (unit === "in" ? 96 : 96 / 2.54) / 4 * factor
+                for (var n = 0; n * quarter <= width; ++n) {
+                    var px = n * quarter
+                    c.beginPath(); c.moveTo(px, 0); c.lineTo(px, n % 4 === 0 ? 9 : n % 2 === 0 ? 6 : 3); c.stroke()
+                    if (n % 4 === 0) c.fillText(String(n / 4), px + 2, 17)
+                }
+                c.fillStyle = "#3574ae"; c.strokeStyle = "#174a77"
+                for (var kind of ["first", "left", "right"]) {
+                    var mx = markerX(kind), top = kind === "first"
+                    c.beginPath(); c.moveTo(mx - 5, top ? 1 : 29); c.lineTo(mx + 5, top ? 1 : 29)
+                    c.lineTo(mx, top ? 9 : 21); c.closePath(); c.fill(); c.stroke()
+                }
+                for (var i = 0; i < stops.length; ++i) {
+                    var tx = dragging === "tab" && tabIndex === i ? preview : (leftMargin + stops[i]) * factor
+                    c.beginPath(); c.moveTo(tx, 22); c.lineTo(tx, 29); c.lineTo(tx + 5, 29); c.stroke()
+                }
+            }
+            MouseArea {
+                anchors.fill: parent
+                preventStealing: true
+                cursorShape: pressed ? Qt.SizeHorCursor : Qt.ArrowCursor
+                onPressed: (mouse) => {
+                    rulerCanvas.dragging = ""
+                    for (var kind of ["first", "left", "right"]) {
+                        if (Math.abs(mouse.x - rulerCanvas.markerX(kind)) <= 7 && (kind === "first" ? mouse.y < 15 : mouse.y >= 15)) {
+                            rulerCanvas.preview = rulerCanvas.markerX(kind)
+                            rulerCanvas.dragging = kind
+                            return
+                        }
+                    }
+                    for (var i = 0; i < rulerCanvas.stops.length; ++i) {
+                        if (Math.abs(mouse.x - (rulerCanvas.leftMargin + rulerCanvas.stops[i]) * rulerCanvas.factor) <= 6) {
+                            rulerCanvas.tabIndex = i; rulerCanvas.preview = mouse.x; rulerCanvas.dragging = "tab"; return
+                        }
+                    }
+                }
+                onPositionChanged: (mouse) => { if (pressed && rulerCanvas.dragging !== "") rulerCanvas.preview = mouse.x }
+                onReleased: (mouse) => {
+                    var kind = rulerCanvas.dragging
+                    var position = mouse.x / rulerCanvas.factor - rulerCanvas.leftMargin
+                    if (kind === "first") root.setParagraphIndents(root.leftIndent, root.rightIndent, position - root.leftIndent)
+                    else if (kind === "left") root.setParagraphIndents(position, root.rightIndent, root.leftIndent + root.firstLineIndent - position)
+                    else if (kind === "right") root.setParagraphIndents(root.leftIndent, (rulerCanvas.width - mouse.x) / rulerCanvas.factor - rulerCanvas.rightMargin, root.firstLineIndent)
+                    else {
+                        var stops = root.tabStops.slice()
+                        if (kind === "tab") stops.splice(rulerCanvas.tabIndex, 1)
+                        if (mouse.y >= 0 && mouse.y <= height && position >= 0) stops.push(position)
+                        root.setTabStops(stops)
+                    }
+                    rulerCanvas.dragging = ""
+                    rulerCanvas.requestPaint()
+                }
+                onCanceled: { rulerCanvas.dragging = ""; rulerCanvas.requestPaint() }
+            }
+        }
+    }
 
     // ── page look (office item 2b, ★1) ──────────────────────────────────────────────────────────
     // `pageWidth` (px): the editor's implicit width when set (0 = the plain editor's 560 default).
@@ -264,6 +430,19 @@ RichText {
 
     // ── character format (office item 2b, ★4) ────────────────────────────────────────────────────
     // The handler owns the live cursor's pending font and reports it immediately.
+    function copyFormat() { if (fmt) fmt.copyFormat() }
+    function applyCopiedFormat() { if (fmt) fmt.applyCopiedFormat() }
+    function setTextColor(color) { if (fmt) fmt.setTextColor(color); _editor.forceActiveFocus() }
+    function setHighlightColor(color) { if (fmt) fmt.setHighlightColor(color); _editor.forceActiveFocus() }
+    function toggleSubscript() { if (fmt) fmt.toggleSubscript(); _editor.forceActiveFocus() }
+    function toggleSuperscript() { if (fmt) fmt.toggleSuperscript(); _editor.forceActiveFocus() }
+    function setParagraphIndents(left, right, firstLine) { if (fmt) fmt.setParagraphIndents(left, right, firstLine) }
+    function setLineSpacing(percent) { if (fmt) fmt.setLineSpacing(percent) }
+    function setParagraphSpacing(before, after) { if (fmt) fmt.setParagraphSpacing(before, after) }
+    function setTabStops(stops) { if (fmt) fmt.setTabStops(stops) }
+    function find(text, options) { return fmt ? fmt.find(text, options || {}) : false }
+    function replace(text) { return fmt ? fmt.replace(text) : false }
+    function replaceAll(text, replacement, options) { return fmt ? fmt.replaceAll(text, replacement, options || {}) : 0 }
     function setFontFamily(name) { if (fmt) fmt.setFontFamily(name); _editor.forceActiveFocus() }
     function setFontSize(pt) { if (fmt) fmt.setFontSize(pt); _editor.forceActiveFocus() }
     // Drops direct CHARACTER formatting in the selection (bold/font/size/…); keeps character

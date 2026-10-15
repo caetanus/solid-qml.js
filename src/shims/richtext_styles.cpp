@@ -16,9 +16,9 @@ QString textBodyStyle() { return QStringLiteral("Text Body"); }
 namespace {
 
 constexpr const char *kPropNames[kPropCount] = {
-    "fontFamily", "fontSize", "fontWeight", "italic", "underline", "strike", "color", "letterSpacing", "language",
+    "fontFamily", "fontSize", "fontWeight", "italic", "underline", "strike", "color", "letterSpacing", "language", "highlight", "verticalAlignment",
     "marginTop", "marginBottom", "marginLeft", "marginRight", "textIndent", "lineHeight", "alignment",
-    "outlineLevel", "widows", "orphans", "keepWithNext",
+    "outlineLevel", "widows", "orphans", "tabStops", "keepWithNext",
 };
 
 // The raw Qt properties behind each style property (what a rebase copies from the new base).
@@ -26,6 +26,9 @@ QList<int> rawIds(Prop p)
 {
     switch (p) {
     case Prop::FontFamily: return { QTextFormat::FontFamilies, QTextFormat::FontFamily };
+    case Prop::Highlight: return { QTextFormat::BackgroundBrush };
+    case Prop::VerticalAlignment: return { QTextFormat::TextVerticalAlignment };
+    case Prop::TabStops: return { QTextFormat::TabPositions };
     case Prop::Language: return { kLanguageProperty };
     case Prop::FontSize: return { QTextFormat::FontPointSize };
     case Prop::FontWeight: return { QTextFormat::FontWeight };
@@ -74,6 +77,14 @@ QString pxString(qreal px) { return QString::number(px, 'g', 6) + QStringLiteral
 void writeValue(QTextFormat &f, Prop p, const QVariant &v)
 {
     switch (p) {
+    case Prop::Highlight: f.setProperty(QTextFormat::BackgroundBrush, v.toString().isEmpty() ? QBrush(Qt::NoBrush) : QBrush(QColor(v.toString()))); break;
+    case Prop::VerticalAlignment: f.setProperty(QTextFormat::TextVerticalAlignment, v.toInt()); break;
+    case Prop::TabStops: {
+        QList<QTextOption::Tab> tabs;
+        for (const auto &value : v.toList()) { QTextOption::Tab tab; tab.position = value.toDouble(); tabs.append(tab); }
+        QTextBlockFormat bf; bf.setTabPositions(tabs); f.setProperty(QTextFormat::TabPositions, bf.property(QTextFormat::TabPositions));
+        break;
+    }
     case Prop::Language: f.setProperty(kLanguageProperty, v.toString()); break;
     case Prop::FontFamily:
         f.clearProperty(QTextFormat::FontFamily);
@@ -250,6 +261,23 @@ bool canonicalValue(Prop p, const QVariant &value, QVariant *out, QString *error
         *out = b;
         return true;
     }
+    case Prop::VerticalAlignment: {
+        const int n = value.toInt();
+        if (n < 0 || n > QTextCharFormat::AlignBaseline) return fail("invalid vertical alignment");
+        *out = n; return true;
+    }
+    case Prop::TabStops: {
+        QVariantList tabs;
+        for (const auto &item : value.toList()) {
+            bool ok = false; const auto n = item.toDouble(&ok);
+            if (!ok || !qIsFinite(n) || n < 0) return fail("invalid tab position");
+            tabs.append(n);
+        }
+        *out = tabs; return true;
+    }
+    case Prop::Highlight:
+        if (s.isEmpty() || s == QLatin1String("transparent")) { *out = QString(); return true; }
+        [[fallthrough]];
     case Prop::Color: {
         const QColor c = value.typeId() == QMetaType::QColor ? value.value<QColor>() : QColor(s);
         if (!c.isValid()) return fail("expected a colour (\"#rrggbb\")");
@@ -545,6 +573,16 @@ QString charStyleOf(const QTextCharFormat &f)
 QVariant readProp(const QTextFormat &f, Prop p)
 {
     switch (p) {
+    case Prop::Highlight: {
+        const auto brush = f.brushProperty(QTextFormat::BackgroundBrush);
+        return brush.style() == Qt::NoBrush ? QString() : brush.color().name();
+    }
+    case Prop::VerticalAlignment: return f.intProperty(QTextFormat::TextVerticalAlignment);
+    case Prop::TabStops: {
+        QVariantList tabs;
+        for (const auto &tab : f.toBlockFormat().tabPositions()) tabs.append(tab.position);
+        return tabs;
+    }
     case Prop::Language: return f.stringProperty(kLanguageProperty);
     case Prop::FontFamily:
         if (f.hasProperty(QTextFormat::FontFamilies)) {
@@ -655,6 +693,11 @@ QTextBlockFormat scaledLengths(const QTextBlockFormat &f, qreal ratio)
                     int(QTextFormat::TextIndent), kListTextOffsetProperty })
         if (out.hasProperty(id))
             out.setProperty(id, out.property(id).toDouble() * ratio);
+    if (out.hasProperty(QTextFormat::TabPositions)) {
+        auto tabs = out.tabPositions();
+        for (auto &tab : tabs) tab.position *= ratio;
+        out.setTabPositions(tabs);
+    }
     if (out.hasProperty(QTextFormat::LineHeight)
         && out.intProperty(QTextFormat::LineHeightType) == QTextBlockFormat::FixedHeight)
         out.setProperty(QTextFormat::LineHeight, out.doubleProperty(QTextFormat::LineHeight) * ratio);

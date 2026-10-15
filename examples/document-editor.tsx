@@ -94,7 +94,7 @@ export function DocumentEditorDemo() {
         <button class="de-btn" onClick={() => applyZoomDelta(0)}>100%</button>
       </div>
       <div class="de-page">
-        <DocumentEditor ref={doc} class="de-editor" toolbar={false}
+        <DocumentEditor ref={doc} class="de-editor" toolbar={false} ruler={true}
           pageWidth={794} pageMargins={[48, 48, 48, 48]} zoom={zoomLevel()}
           onZoomRequested={(delta) => applyZoomDelta(delta)}
           onModifiedChanged={(m) => setDirty(m)}
