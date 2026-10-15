@@ -109,9 +109,8 @@ type DocumentIoResult = { ok: boolean; error: string };
 type DocumentFindOptions = { caseSensitive?: boolean; wholeWords?: boolean; regex?: boolean; backward?: boolean; wrap?: boolean };
 
 type DocumentEditorProps = {
-  /** Horizontal paragraph ruler, default false. */
-  ruler?: boolean;
-  rulerUnit?: "auto" | "cm" | "in";
+  /** Settled page/viewport geometry changed; no payload. */
+  onViewportGeometryChanged?: () => void;
   class?: string;
   classList?: Record<string, boolean | undefined>;
   /** `let doc: DocumentEditorHandle | undefined; <DocumentEditor ref={doc} />` */
@@ -247,9 +246,10 @@ declare global {
 
   /** What `ref={doc}` on <DocumentEditor> gives the app (see docs/document-editor.md). */
   interface DocumentEditorHandle {
-    ruler: boolean;
-    rulerUnit: "auto" | "cm" | "in";
-    readonly effectiveRulerUnit: "cm" | "in";
+    /** Current visible page origin in editor-item device-independent pixels, including zoom. */
+    readonly pageViewportX: number;
+    readonly pageViewportY: number;
+    readonly viewportGeometryChanged: { connect(callback: () => void): void; disconnect(callback: () => void): void };
     /** View geometry in layout pixels at zoom 1; configure through the ref or QML. */
     pageHeight: number;
     pageGap: number;

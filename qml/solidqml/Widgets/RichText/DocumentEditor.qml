@@ -107,118 +107,6 @@ RichText {
         }
     }
 
-    property bool ruler: false
-    property string rulerUnit: "auto"
-    readonly property string effectiveRulerUnit: rulerUnit === "cm" || rulerUnit === "in"
-        ? rulerUnit : (Qt.locale().measurementSystem === Locale.MetricSystem ? "cm" : "in")
-    _rulerHeight: ruler ? 32 : 0
-    Rectangle {
-        id: rulerStrip
-        objectName: "documentRuler"
-        parent: root._body.parent
-        x: root._body.x
-        y: root._body.y - height
-        width: root._body.width
-        height: root._rulerHeight
-        visible: root.ruler
-        clip: true
-        color: "#dededb"
-        Canvas {
-            id: rulerCanvas
-            x: root._editor.x - root._body.contentX
-            width: root._editor.width
-            height: rulerStrip.height
-            property real leftMargin: (root.pageMargins ? root.pageMargins[3] : 12)
-            property real rightMargin: (root.pageMargins ? root.pageMargins[1] : 12)
-            property real factor: root._pageZoom
-            property string unit: root.effectiveRulerUnit
-            onUnitChanged: requestPaint()
-            property real leftIndent: root.leftIndent
-            property real firstIndent: root.firstLineIndent
-            property real rightIndent: root.rightIndent
-            property var stops: root.tabStops
-            property string dragging: ""
-            property int tabIndex: -1
-            property real preview: 0
-            onWidthChanged: requestPaint()
-            onFactorChanged: requestPaint()
-            onLeftMarginChanged: requestPaint()
-            onRightMarginChanged: requestPaint()
-            onLeftIndentChanged: requestPaint()
-            onFirstIndentChanged: requestPaint()
-            onRightIndentChanged: requestPaint()
-            onStopsChanged: requestPaint()
-            onPreviewChanged: requestPaint()
-            onDraggingChanged: requestPaint()
-            function markerX(kind) {
-                if (dragging === kind) return preview
-                if (kind === "first") return (leftMargin + leftIndent + firstIndent) * factor
-                if (kind === "left") return (leftMargin + leftIndent) * factor
-                return width - (rightMargin + rightIndent) * factor
-            }
-            onPaint: {
-                var c = getContext("2d")
-                c.clearRect(0, 0, width, height)
-                c.fillStyle = "#fafaf8"
-                c.fillRect(leftMargin * factor, 0, width - (leftMargin + rightMargin) * factor, height)
-                c.strokeStyle = "#646464"; c.fillStyle = "#444444"; c.font = "10px sans-serif"
-                var quarter = (unit === "in" ? 96 : 96 / 2.54) / 4 * factor
-                for (var n = 0; n * quarter <= width; ++n) {
-                    var px = n * quarter
-                    c.beginPath(); c.moveTo(px, 0); c.lineTo(px, n % 4 === 0 ? 9 : n % 2 === 0 ? 6 : 3); c.stroke()
-                    if (n % 4 === 0) c.fillText(String(n / 4), px + 2, 17)
-                }
-                c.fillStyle = "#3574ae"; c.strokeStyle = "#174a77"
-                for (var kind of ["first", "left", "right"]) {
-                    var mx = markerX(kind), top = kind === "first"
-                    c.beginPath(); c.moveTo(mx - 5, top ? 1 : 29); c.lineTo(mx + 5, top ? 1 : 29)
-                    c.lineTo(mx, top ? 9 : 21); c.closePath(); c.fill(); c.stroke()
-                }
-                for (var i = 0; i < stops.length; ++i) {
-                    var tx = dragging === "tab" && tabIndex === i ? preview : (leftMargin + stops[i]) * factor
-                    c.beginPath(); c.moveTo(tx, 22); c.lineTo(tx, 29); c.lineTo(tx + 5, 29); c.stroke()
-                }
-            }
-            MouseArea {
-                anchors.fill: parent
-                preventStealing: true
-                cursorShape: pressed ? Qt.SizeHorCursor : Qt.ArrowCursor
-                onPressed: (mouse) => {
-                    rulerCanvas.dragging = ""
-                    for (var kind of ["first", "left", "right"]) {
-                        if (Math.abs(mouse.x - rulerCanvas.markerX(kind)) <= 7 && (kind === "first" ? mouse.y < 15 : mouse.y >= 15)) {
-                            rulerCanvas.preview = rulerCanvas.markerX(kind)
-                            rulerCanvas.dragging = kind
-                            return
-                        }
-                    }
-                    for (var i = 0; i < rulerCanvas.stops.length; ++i) {
-                        if (Math.abs(mouse.x - (rulerCanvas.leftMargin + rulerCanvas.stops[i]) * rulerCanvas.factor) <= 6) {
-                            rulerCanvas.tabIndex = i; rulerCanvas.preview = mouse.x; rulerCanvas.dragging = "tab"; return
-                        }
-                    }
-                }
-                onPositionChanged: (mouse) => { if (pressed && rulerCanvas.dragging !== "") rulerCanvas.preview = mouse.x }
-                onReleased: (mouse) => {
-                    var kind = rulerCanvas.dragging
-                    var position = mouse.x / rulerCanvas.factor - rulerCanvas.leftMargin
-                    if (kind === "first") root.setParagraphIndents(root.leftIndent, root.rightIndent, position - root.leftIndent)
-                    else if (kind === "left") root.setParagraphIndents(position, root.rightIndent, root.leftIndent + root.firstLineIndent - position)
-                    else if (kind === "right") root.setParagraphIndents(root.leftIndent, (rulerCanvas.width - mouse.x) / rulerCanvas.factor - rulerCanvas.rightMargin, root.firstLineIndent)
-                    else {
-                        var stops = root.tabStops.slice()
-                        if (kind === "tab") stops.splice(rulerCanvas.tabIndex, 1)
-                        if (mouse.y >= 0 && mouse.y <= height && position >= 0) stops.push(position)
-                        root.setTabStops(stops)
-                    }
-                    rulerCanvas.dragging = ""
-                    rulerCanvas.requestPaint()
-                }
-                onCanceled: { rulerCanvas.dragging = ""; rulerCanvas.requestPaint() }
-            }
-        }
-    }
-
     // ── page look (office item 2b, ★1) ──────────────────────────────────────────────────────────
     // `pageWidth` (px): the editor's implicit width when set (0 = the plain editor's 560 default).
     property real pageHeight: 1123
@@ -238,6 +126,41 @@ RichText {
     readonly property int currentPage: fmt ? fmt.currentPage : 1
     signal pagesChanged()
     function pageAt(position) { return fmt ? fmt.pageAt(position) : 1 }
+    // App overlays use editor-item coordinates, already zoomed (device-independent px).
+    readonly property real pageViewportX: _viewportGeometry[0]
+    readonly property real pageViewportY: _viewportGeometry[1]
+    signal viewportGeometryChanged()
+    property var _viewportGeometry: [0, 0]
+    // Track geometry, not document contents. Cursor movement only matters when it changes
+    // the chosen page. Publish a single settled snapshot after scroll/layout bindings run.
+    readonly property var _viewportInputs: [_body.x, _body.y, _body.width, _body.height,
+        _body.contentX, _body.contentY, _editor.x, _editor.y, _editor.width,
+        _pageZoom, pageHeight, pageGap, _pages, pageMargins, currentPage, pageCount]
+    on_ViewportInputsChanged: Qt.callLater(_publishViewportGeometry)
+    Connections {
+        target: root._editor
+        function onCursorRectangleChanged() { Qt.callLater(root._publishViewportGeometry) }
+    }
+    function _publishViewportGeometry() {
+        // Query the caret only after layout settles, never reenter layout from a binding.
+        var r = _editor.cursorRectangle
+        var cx = _editor.x + r.x - _body.contentX
+        var cy = _editor.y + r.y - _body.contentY
+        var visible = cx + r.width > 0 && cx < _body.width
+            && cy + r.height > 0 && cy < _body.height
+        var page = !_pages ? 0 : visible ? currentPage - 1
+            : Math.max(0, Math.min(pageCount - 1, Math.floor(_body.contentY / _pageStride)))
+        var m = pageMargins || [12, 12, 12, 12]
+        var next = [_body.x + (_pages ? _editor.x : 0) - _body.contentX,
+                _body.y + page * _pageStride - _body.contentY,
+                _body.width, _body.height, _pageZoom, _editor.width,
+                pageHeight, pageGap, _pages, m[0], m[1], m[2], m[3]]
+        if (next.length === _viewportGeometry.length
+            && next.every((value, index) => value === _viewportGeometry[index])) return
+        _viewportGeometry = next
+        viewportGeometryChanged()
+    }
+
     function scrollToPage(n) {
         if (!_pages) return
         _body.contentY = Math.max(0, Math.min((Math.max(1, Math.min(pageCount, Math.floor(n))) - 1) * _pageStride,

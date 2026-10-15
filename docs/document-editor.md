@@ -680,18 +680,30 @@ there is a captured format. `applyCopiedFormat()` applies it to the selection
 (or insertion point and current paragraph) in one undo step. The application
 controls the click-then-select interaction.
 
-## Horizontal ruler and table borders
+## Page/viewport geometry and app overlays
 
-Set `ruler: true` (default false) to show the horizontal ruler above the viewport.
-It follows page width, margins, zoom and horizontal scrolling. Numbers are in
-locale measurement units (centimetres for metric locales, inches otherwise), with
-half- and quarter-unit ticks and shaded margins. `rulerUnit` defaults to `"auto"`;
-set it to `"cm"` or `"in"` to override. `effectiveRulerUnit` reports the chosen unit.
-Drag the upper triangle for first-line indent, the lower left triangle for
-hanging indent (keeping the first line fixed), and the right triangle for right
-indent. Changes commit on release to the selected paragraphs in one undo step.
-Click to add a left tab stop; drag a tab marker to move it, or off the ruler to
-remove it. The example application enables the ruler.
+Rulers and application toolbars belong to the app. Use the generic paragraph APIs
+(`leftIndent`, `rightIndent`, `firstLineIndent`, `setParagraphIndents`, `tabStops`,
+`setTabStops`) to implement them.
+
+`pageViewportX` and `pageViewportY` are read-only coordinates of the current
+page's left and top edge, relative to the **DocumentEditor item**, in
+device-independent pixels with zoom already applied. They include scrolling,
+page centering and the built-in toolbar's offset. The selected page contains the
+caret when its rectangle intersects the viewport; otherwise it is the page at
+the top of the viewport, clamped to the document. A top edge in an inter-page
+gap selects the preceding page. `currentPage` retains its existing caret-only
+meaning. In continuous view the origin is the single scrolling document's edge,
+before the outer text insets.
+
+`viewportGeometryChanged()` (TSX: `onViewportGeometryChanged`) reports changes to
+this geometry, viewport size, zoom, page size/gap or margins. Updates settle at
+the next event-loop turn and are coalesced into one notification; unchanged
+geometry does not notify. Typing or moving within a page does not emit unless it
+actually changes the viewport or selected page. Read the coordinates in the
+callback to position an app overlay. Text-column edges are not currently exposed.
+
+## Table borders
 
 Hover over an internal table-column border for a horizontal resize cursor.
 The grab zone is ±3 px. Dragging shows a preview line; release adjusts the
