@@ -4065,6 +4065,115 @@ private slots:
         check(0, 0, 0, 1, 1, 1);
     }
 
+    void documentWheelZoom_data()
+    {
+        QTest::addColumn<bool>("pages");
+        QTest::addColumn<QString>("surface");
+        for (bool pages : {false, true})
+            for (const auto &surface : {"text", "gap", "table", "margin", "image", "marks"})
+                QTest::newRow(qPrintable(QString("%1-%2").arg(pages).arg(surface)))
+                    << pages << QString::fromLatin1(surface);
+    }
+    void documentWheelZoom()
+    {
+        QFETCH(bool, pages);
+        QFETCH(QString, surface);
+        PageEditor w;
+        QVERIFY(w.root);
+        w.root->setProperty("pageView", pages);
+        w.root->setProperty("pageHeight", 400);
+        w.root->setProperty("pageGap", 40);
+        w.root->setProperty("pageMargins", QVariantList{30, 30, 30, 30});
+        w.edit()->setProperty("text", "<p>Wheel target</p><table border='1'><tr><td>Table target</td></tr></table>"
+                                    + QString("<p>Scrolling content</p>").repeated(100));
+        auto *document = w.fmt()->document()->textDocument();
+        QImage image(40, 40, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::blue);
+        const QString imagePath = m_dir.filePath("wheel.png");
+        QVERIFY(image.save(imagePath));
+        QTextCursor imageCursor(document);
+        imageCursor.movePosition(QTextCursor::EndOfBlock);
+        imageCursor.insertImage(QUrl::fromLocalFile(imagePath).toString());
+        const int imagePosition = imageCursor.position() - 1;
+        QVERIFY(!w.fmt()->addMark("highlight", w.fmt()->blockIdAt(0), 0, 5).isEmpty());
+        w.view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+        QTest::qWait(30);
+        w.body()->setProperty("contentY", 0);
+        QPointF at;
+        if (surface == "text" || surface == "table" || surface == "marks" || surface == "image") {
+            const auto *doc = w.fmt()->document()->textDocument();
+            const int pos = surface == "image" ? imagePosition
+                : doc->toPlainText().indexOf(surface == "table" ? "Table" : "Wheel");
+            QVERIFY(pos >= 0);
+            at = w.edit()->mapToScene(caretRect(w.edit(), pos).center() + QPointF(10, 0));
+        } else if (surface == "gap") {
+            at = w.edit()->mapToScene(QPointF(50, 390)); // page gap (top inset is 30)
+        } else at = w.body()->mapToScene(QPointF(5, 200));
+        QVERIFY(w.body()->contains(w.body()->mapFromScene(at)));
+        QSignalSpy zoom(w.root.data(), SIGNAL(zoomRequested(double)));
+        QVERIFY(zoom.isValid());
+        ulong timestamp = 1000;
+        const auto send = [&](QPoint angle, QPoint pixel, Qt::KeyboardModifiers mods,
+                              Qt::ScrollPhase phase = Qt::NoScrollPhase) {
+            QWheelEvent event(at, w.view.mapToGlobal(at.toPoint()), pixel, angle,
+                             Qt::NoButton, mods, phase, false,
+                             pixel.isNull() ? Qt::MouseEventNotSynthesized : Qt::MouseEventSynthesizedBySystem);
+            event.setTimestamp(timestamp += 20);
+            QCoreApplication::sendEvent(&w.view, &event);
+        };
+        const auto ctrl = Qt::ControlModifier;
+        const qreal before = w.body()->property("contentY").toReal();
+        send({0, -120}, {}, ctrl);
+        QCOMPARE(zoom.size(), 1);
+        QCOMPARE(zoom.takeFirst().at(0).toDouble(), -0.1);
+        send({0, 240}, {0, 240}, ctrl); // angle wins, never count both
+        QCOMPARE(zoom.size(), 2);
+        for (const auto &call : zoom) QCOMPARE(call.at(0).toDouble(), 0.1);
+        zoom.clear();
+        for (int i = 0; i < 3; ++i) send({0, 30}, {}, ctrl);
+        QCOMPARE(zoom.size(), 0);
+        send({0, 30}, {}, ctrl);
+        QCOMPARE(zoom.size(), 1);
+        zoom.clear();
+        send({}, {}, ctrl, Qt::ScrollBegin);
+        for (int i = 0; i < 5; ++i) send({}, {0, -20}, ctrl, Qt::ScrollUpdate);
+        QCOMPARE(zoom.size(), 0);
+        send({}, {0, -20}, ctrl, Qt::ScrollUpdate);
+        send({}, {}, ctrl, Qt::ScrollEnd);
+        QCOMPARE(zoom.size(), 1);
+        QCOMPARE(zoom.takeFirst().at(0).toDouble(), -0.1);
+        send({}, {}, ctrl);
+        QCOMPARE(zoom.size(), 0);
+        QTest::qWait(30);
+        QCOMPARE(w.body()->property("contentY").toReal(), before);
+        send({0, -120}, {}, Qt::NoModifier);
+        QTRY_VERIFY(w.body()->property("contentY").toReal() > before);
+        QMetaObject::invokeMethod(w.body(), "cancelFlick");
+        const qreal afterWheel = w.body()->property("contentY").toReal();
+        send({}, {}, Qt::NoModifier, Qt::ScrollBegin);
+        send({}, {0, -40}, Qt::NoModifier, Qt::ScrollUpdate);
+        send({}, {0, -40}, Qt::NoModifier, Qt::ScrollUpdate);
+        send({}, {}, Qt::NoModifier, Qt::ScrollEnd);
+        // Qt itself suppresses pixel-only updates after an accepted ScrollBegin
+        // on the empty margin. Preserve that existing non-Ctrl delivery path.
+        if (surface != "margin")
+            QTRY_VERIFY(w.body()->property("contentY").toReal() > afterWheel);
+        send({0, -120}, {}, Qt::ShiftModifier);
+        QCOMPARE(zoom.size(), 0);
+        w.root->setVisible(false);
+        send({0, -120}, {}, ctrl);
+        QCOMPARE(zoom.size(), 0);
+        w.root->setVisible(true);
+        w.root->setEnabled(false);
+        send({0, -120}, {}, ctrl);
+        QCOMPARE(zoom.size(), 0);
+        w.root->setEnabled(true);
+        at = QPointF(-10, -10);
+        send({0, -120}, {}, ctrl);
+        QCOMPARE(zoom.size(), 0);
+    }
+
     void documentScrollbar_data()
     {
         QTest::addColumn<bool>("pages");
