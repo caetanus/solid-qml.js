@@ -765,6 +765,32 @@ private slots:
         QCOMPARE(table->format().columnWidthConstraints(), before);
     }
 
+    void tableFormattingOdfRoundTrip()
+    {
+        m_fmt->insertTable(2, 2, {{"headerRow", true}, {"width", 350}});
+        QVERIFY(m_fmt->setTableAlignment("center"));
+        QVERIFY(m_fmt->setTableCellBackground("#abcdef"));
+        QVERIFY(m_fmt->setTableCellVerticalAlignment("bottom"));
+        QVERIFY(m_fmt->setTableBorders("all", {{"width", 1.5}, {"color", "#ff0000"}, {"style", "double"}}));
+        const auto path=QUrl::fromLocalFile(m_dir.filePath("table-editing.odt"));
+        QVERIFY(m_fmt->saveOdfCopy(path));
+        const auto xml=zipEntry(path.toLocalFile(),"content.xml");
+        QVERIFY(xml.contains("table:table-header-rows"));
+        QVERIFY(xml.contains("table:border-model=\"collapsing\""));
+        QVERIFY(m_fmt->loadOdf(path));
+        auto *t=qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        QCOMPARE(t->format().headerRowCount(),1);
+        QCOMPARE(t->format().alignment(),Qt::AlignHCenter);
+        QVERIFY(qAbs(t->format().width().rawValue()-350)<.001);
+        QVERIFY(t->format().borderCollapse());
+        const auto f=t->cellAt(0,0).format().toTableCellFormat();
+        QCOMPARE(f.background().color(),QColor("#abcdef"));
+        QCOMPARE(f.verticalAlignment(),QTextCharFormat::AlignBottom);
+        QCOMPARE(f.topBorderStyle(),QTextFrameFormat::BorderStyle_Double);
+        QCOMPARE(f.topBorderBrush().color(),QColor("#ff0000"));
+        QVERIFY(qAbs(f.topBorder()-2)<.001);
+    }
+
     void tableCellFormattingAndShifts()
     {
         m_fmt->insertTable(2, 2);
