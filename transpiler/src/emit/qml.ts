@@ -2202,6 +2202,7 @@ function emitFor(propsArg: t.Node | undefined, children: t.Node[], scope: Scope,
     // local or an accessor shadows the name.
     isReactiveRead: (name) => !(name in (scope.locals ?? {})) && !(name in (scope.accessors ?? {}))
       && ["signal", "memo"].includes(scope.table.get(name)?.kind ?? ""),
+    isSetter: (name) => ["setter", "storeSetter"].includes(scope.table.get(name)?.kind ?? ""),
   });
   const lines = [
     `${pad}Css.CssRepeater {`,

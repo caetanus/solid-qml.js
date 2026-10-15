@@ -1,7 +1,8 @@
-// <For> rows with an inline `style` OBJECT are certified for virtualization (forCertify.ts) when every
-// value is pure: the row item, the row index accessor i(), literals, component signal/memo reads, and
-// operators over those. A virtualized row is created, parked and rebound as it scrolls, so its bindings
-// must be re-evaluable with no side effect; anything else stays eager, with the reason reported.
+// <For> rows with an inline `style` OBJECT are certified for virtualization (forCertify.ts) when the row's
+// size stays predictable (owner rule): paint-only keys take any side-effect-free value (row, index,
+// signals, memos, calls); layout keys take literals or values from the row's own record (measured per
+// row by the list); anything else — or a style whose keys are unknown at compile time — stays eager,
+// with the reason reported.
 // The app-level counterpart (2000 rows, recycled colours, a live signal) is tests/for-style-virtual/.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -41,7 +42,10 @@ async function verdict(row: string, setup = "") {
   let delegate: t.ArrowFunctionExpression | null = null;
   t.traverseFast(fn, (n) => { if (!delegate && t.isArrowFunctionExpression(n) && isHCall(n.body)) delegate = n; });
   assert.ok(delegate, "no row delegate found");
-  return forRowCertification(delegate, { isReactiveRead: (n) => ["signal", "memo"].includes(table.get(n)?.kind ?? "") });
+  return forRowCertification(delegate, {
+    isReactiveRead: (n) => ["signal", "memo"].includes(table.get(n)?.kind ?? ""),
+    isSetter: (n) => ["setter", "storeSetter"].includes(table.get(n)?.kind ?? ""),
+  });
 }
 
 async function accepted(row: string, setup = "") {
@@ -57,72 +61,84 @@ async function rejected(row: string, reason: RegExp, setup = "") {
   assert.doesNotMatch(await qml(wrap(row, setup)), /virtualize/, row);
 }
 
-// ---- Accepted shapes ---------------------------------------------------------------------------
+// ---- Accepted: paint-only keys, any side-effect-free value -------------------------------------
 
-test("certified: style object from the row item", () => accepted(`(row) => <div class="r" style={{ background: row.c }} />`));
+test("certified: paint-only key from the row item", () => accepted(`(row) => <div class="r" style={{ background: row.c }} />`));
 
-test("certified: style object with literals (numbers get px, negative numbers, strings, booleans)", () =>
-  accepted(`(row) => <div style={{ width: 40, marginTop: -2, opacity: 0.5, color: "red", "--flag": true, border: null }} />`));
+test("certified: paint-only keys from a component signal, a memo and the row index", () =>
+  accepted(`(row, i) => <div style={{ background: tone(), color: dim() ? "gray" : "black", opacity: i() % 2 ? 0.5 : 1 }}><text>{row.id}</text></div>`));
 
-test("certified: style object from the row index accessor", () =>
-  accepted(`(row, i) => <div style={{ opacity: i() % 2 === 0 ? 1 : 0.5, order: i() }}><text>{row.id}</text></div>`));
+test("certified: paint-only keys from a helper call, an outer identifier and a template", () =>
+  accepted("(row) => <div style={{ backgroundColor: fmt(row.c), borderColor: outer, boxShadow: `0 0 4px ${tone()}` }} />"));
 
-test("certified: style object from a component signal and a memo", () =>
-  accepted(`(row) => <div style={{ background: row.c, color: tone(), fontWeight: dim() ? 400 : 700 }} />`));
+test("certified: every paint-only family (border colour/style/radius, outline, shadows, transform, visibility)", () =>
+  accepted(`(row) => <div style={{ borderTopColor: tone(), borderStyle: row.s, borderRadius: fmt(4), outline: tone(),
+    outlineWidth: row.w, textShadow: tone(), transform: row.t, visibility: dim() ? "hidden" : "visible", textDecoration: row.d }} />`));
 
-test("certified: template literals and string concatenation in style values", () =>
-  accepted("(row) => <div style={{ width: `${row.w}px`, background: \"#\" + row.hex, border: `1px solid ${tone()}` }} />"));
+// ---- Accepted: layout keys with a fixed or row-measured value ---------------------------------
 
-test("certified: logical and comparison operators in style values", () =>
-  accepted(`(row) => <div style={{ color: row.c || "black", opacity: row.n > 3 && !row.off ? 1 : 0.4 }} />`));
+test("certified: layout keys with literal values (a fixed size)", () =>
+  accepted(`(row) => <div style={{ width: 40, height: "20px", marginTop: -2, padding: "2px 4px", fontSize: 12, "--gap": 4, flexGrow: 0 }} />`));
 
-test("certified: quoted keys and custom properties", () =>
-  accepted(`(row) => <div style={{ "background-color": row.c, "--accent": tone() }} />`));
+test("certified: layout keys from the row's own record (measured per row, like class={row.status})", () =>
+  accepted("(row) => <div style={{ height: row.h, width: `${row.w}px`, padding: row.big ? 8 : 2, fontSize: row.s + 1 }} />"));
 
-test("certified: a static style string, a dynamic template string, and a runtime style value", async () => {
-  await accepted(`(row) => <div style="color: red" />`);
-  await accepted("(row) => <div style={`background: ${row.c}`} />");
-  await accepted(`(row) => <div style={row.style} />`);
-  await accepted(`(row) => <div style={row.on ? "color: red" : "color: blue"} />`);
+test("certified: a paint key from a signal next to a layout key from the row", () =>
+  accepted(`(row) => <div style={{ background: tone(), height: row.h }} />`));
+
+test("certified: a static style string and a template without interpolation", async () => {
+  await accepted(`(row) => <div style="height: 20px; color: red" />`);
+  await accepted("(row) => <div style={`height: 20px`} />");
 });
 
 test("certified: style on nested text tags of the row", () =>
-  accepted(`(row) => <div class="r"><span style={{ color: row.c }}>{row.label}</span><p style={{ fontSize: 12 }}>x</p></div>`));
+  accepted(`(row) => <div class="r"><span style={{ color: tone(), fontSize: 12 }}>{row.label}</span><p style={{ fontWeight: row.w }}>x</p></div>`));
 
-// ---- Rejected shapes, with their reasons -------------------------------------------------------
+// ---- Rejected: a layout key whose value would make the size unpredictable ----------------------
 
-test("not certified: a call to a helper in a style value", () =>
-  rejected(`(row) => <div style={{ background: fmt(row.c) }} />`, /^style\.background: a call to `fmt`/));
-
-test("not certified: a call with arguments, even to a signal", () =>
-  rejected(`(row) => <div style={{ color: tone(row.c) }} />`, /^style\.color: a call to `tone`/));
-
-test("not certified: an outer (closed-over) identifier in a style value", () =>
-  rejected(`(row) => <div style={{ color: outer }} />`, /^style\.color: `outer`/));
-
-test("not certified: the bare (uncalled) index accessor", () =>
-  rejected(`(row, i) => <div style={{ order: i }} />`, /^style\.order: `i`/));
-
-test("not certified: a spread in the style object", () =>
-  rejected(`(row) => <div style={{ ...row.style, color: "red" }} />`, /^style: a spread in the style object$/));
-
-test("not certified: a computed key in the style object", () =>
-  rejected(`(row) => <div style={{ [row.k]: "red" }} />`, /^style: a computed key in the style object$/));
-
-test("not certified: a method or a function value in the style object", async () => {
-  await rejected(`(row) => <div style={{ color() { return "red"; } }} />`, /^style: a ObjectMethod in the style object$/);
-  await rejected(`(row) => <div style={{ color: () => row.c }} />`, /^style\.color: a ArrowFunctionExpression/);
+test("not certified: a layout key from a component signal or memo", async () => {
+  await rejected(`(row) => <div style={{ width: tone() }} />`,
+    /^style\.width: layout property depends on the component signal\/memo `tone\(\)`/);
+  await rejected(`(row) => <div style={{ background: tone(), fontSize: dim() ? 12 : 14 }} />`,
+    /^style\.font-size: layout property depends on the component signal\/memo `dim\(\)`/);
 });
 
-test("not certified: a computed member access on the row", () =>
-  rejected(`(row) => <div style={{ color: row[tone()] }} />`, /^style\.color: a MemberExpression/));
+test("not certified: a layout key from the row index", () =>
+  rejected(`(row, i) => <div style={{ height: i() * 2 }} />`, /^style\.height: layout property depends on the row index `i\(\)`/));
 
-test("not certified: an assignment or `in` in a style value", async () => {
-  await rejected(`(row) => <div style={{ color: (row.n = 1) }} />`, /^style\.color: a AssignmentExpression/);
-  await rejected(`(row) => <div style={{ opacity: "x" in row ? 1 : 0 }} />`, /^style\.opacity: a BinaryExpression/);
+test("not certified: a layout key from a call or an outer identifier", async () => {
+  await rejected(`(row) => <div style={{ marginTop: fmt(row.m) }} />`, /^style\.margin-top: layout property depends on a call to `fmt`/);
+  await rejected(`(row) => <div style={{ padding: outer }} />`, /^style\.padding: layout property depends on `outer`/);
 });
 
-test("not certified: a signal read stays rejected in class and text (style alone widened)", async () => {
+test("not certified: unknown keys, custom properties and the border shorthand count as layout", async () => {
+  await rejected(`(row) => <div style={{ "--accent": tone() }} />`, /^style\.--accent: layout property depends on the component signal/);
+  await rejected(`(row) => <div style={{ cursor: tone() }} />`, /^style\.cursor: layout property depends on/);
+  await rejected(`(row) => <div style={{ border: tone() }} />`, /^style\.border: layout property depends on/);
+});
+
+// ---- Rejected: side effects, and styles whose properties are not known at compile time ---------
+
+test("not certified: a side effect in a paint-only value", async () => {
+  await rejected(`(row) => <div style={{ background: setTone("red") }} />`, /^style\.background: a side effect \(the setter `setTone`\)$/);
+  await rejected(`(row) => <div style={{ color: (row.n = 1) }} />`, /^style\.color: a side effect \(AssignmentExpression\)$/);
+  await rejected(`(row) => <div style={{ opacity: row.n++ }} />`, /^style\.opacity: a side effect \(UpdateExpression\)$/);
+});
+
+test("not certified: a spread or a computed key in the style object", async () => {
+  await rejected(`(row) => <div style={{ ...row.style, color: "red" }} />`, /^style: a spread in the style object — its properties are not known at compile time$/);
+  await rejected(`(row) => <div style={{ [row.k]: "red" }} />`, /^style: a computed key in the style object/);
+});
+
+test("not certified: a style that is not an object literal (unknown keys)", async () => {
+  for (const style of ["{row.style}", `{row.on ? "color: red" : "color: blue"}`, "{`background: ${row.c}`}"])
+    await rejected(`(row) => <div style=${style} />`, /^style: not an object literal — its properties are not known at compile time$/);
+});
+
+test("not certified: a method in the style object", () =>
+  rejected(`(row) => <div style={{ color() { return "red"; } }} />`, /^style: a ObjectMethod in the style object$/));
+
+test("not certified: a signal read stays rejected in class and text (only style is classified by key)", async () => {
   await rejected(`(row) => <div class={tone()} />`, /^class: a call to `tone`/);
   await rejected(`(row) => <text>{tone()}</text>`, /^child: a call to `tone`/);
   await rejected(`(row, i) => <text>{i()}</text>`, /^child: a call to `i`/);
@@ -130,9 +146,6 @@ test("not certified: a signal read stays rejected in class and text (style alone
 
 test("not certified: an event handler next to the style (the office colour swatch shape)", () =>
   rejected(`(c) => <div class="swatch" style={{ background: c }} onClick={() => setTone(c)} />`, /^attribute `onClick`$/));
-
-test("not certified: a row param that shadows a signal name is not a signal read", () =>
-  rejected(`(tone) => <div style={{ color: tone() }} />`, /^style\.color: a call to `tone`/));
 
 test("not certified: three delegate parameters", async () => {
   const v = await verdict(`(row, i, extra) => <div style={{ color: row.c }} />`);

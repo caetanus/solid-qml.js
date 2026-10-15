@@ -8,11 +8,13 @@
 // NOT certified, which keeps emission byte-identical to today (eager, no `virtualize` line).
 //
 // A virtualized row is created when it enters the window, destroyed or parked in a bounded pool when it
-// leaves, and REBOUND (new modelData/index) when it comes back: every binding in it must be a pure
-// function of its inputs, re-evaluable any number of times, with no side effect. Every rejection carries
-// a reason (forRowCertification), so a test — or a reader — can see why a row stays eager.
+// leaves, and REBOUND (new modelData/index) when it comes back: its bindings are re-evaluated any number
+// of times, so they must have no side effect, and the row's SIZE must stay predictable (the list places
+// rows it has not materialized from measurements and estimates — see certifyStyle). Every rejection
+// carries a reason (forRowCertification), so a test — or a reader — can see why a row stays eager.
 import * as t from "@babel/types";
 import { hParts, isHCall } from "../ast/h.ts";
+import { kebabCssProperty } from "./inlineStyle.ts";
 
 /** Passive primitives eligible for certification: the lowercase tags that reach W.Text (mirrors
  *  TEXT_TAGS in qml.ts) plus the generic block primitive W.Div ("div" itself; other block tags
@@ -29,6 +31,8 @@ export interface CertifyContext {
   /** True when `name()` (no arguments) reads a component signal or memo: emitted as a plain QML
    *  property read (expr.ts cellRef), so it is pure and re-evaluable, and the binding follows it live. */
   isReactiveRead?: (name: string) => boolean;
+  /** True when `name(…)` is a signal or store setter (a write: a side effect). */
+  isSetter?: (name: string) => boolean;
 }
 
 export type Certification = { ok: true } | { ok: false; reason: string };
@@ -83,64 +87,109 @@ function safeValue(node: t.Node, row: Row, where: string): void {
 const PURE_BINARY = new Set(["+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "==", "!=", "===", "!=="]);
 const PURE_UNARY = new Set(["-", "+", "!"]);
 
-/** Pure value grammar for `style` values. Beyond the safe grammar above: number/boolean/null literals,
- *  the row index accessor `i()`, zero-argument reads of a component signal or memo (`tone()`), and
- *  arithmetic, comparison, logical and conditional operators over those. Each of these emits a QML
- *  expression made of literals, `modelData`/`__forIndex` and component property reads: no side effect,
- *  re-evaluable on every rebind, and live (the binding re-runs when the signal changes, in the visible
- *  rows and in the parked ones alike). Any other call, identifier, `new`, assignment, `in`/`instanceof`,
- *  a function or a computed member access rejects. */
-function pureValue(node: t.Node, row: Row, where: string): void {
+/** Owner rule (2026-10-15): "a virtualização é segura sempre que o size é previsível" — a row may be
+ *  virtualized whenever its SIZE is predictable. So a `style` key is classified by whether it can change
+ *  the row's geometry, not by where its value comes from.
+ *
+ *  PAINT-ONLY keys (kebab-case, as emitted): the engine reads them only to paint — never in its layout
+ *  pass (CssLayoutStyle::parse in vendor/qml-css-engine/src/qmlcss/csslength.cpp reads display/position/
+ *  flex/gap/sizes/margin/padding/border WIDTHS/aspect-ratio/order; text measurement reads the font keys).
+ *  Verified one by one in the engine: backgrounds are the render shell / fill layers (cssrect, cssfill);
+ *  `color` is the text colour; `opacity` and `visibility: hidden` stay in flow (cssrect "STILL in flow");
+ *  `transform` is the item's own transform (cssrect parseTransform), outside the flow; border colour,
+ *  style and radius and the outline are the shell's paint (the border WIDTH is layout: `border`,
+ *  `border-width` and their sides are NOT here); box-shadow and text-shadow are shadow items;
+ *  text-decoration is the font's underline/strike. The engine has no list of its own to share, so this
+ *  one is closed and conservative: a key not in it — including custom properties (`--x`, a var() can
+ *  feed a layout property) — is treated as layout-affecting. */
+const PAINT_ONLY = new Set([
+  "background", "background-color", "background-image", "background-position", "background-size", "background-repeat",
+  "color", "opacity", "visibility", "transform",
+  "border-color", "border-top-color", "border-right-color", "border-bottom-color", "border-left-color",
+  "border-style", "border-top-style", "border-right-style", "border-bottom-style", "border-left-style",
+  "border-radius", "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius",
+  "border-bottom-left-radius",
+  "box-shadow", "text-shadow",
+  "outline", "outline-color", "outline-width", "outline-style", "outline-offset",
+  "text-decoration", "text-decoration-line", "text-decoration-color", "text-decoration-style",
+]);
+
+export function isPaintOnlyStyleProperty(kebab: string): boolean {
+  return PAINT_ONLY.has(kebab);
+}
+
+/** A paint-only value may be any expression: whatever it evaluates to, the row keeps its size. It must
+ *  still have no side effect — a virtualized row re-evaluates it on every rebind, an eager one does not —
+ *  so an assignment, `++`/`--`, `delete` or a signal/store setter call anywhere in it rejects. */
+function paintValue(node: t.Expression, row: Row, where: string): void {
+  let bad: string | null = null;
+  t.traverseFast(node, (n) => {
+    if (bad) return;
+    if (t.isAssignmentExpression(n) || t.isUpdateExpression(n) || (t.isUnaryExpression(n) && n.operator === "delete"))
+      bad = `a side effect (${n.type})`;
+    else if (t.isCallExpression(n) && t.isIdentifier(n.callee) && row.ctx.isSetter?.(n.callee.name))
+      bad = `a side effect (the setter \`${n.callee.name}\`)`;
+  });
+  if (bad) reject(`${where}: ${bad}`);
+}
+
+/** A layout-affecting value keeps the size predictable when it depends on nothing but the row's own
+ *  record: literals, the row item and its member paths, and operators over those. The virtualized list
+ *  measures every logical row it materializes and keeps that measurement until the row's record, the
+ *  width, the font or the rule set changes (CssRepeater::dropMeasurement / checkMeasureKey) — the same
+ *  guarantee that covers class={row.status}. Anything else — the row index (rows keep their measurement
+ *  when they move), a component signal or memo (it would resize rows outside the window without a
+ *  re-measure), a call, an outer identifier — would let a measurement go stale: the row stays eager. */
+function rowValue(node: t.Node, row: Row, where: string): void {
   if (t.isStringLiteral(node) || t.isNumericLiteral(node) || t.isBooleanLiteral(node) || t.isNullLiteral(node)) return;
   if (isRowPath(node, row.item)) return;
   if (t.isTemplateLiteral(node)) {
-    for (const e of node.expressions) pureValue(e, row, where);
+    for (const e of node.expressions) rowValue(e, row, where);
     return;
   }
-  if (t.isUnaryExpression(node) && PURE_UNARY.has(node.operator)) return pureValue(node.argument, row, where);
-  if (t.isBinaryExpression(node) && PURE_BINARY.has(node.operator) && t.isExpression(node.left)) {
-    pureValue(node.left, row, where);
-    pureValue(node.right, row, where);
-    return;
-  }
-  if (t.isLogicalExpression(node)) {
-    pureValue(node.left, row, where);
-    pureValue(node.right, row, where);
+  if (t.isUnaryExpression(node) && PURE_UNARY.has(node.operator)) return rowValue(node.argument, row, where);
+  if ((t.isBinaryExpression(node) && PURE_BINARY.has(node.operator) && t.isExpression(node.left)) || t.isLogicalExpression(node)) {
+    rowValue(node.left, row, where);
+    rowValue(node.right, row, where);
     return;
   }
   if (t.isConditionalExpression(node)) {
-    pureValue(node.test, row, where);
-    pureValue(node.consequent, row, where);
-    pureValue(node.alternate, row, where);
+    rowValue(node.test, row, where);
+    rowValue(node.consequent, row, where);
+    rowValue(node.alternate, row, where);
     return;
   }
+  let what = describe(node);
   if (t.isCallExpression(node) && t.isIdentifier(node.callee) && node.arguments.length === 0) {
-    const name = node.callee.name;
-    if (name === row.index) return;
-    if (name !== row.item && row.ctx.isReactiveRead?.(name)) return;
+    if (node.callee.name === row.index) what = `the row index \`${row.index}()\``;
+    else if (node.callee.name !== row.item && row.ctx.isReactiveRead?.(node.callee.name))
+      what = `the component signal/memo \`${node.callee.name}()\``;
   }
-  reject(`${where}: ${describe(node)} (only the row item, the row index i(), literals, component signals/memos, and operators over those)`);
+  reject(`${where}: layout property depends on ${what} — the row's size would not be predictable`);
 }
 
-/** A `style` attribute value: a static string, a template literal or object literal built from pure
- *  values, or a bare pure value (an object or string computed at runtime from the row — the engine's
- *  map setter converts it). An object literal must have static keys and no spread. */
+/** A `style` attribute value. A static string: fixed. An object literal with static keys: each key is
+ *  classified (paint-only → any side-effect-free value; layout → a value from the row's own record).
+ *  Anything else — a spread or computed key, a template string with interpolations, an object or string
+ *  computed at runtime — has properties unknown at compile time: it cannot be classified, so eager. */
 function certifyStyle(v: t.Node, row: Row): void {
   if (t.isStringLiteral(v)) return;
-  if (t.isObjectExpression(v)) {
-    for (const p of v.properties) {
-      if (t.isSpreadElement(p)) reject("style: a spread in the style object");
-      if (!t.isObjectProperty(p)) reject(`style: a ${p.type} in the style object`);
-      if (p.computed || !(t.isIdentifier(p.key) || t.isStringLiteral(p.key))) reject("style: a computed key in the style object");
-      const key = t.isIdentifier(p.key) ? p.key.name : (p.key as t.StringLiteral).value;
-      pureValue(p.value, row, `style.${key}`);
-    }
-    return;
+  if (t.isTemplateLiteral(v) && v.expressions.length === 0) return;
+  if (!t.isObjectExpression(v))
+    reject("style: not an object literal — its properties are not known at compile time");
+  for (const p of v.properties) {
+    if (t.isSpreadElement(p)) reject("style: a spread in the style object — its properties are not known at compile time");
+    if (!t.isObjectProperty(p)) reject(`style: a ${p.type} in the style object`);
+    if (p.computed || !(t.isIdentifier(p.key) || t.isStringLiteral(p.key)))
+      reject("style: a computed key in the style object — its properties are not known at compile time");
+    const prop = kebabCssProperty(t.isIdentifier(p.key) ? p.key.name : (p.key as t.StringLiteral).value);
+    if (!t.isExpression(p.value)) reject(`style.${prop}: a ${p.value.type}`);
+    if (PAINT_ONLY.has(prop)) paintValue(p.value, row, `style.${prop}`);
+    else rowValue(p.value, row, `style.${prop}`);
   }
-  pureValue(v, row, "style");
 }
 
-/** Attributes: `class`/`id` (safe-value grammar) and `style` (pure-value grammar). Any other key —
+/** Attributes: `class`/`id` (safe-value grammar) and `style` (classified per key, certifyStyle). Any other key —
  *  classList, ref, draggable, dragData, onDrop, title, onScroll, onContextMenu, onKeyDown, any other
  *  `on*`, anything custom — or a spread (not an ObjectProperty) disqualifies the row. */
 function certifyProps(propsArg: t.Node | undefined, row: Row): void {
