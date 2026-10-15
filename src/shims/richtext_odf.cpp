@@ -1754,10 +1754,61 @@ private:
             // styles to their parents (style:parent-style-name is dropped on import without it —
             // verified with LibreOffice 26.8).
             + QByteArrayLiteral("</office:styles>")
-            + (m_doc->rootFrame()->frameFormat().property(kDocumentPageStylesProperty).toByteArray().isEmpty()
-                ? QByteArrayLiteral("<office:master-styles/>")
-                : m_doc->rootFrame()->frameFormat().property(kDocumentPageStylesProperty).toByteArray())
+            + savedPageStyles()
             + QByteArrayLiteral("</office:document-styles>");
+    }
+
+    QByteArray savedPageStyles() const
+    {
+        const auto root = m_doc->rootFrame()->frameFormat();
+        auto source = root.property(kDocumentPageStylesProperty).toByteArray();
+        const auto edits = root.property(kDocumentPageEditsProperty).toMap();
+        const bool fresh = source.isEmpty();
+        if (!fresh && edits.isEmpty()) return source;
+        QString master = root.stringProperty(kDocumentMasterNameProperty);
+        if (master.isEmpty()) master = QStringLiteral("Standard");
+        if (fresh) source = "<office:automatic-styles><style:page-layout style:name=\"PageSetup\"><style:page-layout-properties/></style:page-layout></office:automatic-styles><office:master-styles><style:master-page style:name=\"Standard\" style:page-layout-name=\"PageSetup\"/></office:master-styles>";
+        const auto wrapped = QByteArray("<office:document-styles" ODF_NAMESPACES ">") + source + "</office:document-styles>";
+        QString layout;
+        QXmlStreamReader scan(wrapped);
+        while (!scan.atEnd()) {
+            if (scan.readNext() == QXmlStreamReader::StartElement && scan.name() == QLatin1String("master-page")
+                && scan.attributes().value("style:name") == master)
+                layout = scan.attributes().value("style:page-layout-name").toString();
+        }
+        auto geometry = root.property(kDocumentGeometryProperty).toList();
+        if (geometry.size() != 6) geometry = {210.*96/25.4,297.*96/25.4,20.*96/25.4,20.*96/25.4,20.*96/25.4,20.*96/25.4};
+        QByteArray result;
+        QXmlStreamWriter out(&result);
+        QXmlStreamReader xml(wrapped);
+        bool selected = false;
+        while (!xml.atEnd()) {
+            const auto token = xml.readNext();
+            if (xml.name() == QLatin1String("document-styles") || token == QXmlStreamReader::StartDocument || token == QXmlStreamReader::EndDocument) continue;
+            if (token == QXmlStreamReader::StartElement && xml.name() == QLatin1String("page-layout"))
+                selected = xml.attributes().value("style:name") == layout;
+            if (selected && token == QXmlStreamReader::StartElement && xml.name() == QLatin1String("page-layout-properties") && (fresh || edits.contains("geometry"))) {
+                out.writeStartElement("style:page-layout-properties");
+                for (const auto &a : xml.attributes()) {
+                    const auto name = a.qualifiedName();
+                    if (name != QLatin1String("fo:page-width") && name != QLatin1String("fo:page-height")
+                        && !name.startsWith(QLatin1String("fo:margin")) && name != QLatin1String("style:print-orientation"))
+                        out.writeAttribute(name.toString(), a.value().toString());
+                }
+                const char *names[] = {"fo:page-width", "fo:page-height", "fo:margin-top", "fo:margin-right", "fo:margin-bottom", "fo:margin-left"};
+                for (int i = 0; i < 6; ++i) out.writeAttribute(QLatin1String(names[i]), QString::number(geometry[i].toDouble()/96., 'g', 17) + "in");
+                out.writeAttribute("style:print-orientation", geometry[0].toDouble() > geometry[1].toDouble() ? "landscape" : "portrait");
+                continue;
+            }
+            if (token == QXmlStreamReader::StartElement) {
+                out.writeStartElement(xml.qualifiedName().toString());
+                for (const auto &ns : xml.namespaceDeclarations()) out.writeNamespace(ns.namespaceUri().toString(), ns.prefix().toString());
+                for (const auto &attr : xml.attributes()) out.writeAttribute(attr.qualifiedName().toString(), attr.value().toString());
+            } else if (token == QXmlStreamReader::EndElement) out.writeEndElement();
+            else if (token == QXmlStreamReader::Characters) out.writeCharacters(xml.text().toString());
+            if (token == QXmlStreamReader::EndElement && xml.name() == QLatin1String("page-layout")) selected = false;
+        }
+        return result;
     }
 
     QByteArray metaXml() const

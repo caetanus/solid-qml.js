@@ -142,6 +142,7 @@ RichText {
     readonly property var documentPageMargins: fmt ? fmt.documentPageMargins : []
     readonly property int pageCount: fmt ? fmt.pageCount : 1
     readonly property int currentPage: fmt ? fmt.currentPage : 1
+    signal documentPageGeometryChanged()
     signal pagesChanged()
     function pageAt(position) { return fmt ? fmt.pageAt(position) : 1 }
     // App overlays use editor-item coordinates, already zoomed (device-independent px).
@@ -302,6 +303,7 @@ RichText {
         function onHeadingsChanged() { headingsDebounce.restart() }
         function onBlocksLoaded() { root._configurePages(); root.blocksLoaded() }
         function onDocumentChanged() { root._configurePages() }
+        function onDocumentPageGeometryChanged() { root.documentPageGeometryChanged() }
         function onPagesChanged() { root.pagesChanged() }
         function onBlockChanged(blockId) { root.blockChanged(blockId) }
         function onBlockRemoved(blockId) { root.blockRemoved(blockId) }
@@ -396,6 +398,7 @@ RichText {
     // styles. Reuses the engine's clearFormatting() — paragraph properties are untouched, unlike
     // clearDirectFormatting().
     function clearFormatting() { if (fmt) fmt.clearFormatting(); _editor.forceActiveFocus() }
+    function setDocumentPageGeometry(geometry) { if (fmt) fmt.setDocumentPageGeometry(geometry) }
     function setAlignment(align) { if (fmt) fmt.setAlignment(align); _editor.forceActiveFocus() }
     function insertTable(rows, cols, options) { if (fmt) fmt.insertTable(rows, cols, options || {}); _editor.forceActiveFocus() }
     signal tableCellChanged(int row, int column)

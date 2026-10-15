@@ -67,6 +67,7 @@ RichTextHandler::RichTextHandler(QObject *parent) : QObject(parent)
 {
     connect(this, &RichTextHandler::formatChanged, this, &RichTextHandler::updateEditingState);
     connect(this, &RichTextHandler::contentsChanged, this, &RichTextHandler::updateEditingState);
+    connect(this, &RichTextHandler::contentsChanged, this, &RichTextHandler::syncDocumentPageSetup);
     connect(this, &RichTextHandler::zoomChanged, this, &RichTextHandler::updateEditingState);
     // The system clipboard, not this document: canPaste must track another app copying something
     // too (office item 2b, item 6).
@@ -328,6 +329,40 @@ void RichTextHandler::connectOverlayLayout()
     m_overlayUpdateConn = connect(layout, &QAbstractTextDocumentLayout::update, this, schedule);
     m_overlaySizeConn = connect(layout, &QAbstractTextDocumentLayout::documentSizeChanged, this, schedule);
     schedule();
+}
+
+void RichTextHandler::syncDocumentPageSetup()
+{
+    if (!m_doc || m_bulkReset) return;
+    const auto geometry = m_doc->rootFrame()->frameFormat().property(rt::kDocumentGeometryProperty).toList();
+    if (geometry != m_documentGeometry) {
+        m_documentGeometry = geometry;
+        emit documentPageGeometryChanged();
+    }
+}
+
+void RichTextHandler::setDocumentPageGeometry(const QVariantMap &options)
+{
+    if (!m_doc) return;
+    const double width = options.value("width").toDouble(), height = options.value("height").toDouble();
+    const auto margins = options.value("margins").toList();
+    if (!qIsFinite(width) || !qIsFinite(height) || width <= 0 || height <= 0 || margins.size() != 4) return;
+    for (const auto &margin : margins)
+        if (!qIsFinite(margin.toDouble()) || margin.toDouble() < 0) return;
+    if (margins[0].toDouble() + margins[2].toDouble() >= height
+        || margins[1].toDouble() + margins[3].toDouble() >= width) return;
+    QVariantList geometry{width, height};
+    geometry.append(margins);
+    auto format = m_doc->rootFrame()->frameFormat();
+    if (format.property(rt::kDocumentGeometryProperty).toList() == geometry) return;
+    format.setProperty(rt::kDocumentGeometryProperty, geometry);
+    auto edits = format.property(rt::kDocumentPageEditsProperty).toMap();
+    edits.insert("geometry", true);
+    format.setProperty(rt::kDocumentPageEditsProperty, edits);
+    QTextCursor edit(m_doc);
+    edit.beginEditBlock();
+    m_doc->rootFrame()->setFrameFormat(format);
+    edit.endEditBlock();
 }
 
 void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const QVariantList &margins)

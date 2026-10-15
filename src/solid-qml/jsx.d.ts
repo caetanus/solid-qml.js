@@ -128,6 +128,7 @@ type DocumentEditorProps = {
   onContentChanged?: () => void;
   /** The style table changed (defineStyle, a load, newDocument, an undo of a definition). */
   onStylesChanged?: () => void;
+  onDocumentPageGeometryChanged?: () => void;
   /** Page width in px (e.g. 794 ≈ A4 at 96dpi). 0/unset = the plain editor's default. The editor
    *  displays paginated sheets by default. */
   pageWidth?: number;
@@ -447,6 +448,15 @@ declare global {
     setTableColumnWidth(width: number): boolean;
     setTableAlignment(alignment: "left" | "center" | "right"): boolean;
     setTableHeaderRow(on: boolean): boolean;
+    /** Persisted page setup in canonical 96 dpi pixels; one undo step. */
+    setDocumentPageGeometry(geometry: { width: number; height: number; margins: [number, number, number, number] }): void;
+    readonly documentPageGeometryChanged: {
+      connect(callback: () => void): void;
+      disconnect(callback: () => void): void;
+    };
+    readonly documentPageWidth: number;
+    readonly documentPageHeight: number;
+    readonly documentPageMargins: number[];
     addTableRow(): void;
     addTableColumn(): void;
     removeTableRow(): void;

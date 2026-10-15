@@ -23,6 +23,7 @@
 #include <QMetaMethod>
 #include <QPainter>
 #include <QProcess>
+#include <QStandardPaths>
 #include <QXmlStreamReader>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -5259,6 +5260,56 @@ private slots:
         QObject futureEditor;
         QTest::ignoreMessage(QtWarningMsg, "RichText: Qt TextEdit updateSize() is unavailable; view size may be stale");
         QVERIFY(!rt::refreshTextEditSize(&futureEditor));
+    }
+
+    void documentPageSetupRoundTripAndUndo()
+    {
+        m_fmt->newDocument();
+        const auto original = m_fmt->documentPageMargins();
+        QSignalSpy changed(m_fmt, &RichTextHandler::documentPageGeometryChanged);
+        const QVariantMap geometry{{"width", 640.}, {"height", 480.}, {"margins", QVariantList{20.,30.,40.,50.}}};
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setDocumentPageGeometry", Q_ARG(QVariantMap, geometry)));
+        QCOMPARE(m_fmt->documentPageWidth(), 640.);
+        QCOMPARE(m_fmt->documentPageHeight(), 480.);
+        QCOMPARE(changed.count(), 1);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setDocumentPageGeometry", Q_ARG(QVariantMap, geometry)));
+        QCOMPARE(changed.count(), 1);
+        doc()->undo();
+        QCOMPARE(m_fmt->documentPageMargins(), original);
+        QVERIFY(!doc()->isUndoAvailable());
+        doc()->redo();
+        QCOMPARE(m_fmt->documentPageWidth(), 640.);
+        const auto path = QUrl::fromLocalFile(m_dir.filePath("saved-page.odt"));
+        QVERIFY(m_fmt->saveOdf(path));
+        const auto xml = zipEntry(path.toLocalFile(), "styles.xml");
+        QVERIFY(xml.contains("fo:page-width=\""));
+        QVERIFY(xml.contains("style:print-orientation=\"landscape\""));
+        if (!QStandardPaths::findExecutable("soffice").isEmpty()) {
+            QProcess convert;
+            convert.start("soffice", {"-env:UserInstallation=" + QUrl::fromLocalFile(m_dir.filePath("lo-profile")).toString(),
+                "--headless", "--convert-to", "pdf", "--outdir", m_dir.path(), path.toLocalFile()});
+            QVERIFY(convert.waitForFinished(30000));
+            if (convert.exitCode() == 0 && QFile::exists(m_dir.filePath("saved-page.pdf"))) {
+                QProcess info;
+                info.start("pdfinfo", {m_dir.filePath("saved-page.pdf")});
+                QVERIFY(info.waitForFinished());
+                QCOMPARE(info.exitCode(), 0);
+                QVERIFY(info.readAllStandardOutput().contains("480 x 360 pts"));
+            } else {
+                qWarning() << "LibreOffice conversion unavailable in this environment; using XML and reload assertions"
+                           << convert.exitCode() << convert.readAllStandardError();
+                QVERIFY(xml.contains("fo:page-height=\"5in\""));
+            }
+        }
+        QVERIFY(m_fmt->loadOdf(path));
+        QCOMPARE(m_fmt->documentPageWidth(), 640.);
+        QCOMPARE(m_fmt->documentPageHeight(), 480.);
+        QCOMPARE(m_fmt->documentPageMargins(), geometry.value("margins").toList());
+        m_fmt->newDocument();
+        QVERIFY(m_fmt->saveOdf(path));
+        QVERIFY(m_fmt->loadOdf(path));
+        QVERIFY(qAbs(m_fmt->documentPageWidth() - 210. * 96 / 25.4) < .001);
+        QVERIFY(qAbs(m_fmt->documentPageMargins()[0].toReal() - 20. * 96 / 25.4) < .001);
     }
 
     void pageGeometryIsNotAnEdit()

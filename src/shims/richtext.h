@@ -228,6 +228,8 @@ public:
     Q_INVOKABLE void insertPageBreak();
     QString layoutEngine() const { return m_layoutEngine; }
     void setLayoutEngine(const QString &engine);
+    Q_INVOKABLE void setDocumentPageGeometry(const QVariantMap &geometry);
+    void syncDocumentPageSetup();
     qreal documentPageWidth() const { return m_documentGeometry.value(0).toReal(); }
     QString documentLanguage() const { return m_documentLanguage; }
     Q_INVOKABLE QString languageAt(int position) const;

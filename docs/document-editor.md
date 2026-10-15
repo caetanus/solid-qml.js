@@ -603,7 +603,15 @@ reports `0`, `0`, and `[]`. `newDocument()` clears the metadata; a failed load
 that leaves the document untouched preserves it. These are read-only properties;
 `documentPageGeometryChanged` fires only when their values change.
 
-After a successful load, applications can assign these values to `pageWidth`,
+`setDocumentPageGeometry({width, height, margins: [top, right, bottom, left]})`
+persists the selected default master page's dimensions, orientation and margins.
+Lengths use px at 96 dpi. Positive finite dimensions and nonnegative margins
+leaving a positive body area are required; invalid inputs and identical values
+are no-ops. Each change is one undo step, including notification on undo/redo.
+New documents write A4 with 2 cm margins on first save unless explicitly set.
+Imported unrelated page layouts and master-page content are preserved.
+
+After a successful load or a geometry edit, applications can assign these values to `pageWidth`,
 `pageHeight`, and `pageMargins`. This keeps application display settings explicit.
 Mixed page masters within one document are not yet supported by pagination.
 Active headers/footers reserve their declared minimum/fixed band height (which
