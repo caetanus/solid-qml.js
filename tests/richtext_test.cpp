@@ -880,6 +880,22 @@ private slots:
         QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path))); check();
     }
 
+    void tableBordersClearSharedEdges()
+    {
+        m_fmt->insertTable(3,3);
+        auto *t=qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        m_fmt->setCursorPosition(t->cellAt(1,1).firstPosition());
+        QVERIFY(m_fmt->setTableBorders("none"));
+        QCOMPARE(t->cellAt(0,1).format().toTableCellFormat().bottomBorder(),0.);
+        QCOMPARE(t->cellAt(2,1).format().toTableCellFormat().topBorder(),0.);
+        QCOMPARE(t->cellAt(1,0).format().toTableCellFormat().rightBorder(),0.);
+        QCOMPARE(t->cellAt(1,2).format().toTableCellFormat().leftBorder(),0.);
+        QVERIFY(t->cellAt(0,0).format().toTableCellFormat().topBorder()>0);
+        doc()->undo();
+        QVERIFY(t->format().border()>0);
+        QVERIFY(!t->cellAt(0,1).format().hasProperty(QTextFormat::TableCellBottomBorder));
+    }
+
     void tableBordersNoneClearsFrame()
     {
         m_fmt->insertTable(2,2);

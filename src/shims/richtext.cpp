@@ -2055,6 +2055,14 @@ bool RichTextHandler::setTableBorders(const QString &which, const QVariantMap &s
     const QString line=style.value("style","solid").toString();
     if(!qIsFinite(width) || width<0 || !color.isValid() || !QStringList{"solid","dashed","dotted","double"}.contains(line)) return false;
     const auto pen=line=="dashed"?QTextFrameFormat::BorderStyle_Dashed:line=="dotted"?QTextFrameFormat::BorderStyle_Dotted:line=="double"?QTextFrameFormat::BorderStyle_Double:QTextFrameFormat::BorderStyle_Solid;
+    const auto setSide=[&](QTextTableCellFormat &f,int side,qreal w) {
+        switch(side) {
+        case 0: f.setTopBorder(w); f.setTopBorderStyle(pen); f.setTopBorderBrush(color); break;
+        case 1: f.setBottomBorder(w); f.setBottomBorderStyle(pen); f.setBottomBorderBrush(color); break;
+        case 2: f.setLeftBorder(w); f.setLeftBorderStyle(pen); f.setLeftBorderBrush(color); break;
+        case 3: f.setRightBorder(w); f.setRightBorderStyle(pen); f.setRightBorderBrush(color); break;
+        }
+    };
     const TableRange r(c);
     // Qt's fallback handles independent side styles, including double borders.
     selectLayoutEngine(true);
@@ -2078,11 +2086,17 @@ bool RichTextHandler::setTableBorders(const QString &which, const QVariantMap &s
         for(int side=0;side<4;++side) {
             if(which!="all" && which!="none" && !(which=="outer" && edges[side]) && !(which=="inner" && !edges[side]) && !(which==names[side] && edges[side])) continue;
             const qreal w=which=="none"?0:width;
-            switch(side) {
-            case 0: f.setTopBorder(w); f.setTopBorderStyle(pen); f.setTopBorderBrush(color); break;
-            case 1: f.setBottomBorder(w); f.setBottomBorderStyle(pen); f.setBottomBorderBrush(color); break;
-            case 2: f.setLeftBorder(w); f.setLeftBorderStyle(pen); f.setLeftBorderBrush(color); break;
-            case 3: f.setRightBorder(w); f.setRightBorderStyle(pen); f.setRightBorderBrush(color); break;
+            setSide(f,side,w);
+            // A collapsed edge belongs to both cells. Mirror the opposite side
+            // so an unselected neighbor cannot keep a removed edge visible.
+            const int length=inherited.borderCollapse() ? (side<2 ? cell.columnSpan() : cell.rowSpan()) : 0;
+            for(int n=0;n<length;++n) {
+                const int row=side==0 ? i-1 : side==1 ? i+cell.rowSpan() : i+n;
+                const int col=side==2 ? j-1 : side==3 ? j+cell.columnSpan() : j+n;
+                auto neighbor=t->cellAt(row,col);
+                if(!neighbor.isValid()) continue;
+                auto nf=neighbor.format().toTableCellFormat();
+                setSide(nf,side^1,w); neighbor.setFormat(nf);
             }
         }
         cell.setFormat(f);
