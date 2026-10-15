@@ -422,19 +422,26 @@ void RichTextHandler::syncDocumentPageSetup()
 {
     if (!m_doc || m_bulkReset) return;
     const auto geometry = m_doc->rootFrame()->frameFormat().property(rt::kDocumentGeometryProperty).toList();
-    if (geometry != m_documentGeometry) {
+    const bool geometryChanged = geometry != m_documentGeometry;
+    if (geometryChanged) {
         m_documentGeometry = geometry;
         emit documentPageGeometryChanged();
     }
     const auto root = m_doc->rootFrame()->frameFormat();
     const auto bands = root.property(rt::kDocumentPageBandsProperty).toList();
     const auto heights = root.property(rt::kDocumentReservedSpaceProperty).toList();
-    if (bands == m_documentBands && heights == m_documentBandHeights) return;
+    if (bands == m_documentBands && heights == m_documentBandHeights) {
+        // Native root-frame undo also restores its old view-only margins. Keep
+        // the latest view configuration while replaying persisted metadata.
+        if (geometryChanged && m_viewMargins.size() == 4)
+            configurePages(m_viewWidth, m_viewHeight, m_viewGap, m_viewMargins);
+        return;
+    }
     m_documentBands = bands; m_documentBandHeights = heights;
     const auto header = pageHeader(), footer = pageFooter();
     const bool headerChanged = header != m_pageHeader, footerChanged = footer != m_pageFooter;
     m_pageHeader = header; m_pageFooter = footer;
-    if ((headerChanged || footerChanged) && m_viewMargins.size() == 4)
+    if ((geometryChanged || headerChanged || footerChanged) && m_viewMargins.size() == 4)
         configurePages(m_viewWidth, m_viewHeight, m_viewGap, m_viewMargins);
     if (headerChanged) emit pageHeaderChanged();
     if (footerChanged) emit pageFooterChanged();

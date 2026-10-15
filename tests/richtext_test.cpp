@@ -5455,6 +5455,21 @@ private slots:
         QCOMPARE(breaks(), before);
     }
 
+    void pageSetupUndoKeepsCurrentViewMargins()
+    {
+        m_fmt->configurePages(300, 200, 0, {10.,10.,10.,10.});
+        m_fmt->setDocumentPageGeometry({{"width", 640.}, {"height", 480.}, {"margins", QVariantList{20.,30.,40.,50.}}});
+        m_fmt->configurePages(700, 800, 24, {33.,34.,35.,36.});
+        doc()->undo();
+        QCOMPARE(m_fmt->documentPageWidth(), 0.);
+        QCOMPARE(doc()->rootFrame()->frameFormat().topMargin(), 33.);
+        QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), 59.);
+        doc()->redo();
+        QCOMPARE(m_fmt->documentPageWidth(), 640.);
+        QCOMPARE(doc()->rootFrame()->frameFormat().topMargin(), 33.);
+        QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), 59.);
+    }
+
     void pageGeometryIsNotAnEdit()
     {
         PageEditor w;
