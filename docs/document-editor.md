@@ -715,3 +715,24 @@ adjacent columns with one layout update and a 24 px minimum width at zoom 1.
 One completed drag is one undo step; cancellation discards the preview. Column constraints
 are stored in the table format and serialized to ODF. Colors, highlighting,
 sub/superscript, indents, spacing and left tab stops also round-trip through ODF.
+
+### PDF export
+
+`exportPdfAsync(path, { title?, author?, resolution? })` starts an atomic vector PDF
+export of the current paginated document. It returns `false` when an export is
+already running, the engine is unavailable, or pagination is disabled. Connect
+`pdfExported(ok, path, error, pages)` before starting; failures report an error and
+zero pages. `pdfProgress(page, total)` reports completed pages at most ten times
+per second. Completion is always reported through `pdfExported`, even for short
+exports that emit no progress. Paths may be local paths or `file://` URLs.
+
+The snapshot includes document formatting and original images, but excludes
+selection, caret, and editor marks. Edits, loading another document, and zoom
+changes after starting do not affect the export. The PDF uses the active layout
+engine (including the Qt fallback), current page dimensions and margins at 96 CSS
+pixels per inch, without the screen's page gaps. Text stays selectable; the creator
+metadata is `office`. `resolution` defaults to 96 and is clamped to 72–2400 DPI;
+it changes the PDF paint device, never the document's layout width or pagination.
+The snapshot is copied with layout suspended on the GUI thread. A worker owns
+the detached document, its layout and image handlers, and the PDF writer. The
+export continues if the editor is destroyed; its signals are then disconnected.

@@ -16,6 +16,7 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QEventLoop>
 int main(int argc, char **argv) {
     QGuiApplication app(argc, argv);
     if (argc < 3) qFatal("usage: render-fidelity input.odt output-directory [--a4]");
@@ -37,6 +38,16 @@ int main(int argc, char **argv) {
     const QFontMetricsF fontMetrics(doc->defaultFont());
     layout->documentSize(); const int pages=layout->pageCount();
     QDir output(QString::fromLocal8Bit(argv[2])); QDir().mkpath(output.path());
+    if (qEnvironmentVariableIsSet("FIDELITY_PDF")) {
+        QEventLoop loop;
+        QObject::connect(&handler, &RichTextHandler::pdfExported, &loop,
+            [&](bool ok, const QString &, const QString &error, int count) {
+                if (!ok || count != pages) qFatal("PDF export failed: %s", qPrintable(error));
+                loop.quit();
+            });
+        if (!handler.exportPdfAsync(output.filePath("office.pdf"))) qFatal("PDF export did not start");
+        loop.exec();
+    }
     QJsonArray lines;
     for (auto block=doc->begin(); block.isValid(); block=block.next()) {
         const auto origin=layout->blockBoundingRect(block).topLeft();

@@ -295,6 +295,10 @@ public:
     void setModified(bool m);
     QString errorString() const { return m_error; }
 
+    // Paginated snapshot on a worker; busy/unavailable returns false. Completion is
+    // pdfExported; modified, undo, and errorString are unchanged.
+    Q_INVOKABLE bool exportPdfAsync(const QString &path, const QVariantMap &options = QVariantMap());
+
     // File IO. `file` is a file:// URL or a plain path. Both return false and set errorString on
     // failure; on success errorString is "" and `modified` is cleared. A failed load leaves the
     // current document untouched; a load is not an undo step.
@@ -401,6 +405,8 @@ signals:
     void spaceBeforeChanged();
     void spaceAfterChanged();
     void tabStopsChanged();
+    void pdfExported(bool ok, const QString &path, const QString &error, int pages);
+    void pdfProgress(int page, int total);
     void saveCopyFinished(bool ok, const QString &error);
     void pageBreakLabelChanged();
     void pagesChanged();
@@ -533,6 +539,8 @@ private:
     bool m_pageCountUpdatePending = false;
     int m_currentPage = 1;
     qreal m_pageStride = 0;
+    qreal m_pdfPageHeight = 0;
+    bool m_pdfRunning = false;
     void connectOverlayLayout();
     QMetaObject::Connection m_overlayLayoutConn;
     QMetaObject::Connection m_overlayUpdateConn;

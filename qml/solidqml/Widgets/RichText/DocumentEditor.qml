@@ -251,8 +251,10 @@ RichText {
     // Debounced edit notification (ms of quiet before it fires).
     property int contentDelay: 300
     signal contentChanged()
-    // The style table changed (a definition, a load, a new document, an undo of a definition).
+    signal pdfExported(bool ok, string path, string error, int pages)
+    signal pdfProgress(int page, int total)
     signal saveCopyFinished(bool ok, string error)
+    // The style table changed (a definition, a load, a new document, an undo of a definition).
     signal stylesChanged()
     // Office item 2b (★3): the outline changed — debounced the same way, and only forwarded when
     // the engine says the list actually differs (RichTextHandler::headingsChanged dedupes it).
@@ -272,6 +274,8 @@ RichText {
     Connections {
         target: root.fmt
         function onContentsChanged() { debounce.restart() }
+        function onPdfExported(ok, path, error, pages) { root.pdfExported(ok, path, error, pages) }
+        function onPdfProgress(page, total) { root.pdfProgress(page, total) }
         function onSaveCopyFinished(ok, error) { root.saveCopyFinished(ok, error) }
         function onStylesChanged() { root.stylesChanged() }
         function onHeadingsChanged() { headingsDebounce.restart() }
@@ -303,6 +307,7 @@ RichText {
         return r
     }
     function saveOdf(path) { return fmt ? _result(fmt.saveOdf(path)) : _noEngine }
+    function exportPdfAsync(path, options) { return fmt ? fmt.exportPdfAsync(path, options || {}) : false }
     // Autosave / crash recovery: the same file, but `modified` and the undo stack stay as they are.
     function saveOdfCopy(path) { return fmt ? _result(fmt.saveOdfCopy(path)) : _noEngine }
     function saveOdfCopyAsync(path) {
