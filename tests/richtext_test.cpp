@@ -3550,6 +3550,93 @@ private slots:
         QVERIFY(m_fmt->marks().isEmpty());
     }
 
+    void marksPaintAfterRelayout_data()
+    {
+        QTest::addColumn<QString>("engine");
+        QTest::addColumn<bool>("pages");
+        for (const auto &engine : {QString("qt"), QString("custom")})
+            for (bool pages : {false, true})
+                QTest::newRow(qPrintable(engine + (pages ? "-pages" : "-continuous"))) << engine << pages;
+    }
+
+    void marksPaintAfterRelayout()
+    {
+        QFETCH(QString, engine);
+        QFETCH(bool, pages);
+        PageEditor w;
+        QVERIFY(w.root);
+        w.root->setProperty("layoutEngine", engine);
+        w.root->setProperty("pageView", pages);
+        w.view.show();
+        const auto path = m_dir.filePath("marks-relayout.odt");
+        writeOdt(path, "<text:p text:style-name=\"Center\">LinkedIn</text:p>",
+                 "<style:style style:name=\"Center\" style:family=\"paragraph\"><style:paragraph-properties fo:text-align=\"center\"/></style:style>");
+        QVERIFY(w.fmt()->loadOdf(QUrl::fromLocalFile(path)));
+        w.fmt()->markStyle("spelling", {{"color", "#ff0000"}});
+        w.fmt()->addMark("spelling", w.fmt()->blockIds().first(), 0, 8);
+        auto paintedBounds = [&] {
+            const auto image = w.view.grabWindow();
+            QRect bounds;
+            for (int y = 0; y < image.height(); ++y)
+                for (int x = 0; x < image.width(); ++x) {
+                    const auto c = image.pixelColor(x, y);
+                    if (c.red() > 150 && c.green() < 100 && c.blue() < 100)
+                        bounds |= QRect(x, y, 1, 1);
+                }
+            return QRectF(bounds.x()/w.view.effectiveDevicePixelRatio(), bounds.y()/w.view.effectiveDevicePixelRatio(),
+                          bounds.width()/w.view.effectiveDevicePixelRatio(), bounds.height()/w.view.effectiveDevicePixelRatio());
+        };
+        auto aligned = [&] {
+            const QRectF painted = paintedBounds();
+            const QRectF start = caretRect(w.edit(), 0), end = caretRect(w.edit(), 8);
+            const QPointF origin = w.edit()->mapToScene(QPointF());
+            return !painted.isEmpty() && qAbs(painted.left()-origin.x()-start.left()) < 2
+                && qAbs(painted.right()-origin.x()-end.left()) < 2
+                && painted.top() >= origin.y()+start.center().y()
+                && painted.bottom() <= origin.y()+start.bottom()+1;
+        };
+        QTRY_VERIFY(aligned());
+        w.root->setProperty("pageWidth", 650.);
+        w.root->setProperty("pageMargins", QVariantList{40., 60., 40., 80.});
+        QTest::qWait(30);
+        QTRY_VERIFY(aligned());
+        w.root->setProperty("zoom", 1.25);
+        QTest::qWait(30);
+        QTRY_VERIFY(aligned());
+        // Same-size layout: changing alignment must invalidate the cached painting.
+        w.fmt()->setAlignment("right");
+        QTest::qWait(30);
+        QTRY_VERIFY(aligned());
+        // Queue a mark while TextEdit still has deferred layout work.
+        w.fmt()->clearMarks("spelling");
+        w.root->setProperty("pageWidth", 720.);
+        w.fmt()->addMark("spelling", w.fmt()->blockIds().first(), 0, 8);
+        QTest::qWait(30);
+        QTRY_VERIFY(aligned());
+        w.root->setProperty("pageHeight", 900.);
+        w.root->setWidth(860.);
+        QTest::qWait(30);
+        QTRY_VERIFY(aligned());
+        // Default-font relayout bypasses the handler's edit/mark notifications.
+        auto font = qobject_cast<QQuickTextEdit *>(w.edit())->font();
+        font.setPixelSize(22);
+        qobject_cast<QQuickTextEdit *>(w.edit())->setFont(font);
+        QTest::qWait(30);
+        QTRY_VERIFY(aligned());
+        // Background overlays use the same cache, including its inherited transform.
+        w.fmt()->markStyle("spelling", {{"underline", QVariant::fromValue(nullptr)}, {"background", "#ff0000"}});
+        auto highlightAligned = [&] {
+            const auto painted = paintedBounds();
+            const auto start = caretRect(w.edit(), 0), end = caretRect(w.edit(), 8);
+            const auto origin = w.edit()->mapToScene(QPointF());
+            return !painted.isEmpty() && qAbs(painted.left()-origin.x()-start.left()) < 2
+                && qAbs(painted.right()-origin.x()-end.left()) < 2
+                && qAbs(painted.top()-origin.y()-start.top()) < 2
+                && qAbs(painted.height()-start.height()) < 2;
+        };
+        QTRY_VERIFY(highlightAligned());
+    }
+
     void markSegmentsFollowTheTextAndTheStyle()
     {
         m_fmt->insertText(QStringLiteral("I saw teh cat"));
