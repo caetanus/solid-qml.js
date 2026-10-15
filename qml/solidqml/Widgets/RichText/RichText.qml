@@ -25,6 +25,7 @@ Css.CssFill {
     cssPrimitive: "div"
     implicitWidth: 560
     implicitHeight: 380
+    property real _rulerHeight: 0
     property string variant: "document"
     property string html: ""
     // The built-in toolbar (formatting needs the loader's handler either way).
@@ -243,6 +244,7 @@ Css.CssFill {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: bar.bottom
+            anchors.topMargin: root._rulerHeight
             anchors.bottom: parent.bottom
             clip: true
             contentWidth: Math.max(width, root._sheetWidth)

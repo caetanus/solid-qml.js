@@ -679,3 +679,16 @@ canonical units without editing the document. `hasCopiedFormat` reports whether
 there is a captured format. `applyCopiedFormat()` applies it to the selection
 (or insertion point and current paragraph) in one undo step. The application
 controls the click-then-select interaction.
+
+## Horizontal ruler and table borders
+
+Set `ruler: true` (default false) to show the horizontal ruler above the viewport.
+It follows page width, margins, zoom and horizontal scrolling. Numbers are in
+locale measurement units (centimetres for metric locales, inches otherwise), with
+half- and quarter-unit ticks and shaded margins. `rulerUnit` defaults to `"auto"`;
+set it to `"cm"` or `"in"` to override. `effectiveRulerUnit` reports the chosen unit.
+Drag the upper triangle for first-line indent, the lower left triangle for
+hanging indent (keeping the first line fixed), and the right triangle for right
+indent. Changes commit on release to the selected paragraphs in one undo step.
+Click to add a left tab stop; drag a tab marker to move it, or off the ruler to
+remove it. The example application enables the ruler.

@@ -438,6 +438,68 @@ private slots:
         doc()->undo();
     }
 
+    void rulerDefaultsAndToggle()
+    {
+        PageEditor widget;
+        QVERIFY(widget.root);
+        QVERIFY(widget.root->property("ruler").isValid());
+        QVERIFY(!widget.root->property("ruler").toBool());
+        QVERIFY(widget.root->setProperty("ruler", true));
+        auto *ruler = widget.root->findChild<QQuickItem *>("documentRuler");
+        QVERIFY(ruler);
+        QVERIFY(ruler->isVisible());
+        QVERIFY(ruler->height() > 0);
+    }
+
+    void rulerLocaleUnits()
+    {
+        const auto previous = QLocale();
+        for (const auto &name : {QString("pt_BR"), QString("en_US")}) {
+            QLocale::setDefault(QLocale(name));
+            PageEditor widget;
+            QVERIFY(widget.root);
+            QCOMPARE(widget.root->property("rulerUnit").toString(), QString("auto"));
+            QCOMPARE(widget.root->property("effectiveRulerUnit").toString(),
+                     name == "pt_BR" ? QString("cm") : QString("in"));
+            widget.root->setProperty("rulerUnit", name == "pt_BR" ? "in" : "cm");
+            QCOMPARE(widget.root->property("effectiveRulerUnit").toString(),
+                     name == "pt_BR" ? QString("in") : QString("cm"));
+        }
+        QLocale::setDefault(previous);
+    }
+
+    void rulerMouseEditsSelectedParagraphs()
+    {
+        PageEditor widget;
+        QVERIFY(widget.root);
+        widget.root->setProperty("ruler", true);
+        widget.fmt()->insertText("one\ntwo");
+        QMetaObject::invokeMethod(widget.edit(), "select", Q_ARG(int, 0), Q_ARG(int, 7));
+        widget.view.show();
+        QTest::qWait(30);
+        auto *strip = widget.root->findChild<QQuickItem *>("documentRuler");
+        QVERIFY(strip && !strip->childItems().isEmpty());
+        auto *canvas = strip->childItems().first();
+        const auto start = canvas->mapToScene(QPointF(113, 3)).toPoint();
+        const auto end = start + QPoint(24, 0);
+        QTest::mousePress(&widget.view, Qt::LeftButton, Qt::NoModifier, start);
+        QTest::mouseMove(&widget.view, end);
+        QTest::mouseRelease(&widget.view, Qt::LeftButton, Qt::NoModifier, end);
+        auto *document = widget.fmt()->document()->textDocument();
+        QCOMPARE(document->begin().blockFormat().textIndent(), 24.);
+        QCOMPARE(document->lastBlock().blockFormat().textIndent(), 24.);
+        document->undo();
+        QCOMPARE(document->begin().blockFormat().textIndent(), 0.);
+        QCOMPARE(document->lastBlock().blockFormat().textIndent(), 0.);
+        const auto tab = canvas->mapToScene(QPointF(173, 25)).toPoint();
+        QTest::mouseClick(&widget.view, Qt::LeftButton, Qt::NoModifier, tab);
+        QCOMPARE(widget.fmt()->tabStops(), QVariantList{60.});
+        QTest::mousePress(&widget.view, Qt::LeftButton, Qt::NoModifier, tab);
+        QTest::mouseMove(&widget.view, tab + QPoint(0, 45));
+        QTest::mouseRelease(&widget.view, Qt::LeftButton, Qt::NoModifier, tab + QPoint(0,45));
+        QVERIFY(widget.fmt()->tabStops().isEmpty());
+    }
+
     void tableTabNavigation()
     {
         m_fmt->insertTable(2, 2);
