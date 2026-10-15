@@ -96,7 +96,9 @@ tmux integration) is Solid TSX and CSS. Only the terminal core, the pty and the 
 are C++.
 
 Throughput against Tilix (VTE) on the same machine, median of 5 runs
-([method and raw data](docs/evidence/solidterm/parser-thread-2026-10-13.md)):
+([method and raw data](docs/evidence/solidterm/parser-thread-2026-10-13.md)). These measure the
+terminal core (parser, screen buffer, GPU glyph renderer), not the Solid UI layer; SolidTerm's grid
+was 105×56 and Tilix's 105×46, which favours Tilix:
 
 | Test | SolidTerm | Tilix 0.9 |
 |---|---:|---:|
@@ -159,8 +161,8 @@ lists the losses next to the wins.
 | | |
 |---|---|
 | **Linux x86_64** | ✅ supported: npm SDK (runtime bundled) or built from source |
-| **Windows** | 🟡 builds and passes its tests on CI; not in this release |
-| **macOS** | 🟡 CI port in progress |
+| **Windows** | 🟡 port in progress on the `ci-windows` branch (builds and passes its tests there); not on master, not in this release |
+| **macOS** | 🟡 port in progress on the `ci-macos` branch |
 | **Android** | 🔜 next SDK target |
 | **AOT → C++** | 🧪 the generator emits C++ from TSX; first component renders pixel-identical to the interpreted one |
 
