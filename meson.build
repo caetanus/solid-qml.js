@@ -857,9 +857,9 @@ if build_richtext
   richtext_handler_env = ['QT_QPA_PLATFORM=offscreen', 'RICHTEXT_BOOK=' + get_option('richtext_book')]
   test('richtext-handler', richtext_handler_test,
     args: ['--handler-suite'], env: richtext_handler_env, timeout: 60)
-  # The destructive 88k-replacement workload needs its own pristine document.
-  # Measured at 62.6 s in a debug build, almost entirely in Qt undo; sharing
-  # a loaded fixture cannot remove that cost. Allow 120 s for slower machines.
+  # Destructive whole-book replay uses pristine documents for both layout engines.
+  # Keep its timing gates and cold-layout oracles separate from the regular suite.
+  # The former minute-long undo was an unconstrained TextEdit sizing feedback loop.
   test('richtext-handler-book-search', richtext_handler_test,
     args: ['editingBookSearchTiming'], env: richtext_handler_env, timeout: 120)
 

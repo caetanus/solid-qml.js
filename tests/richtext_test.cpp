@@ -423,22 +423,134 @@ private slots:
         QCOMPARE(m_fmt->selectionStart(), 4);
     }
 
+    void editingBookSearchTiming_data()
+    {
+        QTest::addColumn<QString>("engine");
+        QTest::addColumn<bool>("wholeBook");
+        QTest::newRow("bare-book") << QStringLiteral("bare") << true;
+        for (const auto &engine : {QStringLiteral("custom"), QStringLiteral("qt")}) {
+            QTest::newRow(qPrintable(engine + "-book")) << engine << true;
+            QTest::newRow(qPrintable(engine + "-1000")) << engine << false;
+        }
+    }
+
     void editingBookSearchTiming()
     {
+        QFETCH(QString, engine);
+        QFETCH(bool, wholeBook);
         const auto path = qEnvironmentVariable("RICHTEXT_BOOK");
         if (!QFile::exists(path)) QSKIP("book sample unavailable");
-        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        PageEditor w;
+        QVERIFY(w.root);
+        if (engine != "bare") w.root->setProperty("layoutEngine", engine);
+        auto *fmt = engine == "bare" ? m_fmt : w.fmt();
+        // A standalone TextEdit otherwise sizes itself from idealWidth(), feeding
+        // each implicit-width change back into Qt layout during undo. Real editors
+        // have a width imposed by their viewport; give this handler fixture one too.
+        if (engine == "bare") m_edit->setProperty("width", 794);
+        QVERIFY(fmt->loadOdf(QUrl::fromLocalFile(path)));
+        auto *d = fmt->document()->textDocument();
+        if (!wholeBook) {
+            // Keep book-sized layout and bookkeeping, but only 1,000 matches.
+            QTextCursor group(d);
+            group.beginEditBlock();
+            int seen = 0, from = 0;
+            while (true) {
+                auto match = d->find(QStringLiteral("a"), from, QTextDocument::FindCaseSensitively);
+                if (match.isNull()) break;
+                if (++seen > 1000) match.insertText(QStringLiteral("A"));
+                from = match.selectionEnd();
+            }
+            group.endEditBlock();
+        }
+        if (engine != "bare") {
+            w.view.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&w.view));
+            QCoreApplication::processEvents();
+        }
+        QCOMPARE(dynamic_cast<rt::RichTextLayout *>(d->documentLayout()) != nullptr, engine == "custom");
+        const QString before = d->toPlainText();
+        const auto ids = fmt->blockIds();
+        const auto headings = fmt->headings();
+        const int words = fmt->wordCount(), chars = fmt->charCount();
+        const int markPos = before.indexOf(u'a');
+        QVERIFY(markPos >= 0);
+        auto addMark = [&] {
+            const auto block = d->findBlock(markPos);
+            QVERIFY(!fmt->addMark("spelling", fmt->blockIdAt(markPos),
+                                 markPos - block.position(), markPos - block.position() + 1).isEmpty());
+        };
+        addMark();
+        QSignalSpy changes(d, &QTextDocument::contentsChange);
         QElapsedTimer timer; timer.start();
-        QVERIFY(!m_fmt->find("task13-no-hit-8bc31c64", {{"wrap", false}}));
-        const auto noHit = timer.nsecsElapsed()/1e6;
+        QVERIFY(!fmt->find("task13-no-hit-8bc31c64", {{"wrap", false}}));
+        const double searchMs = timer.nsecsElapsed()/1e6;
         timer.restart();
-        const int count = m_fmt->replaceAll("a", "A", {{"caseSensitive", true}});
+        const int count = fmt->replaceAll("a", "A", {{"caseSensitive", true}});
+        d->documentLayout()->documentSize();
         const auto replaceMs = timer.nsecsElapsed()/1e6;
-        qInfo("SEARCH_BOOK no_hit_ms=%.3f replace_all_ms=%.3f replacements=%d", noHit, replaceMs, count);
-        QVERIFY(count > 0);
+        const QString after = d->toPlainText();
+        QCOMPARE(count, before.count(u'a'));
+        if (!wholeBook) QCOMPARE(count, 1000);
+        QCOMPARE(after, QString(before).replace(u'a', u'A'));
+        QVERIFY(!fmt->markAt(markPos).isValid());
+        addMark();
+        const int forwardSignals = changes.size();
+        changes.clear();
         timer.restart();
-        doc()->undo();
-        qInfo("SEARCH_BOOK undo_ms=%.3f", timer.nsecsElapsed()/1e6);
+        d->undo();
+        d->documentLayout()->documentSize();
+        const auto undoMs = timer.nsecsElapsed()/1e6;
+        QCOMPARE(d->toPlainText(), before);
+        QVERIFY(!fmt->markAt(markPos).isValid());
+        QCOMPARE(fmt->blockIds(), ids);
+        QCOMPARE(fmt->headings(), headings);
+        QCOMPARE(fmt->wordCount(), words);
+        QCOMPARE(fmt->charCount(), chars);
+        const int undoSignals = changes.size();
+        auto verifyCold = [&] {
+            QScopedPointer<QTextDocument> cold(d->clone());
+            if (engine == "custom") cold->setDocumentLayout(new rt::RichTextLayout(cold.data()));
+            QCOMPARE(d->pageCount(), cold->pageCount());
+            auto expected = cold->begin();
+            for (auto b = d->begin(); b.isValid(); b = b.next(), expected = expected.next()) {
+                QCOMPARE(d->documentLayout()->blockBoundingRect(b), cold->documentLayout()->blockBoundingRect(expected));
+                QCOMPARE(b.layout()->lineCount(), expected.layout()->lineCount());
+                for (int i = 0; i < b.layout()->lineCount(); ++i) {
+                    QCOMPARE(b.layout()->lineAt(i).position(), expected.layout()->lineAt(i).position());
+                    QCOMPARE(b.layout()->lineAt(i).naturalTextWidth(), expected.layout()->lineAt(i).naturalTextWidth());
+                }
+            }
+        };
+        verifyCold();
+        addMark();
+        timer.restart();
+        d->redo();
+        d->documentLayout()->documentSize();
+        const auto redoMs = timer.nsecsElapsed()/1e6;
+        QCOMPARE(d->toPlainText(), after);
+        QVERIFY(!fmt->markAt(markPos).isValid());
+        QCOMPARE(fmt->blockIds(), ids);
+        QCOMPARE(fmt->wordCount(), words);
+        QCOMPARE(fmt->charCount(), chars);
+        verifyCold();
+        for (const auto &entry : fmt->headings()) {
+            const auto heading = entry.toMap();
+            const auto block = d->findBlock(heading.value("position").toInt());
+            QCOMPARE(heading.value("text").toString(), block.text());
+            QCOMPARE(heading.value("level").toInt(), block.blockFormat().headingLevel());
+        }
+        QCOMPARE(forwardSignals, 1);
+        QCOMPARE(undoSignals, 1);
+        QCOMPARE(changes.size(), 2); // one undo and one redo, both already coalesced by Qt
+        QFile loadFile("/proc/loadavg");
+        QVERIFY(loadFile.open(QIODevice::ReadOnly));
+        const double load = loadFile.readAll().split(' ').first().toDouble();
+        qInfo("REPLAY engine=%s count=%d search_ms=%.3f replace_ms=%.3f undo_ms=%.3f redo_ms=%.3f signals=%d/%d load=%.2f",
+              qPrintable(engine), count, searchMs, replaceMs, undoMs, redoMs, forwardSignals, undoSignals, load);
+        if (load > 6) QSKIP("correctness passed; timing budget skipped at load > 6");
+        QVERIFY2(undoMs <= 3 * replaceMs, "undo must cost at most 3x replaceAll");
+        QVERIFY2(redoMs <= 3 * replaceMs, "redo must cost at most 3x replaceAll");
     }
 
     void rulerDefaultsAndToggle()
