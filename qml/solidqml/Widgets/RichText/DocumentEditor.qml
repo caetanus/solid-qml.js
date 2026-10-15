@@ -49,6 +49,7 @@ RichText {
     readonly property real spaceBefore: fmt ? fmt.spaceBefore : 0
     readonly property real spaceAfter: fmt ? fmt.spaceAfter : 0
     readonly property var tabStops: fmt ? fmt.tabStops : []
+    readonly property bool hasCopiedFormat: !!fmt && fmt.hasCopiedFormat
     readonly property bool inTable: !!fmt && fmt.inTable
     // Named styles at the caret (paragraph style; character style, "" = none).
     readonly property string currentParagraphStyle: fmt ? fmt.currentParagraphStyle : "Default Paragraph Style"
@@ -275,6 +276,8 @@ RichText {
 
     // ── character format (office item 2b, ★4) ────────────────────────────────────────────────────
     // The handler owns the live cursor's pending font and reports it immediately.
+    function copyFormat() { if (fmt) fmt.copyFormat() }
+    function applyCopiedFormat() { if (fmt) fmt.applyCopiedFormat() }
     function setTextColor(color) { if (fmt) fmt.setTextColor(color); _editor.forceActiveFocus() }
     function setHighlightColor(color) { if (fmt) fmt.setHighlightColor(color); _editor.forceActiveFocus() }
     function toggleSubscript() { if (fmt) fmt.toggleSubscript(); _editor.forceActiveFocus() }

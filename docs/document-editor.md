@@ -673,3 +673,9 @@ New state properties notify only when their reported value changes.
 `replaceAll(find, replacement, options)` returns a count and uses one undo step;
 it always scans forward through the document once. Replacement text is literal,
 including when the search is a regular expression.
+
+`copyFormat()` captures character and paragraph formatting at the caret in
+canonical units without editing the document. `hasCopiedFormat` reports whether
+there is a captured format. `applyCopiedFormat()` applies it to the selection
+(or insertion point and current paragraph) in one undo step. The application
+controls the click-then-select interaction.

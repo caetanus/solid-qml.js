@@ -106,6 +106,8 @@ type NativeWidget = Component<NativeWidgetProps>;
 /** File IO result of the DocumentEditor ref methods. */
 type DocumentIoResult = { ok: boolean; error: string };
 
+type DocumentFindOptions = { caseSensitive?: boolean; wholeWords?: boolean; regex?: boolean; backward?: boolean; wrap?: boolean };
+
 type DocumentEditorProps = {
   class?: string;
   classList?: Record<string, boolean | undefined>;
@@ -279,6 +281,18 @@ declare global {
     /** pt, canonical (zoom-1) units; 0 when unset. */
     readonly fontSize: number;
     readonly alignment: "left" | "center" | "right" | "justify";
+    readonly textColor: string;
+    readonly highlightColor: string;
+    readonly subscript: boolean;
+    readonly superscript: boolean;
+    readonly hasCopiedFormat: boolean;
+    readonly leftIndent: number;
+    readonly rightIndent: number;
+    readonly firstLineIndent: number;
+    readonly lineSpacing: number;
+    readonly spaceBefore: number;
+    readonly spaceAfter: number;
+    readonly tabStops: number[];
     readonly inTable: boolean;
     /** The caret's paragraph style ("Default Paragraph Style", "Text Body", "Heading 1", …). */
     readonly currentParagraphStyle: string;
@@ -364,6 +378,19 @@ declare global {
     setHeading(level: number): void;
     /** On the selection, or only on what is typed next with nothing selected.
      *  Reports the pending font immediately; moving the caret cancels it. */
+    setTextColor(color: string): void;
+    setHighlightColor(color: string): void;
+    toggleSubscript(): void;
+    toggleSuperscript(): void;
+    copyFormat(): void;
+    applyCopiedFormat(): void;
+    setParagraphIndents(left: number, right: number, firstLine: number): void;
+    setLineSpacing(percent: number): void;
+    setParagraphSpacing(before: number, after: number): void;
+    setTabStops(stops: number[]): void;
+    find(text: string, options?: DocumentFindOptions): boolean;
+    replace(text: string): boolean;
+    replaceAll(text: string, replacement: string, options?: DocumentFindOptions): number;
     setFontFamily(name: string): void;
     /** pt, canonical (zoom-1) units. Same mechanics as setFontFamily. */
     setFontSize(pt: number): void;

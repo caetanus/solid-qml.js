@@ -1281,6 +1281,54 @@ QString RichTextHandler::highlightColor() const
 }
 bool RichTextHandler::subscript() const { return editingCharFormat().verticalAlignment() == QTextCharFormat::AlignSubScript; }
 bool RichTextHandler::superscript() const { return editingCharFormat().verticalAlignment() == QTextCharFormat::AlignSuperScript; }
+void RichTextHandler::copyFormat()
+{
+    const auto c = insertionCursor();
+    if (c.isNull()) return;
+    m_copiedCharFormat = rt::scaledLengths(c.charFormat(), 1 / m_zoom);
+    m_copiedCharFormat.clearProperty(QTextFormat::ObjectIndex);
+    m_copiedCharFormat.clearProperty(QTextFormat::ObjectType);
+    m_copiedBlockFormat = rt::scaledLengths(c.blockFormat(), 1 / m_zoom);
+    m_copiedBlockFormat.clearProperty(QTextFormat::ObjectIndex);
+    m_copiedBlockFormat.clearProperty(QTextFormat::PageBreakPolicy);
+    if (!m_hasCopiedFormat) { m_hasCopiedFormat = true; emit hasCopiedFormatChanged(); }
+}
+void RichTextHandler::applyCopiedFormat()
+{
+    if (!m_hasCopiedFormat) return;
+    auto c = selectionCursor();
+    if (c.isNull()) c = insertionCursor();
+    if (c.isNull()) return;
+    c.beginEditBlock();
+    const int end = c.selectionEnd();
+    for (auto block = c.document()->findBlock(c.selectionStart()); block.isValid(); block = block.next()) {
+        if (block.position() > end || (c.hasSelection() && block.position() == end)) break;
+        auto format = rt::scaledLengths(m_copiedBlockFormat, m_zoom);
+        const auto old = block.blockFormat();
+        for (int property : {int(QTextFormat::ObjectIndex), int(QTextFormat::PageBreakPolicy)})
+            if (old.hasProperty(property)) format.setProperty(property, old.property(property));
+        QTextCursor paragraph(block);
+        paragraph.setBlockFormat(format);
+    }
+    auto format = rt::scaledLengths(m_copiedCharFormat, m_zoom);
+    if (c.hasSelection()) {
+        m_pendingFont = {};
+        c.setCharFormat(format);
+    } else {
+        // Explicit defaults let the existing insertion-format path clear target overrides.
+        QTextCharFormat defaults;
+        defaults.setFont(c.document()->defaultFont());
+        defaults.setForeground(QBrush(Qt::NoBrush));
+        defaults.setBackground(QBrush(Qt::NoBrush));
+        defaults.setVerticalAlignment(QTextCharFormat::AlignNormal);
+        defaults.merge(format);
+        m_pendingFont = {};
+        mergeInsertionFont(defaults);
+    }
+    c.endEditBlock();
+    emit formatChanged();
+}
+
 void RichTextHandler::setTextColor(const QString &color)
 {
     const QColor value(color);
@@ -1361,6 +1409,7 @@ void RichTextHandler::setTabStops(const QVariantList &stops)
 }
 void RichTextHandler::updateEditingState()
 {
+    if (m_changingZoom) return;
     const QVariantList state{textColor(), highlightColor(), subscript(), superscript(), leftIndent(), rightIndent(),
         firstLineIndent(), lineSpacing(), spaceBefore(), spaceAfter(), QVariant(tabStops())};
     const auto previous = m_editingState;
@@ -2016,8 +2065,9 @@ void RichTextHandler::rescaleRange(int from, int to, qreal ratio, bool clipChars
     const std::function<void(QTextFrame::iterator, const QTextFrame::iterator &)> walk =
         [&](QTextFrame::iterator it, const QTextFrame::iterator &end) {
             for (; it != end; ++it) {
-                if (QTextFrame *f = it.currentFrame())
+                if (QTextFrame *f = it.currentFrame()) {
                     walk(f->begin(), f->end());
+                }
                 else if (const QTextBlock b = it.currentBlock(); b.isValid())
                     scaleBlock(b);
             }
@@ -2034,6 +2084,7 @@ void RichTextHandler::setZoom(qreal z)
     const qreal ratio = z / m_zoom;
     if (m_pendingFont.hasProperty(QTextFormat::FontPointSize))
         m_pendingFont.setFontPointSize(m_pendingFont.fontPointSize() * ratio);
+    m_changingZoom = true;
     if (doc) {
         QTextCursor edit(doc);
         edit.beginEditBlock(); // one undo step, like any other formatting change
@@ -2044,6 +2095,7 @@ void RichTextHandler::setZoom(qreal z)
     if (doc) rt::prepareImageSampling(doc, m_document->parent());
     if (m_selectionStart == m_selectionEnd && !m_pendingFont.isEmpty())
         mergeInsertionFont(m_pendingFont);
+    m_changingZoom = false;
     emit zoomChanged();
 }
 

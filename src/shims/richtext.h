@@ -68,6 +68,7 @@ class RichTextHandler : public QObject {
     Q_PROPERTY(qreal spaceBefore READ spaceBefore NOTIFY spaceBeforeChanged)
     Q_PROPERTY(qreal spaceAfter READ spaceAfter NOTIFY spaceAfterChanged)
     Q_PROPERTY(QVariantList tabStops READ tabStops NOTIFY tabStopsChanged)
+    Q_PROPERTY(bool hasCopiedFormat READ hasCopiedFormat NOTIFY hasCopiedFormatChanged)
     Q_PROPERTY(bool inTable READ inTable NOTIFY formatChanged)
     // Paragraph alignment at the cursor: "left" | "center" | "right" | "justify".
     Q_PROPERTY(QString alignment READ alignment NOTIFY formatChanged)
@@ -157,6 +158,9 @@ public:
     Q_INVOKABLE void setLineSpacing(qreal percent);
     Q_INVOKABLE void setParagraphSpacing(qreal before, qreal after);
     Q_INVOKABLE void setTabStops(const QVariantList &stops);
+    bool hasCopiedFormat() const { return m_hasCopiedFormat; }
+    Q_INVOKABLE void copyFormat();
+    Q_INVOKABLE void applyCopiedFormat();
     Q_INVOKABLE void toggleBold();
     Q_INVOKABLE void toggleItalic();
     Q_INVOKABLE void toggleUnderline();
@@ -378,6 +382,7 @@ public:
     const QList<Mark> &marks() { ensureMarksSorted(); return m_marks; }
 
 signals:
+    void hasCopiedFormatChanged();
     void textColorChanged();
     void highlightColorChanged();
     void subscriptChanged();
@@ -486,6 +491,9 @@ private:
     QString m_findText;
     QVariantMap m_findOptions;
     QTextCursor m_findMatch;
+    bool m_hasCopiedFormat = false;
+    QTextCharFormat m_copiedCharFormat;
+    QTextBlockFormat m_copiedBlockFormat;
     QTextCharFormat m_pendingFont;
 
     // ── outline (★3) ──────────────────────────────────────────────────────────────────────────
@@ -595,5 +603,6 @@ private:
     QMetaObject::Connection m_contentsConn;
     QMetaObject::Connection m_cullingConn;
     QMetaObject::Connection m_headingsConn;
+    bool m_changingZoom = false;
     qreal m_zoom = 1.0; // the live document's CURRENT zoom; m_sheet itself is never scaled
 };

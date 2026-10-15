@@ -347,6 +347,97 @@ private slots:
         QCOMPARE(f.tabPositions()[1].position, 72.);
     }
 
+    void editingFormatPainter()
+    {
+        m_fmt->insertText("one\ntwo");
+        m_fmt->setCursorPosition(1);
+        m_fmt->setSelectionStart(0); m_fmt->setSelectionEnd(3);
+        m_fmt->setTextColor("#aa0000"); m_fmt->setParagraphIndents(24, 12, -6);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "copyFormat"));
+        QVERIFY(m_fmt->property("hasCopiedFormat").toBool());
+        m_fmt->setCursorPosition(5); m_fmt->setSelectionStart(4); m_fmt->setSelectionEnd(7);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "applyCopiedFormat"));
+        QCOMPARE(charAt(doc(), 4).foreground().color(), QColor("#aa0000"));
+        QCOMPARE(doc()->lastBlock().blockFormat().leftMargin(), 24.);
+        doc()->undo();
+        QVERIFY(charAt(doc(), 4).foreground().color() != QColor("#aa0000"));
+        QCOMPARE(doc()->lastBlock().blockFormat().leftMargin(), 0.);
+    }
+
+    void formatPainterClearsTargetFormatting()
+    {
+        m_fmt->insertText("plain\ntarget");
+        m_fmt->setSelectionStart(6); m_fmt->setSelectionEnd(12); m_fmt->setCursorPosition(7);
+        m_fmt->toggleBold(); m_fmt->setHighlightColor("#ffff00");
+        m_fmt->setParagraphIndents(24, 12, 6);
+        m_fmt->setSelectionStart(0); m_fmt->setSelectionEnd(0); m_fmt->setCursorPosition(1);
+        m_fmt->copyFormat();
+        m_fmt->setSelectionStart(6); m_fmt->setSelectionEnd(12); m_fmt->setCursorPosition(7);
+        m_fmt->applyCopiedFormat();
+        QVERIFY(charAt(doc(), 6).fontWeight() != QFont::Bold);
+        QCOMPARE(charAt(doc(), 6).background().style(), Qt::NoBrush);
+        QCOMPARE(doc()->lastBlock().blockFormat().leftMargin(), 0.);
+    }
+
+    void editingNotifyOnlyOnChange()
+    {
+        m_fmt->insertText("word");
+        m_fmt->setCursorPosition(2);
+        QSignalSpy color(m_fmt, &RichTextHandler::textColorChanged);
+        QSignalSpy highlight(m_fmt, &RichTextHandler::highlightColorChanged);
+        QSignalSpy left(m_fmt, &RichTextHandler::leftIndentChanged);
+        m_fmt->setTextColor("#123456");
+        QCOMPARE(color.size(), 1);
+        m_fmt->setTextColor("#123456");
+        QCOMPARE(color.size(), 1);
+        m_fmt->setHighlightColor("#ffff00");
+        QCOMPARE(highlight.size(), 1);
+        m_fmt->setHighlightColor("");
+        QCOMPARE(highlight.size(), 2);
+        m_fmt->setHighlightColor("");
+        QCOMPARE(highlight.size(), 2);
+        m_fmt->setParagraphIndents(24, 0, 0);
+        QCOMPARE(left.size(), 1);
+        m_fmt->setParagraphIndents(24, 0, 0);
+        QCOMPARE(left.size(), 1);
+        m_fmt->setZoom(2);
+        QCOMPARE(left.size(), 1);
+        QCOMPARE(m_fmt->leftIndent(), 24.);
+    }
+
+    void editingSearchOptions()
+    {
+        m_fmt->insertText("Cat cat scatter cat42");
+        m_fmt->setCursorPosition(0);
+        QVERIFY(m_fmt->find("cat", {{"caseSensitive", true}, {"wholeWords", true}}));
+        QCOMPARE(m_fmt->selectionStart(), 4);
+        QVERIFY(!m_fmt->replace("dog"));
+        QVERIFY(doc()->toPlainText().startsWith("Cat dog"));
+        QVERIFY(!m_fmt->find("[", {{"regex", true}}));
+        QCOMPARE(m_fmt->replaceAll("cat[0-9]+", "number", {{"regex", true}}), 1);
+        QVERIFY(doc()->toPlainText().endsWith("number"));
+        m_fmt->setSelectionStart(0); m_fmt->setSelectionEnd(0); m_fmt->setCursorPosition(0);
+        QVERIFY(!m_fmt->find("dog", {{"backward", true}, {"wrap", false}}));
+        QVERIFY(m_fmt->find("dog", {{"backward", true}, {"wrap", true}}));
+        QCOMPARE(m_fmt->selectionStart(), 4);
+    }
+
+    void editingBookSearchTiming()
+    {
+        const auto path = qEnvironmentVariable("RICHTEXT_BOOK");
+        if (!QFile::exists(path)) QSKIP("book sample unavailable");
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(path)));
+        QElapsedTimer timer; timer.start();
+        QVERIFY(!m_fmt->find("task13-no-hit-8bc31c64", {{"wrap", false}}));
+        const auto noHit = timer.nsecsElapsed()/1e6;
+        timer.restart();
+        const int count = m_fmt->replaceAll("a", "A", {{"caseSensitive", true}});
+        const auto replaceMs = timer.nsecsElapsed()/1e6;
+        qInfo("SEARCH_BOOK no_hit_ms=%.3f replace_all_ms=%.3f replacements=%d", noHit, replaceMs, count);
+        QVERIFY(count > 0);
+        doc()->undo();
+    }
+
     void tableTabNavigation()
     {
         m_fmt->insertTable(2, 2);
