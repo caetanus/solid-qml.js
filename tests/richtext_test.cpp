@@ -328,6 +328,25 @@ private slots:
         QCOMPARE(doc()->toPlainText(), QString("Cat cat scatter cat"));
     }
 
+    void editingOdfRoundTrip()
+    {
+        m_fmt->insertText("sample");
+        m_fmt->setSelectionStart(0); m_fmt->setSelectionEnd(6);
+        m_fmt->setTextColor("#aa0000"); m_fmt->setHighlightColor("#ffff00"); m_fmt->toggleSubscript();
+        m_fmt->setParagraphIndents(24, 12, -6); m_fmt->setParagraphSpacing(9, 13);
+        m_fmt->setLineSpacing(150); m_fmt->setTabStops({24.,72.});
+        const auto path = QUrl::fromLocalFile(m_dir.filePath("editing.odt"));
+        QVERIFY(m_fmt->saveOdfCopy(path)); QVERIFY(m_fmt->loadOdf(path));
+        QCOMPARE(charAt(doc(), 0).foreground().color(), QColor("#aa0000"));
+        QCOMPARE(charAt(doc(), 0).background().color(), QColor("#ffff00"));
+        QCOMPARE(charAt(doc(), 0).verticalAlignment(), QTextCharFormat::AlignSubScript);
+        const auto f = doc()->begin().blockFormat();
+        QCOMPARE(f.leftMargin(), 24.); QCOMPARE(f.rightMargin(), 12.); QCOMPARE(f.textIndent(), -6.);
+        QVERIFY(qAbs(f.topMargin() - 9.) < 0.00001); QVERIFY(qAbs(f.bottomMargin() - 13.) < 0.00001); QCOMPARE(f.lineHeight(), 150.);
+        QCOMPARE(f.tabPositions().size(), 2);
+        QCOMPARE(f.tabPositions()[1].position, 72.);
+    }
+
     void tableTabNavigation()
     {
         m_fmt->insertTable(2, 2);
