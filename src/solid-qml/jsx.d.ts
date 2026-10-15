@@ -109,6 +109,10 @@ type DocumentIoResult = { ok: boolean; error: string };
 type DocumentFindOptions = { caseSensitive?: boolean; wholeWords?: boolean; regex?: boolean; backward?: boolean; wrap?: boolean };
 
 type DocumentEditorProps = {
+  /** View-only whitespace/paragraph markers; default false. Ctrl+F10 toggles. */
+  showFormattingMarks?: boolean;
+  /** Localized marker labels; pageBreak defaults to "Page Break". */
+  formattingMarksLabels?: { pageBreak?: string };
   onPdfExported?: (ok: boolean, path: string, error: string, pages: number) => void;
   onPdfProgress?: (page: number, total: number) => void;
   /** Settled page/viewport geometry changed; no payload. */
@@ -392,6 +396,8 @@ declare global {
     insertPageBreak(): void;
     /** Label on page-break overlay markers; default "Quebra de página". */
     pageBreakLabel: string;
+    showFormattingMarks: boolean;
+    formattingMarksLabels: { pageBreak?: string };
     /** 0 = "Text Body", 1..6 = "Heading n" (applyParagraphStyle). */
     setHeading(level: number): void;
     /** On the selection, or only on what is typed next with nothing selected.
@@ -444,6 +450,8 @@ declare global {
     blockIdsInRange(from: number, to: number): string[];
     /** The id of the block holding document position `pos` ("" outside the document). */
     blockIdAt(pos: number): string;
+    /** First character position, or -1 for an unknown id; uses the block index. */
+    blockPosition(blockId: string): number;
     /** The block's plain text (UTF-16 — mark offsets count in it; a soft line break reads "\n").
      *  "" for an unknown id. */
     blockText(blockId: string): string;

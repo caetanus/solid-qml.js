@@ -129,6 +129,7 @@ Methods:
 | `undo()`, `redo()`, `focusEditor()` | | |
 | `cut()`, `copy()`, `paste()` | | HTML (formatting kept, rescaled to canonical zoom-1 sizes — see "Clipboard" below) and plain text on the SYSTEM clipboard; `cut()`/`copy()` are no-ops without a selection, `paste()` when `!canPaste`. Ctrl+C/X/V are routed to these (not the editor's own built-in handling) — these are also there for an app's own toolbar/menu. |
 | `insertHtml(html)` | | At the caret (replacing a selection), rescaled to the zoom in effect — the same choke point `paste()` uses for its HTML branch. |
+| `blockPosition(id)` | `number` | UTF-16 document position of the block's first character, or -1 for an unknown/deleted id. Uses the existing block index; includes table-cell paragraphs and tracks edits before the block. Consistent with `blockIdAt(pos)`. |
 | `blockIds()` | `string[]` | Every block's id, in document order (see "Blocks and marks"). |
 | `blockIdsInRange(from, to)` | `string[]` | Block ids intersecting inclusive `[from, to]`, in document order, including table-cell paragraphs. UTF-16 document positions, like `blockIdAt`; paragraph separators belong to the preceding block, and a collapsed range returns its containing block (including an empty paragraph). Clips to the document; reversed or wholly outside ranges return `[]`. Uses indexed lookup plus traversal of only the intersecting blocks, so small ranges stay cheap in large documents. |
 | `blockIdAt(pos)` | string | The id of the block holding document position `pos`; `""` outside the document. |
@@ -736,3 +737,18 @@ it changes the PDF paint device, never the document's layout width or pagination
 The snapshot is copied with layout suspended on the GUI thread. A worker owns
 the detached document, its layout and image handlers, and the PDF writer. The
 export continues if the editor is destroyed; its signals are then disconnected.
+
+### Formatting marks
+
+Set `showFormattingMarks={true}` (default false), or press Ctrl+F10, to show
+paragraph ends (¶), soft line breaks (↵), tabs (→), spaces (·), non-breaking spaces
+(°), and manual page-break lines. Localize the latter with
+`formattingMarksLabels={{ pageBreak: "Quebra de página" }}`; the default is
+"Page Break". These properties are also available on the editor handle.
+
+Marks use soft grey-blue ink and the existing text layout's glyph advances.
+They follow zoom, include empty paragraphs and table cells, and decorate only
+visible lines. They never alter line wrapping, document content, selection/copy,
+word counts, undo, saved files, or PDF output. Turning marks off removes their
+overlay. The earlier `pageBreakLabel` continuous-view marker remains available
+when formatting marks are off.

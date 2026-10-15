@@ -84,6 +84,8 @@ class RichTextHandler : public QObject {
     Q_PROPERTY(int pageCount READ pageCount NOTIFY pagesChanged)
     Q_PROPERTY(int currentPage READ currentPage NOTIFY currentPageChanged)
     Q_PROPERTY(QString pageBreakLabel READ pageBreakLabel WRITE setPageBreakLabel NOTIFY pageBreakLabelChanged)
+    Q_PROPERTY(bool showFormattingMarks READ showFormattingMarks WRITE setShowFormattingMarks NOTIFY showFormattingMarksChanged)
+    Q_PROPERTY(QVariantMap formattingMarksLabels READ formattingMarksLabels WRITE setFormattingMarksLabels NOTIFY formattingMarksLabelsChanged)
     Q_PROPERTY(bool modified READ isModified WRITE setModified NOTIFY modifiedChanged)
     // Why the last loadOdf/saveOdf failed ("" after a success).
     Q_PROPERTY(QString errorString READ errorString NOTIFY errorStringChanged)
@@ -236,6 +238,19 @@ public:
     int currentPage() const { return m_currentPage; }
     Q_INVOKABLE int pageAt(int position) const;
     Q_INVOKABLE void configurePages(qreal width, qreal height, qreal gap, const QVariantList &margins);
+    bool showFormattingMarks() const { return m_showFormattingMarks; }
+    void setShowFormattingMarks(bool show);
+    QVariantMap formattingMarksLabels() const { return m_formattingMarksLabels; }
+    void setFormattingMarksLabels(const QVariantMap &labels);
+    struct FormattingMarkSegment {
+        QString text;
+        QPointF baseline;
+        QFont font;
+        int position;
+        QRectF rect;
+        bool pageBreak;
+    };
+    QList<FormattingMarkSegment> formattingMarkSegments(const QRectF &band) const;
     QString pageBreakLabel() const { return m_pageBreakLabel; }
     void setPageBreakLabel(const QString &label);
     bool hasPageBreaks() const { return !m_pageBreaks.isEmpty(); }
@@ -350,6 +365,7 @@ public:
     // undo/redo put back the ids the step removed/created (m_idSteps). Saved as xml:id.
     Q_INVOKABLE QStringList blockIds() const;          // document order
     Q_INVOKABLE QStringList blockIdsInRange(int from, int to) const; // inclusive; clipped to the document
+    Q_INVOKABLE int blockPosition(const QString &blockId) const;
     Q_INVOKABLE QString blockIdAt(int position) const; // "" outside the document
     // Plain text of the block, UTF-16 — the coordinate space of mark offsets (a soft line break
     // U+2028 reads as "\n", same length). "" for an unknown id.
@@ -408,6 +424,8 @@ signals:
     void pdfExported(bool ok, const QString &path, const QString &error, int pages);
     void pdfProgress(int page, int total);
     void saveCopyFinished(bool ok, const QString &error);
+    void showFormattingMarksChanged();
+    void formattingMarksLabelsChanged();
     void pageBreakLabelChanged();
     void pagesChanged();
     void documentPageGeometryChanged();
@@ -549,6 +567,9 @@ private:
     QMetaObject::Connection m_pageCursorConn;
     QSet<QString> m_pageBreaks;
     QString m_pageBreakLabel = QStringLiteral("Quebra de página");
+    bool m_showFormattingMarks = false;
+    QVariantMap m_formattingMarksLabels{{QStringLiteral("pageBreak"), QStringLiteral("Page Break")}};
+    QPointer<QQuickItem> m_formattingMarksOverlay;
     QPointer<QQuickItem> m_pageBreakOverlay;
     QPointer<QQuickItem> m_pageBandsOverlay;
 
