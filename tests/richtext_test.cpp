@@ -23,6 +23,7 @@
 #include <QMetaMethod>
 #include <QPainter>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QStandardPaths>
 #include <QXmlStreamReader>
 #include <QQmlComponent>
@@ -5308,10 +5309,20 @@ private slots:
             QVERIFY(convert.waitForFinished(30000));
             if (convert.exitCode() == 0 && QFile::exists(m_dir.filePath("saved-page.pdf"))) {
                 QProcess info;
+                auto environment = QProcessEnvironment::systemEnvironment();
+                environment.insert(QStringLiteral("LC_ALL"), QStringLiteral("C"));
+                info.setProcessEnvironment(environment);
                 info.start("pdfinfo", {m_dir.filePath("saved-page.pdf")});
                 QVERIFY(info.waitForFinished());
                 QCOMPARE(info.exitCode(), 0);
-                QVERIFY(info.readAllStandardOutput().contains("480 x 360 pts"));
+                const auto output = QString::fromUtf8(info.readAllStandardOutput());
+                const auto pageSize = QRegularExpression(QStringLiteral(
+                    "^Page size:\\s+([0-9]+(?:\\.[0-9]+)?)\\s+x\\s+([0-9]+(?:\\.[0-9]+)?)\\s+pts"),
+                    QRegularExpression::MultilineOption).match(output);
+                QVERIFY2(pageSize.hasMatch(), qPrintable(output));
+                // LibreOffice rounds page dimensions to 1/100 mm.
+                QVERIFY2(qAbs(pageSize.captured(1).toDouble() - 480.) <= 0.1, qPrintable(output));
+                QVERIFY2(qAbs(pageSize.captured(2).toDouble() - 360.) <= 0.1, qPrintable(output));
             } else {
                 qWarning() << "LibreOffice conversion unavailable in this environment; using XML and reload assertions"
                            << convert.exitCode() << convert.readAllStandardError();
