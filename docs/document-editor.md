@@ -622,9 +622,22 @@ header/footer paragraphs render on every page, in both live layout engines and
 the custom engine's QPainter export. Supported content: plain text, explicit
 spaces/line breaks, paragraph font/color/spacing/alignment (including inherited
 and automatic styles), decimal `text:page-number` and `text:page-count` fields.
-They are decorations, outside body selection, editing, word counts and undo.
+They are decorations, outside body selection and word counts.
 Only nearby page bands have live items; page-count changes refresh the fields.
-No new application API is required.
+`setPageHeader({enabled, text?, alignment?, height?})` and `setPageFooter(...)`
+edit these bands on the selected default master page. `text` supports `{page}`
+and `{pages}`, saved as ODF fields and resolved for every rendered/exported page.
+Alignment is `left`, `center`, or `right`. Height is in canonical 96 dpi pixels;
+newly enabled bands default to 32 px. Set a larger height for multiline text.
+Omitted options keep their current values. Disabling clears the band and its
+reserved space. `pageHeader` and `pageFooter` report enabled, text, alignment,
+and height; their change signals fire only on actual changes, including undo/redo.
+Each setter is one undo step; identical or invalid requests do nothing. These
+edits also persist through synchronous and asynchronous ODF copies.
+
+The dialog API does not support editing bands in place, first-page-different
+bands, or inserting page fields in body text. Imported first-page variants are
+preserved in ODF but are not selected by the renderer.
 
 The original page layouts, master-page markup, font aliases and automatic styles
 round-trip on save, including asynchronous copies. The first body's active master

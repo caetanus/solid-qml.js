@@ -65,6 +65,8 @@ QQuickItem *createFormattingMarksOverlay(RichTextHandler *handler, QQuickItem *e
 
 RichTextHandler::RichTextHandler(QObject *parent) : QObject(parent)
 {
+    m_pageHeader = pageHeader();
+    m_pageFooter = pageFooter();
     connect(this, &RichTextHandler::formatChanged, this, &RichTextHandler::updateEditingState);
     connect(this, &RichTextHandler::contentsChanged, this, &RichTextHandler::updateEditingState);
     connect(this, &RichTextHandler::contentsChanged, this, &RichTextHandler::syncDocumentPageSetup);
@@ -331,6 +333,91 @@ void RichTextHandler::connectOverlayLayout()
     schedule();
 }
 
+QVariantMap RichTextHandler::pageBand(int area) const
+{
+    const auto root = m_doc ? m_doc->rootFrame()->frameFormat() : QTextFrameFormat();
+    const auto paragraphs = root.property(rt::kDocumentPageBandsProperty).toList().value(area).toList();
+    QStringList text;
+    QString alignment = QStringLiteral("left");
+    for (const auto &value : paragraphs) {
+        const auto paragraph = value.toMap();
+        const auto flags = paragraph.value("block").value<QTextBlockFormat>().alignment();
+        if (text.isEmpty()) alignment = flags & Qt::AlignHCenter ? "center" : flags & Qt::AlignRight ? "right" : "left";
+        QString line;
+        for (const auto &run : paragraph.value("runs").toList()) {
+            const auto token = run.toMap();
+            const auto field = token.value("field").toString();
+            line += field.isEmpty() ? token.value("text").toString() : field == QLatin1String("page-number") ? "{page}" : "{pages}";
+        }
+        text.append(line);
+    }
+    return {{"enabled", !paragraphs.isEmpty()}, {"text", text.join('\n')}, {"alignment", alignment},
+        {"height", root.property(rt::kDocumentReservedSpaceProperty).toList().value(area, 0.)}};
+}
+
+QVariantMap RichTextHandler::pageHeader() const { return pageBand(0); }
+QVariantMap RichTextHandler::pageFooter() const { return pageBand(1); }
+
+void RichTextHandler::setPageBand(int area, const QVariantMap &options)
+{
+    if (!m_doc || !options.contains("enabled")) return;
+    auto band = pageBand(area);
+    for (const auto &key : {"enabled", "text", "alignment", "height"})
+        if (options.contains(key)) band.insert(key, options.value(key));
+    const auto alignment = band.value("alignment").toString();
+    if (alignment != "left" && alignment != "center" && alignment != "right") return;
+    qreal height = band.value("height").toDouble();
+    if (!qIsFinite(height) || height < 0) return;
+    if (band.value("enabled").toBool() && !options.contains("height") && height == 0) height = 32.;
+    band["height"] = band.value("enabled").toBool() ? height : 0.;
+    if (!band.value("enabled").toBool()) { band["text"] = QString(); band["alignment"] = QStringLiteral("left"); }
+    if (band == pageBand(area)) return;
+    QVariantList paragraphs;
+    if (band.value("enabled").toBool()) {
+        QTextBlockFormat block;
+        QTextCharFormat chars;
+        QFont font = m_doc->defaultFont();
+        // Store canonical, explicit font metrics. An unresolved QFont lets QPainter
+        // substitute its PDF default font after alignment was measured on screen.
+        if (font.pixelSize() > 0) font.setPointSizeF(font.pixelSize() * 72. / 96.);
+        chars.setFont(font);
+        block.setAlignment(alignment == "center" ? Qt::AlignHCenter : alignment == "right" ? Qt::AlignRight : Qt::AlignLeft);
+        for (const auto &line : band.value("text").toString().split('\n')) {
+            QVariantList runs;
+            static const QRegularExpression fields(QStringLiteral("\\{(page|pages)\\}"));
+            auto matches = fields.globalMatch(line);
+            qsizetype end = 0;
+            while (matches.hasNext()) {
+                const auto match = matches.next();
+                if (match.capturedStart() > end) runs.append(QVariantMap{{"text", line.mid(end, match.capturedStart() - end)}});
+                runs.append(QVariantMap{{"field", match.captured(1) == "page" ? "page-number" : "page-count"}});
+                end = match.capturedEnd();
+            }
+            if (end < line.size()) runs.append(QVariantMap{{"text", line.mid(end)}});
+            paragraphs.append(QVariantMap{{"runs", runs}, {"block", QVariant::fromValue(block)}, {"char", QVariant::fromValue(chars)}});
+        }
+    }
+    auto root = m_doc->rootFrame()->frameFormat();
+    auto bands = root.property(rt::kDocumentPageBandsProperty).toList();
+    while (bands.size() < 2) bands.append(QVariant(QVariantList()));
+    bands[area] = paragraphs;
+    root.setProperty(rt::kDocumentPageBandsProperty, bands);
+    auto reserved = root.property(rt::kDocumentReservedSpaceProperty).toList();
+    auto gaps = root.property(rt::kDocumentBandGapsProperty).toList();
+    while (reserved.size() < 2) reserved.append(0.);
+    while (gaps.size() < 2) gaps.append(0.);
+    reserved[area] = band.value("height"); gaps[area] = 0.;
+    root.setProperty(rt::kDocumentReservedSpaceProperty, reserved);
+    root.setProperty(rt::kDocumentBandGapsProperty, gaps);
+    auto edits = root.property(rt::kDocumentPageEditsProperty).toMap();
+    edits.insert(area ? "footer" : "header", band);
+    root.setProperty(rt::kDocumentPageEditsProperty, edits);
+    QTextCursor edit(m_doc);
+    edit.beginEditBlock();
+    m_doc->rootFrame()->setFrameFormat(root);
+    edit.endEditBlock();
+}
+
 void RichTextHandler::syncDocumentPageSetup()
 {
     if (!m_doc || m_bulkReset) return;
@@ -339,6 +426,18 @@ void RichTextHandler::syncDocumentPageSetup()
         m_documentGeometry = geometry;
         emit documentPageGeometryChanged();
     }
+    const auto root = m_doc->rootFrame()->frameFormat();
+    const auto bands = root.property(rt::kDocumentPageBandsProperty).toList();
+    const auto heights = root.property(rt::kDocumentReservedSpaceProperty).toList();
+    if (bands == m_documentBands && heights == m_documentBandHeights) return;
+    m_documentBands = bands; m_documentBandHeights = heights;
+    const auto header = pageHeader(), footer = pageFooter();
+    const bool headerChanged = header != m_pageHeader, footerChanged = footer != m_pageFooter;
+    m_pageHeader = header; m_pageFooter = footer;
+    if ((headerChanged || footerChanged) && m_viewMargins.size() == 4)
+        configurePages(m_viewWidth, m_viewHeight, m_viewGap, m_viewMargins);
+    if (headerChanged) emit pageHeaderChanged();
+    if (footerChanged) emit pageFooterChanged();
 }
 
 void RichTextHandler::setDocumentPageGeometry(const QVariantMap &options)
@@ -368,6 +467,7 @@ void RichTextHandler::setDocumentPageGeometry(const QVariantMap &options)
 void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const QVariantList &margins)
 {
     if (!m_doc || margins.size() != 4) return;
+    m_viewWidth = width; m_viewHeight = height; m_viewGap = gap; m_viewMargins = margins;
     m_pdfPageHeight = height;
     m_pageStride = height > 0 ? height + gap : 0;
     auto f = m_doc->rootFrame()->frameFormat();

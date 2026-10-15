@@ -77,6 +77,8 @@ class RichTextHandler : public QObject {
     // The document has unsaved edits (QTextDocument::isModified). Cleared by saveOdf/loadOdf/
     // newDocument; writable so a host can mark its own save points.
     Q_PROPERTY(QString layoutEngine READ layoutEngine WRITE setLayoutEngine NOTIFY layoutEngineChanged)
+    Q_PROPERTY(QVariantMap pageHeader READ pageHeader NOTIFY pageHeaderChanged)
+    Q_PROPERTY(QVariantMap pageFooter READ pageFooter NOTIFY pageFooterChanged)
     Q_PROPERTY(qreal documentPageWidth READ documentPageWidth NOTIFY documentPageGeometryChanged)
     Q_PROPERTY(QString documentLanguage READ documentLanguage NOTIFY documentLanguageChanged)
     Q_PROPERTY(qreal documentPageHeight READ documentPageHeight NOTIFY documentPageGeometryChanged)
@@ -228,6 +230,10 @@ public:
     Q_INVOKABLE void insertPageBreak();
     QString layoutEngine() const { return m_layoutEngine; }
     void setLayoutEngine(const QString &engine);
+    QVariantMap pageHeader() const;
+    QVariantMap pageFooter() const;
+    Q_INVOKABLE void setPageHeader(const QVariantMap &options) { setPageBand(0, options); }
+    Q_INVOKABLE void setPageFooter(const QVariantMap &options) { setPageBand(1, options); }
     Q_INVOKABLE void setDocumentPageGeometry(const QVariantMap &geometry);
     void syncDocumentPageSetup();
     qreal documentPageWidth() const { return m_documentGeometry.value(0).toReal(); }
@@ -453,6 +459,8 @@ signals:
     void pageBreakLabelChanged();
     void pagesChanged();
     void documentPageGeometryChanged();
+    void pageHeaderChanged();
+    void pageFooterChanged();
     void documentLanguageChanged();
     void layoutEngineChanged();
     void currentPageChanged();
@@ -575,6 +583,12 @@ private:
     void selectLayoutEngine(bool forceQt = false);
     bool m_unsupportedHistory = false;
     QString m_layoutEngine = QStringLiteral("auto");
+    void setPageBand(int area, const QVariantMap &options);
+    QVariantMap pageBand(int area) const;
+    QVariantMap m_pageHeader, m_pageFooter;
+    QVariantList m_documentBands, m_documentBandHeights;
+    QVariantList m_viewMargins;
+    qreal m_viewWidth = 0, m_viewHeight = 0, m_viewGap = 0;
     QVariantList m_documentGeometry;
     QString m_documentLanguage;
     void syncDocumentLanguage();

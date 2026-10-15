@@ -5312,6 +5312,132 @@ private slots:
         QVERIFY(qAbs(m_fmt->documentPageMargins()[0].toReal() - 20. * 96 / 25.4) < .001);
     }
 
+    void editablePageBands_data()
+    {
+        QTest::addColumn<QString>("engine");
+        QTest::newRow("custom") << QStringLiteral("custom");
+        QTest::newRow("qt") << QStringLiteral("qt");
+    }
+    void editablePageBands()
+    {
+        QFETCH(QString, engine);
+        PageEditor w;
+        QVERIFY(w.root);
+        w.root->setProperty("pageWidth", 300.);
+        w.root->setProperty("pageHeight", 200.);
+        w.root->setProperty("pageGap", 0.);
+        w.root->setProperty("pageMargins", QVariantList{10.,10.,10.,10.});
+        w.root->setProperty("layoutEngine", engine);
+        auto *m_fmt = w.fmt();
+        const auto doc = [m_fmt] { return m_fmt->document()->textDocument(); };
+        w.view.show();
+        QCoreApplication::processEvents();
+        m_fmt->configurePages(300, 200, 0, {10.,10.,10.,10.});
+        m_fmt->insertText(QStringLiteral("Body\n").repeated(60));
+        doc()->clearUndoRedoStacks();
+        QSignalSpy headerChanges(m_fmt, SIGNAL(pageHeaderChanged()));
+        QSignalSpy footerChanges(m_fmt, SIGNAL(pageFooterChanged()));
+        const QVariantMap header{{"enabled", true}, {"text", "Chapter {page}/{pages}"}, {"alignment", "center"}, {"height", 30.}};
+        const QVariantMap footer{{"enabled", true}, {"text", "Footer {page}"}, {"alignment", "right"}, {"height", 25.}};
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setPageHeader", Q_ARG(QVariantMap, header)));
+        QCOMPARE(m_fmt->property("pageHeader").toMap().value("text").toString(), QStringLiteral("Chapter {page}/{pages}"));
+        QCOMPARE(doc()->rootFrame()->frameFormat().topMargin(), 40.);
+        doc()->undo();
+        QVERIFY(!m_fmt->property("pageHeader").toMap().value("enabled").toBool());
+        QCOMPARE(doc()->rootFrame()->frameFormat().topMargin(), 10.);
+        QVERIFY(!doc()->isUndoAvailable());
+        doc()->redo();
+        QCOMPARE(doc()->rootFrame()->frameFormat().topMargin(), 40.);
+        const int steps = doc()->availableUndoSteps();
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setPageHeader", Q_ARG(QVariantMap, header)));
+        QCOMPARE(doc()->availableUndoSteps(), steps);
+        QCOMPARE(headerChanges.count(), 3);
+        QCOMPARE(footerChanges.count(), 0);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setPageFooter", Q_ARG(QVariantMap, footer)));
+        QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), 35.);
+        const int pages = doc()->pageCount();
+        QVERIFY(pages > 2);
+        for (int page = 0; page < pages; ++page) {
+            const auto lines = rt::pageBandLines(doc(), page, pages);
+            QCOMPARE(lines.size(), 2);
+            QCOMPARE(lines[0].text, QString("Chapter %1/%2").arg(page+1).arg(pages));
+            QCOMPARE(lines[1].text, QString("Footer %1").arg(page+1));
+            QVERIFY(lines[0].rect.x() > 10.);
+            QVERIFY(lines[1].rect.x() > lines[0].rect.x());
+        }
+        const auto pdf = m_dir.filePath("edited-bands-" + engine + ".pdf");
+        QSignalSpy done(m_fmt, &RichTextHandler::pdfExported);
+        QVERIFY(m_fmt->exportPdfAsync(pdf));
+        QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 10000);
+        QVERIFY(done[0][0].toBool());
+        QProcess extract;
+        extract.start("pdftotext", {"-layout", pdf, "-"});
+        QVERIFY(extract.waitForFinished());
+        const auto text = extract.readAllStandardOutput();
+        for (int page = 1; page <= pages; ++page) {
+            QVERIFY(text.contains(QString("Chapter %1/%2").arg(page).arg(pages).toUtf8()));
+            QVERIFY2(text.contains(QString("Footer %1").arg(page).toUtf8()), text.constData());
+        }
+        const auto path = QUrl::fromLocalFile(m_dir.filePath("edited-bands.odt"));
+        QVERIFY(m_fmt->saveOdf(path));
+        const auto xml = zipEntry(path.toLocalFile(), "styles.xml");
+        QVERIFY(xml.contains("text:page-number"));
+        QVERIFY(xml.contains("text:page-count"));
+        QVERIFY(m_fmt->loadOdf(path));
+        QCOMPARE(m_fmt->property("pageHeader").toMap().value("text").toString(), header.value("text").toString());
+        QCOMPARE(m_fmt->property("pageFooter").toMap().value("alignment").toString(), QStringLiteral("right"));
+        m_fmt->configurePages(300, 200, 0, {10.,10.,10.,10.});
+        QCOMPARE(doc()->rootFrame()->frameFormat().topMargin(), 40.);
+        QCOMPARE(doc()->rootFrame()->frameFormat().bottomMargin(), 35.);
+        const QVariantMap disabled{{"enabled", false}};
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setPageHeader", Q_ARG(QVariantMap, disabled)));
+        QCOMPARE(doc()->rootFrame()->frameFormat().topMargin(), 10.);
+        QVERIFY(m_fmt->saveOdf(path));
+        QVERIFY(m_fmt->loadOdf(path));
+        QVERIFY(!m_fmt->property("pageHeader").toMap().value("enabled").toBool());
+        QVERIFY(m_fmt->property("pageFooter").toMap().value("enabled").toBool());
+    }
+
+    void bookPageBandsUndoPreservesBreakOffsets()
+    {
+        const auto book = qEnvironmentVariable("RICHTEXT_BOOK");
+        if (!QFile::exists(book)) QSKIP("book sample unavailable");
+        PageEditor w;
+        QVERIFY(w.root);
+        w.root->setProperty("pageGap", 0.);
+        auto *m_fmt = w.fmt();
+        const auto doc = [m_fmt] { return m_fmt->document()->textDocument(); };
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(book)));
+        m_fmt->setLayoutEngine("custom");
+        m_fmt->configurePages(794, 1123, 0, {94.,113.,94.,113.});
+        m_fmt->setPageHeader({{"enabled", false}});
+        m_fmt->setPageFooter({{"enabled", false}});
+        const auto breaks = [&] {
+            QList<int> result;
+            int previous = -1;
+            doc()->documentLayout()->documentSize();
+            for (auto b = doc()->begin(); b.isValid(); b = b.next()) {
+                for (int i = 0; i < b.layout()->lineCount(); ++i) {
+                    const auto line = b.layout()->lineAt(i);
+                    const int page = int((b.layout()->position().y() + line.y()) / 1123.);
+                    if (page != previous) { result.append(b.position() + line.textStart()); previous = page; }
+                }
+            }
+            return result;
+        };
+        const auto before = breaks();
+        QVERIFY(before.size() > 100);
+        m_fmt->setPageHeader({{"enabled", true}, {"text", "Book {page} / {pages}"}, {"height", 40.}});
+        QVERIFY(breaks() != before);
+        doc()->undo();
+        QCOMPARE(breaks(), before);
+        const auto path = QUrl::fromLocalFile(m_dir.filePath("book-no-bands.odt"));
+        QVERIFY(m_fmt->saveOdf(path));
+        QVERIFY(m_fmt->loadOdf(path));
+        m_fmt->configurePages(794, 1123, 0, {94.,113.,94.,113.});
+        QCOMPARE(breaks(), before);
+    }
+
     void pageGeometryIsNotAnEdit()
     {
         PageEditor w;

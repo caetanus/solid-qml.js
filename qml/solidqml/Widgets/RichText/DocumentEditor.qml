@@ -136,6 +136,8 @@ RichText {
     readonly property bool _pages: pageView && pageHeight > 0
     readonly property real _pageZoom: Math.max(0.5, Math.min(3.0, zoom))
     readonly property real _pageStride: (pageHeight + Math.max(0, pageGap)) * _pageZoom
+    readonly property var pageHeader: fmt ? fmt.pageHeader : ({enabled: false, text: "", alignment: "left"})
+    readonly property var pageFooter: fmt ? fmt.pageFooter : ({enabled: false, text: "", alignment: "left"})
     readonly property real documentPageWidth: fmt ? fmt.documentPageWidth : 0
     readonly property string documentLanguage: fmt ? fmt.documentLanguage : ""
     readonly property real documentPageHeight: fmt ? fmt.documentPageHeight : 0
@@ -398,6 +400,8 @@ RichText {
     // styles. Reuses the engine's clearFormatting() — paragraph properties are untouched, unlike
     // clearDirectFormatting().
     function clearFormatting() { if (fmt) fmt.clearFormatting(); _editor.forceActiveFocus() }
+    function setPageHeader(options) { if (fmt) fmt.setPageHeader(options) }
+    function setPageFooter(options) { if (fmt) fmt.setPageFooter(options) }
     function setDocumentPageGeometry(geometry) { if (fmt) fmt.setDocumentPageGeometry(geometry) }
     function setAlignment(align) { if (fmt) fmt.setAlignment(align); _editor.forceActiveFocus() }
     function insertTable(rows, cols, options) { if (fmt) fmt.insertTable(rows, cols, options || {}); _editor.forceActiveFocus() }

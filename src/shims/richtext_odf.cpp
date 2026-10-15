@@ -1781,12 +1781,89 @@ private:
         QByteArray result;
         QXmlStreamWriter out(&result);
         QXmlStreamReader xml(wrapped);
-        bool selected = false;
+        bool selected = false, selectedMaster = false;
+        QString bandStyle[2];
+        for (int area = 0; area < 2; ++area) {
+            bandStyle[area] = QStringLiteral("SolidQmlPageBand%1").arg(area);
+            while (source.contains(bandStyle[area].toUtf8())) bandStyle[area] += QLatin1Char('_');
+        }
+        const auto writeBand = [&](int area) {
+            const auto key = area ? "footer" : "header";
+            const auto band = edits.value(key).toMap();
+            if (!band.value("enabled").toBool()) return;
+            out.writeStartElement(area ? "style:footer" : "style:header");
+            const auto paragraphs = root.property(kDocumentPageBandsProperty).toList().value(area).toList();
+            for (const auto &value : paragraphs) {
+                out.writeStartElement("text:p");
+                out.writeAttribute("text:style-name", bandStyle[area]);
+                for (const auto &run : value.toMap().value("runs").toList()) {
+                    const auto token = run.toMap();
+                    const auto field = token.value("field").toString();
+                    if (!field.isEmpty()) {
+                        out.writeStartElement("text:" + field);
+                        if (field == "page-number") out.writeAttribute("text:select-page", "current");
+                        out.writeCharacters("1"); out.writeEndElement();
+                    } else {
+                        // Explicit spaces survive ODF whitespace collapsing, including repeats.
+                        const auto text = token.value("text").toString();
+                        QString plain;
+                        for (const auto ch : text) {
+                            if (ch == ' ' || ch == '\t' || ch == QChar::LineSeparator) {
+                                if (!plain.isEmpty()) { out.writeCharacters(plain); plain.clear(); }
+                                out.writeEmptyElement(ch == ' ' ? "text:s" : ch == '\t' ? "text:tab" : "text:line-break");
+                            } else plain += ch;
+                        }
+                        if (!plain.isEmpty()) out.writeCharacters(plain);
+                    }
+                }
+                out.writeEndElement();
+            }
+            out.writeEndElement();
+        };
         while (!xml.atEnd()) {
             const auto token = xml.readNext();
             if (xml.name() == QLatin1String("document-styles") || token == QXmlStreamReader::StartDocument || token == QXmlStreamReader::EndDocument) continue;
             if (token == QXmlStreamReader::StartElement && xml.name() == QLatin1String("page-layout"))
                 selected = xml.attributes().value("style:name") == layout;
+            if (token == QXmlStreamReader::StartElement && xml.name() == QLatin1String("master-page"))
+                selectedMaster = xml.attributes().value("style:name") == master;
+            if (token == QXmlStreamReader::StartElement) {
+                const auto name = xml.name();
+                if ((selected && ((name == QLatin1String("header-style") && edits.contains("header")) || (name == QLatin1String("footer-style") && edits.contains("footer"))))
+                    || (selectedMaster && ((name == QLatin1String("header") && edits.contains("header")) || (name == QLatin1String("footer") && edits.contains("footer"))))) {
+                    xml.skipCurrentElement();
+                    continue;
+                }
+            }
+            if (token == QXmlStreamReader::EndElement) {
+                for (int area = 0; area < 2; ++area) {
+                    const auto key = area ? "footer" : "header";
+                    if (!edits.contains(key)) continue;
+                    const auto band = edits.value(key).toMap();
+                    if (xml.name() == QLatin1String("automatic-styles")) {
+                        out.writeStartElement("style:style");
+                        out.writeAttribute("style:name", bandStyle[area]);
+                        out.writeAttribute("style:family", "paragraph");
+                        out.writeEmptyElement("style:paragraph-properties");
+                        out.writeAttribute("fo:text-align", band.value("alignment").toString());
+                        const auto paragraphs = root.property(kDocumentPageBandsProperty).toList().value(area).toList();
+                        if (!paragraphs.isEmpty()) {
+                            const auto chars = paragraphs.first().toMap().value("char").value<QTextCharFormat>();
+                            out.writeEmptyElement("style:text-properties");
+                            out.writeAttribute("fo:font-family", chars.font().family());
+                            out.writeAttribute("fo:font-size", points(chars.fontPointSize()));
+                        }
+                        out.writeEndElement();
+                    }
+                    if (selected && xml.name() == QLatin1String("page-layout")) {
+                        out.writeStartElement(area ? "style:footer-style" : "style:header-style");
+                        out.writeEmptyElement("style:header-footer-properties");
+                        out.writeAttribute("fo:min-height", QString::number(band.value("height").toDouble()/96., 'g', 17) + "in");
+                        out.writeEndElement();
+                    }
+                    if (selectedMaster && xml.name() == QLatin1String("master-page")) writeBand(area);
+                }
+            }
             if (selected && token == QXmlStreamReader::StartElement && xml.name() == QLatin1String("page-layout-properties") && (fresh || edits.contains("geometry"))) {
                 out.writeStartElement("style:page-layout-properties");
                 for (const auto &a : xml.attributes()) {
@@ -1807,6 +1884,7 @@ private:
             } else if (token == QXmlStreamReader::EndElement) out.writeEndElement();
             else if (token == QXmlStreamReader::Characters) out.writeCharacters(xml.text().toString());
             if (token == QXmlStreamReader::EndElement && xml.name() == QLatin1String("page-layout")) selected = false;
+            if (token == QXmlStreamReader::EndElement && xml.name() == QLatin1String("master-page")) selectedMaster = false;
         }
         return result;
     }
