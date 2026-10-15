@@ -97,7 +97,8 @@ The rules that catch people most often:
 | components | destructured props `function C({ a })` | ❌ | rejected: `a component's props must be one parameter (`function C(props)`): destructuring it (`({ a, b })`) reads each prop once, untracked — not suppo` | use `props.a` (destructuring reads each prop once, untracked) |
 | components | `ref={el}` (variable) | ✅ | accepted | `examples/refs.tsx`, `transpiler/test/ref-render.test.ts` |
 | components | `ref={(e) => …}` (callback) | ❌ | rejected: `<div> ref must be a variable: ref={x}` |  |
-| JSX | inline `style=` | ❌ | rejected: `<div> does not support `style` natively (it would be silently dropped); supported: class, classList, ref, onClick, onKeyDown, onContextMenu,` | use a class and CSS |
+| JSX | inline `style=` on a box/text tag (object, string or expression) | ✅ | accepted | the engine's `inlineStyle`: beats every stylesheet rule (`:hover` included); camelCase keys and numeric lengths (px) as in React DOM — `transpiler/test/inline-style.test.ts`, engine `inlineStyle*` tests |
+| JSX | inline `style=` on a native widget (`<button>`, `<input>`…) | ❌ | rejected: `<button> does not support `style` natively: inline styles apply only to CSS-engine boxes (<div>, <span>, <text>, <p>, … and the other block/` | style the widget with a class |
 | JSX | `classList={{…}}` | ✅ | accepted | `transpiler/test/qml.test.ts` |
 | JSX | `use:` directives | ❌ | rejected: `<div> does not support `use:d` natively (it would be silently dropped); supported: class, classList, ref, onClick, onKeyDown, onContextMenu,` |  |
 | JSX | nested fragments | ✅ | accepted |  |
@@ -152,8 +153,8 @@ documented in [keyboard & accessibility](keyboard-accessibility.md).
 <!-- generated:elements:begin (scripts/support-matrix.mjs — do not edit by hand) -->
 | Tag | Emits (QML type) | Attributes (value form) |
 |---|---|---|
-| `div`, `section`, `nav`, `li`, `ul`, `label`, `table`… (any other lowercase tag) | `W.Div` | `class` expr, `classList` object, `ref` ident, `onClick` handler, `onKeyDown` fn, `onContextMenu` fn, `draggable` flag, `dragData` expr, `onDrop` fn, `title` expr, `tabIndex` numlit, `role` lit, `aria-label` expr, `aria-description` lit, `aria-describedby` lit, `aria-checked` expr, `aria-pressed` expr, `aria-selected` expr, `aria-hidden` expr, `aria-disabled` expr, `onMouseEnter` handler, `onMouseLeave` handler, `onScroll` fn |
-| `text`, `span`, `h1`, `h2`, `h3`, `h4`, `h5`, `h6`, `p`, `cite`, `bio` | `W.Text` | `class` expr, `classList` object, `ref` ident, `onClick` handler, `onKeyDown` fn, `onContextMenu` fn, `draggable` flag, `dragData` expr, `onDrop` fn, `title` expr, `tabIndex` numlit, `role` lit, `aria-label` expr, `aria-description` lit, `aria-describedby` lit, `aria-checked` expr, `aria-pressed` expr, `aria-selected` expr, `aria-hidden` expr, `aria-disabled` expr |
+| `div`, `section`, `nav`, `li`, `ul`, `label`, `table`… (any other lowercase tag) | `W.Div` | `class` expr, `classList` object, `ref` ident, `onClick` handler, `onKeyDown` fn, `onContextMenu` fn, `draggable` flag, `dragData` expr, `onDrop` fn, `title` expr, `tabIndex` numlit, `role` lit, `aria-label` expr, `aria-description` lit, `aria-describedby` lit, `aria-checked` expr, `aria-pressed` expr, `aria-selected` expr, `aria-hidden` expr, `aria-disabled` expr, `onMouseEnter` handler, `onMouseLeave` handler, `onScroll` fn, `style` expr |
+| `text`, `span`, `h1`, `h2`, `h3`, `h4`, `h5`, `h6`, `p`, `cite`, `bio` | `W.Text` | `class` expr, `classList` object, `ref` ident, `onClick` handler, `onKeyDown` fn, `onContextMenu` fn, `draggable` flag, `dragData` expr, `onDrop` fn, `title` expr, `tabIndex` numlit, `role` lit, `aria-label` expr, `aria-description` lit, `aria-describedby` lit, `aria-checked` expr, `aria-pressed` expr, `aria-selected` expr, `aria-hidden` expr, `aria-disabled` expr, `style` expr |
 | `button` | `W.Button` | `class` expr, `classList` object, `onClick` handler, `type` lit: submit/button, `aria-label` expr, `aria-description` lit, `aria-describedby` lit |
 | `img` | `W.Image` | `class` expr, `classList` object, `src` expr, `alt` expr |
 | `icon` | `W.Icon` | `class` lit, `classList` object, `name` expr |
@@ -328,7 +329,7 @@ this table (it omits `flex-wrap`, `flex-shrink`, `flex-basis`, `order`, `grid-te
 | `transition` (opacity, width/height, background and border colours) | ✅ | `tests/test_qml_css.cpp` `transitionAnimatesItemOpacity`, `transitionAnimatesLayoutWidth` |
 | Text: `font-family/size/weight`, `line-height`, `letter-spacing`, `text-align` (left/center/right), `text-decoration`, `text-transform`, `white-space: nowrap`, `text-overflow: ellipsis` | ✅ | `tests/test_text.cpp` |
 | `font-style: italic`, `text-align: justify`, `word-break`, `white-space: pre*` | ❌ | |
-| Inline `style=` attribute | ❌ | rejected by the transpiler (see above); use classes |
+| Inline `style=` attribute | ✅ | on box/text tags (see above): the engine's `CssBox.inlineStyle`, overlaid after the cascade and `:hover`; a stylesheet `!important` does not beat it, and inline custom properties are not inherited by descendants |
 
 ## Runtime shims and capability profiles
 

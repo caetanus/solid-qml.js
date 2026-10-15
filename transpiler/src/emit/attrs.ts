@@ -53,8 +53,9 @@ const INPUT_TYPES = [...TEXT_INPUT_TYPES, "checkbox", "radio", "range", "number"
 
 export const ELEMENT_ATTRS: Record<string, Attrs> = {
   // ── HTML ──────────────────────────────────────────────────────────────────────────────────────
-  box: { ...DYN, ...POINTER, onMouseEnter: "handler", onMouseLeave: "handler", onScroll: "fn" },
-  text: { ...DYN, ...POINTER },
+  // style: the element's inline style → the engine box's `inlineStyle` (qml.ts buildInlineStyleLine).
+  box: { ...DYN, ...POINTER, onMouseEnter: "handler", onMouseLeave: "handler", onScroll: "fn", style: "expr" },
+  text: { ...DYN, ...POINTER, style: "expr" },
   // aria-label/aria-description/aria-describedby (release-plan M5 follow-up): on every native
   // control that takes focus, routed by the emitter onto the inner QtQuick.Templates control's
   // Accessible.name/.description — see docs/keyboard-accessibility.md "aria-label on native
@@ -338,6 +339,9 @@ export function checkAttrs(tagKey: string, propsArg: t.Node | undefined): void {
     if (s === undefined) {
       const retired = RETIRED[`${tagKey} ${key}`];
       if (retired) throw new Error(retired);
+      if (key === "style")
+        throw new Error(`<${label(tagKey)}> does not support \`style\` natively: inline styles apply only to CSS-engine ` +
+          "boxes (<div>, <span>, <text>, <p>, … and the other block/text tags) — style this widget with a class instead");
       if (isWarnOnlyAttr(key)) {
         const k = `${tagKey}:${key}`;
         if (!warned.has(k)) {

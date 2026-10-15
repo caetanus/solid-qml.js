@@ -779,6 +779,11 @@ if sh_prog.found() and is_variable('loader_exe')
   test('for-identity-virtual', sh_prog,
     args: [files('tests/c23/run-virtual.sh'), loader_exe, meson.current_build_dir() / 'c23-for-virtual'],
     workdir: meson.project_source_root(), timeout: 300)
+  # Inline `style`, app level: examples/inline-style.qml.tsx grabbed offscreen and pixel-sampled
+  # (swatches coloured only inline, numeric widths relaid out, inline beating a class).
+  test('inline-style', sh_prog,
+    args: [files('tests/inline-style/run.sh'), loader_exe, meson.current_build_dir() / 'inline-style'],
+    workdir: meson.project_source_root(), timeout: 120)
 endif
 
 # Accessibility of the CSS primitives (Text/Image): role/name semantics + the lazy cost contract
