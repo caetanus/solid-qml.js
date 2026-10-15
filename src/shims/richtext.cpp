@@ -1924,7 +1924,14 @@ bool RichTextHandler::splitTableCell(int rows, int columns)
     if (cell.rowSpan() == 1 && cell.columnSpan() == 1) {
         if (rows > 1) { t->insertRows(row+1,rows-1); for (int j=0;j<t->columns();++j) if (j!=col) t->mergeCells(row,j,rows,1); }
         if (columns > 1) { t->insertColumns(col+1,columns-1); for (int i=0;i<t->rows();++i) if (i<row || i>=row+rows) t->mergeCells(i,col,1,columns); }
-    } else t->splitCell(row,col,rows,columns);
+    } else {
+        const int rowSpan=cell.rowSpan(), columnSpan=cell.columnSpan();
+        t->splitCell(row,col,1,1);
+        for(int i=0;i<rows;++i) for(int j=0;j<columns;++j) {
+            const int top=i*rowSpan/rows, left=j*columnSpan/columns;
+            t->mergeCells(row+top,col+left,(i+1)*rowSpan/rows-top,(j+1)*columnSpan/columns-left);
+        }
+    }
     c.endEditBlock(); selectEditorCursor(t->cellAt(row,col).firstCursorPosition()); emit formatChanged(); return true;
 }
 
@@ -2028,6 +2035,17 @@ bool RichTextHandler::setTableBorders(const QString &which, const QVariantMap &s
     // Qt's fallback handles independent side styles, including double borders.
     selectLayoutEngine(true);
     c.beginEditBlock();
+    const auto inherited=t->format();
+    for(int i=0;i<t->rows();++i) for(int j=0;j<t->columns();++j) {
+        auto cell=t->cellAt(i,j); if(cell.row()!=i || cell.column()!=j) continue;
+        auto f=cell.format().toTableCellFormat();
+        if(!f.hasProperty(QTextFormat::TableCellTopBorder)) { f.setTopBorder(inherited.border()); f.setTopBorderStyle(inherited.borderStyle()); f.setTopBorderBrush(inherited.borderBrush()); }
+        if(!f.hasProperty(QTextFormat::TableCellBottomBorder)) { f.setBottomBorder(inherited.border()); f.setBottomBorderStyle(inherited.borderStyle()); f.setBottomBorderBrush(inherited.borderBrush()); }
+        if(!f.hasProperty(QTextFormat::TableCellLeftBorder)) { f.setLeftBorder(inherited.border()); f.setLeftBorderStyle(inherited.borderStyle()); f.setLeftBorderBrush(inherited.borderBrush()); }
+        if(!f.hasProperty(QTextFormat::TableCellRightBorder)) { f.setRightBorder(inherited.border()); f.setRightBorderStyle(inherited.borderStyle()); f.setRightBorderBrush(inherited.borderBrush()); }
+        cell.setFormat(f);
+    }
+    auto tableFormat=inherited; tableFormat.setBorder(0); t->setFormat(tableFormat);
     for(int i=r.top;i<r.top+r.rows;++i) for(int j=r.left;j<r.left+r.columns;++j) {
         auto cell=t->cellAt(i,j); if(cell.row()!=i || cell.column()!=j) continue;
         auto f=cell.format().toTableCellFormat();

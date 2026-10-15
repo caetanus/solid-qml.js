@@ -765,6 +765,54 @@ private slots:
         QCOMPARE(table->format().columnWidthConstraints(), before);
     }
 
+    void tableBordersNoneClearsFrame()
+    {
+        m_fmt->insertTable(2,2);
+        auto *t=qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        QVERIFY(m_fmt->selectTable());
+        QVERIFY(m_fmt->setTableBorders("none"));
+        QCOMPARE(t->format().border(),0.);
+        for(int i=0;i<2;++i) for(int j=0;j<2;++j) {
+            const auto f=t->cellAt(i,j).format().toTableCellFormat();
+            QCOMPARE(f.topBorder(),0.); QCOMPARE(f.bottomBorder(),0.);
+            QCOMPARE(f.leftBorder(),0.); QCOMPARE(f.rightBorder(),0.);
+        }
+        doc()->undo();
+        QVERIFY(t->format().border()>0);
+    }
+
+    void tableRectangularSelectionAndVerticalShifts()
+    {
+        m_fmt->insertTable(3,3);
+        auto *t=qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        t->cellAt(0,1).firstCursorPosition().insertText("A");
+        t->cellAt(1,1).firstCursorPosition().insertText("B");
+        m_fmt->setCursorPosition(t->cellAt(0,1).firstPosition());
+        QVERIFY(m_fmt->insertTableCells("down")); QCOMPARE(t->rows(),4);
+        QCOMPARE(t->cellAt(1,1).firstCursorPosition().block().text(),QString("A"));
+        QCOMPARE(t->cellAt(2,1).firstCursorPosition().block().text(),QString("B"));
+        doc()->undo(); QCOMPARE(t->rows(),3);
+        m_fmt->setCursorPosition(t->cellAt(0,1).firstPosition());
+        QVERIFY(m_fmt->deleteTableCells("up"));
+        QCOMPARE(t->cellAt(0,1).firstCursorPosition().block().text(),QString("B"));
+        doc()->undo();
+        m_fmt->setCursorPosition(t->cellAt(0,1).firstPosition());
+        QVERIFY(m_fmt->selectTableColumn());
+        const auto selection=m_fmt->tableInfo().toMap().value("selection").toMap();
+        QCOMPARE(selection.value("left").toInt(),1); QCOMPARE(selection.value("right").toInt(),1);
+        QCOMPARE(selection.value("top").toInt(),0); QCOMPARE(selection.value("bottom").toInt(),2);
+        QVERIFY(m_fmt->setTableCellBackground("#00ff00"));
+        for(int i=0;i<3;++i) {
+            QCOMPARE(t->cellAt(i,1).format().background().color(),QColor("#00ff00"));
+            QCOMPARE(t->cellAt(i,0).format().background().style(),Qt::NoBrush);
+        }
+        doc()->undo(); QCOMPARE(t->cellAt(0,1).format().background().style(),Qt::NoBrush);
+        QVERIFY(m_fmt->mergeTableCells()); QCOMPARE(t->cellAt(0,1).rowSpan(),3);
+        QVERIFY(!m_fmt->insertTableCells("down"));
+        QVERIFY(m_fmt->splitTableCell(3,1)); QCOMPARE(t->cellAt(0,1).rowSpan(),1);
+        doc()->undo(); QCOMPARE(t->cellAt(0,1).rowSpan(),3);
+    }
+
     void tableFormattingOdfRoundTrip()
     {
         m_fmt->insertTable(2, 2, {{"headerRow", true}, {"width", 350}});
@@ -2564,6 +2612,7 @@ private slots:
         // Saving again writes the same document.
         const QString again = m_dir.filePath(QStringLiteral("styled-again.odt"));
         QVERIFY(m_fmt->saveOdf(QUrl(again)));
+        keepForInspection(again);
         QCOMPARE(QZipReader(again).fileData(QStringLiteral("content.xml")), rawContent); // block ids included
     }
 

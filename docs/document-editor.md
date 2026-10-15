@@ -791,7 +791,7 @@ commands make one undo step and use the caret cell or selected cell rectangle:
   shifts contents back and leaves empty trailing cells. Merged grids return false.
 - `selectTable()`, `selectTableRow()`, `selectTableColumn()`.
 - `mergeTableCells()` merges the selected rectangle. `splitTableCell(rows, columns)`
-  splits a merged span on its existing grid. For an ordinary cell it extends the
+  divides a merged span into the requested number of rows and columns on its existing grid. For an ordinary cell it extends the
   grid and merges the surrounding cells across the new tracks. A merged cell
   cannot split into more tracks than its existing span; that returns false.
 - `setTableBorders(which, style?)`: `which` is `all`, `outer`, `inner`, `none`,

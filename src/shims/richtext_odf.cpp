@@ -1020,7 +1020,14 @@ bool readOdt(const QString &path, QTextDocument *doc, StyleSheet *sheetOut, QStr
                 if (curTable) {
                     auto format = curTable->format();
                     format.setHeaderRowCount(headerRows);
-                    if (uniformBorder && tableBorder >= 0) format.setBorder(tableBorder);
+                    if (uniformBorder && tableBorder >= 0) {
+                        format.setBorder(tableBorder);
+                        const auto first=curTable->cellAt(0,0).format().toTableCellFormat();
+                        if(qAbs(first.topBorder()-tableBorder)<.000001) {
+                            format.setBorderStyle(first.topBorderStyle());
+                            format.setBorderBrush(first.topBorderBrush());
+                        }
+                    }
                     if (uniformPadding && tablePadding >= 0) format.setCellPadding(tablePadding);
                     curTable->setFormat(format);
                     for (const Merge &m : std::as_const(merges))
@@ -1657,7 +1664,8 @@ private:
                         return width>0 ? points(width*.75*m_unzoom)+QLatin1Char(' ')+line+QLatin1Char(' ')+brush.color().name() : QStringLiteral("none");
                     };
                     x.writeAttribute(QStringLiteral("fo:border"),borderText(t.border,t.format.borderStyle(),t.format.borderBrush()));
-                    for(int side=0;side<4;++side) if(f.hasProperty(properties[side]))
+                    for(int side=0;side<4;++side) if(f.hasProperty(properties[side]) &&
+                        (qAbs(widths[side]-t.border)>.000001 || styles[side]!=t.format.borderStyle() || brushes[side].color()!=t.format.borderBrush().color()))
                         x.writeAttribute("fo:border-"+sides[side],borderText(widths[side],styles[side],brushes[side]));
                     x.writeEndElement();
                 }
