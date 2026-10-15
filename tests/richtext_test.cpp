@@ -441,66 +441,142 @@ private slots:
         qInfo("SEARCH_BOOK undo_ms=%.3f", timer.nsecsElapsed()/1e6);
     }
 
-    void rulerDefaultsAndToggle()
+    void viewportGeometry_data()
+    {
+        QTest::addColumn<QString>("engine");
+        QTest::newRow("custom") << QString("custom");
+        QTest::newRow("qt") << QString("qt");
+    }
+
+    void viewportGeometry()
+    {
+        QFETCH(QString, engine);
+        PageEditor widget;
+        QVERIFY(widget.root);
+        QVERIFY(widget.root->property("pageViewportX").isValid());
+        QVERIFY(!widget.root->property("ruler").isValid());
+        QVERIFY(!widget.root->property("rulerUnit").isValid());
+        QVERIFY(!widget.root->property("effectiveRulerUnit").isValid());
+        QVERIFY(!widget.root->findChild<QQuickItem *>("documentRuler"));
+        widget.root->setProperty("layoutEngine", engine);
+        widget.view.show();
+        widget.fmt()->insertText("first");
+        widget.fmt()->insertPageBreak();
+        widget.fmt()->insertText("second");
+        widget.fmt()->insertPageBreak();
+        widget.fmt()->insertText("third");
+        widget.edit()->setProperty("cursorPosition", 0);
+        QTest::qWait(50);
+        widget.body()->setProperty("contentY", 0.);
+        QTest::qWait(30);
+        auto value = [&](const char *name) { return widget.root->property(name).toReal(); };
+        QCOMPARE(value("pageViewportX"), 53.);
+        QCOMPARE(value("pageViewportY"), 0.);
+        QSignalSpy changed(widget.root.data(), SIGNAL(viewportGeometryChanged()));
+        QVERIFY(changed.isValid());
+        widget.body()->setProperty("contentY", 1200.);
+        QTest::qWait(30);
+        QCOMPARE(value("pageViewportY"), -53.); // caret off-screen: second sheet
+        QCOMPARE(changed.count(), 1);
+        changed.clear();
+        widget.body()->setProperty("contentY", 1200.);
+        QTest::qWait(30);
+        QCOMPARE(changed.count(), 0);
+        widget.body()->setProperty("contentY", 0.);
+        QTest::qWait(30);
+        QCOMPARE(changed.count(), 1);
+        changed.clear();
+        widget.root->setProperty("zoom", 1.5);
+        QTest::qWait(50);
+        QCOMPARE(value("pageViewportX"), 0.);
+        QCOMPARE(value("pageViewportY"), 0.);
+        QCOMPARE(changed.count(), 1);
+        changed.clear();
+        widget.body()->setProperty("contentX", 60.);
+        QTest::qWait(30);
+        QCOMPARE(value("pageViewportX"), -60.);
+        QCOMPARE(changed.count(), 1);
+        widget.body()->setProperty("contentX", 0.);
+        QTest::qWait(30);
+        changed.clear();
+        widget.root->setWidth(1300);
+        widget.view.resize(1300, 600);
+        QTest::qWait(30);
+        QCOMPARE(value("pageViewportX"), 54.5);
+        QCOMPARE(changed.count(), 1);
+        changed.clear();
+        widget.root->setHeight(650);
+        widget.view.resize(1300, 650);
+        QTest::qWait(30);
+        QCOMPARE(changed.count(), 1);
+        changed.clear();
+        widget.root->setProperty("pageWidth", 700.);
+        QTest::qWait(30);
+        QCOMPARE(value("pageViewportX"), 125.);
+        QCOMPARE(changed.count(), 1);
+        changed.clear();
+        widget.root->setProperty("pageHeight", 1000.);
+        QTest::qWait(30);
+        QCOMPARE(changed.count(), 1);
+        changed.clear();
+        widget.root->setProperty("pageMargins", QVariantList{90, 100, 90, 100});
+        QTest::qWait(30);
+        QCOMPARE(changed.count(), 1);
+        changed.clear();
+        widget.fmt()->insertText("abc");
+        QTest::qWait(30);
+        QCOMPARE(changed.count(), 0);
+        widget.root->setProperty("toolbar", true);
+        QTest::qWait(30);
+        QCOMPARE(value("pageViewportY"), 38.);
+        QCOMPARE(changed.count(), 1);
+    }
+
+    void viewportGeometryPageChoice()
     {
         PageEditor widget;
         QVERIFY(widget.root);
-        QVERIFY(widget.root->property("ruler").isValid());
-        QVERIFY(!widget.root->property("ruler").toBool());
-        QVERIFY(widget.root->setProperty("ruler", true));
-        auto *ruler = widget.root->findChild<QQuickItem *>("documentRuler");
-        QVERIFY(ruler);
-        QVERIFY(ruler->isVisible());
-        QVERIFY(ruler->height() > 0);
-    }
-
-    void rulerLocaleUnits()
-    {
-        const auto previous = QLocale();
-        for (const auto &name : {QString("pt_BR"), QString("en_US")}) {
-            QLocale::setDefault(QLocale(name));
-            PageEditor widget;
-            QVERIFY(widget.root);
-            QCOMPARE(widget.root->property("rulerUnit").toString(), QString("auto"));
-            QCOMPARE(widget.root->property("effectiveRulerUnit").toString(),
-                     name == "pt_BR" ? QString("cm") : QString("in"));
-            widget.root->setProperty("rulerUnit", name == "pt_BR" ? "in" : "cm");
-            QCOMPARE(widget.root->property("effectiveRulerUnit").toString(),
-                     name == "pt_BR" ? QString("in") : QString("cm"));
-        }
-        QLocale::setDefault(previous);
-    }
-
-    void rulerMouseEditsSelectedParagraphs()
-    {
-        PageEditor widget;
-        QVERIFY(widget.root);
-        widget.root->setProperty("ruler", true);
-        widget.fmt()->insertText("one\ntwo");
-        QMetaObject::invokeMethod(widget.edit(), "select", Q_ARG(int, 0), Q_ARG(int, 7));
+        widget.root->setProperty("pageHeight", 300.);
         widget.view.show();
         QTest::qWait(30);
-        auto *strip = widget.root->findChild<QQuickItem *>("documentRuler");
-        QVERIFY(strip && !strip->childItems().isEmpty());
-        auto *canvas = strip->childItems().first();
-        const auto start = canvas->mapToScene(QPointF(113, 3)).toPoint();
-        const auto end = start + QPoint(24, 0);
-        QTest::mousePress(&widget.view, Qt::LeftButton, Qt::NoModifier, start);
-        QTest::mouseMove(&widget.view, end);
-        QTest::mouseRelease(&widget.view, Qt::LeftButton, Qt::NoModifier, end);
-        auto *document = widget.fmt()->document()->textDocument();
-        QCOMPARE(document->begin().blockFormat().textIndent(), 24.);
-        QCOMPARE(document->lastBlock().blockFormat().textIndent(), 24.);
-        document->undo();
-        QCOMPARE(document->begin().blockFormat().textIndent(), 0.);
-        QCOMPARE(document->lastBlock().blockFormat().textIndent(), 0.);
-        const auto tab = canvas->mapToScene(QPointF(173, 25)).toPoint();
-        QTest::mouseClick(&widget.view, Qt::LeftButton, Qt::NoModifier, tab);
-        QCOMPARE(widget.fmt()->tabStops(), QVariantList{60.});
-        QTest::mousePress(&widget.view, Qt::LeftButton, Qt::NoModifier, tab);
-        QTest::mouseMove(&widget.view, tab + QPoint(0, 45));
-        QTest::mouseRelease(&widget.view, Qt::LeftButton, Qt::NoModifier, tab + QPoint(0,45));
-        QVERIFY(widget.fmt()->tabStops().isEmpty());
+        widget.fmt()->insertText("first");
+        widget.fmt()->insertPageBreak();
+        widget.fmt()->insertText("second");
+        widget.fmt()->insertPageBreak();
+        widget.fmt()->insertText("third");
+        const int second = widget.fmt()->plainText().indexOf("second");
+        QVERIFY(second > 0);
+        widget.edit()->setProperty("cursorPosition", second);
+        QTest::qWait(30);
+        widget.body()->setProperty("contentY", 0.);
+        QTest::qWait(30);
+        QCOMPARE(widget.root->property("currentPage").toInt(), 2);
+        QCOMPARE(widget.root->property("pageViewportY").toReal(), 324.);
+        QSignalSpy changed(widget.root.data(), SIGNAL(viewportGeometryChanged()));
+        widget.edit()->setProperty("cursorPosition", second + 1);
+        QTest::qWait(30);
+        QCOMPARE(changed.count(), 0);
+        widget.edit()->setProperty("cursorPosition", 0);
+        QTest::qWait(30);
+        QCOMPARE(widget.root->property("pageViewportY").toReal(), 0.);
+        QCOMPARE(changed.count(), 1);
+        changed.clear();
+        // A viewport top in the gap belongs to the preceding sheet, even with
+        // the caret off-screen. The caret-only currentPage remains unchanged.
+        widget.body()->setProperty("contentY", 310.);
+        QTest::qWait(30);
+        QCOMPARE(widget.root->property("pageViewportY").toReal(), -310.);
+        QCOMPARE(changed.count(), 1);
+        changed.clear();
+        widget.root->setProperty("pageGap", 40.);
+        QTest::qWait(30);
+        QCOMPARE(changed.count(), 1);
+        changed.clear();
+        widget.body()->setProperty("contentY", 350.);
+        QTest::qWait(30);
+        QCOMPARE(widget.root->property("pageViewportY").toReal(), -10.);
+        QCOMPARE(widget.root->property("currentPage").toInt(), 1);
+        QCOMPARE(changed.count(), 1);
     }
 
     void tableColumnResizeUndoAndOdf()
