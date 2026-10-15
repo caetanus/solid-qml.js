@@ -65,6 +65,24 @@ RichText {
     readonly property int selectionCharCount: fmt ? fmt.selectionCharCount : 0
     readonly property string selectedText: fmt ? fmt.selectedText : ""
 
+    property var _tableSelectionRects: {
+        var start = fmt ? fmt.selectionStart : 0, end = fmt ? fmt.selectionEnd : 0
+        var width = _editor.width, height = _editor.height
+        return fmt && start !== end ? fmt._selectedTableCellRects() : []
+    }
+    Repeater {
+        parent: root._editor
+        model: root._tableSelectionRects
+        delegate: Rectangle {
+            required property var modelData
+            objectName: "tableCellSelection"
+            z: -0.5
+            x: modelData.x; y: modelData.y
+            width: modelData.width; height: modelData.height
+            color: root._editor.selectionColor
+        }
+    }
+
     MouseArea {
         id: columnHandle
         objectName: "tableColumnHandle"

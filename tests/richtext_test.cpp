@@ -813,6 +813,34 @@ private slots:
         doc()->undo(); QCOMPARE(t->cellAt(0,1).rowSpan(),3);
     }
 
+    void tableWholeCellSelection()
+    {
+        PageEditor w;
+        QVERIFY(w.root);
+        w.root->setProperty("layoutEngine","custom");
+        w.fmt()->insertTable(2,2);
+        w.view.show(); QTest::qWait(30);
+        auto *d=w.fmt()->document()->textDocument();
+        auto *t=qobject_cast<QTextTable *>(d->rootFrame()->childFrames().first());
+        QVERIFY(dynamic_cast<rt::RichTextLayout *>(d->documentLayout()));
+        QVERIFY(w.fmt()->selectTableRow());
+        QTest::qWait(30);
+        const auto rects=w.fmt()->_selectedTableCellRects();
+        QCOMPARE(rects.size(),2);
+        for(const auto &value:rects) {
+            const auto rect=value.toRectF();
+            QVERIFY(rect.width()>100); QVERIFY(rect.height()>10);
+            const auto image=w.view.grabWindow();
+            const auto point=w.edit()->mapToScene(rect.center()).toPoint();
+            QVERIFY(image.rect().contains(point));
+            const auto pixel=image.pixelColor(point);
+            QVERIFY(pixel.blue()>pixel.red());
+        }
+        w.edit()->setProperty("cursorPosition",t->firstPosition());
+        QTest::qWait(30);
+        QCOMPARE(w.fmt()->_selectedTableCellRects().size(),0);
+    }
+
     void tableFormattingOdfRoundTrip()
     {
         m_fmt->insertTable(2, 2, {{"headerRow", true}, {"width", 350}});

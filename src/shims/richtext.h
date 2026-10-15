@@ -294,6 +294,7 @@ public:
     Q_INVOKABLE bool tableTab(bool backward = false);
     Q_INVOKABLE void insertTable(int rows, int cols, const QVariantMap &options = {});
     Q_INVOKABLE QVariant tableInfo() const;
+    Q_INVOKABLE QVariantList _selectedTableCellRects() const;
     Q_INVOKABLE void addTableRow();
     Q_INVOKABLE void addTableColumn();
     Q_INVOKABLE void removeTableRow();

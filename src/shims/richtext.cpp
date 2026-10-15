@@ -1840,6 +1840,19 @@ QVariant RichTextHandler::tableInfo() const
     return QVariantMap{{"rows", t->rows()}, {"columns", t->columns()}, {"row", cell.row()},
         {"column", cell.column()}, {"selection", selection}, {"headerRow", t->format().headerRowCount() > 0}};
 }
+QVariantList RichTextHandler::_selectedTableCellRects() const
+{
+    const auto c=tableCursor();
+    if(c.isNull() || !c.currentTable() || !c.hasComplexSelection()) return {};
+    const auto *layout=dynamic_cast<rt::RichTextLayout *>(c.document()->documentLayout());
+    if(!layout) return {}; // Qt renders its own whole-cell selection.
+    const TableRange r(c); QVariantList rectangles;
+    for(const auto &fragment:layout->tableFragments())
+        if(fragment.table==c.currentTable() && fragment.row>=r.top && fragment.row<r.top+r.rows &&
+            fragment.column>=r.left && fragment.column<r.left+r.columns) rectangles.append(fragment.rect);
+    return rectangles;
+}
+
 bool RichTextHandler::insertTableRows(const QString &where, int count)
 {
     auto c = tableCursor(); auto *t = c.isNull() ? nullptr : c.currentTable();
