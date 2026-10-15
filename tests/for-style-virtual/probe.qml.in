@@ -1,0 +1,46 @@
+    // Probe appended by tests/for-style-virtual/run.sh (not transpiler output): drives the list's scroll
+    // and the component's signal setter, grabs a frame after each step and logs the live row count.
+    Timer {
+        interval: 250
+        repeat: true
+        running: true
+        property int step: 0
+        property var flick: null
+        function findFlick(it) {
+            if (!it) return null
+            if (it.contentY !== undefined && it.contentHeight !== undefined) return it
+            for (var i = 0; i < it.children.length; i++) { var r = findFlick(it.children[i]); if (r) return r }
+            return null
+        }
+        function liveRows(it) {
+            var n = 0
+            for (var i = 0; i < it.children.length; i++) {
+                var k = it.children[i]
+                if (k.cssClass !== undefined && k.cssClass.indexOf("srow") >= 0) n++
+                else n += liveRows(k)
+            }
+            return n
+        }
+        function grab(name) {
+            var y = flick.contentY, h = flick.contentHeight, live = liveRows(flick)
+            __self.contentItem.grabToImage(function(r) {
+                r.saveToFile("@OUT@/" + name + ".png")
+                console.log("FSV grab " + name + " contentY=" + y + " contentHeight=" + h + " live=" + live)
+            })
+        }
+        onTriggered: {
+            if (step === 0) { if (__probe.rows.length !== 2000) return; flick = findFlick(__probe) }
+            else if (step === 1) grab("top")
+            else if (step === 2) flick.contentY = 1000 * 20
+            else if (step === 3) grab("mid")
+            else if (step === 4) __probe.retone()
+            else if (step === 5) grab("mid-tone")
+            else if (step === 6) flick.contentY = 0
+            else if (step === 7) grab("top-tone")
+            else if (step === 8) flick.contentY = flick.contentHeight - flick.height
+            else if (step === 9) grab("end-tone")
+            else if (step === 10) { console.log("FSV done"); Qt.quit() }
+            step++
+        }
+    }
+}

@@ -1,0 +1,3 @@
+.slist { display: flex; flex-direction: column; overflow-y: auto; height: 100vh; background: #000000; }
+.srow { display: flex; flex-direction: row; height: 20px; }
+.sdot { width: 20px; height: 20px; }
