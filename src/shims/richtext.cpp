@@ -18,6 +18,9 @@
 #include <QImage>
 #include <QMimeData>
 #include <QQuickItem>
+#include <QQuickWindow>
+#include <QWheelEvent>
+#include <QElapsedTimer>
 #include <QQuickPaintedItem>
 #include <QTextBlock>
 #include <QTextDocument>
@@ -396,6 +399,69 @@ void RichTextHandler::updateViewportCulling()
     const bool large = doc->characterCount() > kLargeTextThreshold;
     if (editor->flags().testFlag(QQuickItem::ItemObservesViewport) != large)
         editor->setFlag(QQuickItem::ItemObservesViewport, large);
+}
+
+namespace {
+// Observe wheel events before Qt Quick's child dispatch (and its compatibility
+// suppression of pixel-only ScrollUpdate events). Lifetime follows the editor.
+class DocumentZoomInput final : public QObject {
+public:
+    explicit DocumentZoomInput(QQuickItem *editor) : QObject(editor), m_editor(editor) {
+        setObjectName(QStringLiteral("documentZoomInput"));
+        watch(editor->window());
+        connect(editor, &QQuickItem::windowChanged, this, [this](QQuickWindow *window) { watch(window); });
+    }
+    bool eventFilter(QObject *, QEvent *event) override {
+        if (event->type() != QEvent::Wheel) return false;
+        auto *wheel = static_cast<QWheelEvent *>(event);
+        const QPointF position = wheel->position();
+        bool inside = m_editor->isVisible() && m_editor->isEnabled();
+        for (auto *item = m_editor; inside && item; item = item->parentItem()) {
+            if (item == m_editor || item->clip())
+                inside = item->contains(item->mapFromScene(position));
+        }
+        if (!inside || wheel->modifiers() != Qt::ControlModifier) {
+            m_remainder = 0;
+            return false;
+        }
+        if (wheel->phase() == Qt::ScrollBegin || !m_time.isValid() || m_time.elapsed() > 1000)
+            m_remainder = 0;
+        m_time.start();
+        const bool pixels = wheel->angleDelta().y() == 0;
+        const int delta = pixels ? wheel->pixelDelta().y() : wheel->angleDelta().y();
+        if (delta) {
+            if (pixels != m_pixels) m_remainder = 0;
+            m_pixels = pixels;
+            m_remainder += delta;
+            while (qAbs(m_remainder) >= 120) {
+                const int direction = m_remainder > 0 ? 1 : -1;
+                m_remainder -= direction * 120;
+                QMetaObject::invokeMethod(m_editor, "zoomRequested", Q_ARG(double, direction * 0.1));
+            }
+        }
+        if (wheel->phase() == Qt::ScrollEnd) m_remainder = 0;
+        wheel->accept();
+        return true;
+    }
+private:
+    void watch(QQuickWindow *window) {
+        if (m_window) m_window->removeEventFilter(this);
+        m_window = window;
+        m_remainder = 0;
+        if (window) window->installEventFilter(this);
+    }
+    QQuickItem *m_editor;
+    QPointer<QQuickWindow> m_window;
+    QElapsedTimer m_time;
+    qint64 m_remainder = 0;
+    bool m_pixels = false;
+};
+}
+
+void RichTextHandler::_attachZoomInput(QQuickItem *editor)
+{
+    if (editor && !editor->findChild<QObject *>(QStringLiteral("documentZoomInput"), Qt::FindDirectChildrenOnly))
+        new DocumentZoomInput(editor);
 }
 
 void RichTextHandler::attachScrollBar(QQuickItem *flick)

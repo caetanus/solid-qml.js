@@ -243,11 +243,6 @@ RichText {
     // Ctrl+wheel / Ctrl+= / Ctrl+- / Ctrl+0: the app owns `zoom`, so these only ask for a change
     // (delta +0.1/-0.1, 0 = reset) — set zoom from an onZoomRequested handler to act on it.
     signal zoomRequested(real delta)
-    WheelHandler {
-        target: null
-        acceptedModifiers: Qt.ControlModifier
-        onWheel: (event) => root.zoomRequested(event.angleDelta.y > 0 ? 0.1 : -0.1)
-    }
     Shortcut { sequence: "Ctrl+="; onActivated: root.zoomRequested(0.1) }
     Shortcut { sequence: "Ctrl++"; onActivated: root.zoomRequested(0.1) }
     Shortcut { sequence: "Ctrl+-"; onActivated: root.zoomRequested(-0.1) }
@@ -289,6 +284,7 @@ RichText {
     // The handler arrives in RichText's Component.onCompleted: start from an empty, unmodified
     // document, without reporting that as an edit.
     onFmtChanged: if (fmt) {
+        fmt._attachZoomInput(root)
         fmt.zoom = _pageZoom
         fmt.pageBreakLabel = Qt.binding(function() { return root.pageBreakLabel })
         fmt.newDocument()
