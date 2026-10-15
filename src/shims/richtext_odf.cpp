@@ -1357,8 +1357,21 @@ private:
         const QString style = paragraphStyleOf(bf);
         QVariantMap direct = directProps(bf, m_sheet.blockFormat(style), true);
         direct.remove(QStringLiteral("outlineLevel")); // text:h's text:outline-level says it
-        const auto master = m_doc->rootFrame()->frameFormat().stringProperty(kDocumentMasterNameProperty);
-        if (b == m_doc->begin() && !master.isEmpty()) direct.insert(QStringLiteral("__masterPage"), master);
+        if (b == m_doc->begin()) {
+            const auto root = m_doc->rootFrame()->frameFormat();
+            auto master = root.stringProperty(kDocumentMasterNameProperty);
+            // The first master is already the ODF default. Avoid adding a redundant
+            // paragraph override on reload (new documents acquire their master on save).
+            QXmlStreamReader pages(QByteArray("<office:document-styles" ODF_NAMESPACES ">")
+                + root.property(kDocumentPageStylesProperty).toByteArray() + "</office:document-styles>");
+            while (!pages.atEnd()) {
+                if (pages.readNext() == QXmlStreamReader::StartElement && pages.name() == QLatin1String("master-page")) {
+                    if (pages.attributes().value("style:name") == master) master.clear();
+                    break;
+                }
+            }
+            if (!master.isEmpty()) direct.insert(QStringLiteral("__masterPage"), master);
+        }
         // insertPageBreak() (item 5): not a rt::Prop, so directProps() above never sees it —
         // forced into `direct` straight from the live format so writeProps() picks it up.
         if (bf.pageBreakPolicy() & QTextFormat::PageBreak_AlwaysBefore)
@@ -1763,19 +1776,92 @@ private:
         const auto root = m_doc->rootFrame()->frameFormat();
         auto source = root.property(kDocumentPageStylesProperty).toByteArray();
         const auto edits = root.property(kDocumentPageEditsProperty).toMap();
-        const bool fresh = source.isEmpty();
+        bool fresh = source.isEmpty();
         if (!fresh && edits.isEmpty()) return source;
         QString master = root.stringProperty(kDocumentMasterNameProperty);
         if (master.isEmpty()) master = QStringLiteral("Standard");
-        if (fresh) source = "<office:automatic-styles><style:page-layout style:name=\"PageSetup\"><style:page-layout-properties/></style:page-layout></office:automatic-styles><office:master-styles><style:master-page style:name=\"Standard\" style:page-layout-name=\"PageSetup\"/></office:master-styles>";
-        const auto wrapped = QByteArray("<office:document-styles" ODF_NAMESPACES ">") + source + "</office:document-styles>";
-        QString layout;
-        QXmlStreamReader scan(wrapped);
+        const auto wrap = [](const QByteArray &fragment) {
+            return QByteArray("<office:document-styles" ODF_NAMESPACES ">") + fragment + "</office:document-styles>";
+        };
+        const auto copyToken = [](QXmlStreamWriter &writer, const QXmlStreamReader &reader) {
+            if (reader.isStartElement()) {
+                writer.writeStartElement(reader.qualifiedName().toString());
+                for (const auto &ns : reader.namespaceDeclarations()) writer.writeNamespace(ns.namespaceUri().toString(), ns.prefix().toString());
+                for (const auto &attr : reader.attributes()) writer.writeAttribute(attr.qualifiedName().toString(), attr.value().toString());
+            } else if (reader.isEndElement()) writer.writeEndElement();
+            else if (reader.isCharacters()) writer.writeCharacters(reader.text().toString());
+        };
+        QString layout, scanningLayout;
+        QSet<QString> layouts, properties;
+        bool hasMaster = false, hasAutoSection = false, hasMasterSection = false;
+        QXmlStreamReader scan(wrap(source));
         while (!scan.atEnd()) {
-            if (scan.readNext() == QXmlStreamReader::StartElement && scan.name() == QLatin1String("master-page")
-                && scan.attributes().value("style:name") == master)
+            if (scan.readNext() != QXmlStreamReader::StartElement) continue;
+            const auto name = scan.name();
+            if (name == QLatin1String("automatic-styles")) hasAutoSection = true;
+            if (name == QLatin1String("master-styles")) hasMasterSection = true;
+            if (name == QLatin1String("page-layout")) {
+                scanningLayout = scan.attributes().value("style:name").toString();
+                layouts.insert(scanningLayout);
+            }
+            if (name == QLatin1String("page-layout-properties")) properties.insert(scanningLayout);
+            if (name == QLatin1String("master-page") && scan.attributes().value("style:name") == master) {
+                hasMaster = true;
                 layout = scan.attributes().value("style:page-layout-name").toString();
+            }
         }
+        if (layout.isEmpty()) {
+            layout = QStringLiteral("SolidQmlPageSetup");
+            while (layouts.contains(layout)) layout += QLatin1Char('_');
+        }
+        if (!hasMaster || !properties.contains(layout)) {
+            // Older writer output has an empty master-styles section. Add only the
+            // missing nodes, retaining unrelated automatic styles and master pages.
+            fresh = true;
+            QByteArray normalized;
+            QXmlStreamWriter writer(&normalized);
+            const auto writeLayout = [&] {
+                writer.writeStartElement("style:page-layout"); writer.writeAttribute("style:name", layout);
+                writer.writeEmptyElement("style:page-layout-properties"); writer.writeEndElement();
+            };
+            const auto writeMaster = [&] {
+                writer.writeEmptyElement("style:master-page"); writer.writeAttribute("style:name", master);
+                writer.writeAttribute("style:page-layout-name", layout);
+            };
+            const auto writeAuto = [&] {
+                writer.writeStartElement("office:automatic-styles"); writeLayout(); writer.writeEndElement();
+            };
+            QXmlStreamReader reader(wrap(source));
+            bool targetLayout = false;
+            while (!reader.atEnd()) {
+                reader.readNext();
+                const auto name = reader.name();
+                if (name == QLatin1String("document-styles")) {
+                    if (reader.isEndElement() && !hasMasterSection) {
+                        if (!hasAutoSection) writeAuto();
+                        writer.writeStartElement("office:master-styles"); writeMaster(); writer.writeEndElement();
+                    }
+                    continue;
+                }
+                if (reader.isStartElement() && name == QLatin1String("master-styles") && !hasAutoSection) writeAuto();
+                if (reader.isStartElement() && name == QLatin1String("page-layout")) targetLayout = reader.attributes().value("style:name") == layout;
+                if (reader.isStartElement() && name == QLatin1String("master-page") && reader.attributes().value("style:name") == master) {
+                    writer.writeStartElement(reader.qualifiedName().toString());
+                    for (const auto &attr : reader.attributes()) if (attr.qualifiedName() != QLatin1String("style:page-layout-name"))
+                        writer.writeAttribute(attr.qualifiedName().toString(), attr.value().toString());
+                    writer.writeAttribute("style:page-layout-name", layout);
+                    continue;
+                }
+                if (reader.isEndElement()) {
+                    if (name == QLatin1String("page-layout") && targetLayout && !properties.contains(layout)) writer.writeEmptyElement("style:page-layout-properties");
+                    if (name == QLatin1String("automatic-styles") && !layouts.contains(layout)) writeLayout();
+                    if (name == QLatin1String("master-styles") && !hasMaster) writeMaster();
+                }
+                copyToken(writer, reader);
+            }
+            source = normalized;
+        }
+        const auto wrapped = wrap(source);
         auto geometry = root.property(kDocumentGeometryProperty).toList();
         if (geometry.size() != 6) geometry = {210.*96/25.4,297.*96/25.4,20.*96/25.4,20.*96/25.4,20.*96/25.4,20.*96/25.4};
         QByteArray result;
@@ -1877,12 +1963,7 @@ private:
                 out.writeAttribute("style:print-orientation", geometry[0].toDouble() > geometry[1].toDouble() ? "landscape" : "portrait");
                 continue;
             }
-            if (token == QXmlStreamReader::StartElement) {
-                out.writeStartElement(xml.qualifiedName().toString());
-                for (const auto &ns : xml.namespaceDeclarations()) out.writeNamespace(ns.namespaceUri().toString(), ns.prefix().toString());
-                for (const auto &attr : xml.attributes()) out.writeAttribute(attr.qualifiedName().toString(), attr.value().toString());
-            } else if (token == QXmlStreamReader::EndElement) out.writeEndElement();
-            else if (token == QXmlStreamReader::Characters) out.writeCharacters(xml.text().toString());
+            copyToken(out, xml);
             if (token == QXmlStreamReader::EndElement && xml.name() == QLatin1String("page-layout")) selected = false;
             if (token == QXmlStreamReader::EndElement && xml.name() == QLatin1String("master-page")) selectedMaster = false;
         }

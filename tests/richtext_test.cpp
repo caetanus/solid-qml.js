@@ -5262,6 +5262,23 @@ private slots:
         QVERIFY(!rt::refreshTextEditSize(&futureEditor));
     }
 
+    void pageSetupInLegacyDocumentWithoutMaster()
+    {
+        const auto path = QUrl::fromLocalFile(m_dir.filePath("legacy-page.odt"));
+        QZipWriter zip(path.toLocalFile());
+        zip.addFile("content.xml", "<office:document-content" ODF_NS "><office:body><office:text><text:p>Legacy</text:p></office:text></office:body></office:document-content>");
+        zip.addFile("styles.xml", "<office:document-styles" ODF_NS "><office:styles/><office:automatic-styles><style:page-layout style:name=\"Unused\"><style:page-layout-properties fo:page-width=\"10in\" fo:page-height=\"12in\"/></style:page-layout></office:automatic-styles><office:master-styles/></office:document-styles>");
+        zip.close();
+        QVERIFY(m_fmt->loadOdf(path));
+        m_fmt->setDocumentPageGeometry({{"width", 640.}, {"height", 480.}, {"margins", QVariantList{20.,30.,40.,50.}}});
+        m_fmt->setPageHeader({{"enabled", true}, {"text", "Legacy {page}"}});
+        QVERIFY(m_fmt->saveOdf(path));
+        QVERIFY(zipEntry(path.toLocalFile(), "styles.xml").contains("style:name=\"Unused\""));
+        QVERIFY(m_fmt->loadOdf(path));
+        QCOMPARE(m_fmt->documentPageWidth(), 640.);
+        QCOMPARE(m_fmt->pageHeader().value("text").toString(), QStringLiteral("Legacy {page}"));
+    }
+
     void documentPageSetupRoundTripAndUndo()
     {
         m_fmt->newDocument();
