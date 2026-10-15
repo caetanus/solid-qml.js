@@ -275,9 +275,12 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
             }
         }
     }
-    if (flow.pageBreak)
+    // TextEdit's setTextWidth() temporarily clears page height during width/view
+    // transitions. Explicit breaks have no effect in that continuous layout;
+    // applying the fallback stride would publish positions around 1e12 pixels.
+    if (m_page.height() > 0 && flow.pageBreak)
         flow.y = (qFloor(flow.y / stride) + 1) * stride + top;
-    if (format.pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysBefore))
+    if (m_page.height() > 0 && format.pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysBefore))
         flow.y = (qFloor(flow.y / stride) + 1) * stride + top;
     if (!first) {
         const qreal beforeSpacing = flow.y;
@@ -351,7 +354,7 @@ bool RichTextLayout::layoutBlock(QTextBlock b, Flow &flow, const Box &box, Pass 
     }
     layout->setPosition({left, origin});
     flow.bottom = quantizedLength(format.bottomMargin());
-    flow.pageBreak = format.pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysAfter);
+    flow.pageBreak = m_page.height() > 0 && format.pageBreakPolicy().testFlag(QTextFormat::PageBreak_AlwaysAfter);
     // Qt publishes the layout origin plus its bounding *size*: a first-line
     // page jump is not included in that size. Painting uses the translated
     // line bounds instead, so this compatibility rectangle never clips ink.
@@ -720,8 +723,8 @@ void RichTextLayout::documentChanged(int from, int removed, int added)
         }
     }
     Q_UNUSED(removed);
-    const qreal end = flow.pageBreak ? (qFloor(flow.y/stride)+1)*stride+top : flow.y;
-    m_pages = qMax(1, int(qCeil((end+bottom)/stride)));
+    const qreal end = page.height() > 0 && flow.pageBreak ? (qFloor(flow.y/stride)+1)*stride+top : flow.y;
+    m_pages = page.height() > 0 ? qMax(1, int(qCeil((end+bottom)/stride))) : 1;
     if (m_widthDirty) {
         documentWidth = width;
         for (auto it = m_blocks.cbegin(); it != m_blocks.cend(); ++it) documentWidth = qMax(documentWidth, it->right);

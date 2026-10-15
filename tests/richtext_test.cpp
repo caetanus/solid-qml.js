@@ -3637,6 +3637,52 @@ private slots:
         QTRY_VERIFY(highlightAligned());
     }
 
+    void pageToContinuousAfterScroll_data()
+    {
+        QTest::addColumn<QString>("engine");
+        QTest::newRow("qt") << QString("qt");
+        QTest::newRow("custom") << QString("custom");
+    }
+
+    void pageToContinuousAfterScroll()
+    {
+        QFETCH(QString, engine);
+        PageEditor w;
+        QVERIFY(w.root);
+        w.root->setProperty("layoutEngine", engine);
+        w.root->setProperty("pageHeight", 300.);
+        w.root->setProperty("pageGap", 40.);
+        w.view.show();
+        QTest::qWait(30);
+        w.fmt()->insertText("first");
+        w.fmt()->insertPageBreak();
+        w.fmt()->insertText("second");
+        w.fmt()->insertPageBreak();
+        w.fmt()->insertText("third");
+        w.edit()->setProperty("cursorPosition", 0);
+        QTest::qWait(30);
+        w.body()->setProperty("contentY", 350.);
+        QTest::qWait(30);
+        w.root->setProperty("pageView", false);
+        QTRY_COMPARE(w.fmt()->pageCount(), 1);
+        QTRY_VERIFY(std::isfinite(w.body()->property("contentHeight").toReal()));
+        QVERIFY(caretRect(w.edit(), 13).top() < 300.);
+        QTRY_VERIFY(w.edit()->findChild<QQuickItem *>(QStringLiteral("pageBreakMarker")));
+        auto font = qobject_cast<QQuickTextEdit *>(w.edit())->font();
+        font.setPixelSize(22);
+        qobject_cast<QQuickTextEdit *>(w.edit())->setFont(font);
+        QTest::qWait(30);
+        const auto markers = w.edit()->findChildren<QQuickItem *>(QStringLiteral("pageBreakMarker"));
+        QCOMPARE(markers.size(), 2);
+        for (const auto *marker : markers) {
+            const int block = w.fmt()->blockIds().indexOf(marker->property("blockId").toString());
+            const int position = w.fmt()->document()->textDocument()->findBlockByNumber(block).position();
+            QVERIFY(qAbs(marker->y()+marker->height()-caretRect(w.edit(), position).top()) < 1);
+        }
+        w.root->setProperty("pageView", true);
+        QTRY_COMPARE(w.fmt()->pageCount(), 3);
+    }
+
     void markSegmentsFollowTheTextAndTheStyle()
     {
         m_fmt->insertText(QStringLiteral("I saw teh cat"));
