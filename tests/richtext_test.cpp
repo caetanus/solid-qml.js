@@ -20,6 +20,7 @@
 #include <QGuiApplication>
 #include <QImage>
 #include <QMimeData>
+#include <QMetaMethod>
 #include <QPainter>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -435,7 +436,9 @@ private slots:
         const auto replaceMs = timer.nsecsElapsed()/1e6;
         qInfo("SEARCH_BOOK no_hit_ms=%.3f replace_all_ms=%.3f replacements=%d", noHit, replaceMs, count);
         QVERIFY(count > 0);
+        timer.restart();
         doc()->undo();
+        qInfo("SEARCH_BOOK undo_ms=%.3f", timer.nsecsElapsed()/1e6);
     }
 
     void rulerDefaultsAndToggle()
@@ -4849,5 +4852,27 @@ private slots:
     }
 };
 
-QTEST_MAIN(RichTextTest)
+int main(int argc, char **argv)
+{
+    QGuiApplication app(argc, argv);
+    app.setAttribute(Qt::AA_Use96Dpi, true);
+    RichTextTest test;
+    auto arguments = app.arguments();
+    // Meson runs the destructive whole-book search/undo workload separately.
+    // Discover the remaining slots so newly added tests are included automatically.
+    // Direct invocations retain QTest's usual function/data-row selection.
+    if (arguments.removeOne(QStringLiteral("--handler-suite"))) {
+        const auto *meta = test.metaObject();
+        for (int i = meta->methodOffset(); i < meta->methodCount(); ++i) {
+            const auto method = meta->method(i);
+            const auto name = method.name();
+            if (method.methodType() == QMetaMethod::Slot && method.parameterCount() == 0
+                && method.returnMetaType().id() == QMetaType::Void
+                && !name.endsWith("_data") && name != "initTestCase" && name != "cleanupTestCase"
+                && name != "init" && name != "cleanup" && name != "editingBookSearchTiming")
+                arguments.append(QString::fromLatin1(name));
+        }
+    }
+    return QTest::qExec(&test, arguments);
+}
 #include "richtext_test.moc"
