@@ -38,6 +38,17 @@ RichText {
     readonly property string fontFamily: fmt ? fmt.fontFamily : ""
     readonly property real fontSize: fmt ? fmt.fontSize : 0
     readonly property string alignment: fmt ? fmt.alignment : "left" // left|center|right|justify
+    readonly property string textColor: fmt ? fmt.textColor : ""
+    readonly property string highlightColor: fmt ? fmt.highlightColor : ""
+    readonly property bool subscript: fmt ? fmt.subscript : false
+    readonly property bool superscript: fmt ? fmt.superscript : false
+    readonly property real leftIndent: fmt ? fmt.leftIndent : 0
+    readonly property real rightIndent: fmt ? fmt.rightIndent : 0
+    readonly property real firstLineIndent: fmt ? fmt.firstLineIndent : 0
+    readonly property real lineSpacing: fmt ? fmt.lineSpacing : 100
+    readonly property real spaceBefore: fmt ? fmt.spaceBefore : 0
+    readonly property real spaceAfter: fmt ? fmt.spaceAfter : 0
+    readonly property var tabStops: fmt ? fmt.tabStops : []
     readonly property bool inTable: !!fmt && fmt.inTable
     // Named styles at the caret (paragraph style; character style, "" = none).
     readonly property string currentParagraphStyle: fmt ? fmt.currentParagraphStyle : "Default Paragraph Style"
@@ -264,6 +275,17 @@ RichText {
 
     // ── character format (office item 2b, ★4) ────────────────────────────────────────────────────
     // The handler owns the live cursor's pending font and reports it immediately.
+    function setTextColor(color) { if (fmt) fmt.setTextColor(color); _editor.forceActiveFocus() }
+    function setHighlightColor(color) { if (fmt) fmt.setHighlightColor(color); _editor.forceActiveFocus() }
+    function toggleSubscript() { if (fmt) fmt.toggleSubscript(); _editor.forceActiveFocus() }
+    function toggleSuperscript() { if (fmt) fmt.toggleSuperscript(); _editor.forceActiveFocus() }
+    function setParagraphIndents(left, right, firstLine) { if (fmt) fmt.setParagraphIndents(left, right, firstLine) }
+    function setLineSpacing(percent) { if (fmt) fmt.setLineSpacing(percent) }
+    function setParagraphSpacing(before, after) { if (fmt) fmt.setParagraphSpacing(before, after) }
+    function setTabStops(stops) { if (fmt) fmt.setTabStops(stops) }
+    function find(text, options) { return fmt ? fmt.find(text, options || {}) : false }
+    function replace(text) { return fmt ? fmt.replace(text) : false }
+    function replaceAll(text, replacement, options) { return fmt ? fmt.replaceAll(text, replacement, options || {}) : 0 }
     function setFontFamily(name) { if (fmt) fmt.setFontFamily(name); _editor.forceActiveFocus() }
     function setFontSize(pt) { if (fmt) fmt.setFontSize(pt); _editor.forceActiveFocus() }
     // Drops direct CHARACTER formatting in the selection (bold/font/size/…); keeps character

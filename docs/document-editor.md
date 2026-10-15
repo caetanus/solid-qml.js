@@ -640,3 +640,36 @@ that size stays unchanged and refreshed on page resize, zoom or a DPR change;
 scrolling and caret frames do not resample it. Both live layout engines and the
 QPainter fidelity export use these pixels. ODF saves and asynchronous copies keep
 the original full-resolution image.
+
+## Table keyboard navigation
+
+Tab selects the next table cell's content; Shift+Tab selects the previous cell.
+Tab in the final cell appends a row as one undo step. Shift+Tab in the first
+cell stays there. Merged cells are visited once. Ctrl+Tab inserts a literal tab
+inside a cell; Tab outside a table also inserts a tab.
+
+## Editing toolbar API
+
+Character setters act on the exact selection, or on subsequently typed text at
+an empty selection (moving the caret clears that pending format):
+
+- `textColor`, `setTextColor(color)` use a CSS color string.
+- `highlightColor`, `setHighlightColor(color)` use a CSS color string; `""` clears highlight.
+- `subscript`, `superscript`, `toggleSubscript()`, `toggleSuperscript()` are mutually exclusive.
+
+Paragraph getters report the caret paragraph. Setters affect all selected
+paragraphs as one undo step. Lengths are canonical pixels at 96 dpi, independent
+of zoom: `leftIndent`, `rightIndent`, `firstLineIndent`,
+`setParagraphIndents(left, right, firstLine)`, `spaceBefore`, `spaceAfter`,
+`setParagraphSpacing(before, after)`. `lineSpacing` / `setLineSpacing(percent)`
+use proportional percentages (100 means single spacing). `tabStops` /
+`setTabStops([24, 72, ...])` use sorted, nonnegative positions for left tabs.
+New state properties notify only when their reported value changes.
+
+`find(text, options)` selects the next match and returns a boolean. Options are
+`caseSensitive`, `wholeWords`, `regex`, `backward` (all default false), and `wrap`
+(default true). Invalid regular expressions and empty searches return false.
+`replace(text)` replaces the selected current match and finds the next one.
+`replaceAll(find, replacement, options)` returns a count and uses one undo step;
+it always scans forward through the document once. Replacement text is literal,
+including when the search is a regular expression.

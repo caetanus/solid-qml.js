@@ -272,6 +272,87 @@ class RichTextTest : public QObject {
     }
 
 private slots:
+    void editingColorsAtInsertionPoint()
+    {
+        m_fmt->insertText("abcd");
+        m_fmt->setCursorPosition(2);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setTextColor", Q_ARG(QString, QString("#ff0000"))));
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setHighlightColor", Q_ARG(QString, QString("#ffff00"))));
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "toggleSuperscript"));
+        QCOMPARE(m_fmt->property("textColor").toString(), QString("#ff0000"));
+        QVERIFY(m_fmt->property("superscript").toBool());
+        m_fmt->insertText("X");
+        QCOMPARE(charAt(doc(), 2).foreground().color(), QColor("#ff0000"));
+        QCOMPARE(charAt(doc(), 2).background().color(), QColor("#ffff00"));
+        QCOMPARE(charAt(doc(), 2).verticalAlignment(), QTextCharFormat::AlignSuperScript);
+        QVERIFY(charAt(doc(), 1).foreground().color() != QColor("#ff0000"));
+    }
+
+    void editingParagraphApi()
+    {
+        m_fmt->insertText("one\ntwo");
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(7);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setParagraphIndents", Q_ARG(qreal, 24.), Q_ARG(qreal, 12.), Q_ARG(qreal, -8.)));
+        for (auto b = doc()->begin(); b.isValid(); b = b.next()) {
+            QCOMPARE(b.blockFormat().leftMargin(), 24.);
+            QCOMPARE(b.blockFormat().rightMargin(), 12.);
+            QCOMPARE(b.blockFormat().textIndent(), -8.);
+        }
+        doc()->undo();
+        QCOMPARE(doc()->begin().blockFormat().leftMargin(), 0.);
+        QCOMPARE(doc()->lastBlock().blockFormat().leftMargin(), 0.);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setLineSpacing", Q_ARG(qreal, 150.)));
+        QCOMPARE(doc()->begin().blockFormat().lineHeight(), 150.);
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setParagraphSpacing", Q_ARG(qreal, 9.), Q_ARG(qreal, 13.)));
+        QCOMPARE(doc()->lastBlock().blockFormat().bottomMargin(), 13.);
+        const QVariantList stops{24., 72.};
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "setTabStops", Q_ARG(QVariantList, stops)));
+        QCOMPARE(doc()->begin().blockFormat().tabPositions().size(), 2);
+    }
+
+    void editingFindReplace()
+    {
+        m_fmt->insertText("Cat cat scatter cat");
+        m_fmt->setCursorPosition(0);
+        const QVariantMap options{{"wholeWords", true}, {"wrap", true}};
+        bool found = false;
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "find", Q_RETURN_ARG(bool, found), Q_ARG(QString, QString("cat")), Q_ARG(QVariantMap, options)));
+        QVERIFY(found);
+        QCOMPARE(m_edit->property("selectedText").toString(), QString("Cat"));
+        int count = 0;
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "replaceAll", Q_RETURN_ARG(int, count), Q_ARG(QString, QString("cat")), Q_ARG(QString, QString("dog")), Q_ARG(QVariantMap, options)));
+        QCOMPARE(count, 3);
+        QCOMPARE(doc()->toPlainText(), QString("dog dog scatter dog"));
+        doc()->undo();
+        QCOMPARE(doc()->toPlainText(), QString("Cat cat scatter cat"));
+    }
+
+    void tableTabNavigation()
+    {
+        m_fmt->insertTable(2, 2);
+        auto *table = qobject_cast<QTextTable *>(doc()->rootFrame()->childFrames().first());
+        QVERIFY(table);
+        auto first = table->cellAt(0, 0).firstCursorPosition();
+        first.insertText("one");
+        auto second = table->cellAt(0, 1).firstCursorPosition();
+        second.insertText("two");
+        m_fmt->setCursorPosition(first.position());
+        bool handled = false;
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "tableTab", Q_RETURN_ARG(bool, handled), Q_ARG(bool, false)));
+        QVERIFY(handled);
+        QCOMPARE(m_edit->property("selectedText").toString(), QString("two"));
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "tableTab", Q_RETURN_ARG(bool, handled), Q_ARG(bool, true)));
+        QCOMPARE(m_edit->property("selectedText").toString(), QString("one"));
+        m_fmt->setSelectionStart(0);
+        m_fmt->setSelectionEnd(0);
+        m_fmt->setCursorPosition(table->cellAt(1, 1).firstPosition());
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "tableTab", Q_RETURN_ARG(bool, handled), Q_ARG(bool, false)));
+        QCOMPARE(table->rows(), 3);
+        doc()->undo();
+        QCOMPARE(table->rows(), 2);
+    }
+
     void odfLinksKeepStyleAndTargetThroughNestedSpans()
     {
         const QString path = m_dir.filePath("links.odt");
