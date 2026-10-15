@@ -1775,7 +1775,8 @@ void RichTextHandler::insertTable(int rows, int cols)
         selectLayoutEngine(true);
     }
     // Our ODF writer closes a list before a table, so a table may follow a list item directly.
-    c.insertTable(rows, cols, rt::wordLikeTableFormat());
+    auto *table = c.insertTable(rows, cols, rt::wordLikeTableFormat());
+    selectEditorCursor(table->cellAt(0, 0).firstCursorPosition());
     emit formatChanged();
 }
 

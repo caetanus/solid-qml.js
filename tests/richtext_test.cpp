@@ -765,6 +765,38 @@ private slots:
         QCOMPARE(table->format().columnWidthConstraints(), before);
     }
 
+    void documentEditorTableKeys()
+    {
+        PageEditor widget;
+        QVERIFY(widget.root);
+        QQmlComponent controls(widget.view.engine());
+        controls.setData("import QtQuick\nimport QtQuick.Controls\nRow { Button { text: \"Before\" } ComboBox { model: [\"After\"] } }", QUrl());
+        QScopedPointer<QQuickItem> surrounding(qobject_cast<QQuickItem *>(controls.create()));
+        QVERIFY2(surrounding, qPrintable(controls.errorString()));
+        surrounding->setParentItem(widget.view.contentItem());
+        widget.root->setProperty("layoutEngine", "custom");
+        widget.root->setProperty("pageView", true);
+        widget.view.show();
+        QVERIFY(QMetaObject::invokeMethod(widget.root.data(), "insertTable", Q_ARG(QVariant, 2), Q_ARG(QVariant, 2)));
+        QTest::qWait(30);
+        auto *document = widget.fmt()->document()->textDocument();
+        auto *table = qobject_cast<QTextTable *>(document->rootFrame()->childFrames().first());
+        QVERIFY(table);
+        QTest::keyClick(&widget.view, Qt::Key_Tab);
+        QCOMPARE(widget.edit()->property("cursorPosition").toInt(), table->cellAt(0, 1).firstPosition());
+        QVERIFY(widget.edit()->hasActiveFocus());
+        QTest::keyClick(&widget.view, Qt::Key_Backtab, Qt::ShiftModifier);
+        QCOMPARE(widget.edit()->property("cursorPosition").toInt(), table->cellAt(0, 0).firstPosition());
+        QTest::keyClick(&widget.view, Qt::Key_Tab, Qt::ControlModifier);
+        QCOMPARE(table->cellAt(0, 0).firstCursorPosition().block().text(), QString("\t"));
+        widget.edit()->setProperty("cursorPosition", table->cellAt(1, 1).firstPosition());
+        QTest::keyClick(&widget.view, Qt::Key_Tab);
+        QCOMPARE(table->rows(), 3);
+        QCOMPARE(widget.edit()->property("cursorPosition").toInt(), table->cellAt(2, 0).firstPosition());
+        document->undo();
+        QCOMPARE(table->rows(), 2);
+    }
+
     void tableTabNavigation()
     {
         m_fmt->insertTable(2, 2);
