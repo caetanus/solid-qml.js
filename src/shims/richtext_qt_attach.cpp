@@ -121,6 +121,10 @@ QVariant originalImage(const QTextDocument *doc, const QUrl &name)
     return entry.value("key").toLongLong() == current.value<QImage>().cacheKey()
         ? entry.value("source") : current;
 }
+void installPrintImageHandler(QTextDocument *doc)
+{
+    doc->documentLayout()->registerHandler(QTextFormat::ImageObject, new ExportImageHandler(doc, nullptr));
+}
 void prepareImageSampling(QTextDocument *doc, QObject *editor)
 {
     if (!doc) return;

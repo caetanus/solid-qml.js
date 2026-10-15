@@ -109,6 +109,8 @@ type DocumentIoResult = { ok: boolean; error: string };
 type DocumentFindOptions = { caseSensitive?: boolean; wholeWords?: boolean; regex?: boolean; backward?: boolean; wrap?: boolean };
 
 type DocumentEditorProps = {
+  onPdfExported?: (ok: boolean, path: string, error: string, pages: number) => void;
+  onPdfProgress?: (page: number, total: number) => void;
   /** Settled page/viewport geometry changed; no payload. */
   onViewportGeometryChanged?: () => void;
   class?: string;
@@ -337,6 +339,16 @@ declare global {
     readonly saveCopyFinished: {
       connect(callback: (ok: boolean, error: string) => void): void;
       disconnect(callback: (ok: boolean, error: string) => void): void;
+    };
+    /** Exports a paginated snapshot. False if busy, detached, or not paginated. */
+    exportPdfAsync(path: string, options?: { title?: string; author?: string; resolution?: number }): boolean;
+    readonly pdfExported: {
+      connect(callback: (ok: boolean, path: string, error: string, pages: number) => void): void;
+      disconnect(callback: (ok: boolean, path: string, error: string, pages: number) => void): void;
+    };
+    readonly pdfProgress: {
+      connect(callback: (page: number, total: number) => void): void;
+      disconnect(callback: (page: number, total: number) => void): void;
     };
     /** Empty, unmodified document in Default Paragraph Style; drops undo history, images and
      *  style definitions (back to the built-in styles) — same as `newDocument()`. With `options`,

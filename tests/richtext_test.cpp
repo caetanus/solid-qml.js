@@ -22,6 +22,7 @@
 #include <QMimeData>
 #include <QMetaMethod>
 #include <QPainter>
+#include <QProcess>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickItem>
@@ -44,6 +45,7 @@
 #include <QTextList>
 #include <QElapsedTimer>
 #include <QThread>
+#include <QTimer>
 
 #include <private/qquicktextedit_p_p.h>
 #include <private/qzipreader_p.h>
@@ -1687,6 +1689,138 @@ private slots:
         QVERIFY(!finished[2][1].toString().isEmpty());
         QCOMPARE(doc()->isModified(), modified);
         QCOMPARE(doc()->availableUndoSteps(), undo);
+    }
+
+    void pdfExportBook()
+    {
+        const auto book = qEnvironmentVariable("RICHTEXT_BOOK");
+        if (book.isEmpty()) QSKIP("Set RICHTEXT_BOOK");
+        m_edit->setProperty("wrapMode", QQuickTextEdit::Wrap);
+        m_edit->setProperty("width", 794);
+        QVERIFY(m_fmt->loadOdf(QUrl::fromLocalFile(book)));
+        m_fmt->configurePages(794, 1123, 20, {94, 113, 94, 113});
+        const int pages = m_fmt->pageCount();
+        QSignalSpy done(m_fmt, &RichTextHandler::pdfExported);
+        const auto rss = [] {
+            QFile status("/proc/self/status"); if (!status.open(QIODevice::ReadOnly)) return qint64(0);
+            const auto match = QRegularExpression("VmRSS:\\s+(\\d+)").match(QString::fromUtf8(status.readAll()));
+            return match.captured(1).toLongLong();
+        };
+        const auto beforeRss = rss();
+        auto peakRss = beforeRss;
+        QSignalSpy progress(m_fmt, &RichTextHandler::pdfProgress);
+        QList<qint64> progressTimes;
+        QElapsedTimer wall, interval;
+        connect(m_fmt, &RichTextHandler::pdfProgress, this, [&] { progressTimes.append(wall.elapsed()); });
+        qint64 stall = 0;
+        QTimer heartbeat;
+        connect(&heartbeat, &QTimer::timeout, this, [&] { stall = qMax(stall, interval.restart()); peakRss = qMax(peakRss, rss()); });
+        heartbeat.start(0);
+        wall.start(); interval.start();
+        const QString path = m_dir.filePath("book.pdf");
+        QVERIFY(m_fmt->exportPdfAsync(path));
+        const auto snapshotMs = wall.elapsed();
+        QTRY_COMPARE_WITH_TIMEOUT(done.size(), 1, 120000);
+        heartbeat.stop();
+        QVERIFY2(done[0][0].toBool(), qPrintable(done[0][2].toString()));
+        QCOMPARE(done[0][3].toInt(), pages);
+        qInfo() << "PDF book pages" << pages << "wall ms" << wall.elapsed()
+                << "snapshot ms" << snapshotMs << "max GUI interval ms" << stall
+                << "peak RSS delta KiB" << peakRss - beforeRss;
+        QVERIFY(!progress.isEmpty());
+        int previousPage = 0;
+        for (int i = 0; i < progress.size(); ++i) {
+            QVERIFY(progress[i][0].toInt() > previousPage);
+            previousPage = progress[i][0].toInt();
+            QCOMPARE(progress[i][1].toInt(), pages);
+            if (i) QVERIFY(progressTimes[i] - progressTimes[i-1] >= 90);
+        }
+        keepForInspection(path);
+        QProcess info;
+        info.start("pdfinfo", {path});
+        QVERIFY(info.waitForFinished());
+        QVERIFY(info.readAllStandardOutput().contains("595.5 x 842.25 pts"));
+        const QString editedPath = m_dir.filePath("book-edited.pdf");
+        QVERIFY(m_fmt->exportPdfAsync(editedPath));
+        m_fmt->newDocument();
+        m_fmt->insertText(QStringLiteral("EDIT DURING BOOK EXPORT"));
+        QTRY_COMPARE_WITH_TIMEOUT(done.size(), 2, 120000);
+        QVERIFY(done[1][0].toBool());
+        QCOMPARE(done[1][3].toInt(), pages);
+        QProcess process;
+        process.start("pdftotext", {path, "-"});
+        QVERIFY(process.waitForFinished());
+        const auto baseline = process.readAllStandardOutput();
+        process.start("pdftotext", {editedPath, "-"});
+        QVERIFY(process.waitForFinished());
+        QCOMPARE(process.readAllStandardOutput(), baseline);
+
+    }
+
+    void pdfExportFailure()
+    {
+        QVERIFY(!m_fmt->exportPdfAsync(m_dir.filePath("unpaginated.pdf")));
+        m_fmt->configurePages(400, 500, 20, {30, 40, 30, 40});
+        QSignalSpy done(m_fmt, &RichTextHandler::pdfExported);
+        QVERIFY(m_fmt->exportPdfAsync(m_dir.filePath("missing/export.pdf")));
+        QTRY_COMPARE(done.size(), 1);
+        QVERIFY(!done[0][0].toBool());
+        QVERIFY(!done[0][2].toString().isEmpty());
+        QCOMPARE(done[0][3].toInt(), 0);
+        QVERIFY(m_fmt->exportPdfAsync(m_dir.filePath("recovery.pdf")));
+        QTRY_COMPARE(done.size(), 2);
+        QVERIFY(done[1][0].toBool());
+    }
+
+    void pdfExportSnapshot_data()
+    {
+        QTest::addColumn<QString>("engine");
+        QTest::addColumn<int>("resolution");
+        QTest::addColumn<qreal>("zoom");
+        QTest::newRow("custom-96") << QString("custom") << 96 << qreal(1);
+        QTest::newRow("custom-600") << QString("custom") << 600 << qreal(1);
+        QTest::newRow("qt-96") << QString("qt") << 96 << qreal(1);
+        QTest::newRow("custom-zoom") << QString("custom") << 96 << qreal(2);
+    }
+    void pdfExportSnapshot()
+    {
+        QFETCH(QString, engine);
+        QFETCH(int, resolution);
+        QFETCH(qreal, zoom);
+        m_fmt->setLayoutEngine(engine);
+        m_fmt->insertText(QStringLiteral("Snapshot first page"));
+        m_fmt->insertPageBreak();
+        m_fmt->insertText(QStringLiteral("Snapshot second page"));
+        m_fmt->setZoom(zoom);
+        m_edit->setProperty("width", 400 * zoom);
+        m_fmt->configurePages(400 * zoom, 500 * zoom, 20 * zoom, {30 * zoom, 40 * zoom, 30 * zoom, 40 * zoom});
+        doc()->setPageSize(QSizeF(400 * zoom, 520 * zoom));
+        QSignalSpy done(m_fmt, &RichTextHandler::pdfExported);
+        const QString path = m_dir.filePath("snapshot.pdf");
+        QVERIFY(m_fmt->exportPdfAsync(path, {{"title", "PDF fixture"}, {"author", "PDF author"}, {"resolution", resolution}}));
+        QVERIFY(!m_fmt->exportPdfAsync(path));
+        m_fmt->newDocument();
+        m_fmt->insertText(QStringLiteral("EDIT MUST NOT LEAK"));
+        QTRY_COMPARE(done.size(), 1);
+        QVERIFY2(done[0][0].toBool(), qPrintable(done[0][2].toString()));
+        QCOMPARE(done[0][3].toInt(), 2);
+        QProcess process;
+        process.start("pdftotext", {path, "-"});
+        QVERIFY(process.waitForFinished());
+        const auto text = QString::fromUtf8(process.readAllStandardOutput()).normalized(QString::NormalizationForm_KC);
+        QVERIFY2(text.contains("Snapshot first page"), qPrintable(text));
+        QVERIFY(text.contains("Snapshot second page"));
+        QVERIFY(!text.contains("EDIT MUST NOT LEAK"));
+        process.start("pdfinfo", {path});
+        QVERIFY(process.waitForFinished());
+        const auto info = process.readAllStandardOutput();
+        QVERIFY(info.contains("300 x 375 pts"));
+        QVERIFY(info.contains("PDF fixture"));
+        QVERIFY(info.contains("PDF author"));
+        QVERIFY(info.contains("office"));
+        process.start("pdffonts", {path});
+        QVERIFY(process.waitForFinished());
+        QVERIFY(process.readAllStandardOutput().contains("yes"));
     }
 
     void saveOdfCopyLeavesTheDocumentAlone()

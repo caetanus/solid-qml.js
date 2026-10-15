@@ -9,6 +9,7 @@ class QTextFrameFormat;
 // Internal compatibility boundary; not part of the QML or application API.
 namespace rt {
 QVariant originalImage(const QTextDocument *document, const QUrl &name);
+void installPrintImageHandler(QTextDocument *document);
 void prepareImageSampling(QTextDocument *document, QObject *editor);
 void setRootMarginsNoUndo(QTextDocument *document, const QTextFrameFormat &format);
 bool refreshTextEditSize(QObject *editor);

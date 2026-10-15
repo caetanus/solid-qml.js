@@ -8,6 +8,9 @@
 
 #include <QClipboard>
 #include <QFile>
+#include <QPdfWriter>
+#include <QSaveFile>
+#include <QTemporaryFile>
 #include <QFileInfo>
 #include <QFutureWatcher>
 #include <QPromise>
@@ -312,6 +315,7 @@ void RichTextHandler::connectOverlayLayout()
 void RichTextHandler::configurePages(qreal width, qreal height, qreal gap, const QVariantList &margins)
 {
     if (!m_doc || margins.size() != 4) return;
+    m_pdfPageHeight = height;
     m_pageStride = height > 0 ? height + gap : 0;
     auto f = m_doc->rootFrame()->frameFormat();
     f.setProperty(rt::kDocumentBandZoomProperty, m_zoom);
@@ -1834,6 +1838,167 @@ bool RichTextHandler::writeOdf(const QUrl &file)
         return false;
     }
     setError(QString());
+    return true;
+}
+
+namespace {
+// Qt 6 emits integer-point MediaBox/TrimBox values even for an ExactMatch
+// QPageSize. Patch only page dictionaries reached through its classic xref,
+// keeping byte lengths unchanged so streams and every xref offset stay intact.
+// This is deliberately a checked boundary for PDFs produced by QPdfWriter,
+// not a parser for arbitrary input PDFs. A changed Qt encoding fails the export.
+bool exactPdfPageBoxes(QTemporaryFile &file, const QSizeF &points, int pages)
+{
+    if (!file.seek(qMax(qint64(0), file.size() - 1024))) return false;
+    const auto tail = QString::fromLatin1(file.readAll());
+    const auto match = QRegularExpression(QStringLiteral("startxref\\s+(\\d+)\\s+%%EOF\\s*$")).match(tail);
+    if (!match.hasMatch() || !file.seek(match.captured(1).toLongLong()) || file.readLine() != "xref\n") return false;
+    const auto range = file.readLine().simplified().split(' ');
+    if (range.size() != 2 || range[0] != "0") return false;
+    QList<qint64> offsets;
+    for (int i = 0, count = range[1].toInt(); i < count; ++i) {
+        const auto entry = file.readLine().simplified().split(' ');
+        if (entry.size() != 3) return false;
+        if (entry[2] == "n") offsets.append(entry[0].toLongLong());
+    }
+    int corrected = 0;
+    for (const auto offset : offsets) {
+        if (!file.seek(offset)) return false;
+        file.readLine(); // object number and generation
+        if (file.readLine() != "<<\n" || file.readLine() != "/Type /Page\n") continue;
+        while (!file.atEnd()) {
+            const auto position = file.pos();
+            const auto line = file.readLine();
+            if (line == "endobj\n") break;
+            const bool media = line.startsWith("/MediaBox ");
+            if (!media && !line.startsWith("/TrimBox ")) continue;
+            QByteArray replacement = media ? "/MediaBox [0 0 " : "/TrimBox [0 0 ";
+            replacement += QByteArray::number(points.width(), 'f', 6) + ' '
+                + QByteArray::number(points.height(), 'f', 6) + "]";
+            if (replacement.size() + 1 > line.size()) return false;
+            replacement = replacement.leftJustified(line.size() - 1, ' ') + '\n';
+            if (!file.seek(position) || file.write(replacement) != replacement.size()) return false;
+            if (media) ++corrected;
+        }
+    }
+    return corrected == pages && file.flush();
+}
+}
+
+bool RichTextHandler::exportPdfAsync(const QString &path, const QVariantMap &options)
+{
+    if (m_pdfRunning || !m_doc || m_pdfPageHeight <= 0) return false;
+    // Copy formats/resources with layout suspended. The detached document and
+    // every object handler become worker-owned before layout or painting begins.
+    auto snapshot = std::make_unique<QTextDocument>();
+    snapshot->setLayoutEnabled(false);
+    snapshot->setUndoRedoEnabled(false);
+    snapshot->setDefaultFont(m_doc->defaultFont());
+    snapshot->setDefaultTextOption(m_doc->defaultTextOption());
+    snapshot->setUseDesignMetrics(m_doc->useDesignMetrics());
+    snapshot->setBaseUrl(m_doc->baseUrl());
+    QTextCursor(snapshot.get()).insertFragment(QTextDocumentFragment(m_doc));
+    snapshot->rootFrame()->setFrameFormat(m_doc->rootFrame()->frameFormat());
+    snapshot->setPageSize(m_doc->pageSize());
+    for (const auto &format : m_doc->allFormats()) {
+        if (!format.isImageFormat()) continue;
+        const QUrl name(format.toImageFormat().name());
+        auto resource = rt::originalImage(m_doc, name);
+        if (resource.metaType().id() == QMetaType::QPixmap)
+            resource = resource.value<QPixmap>().toImage();
+        snapshot->addResource(QTextDocument::ImageResource, name, resource);
+    }
+    const bool custom = dynamic_cast<rt::RichTextLayout *>(m_doc->documentLayout());
+    const QSizeF paper(m_doc->pageSize().width(), m_pdfPageHeight);
+    snapshot->moveToThread(nullptr);
+    QPromise<QVariantMap> promise;
+    auto *watcher = new QFutureWatcher<QVariantMap>(this);
+    QElapsedTimer progressClock;
+    progressClock.start();
+    connect(watcher, &QFutureWatcher<QVariantMap>::progressValueChanged, this, [this, watcher, progressClock](int page) mutable {
+        if (page > 0 && progressClock.elapsed() >= 100) {
+            progressClock.restart();
+            emit pdfProgress(page, watcher->progressMaximum());
+        }
+    });
+    connect(watcher, &QFutureWatcher<QVariantMap>::finished, this, [this, watcher, path] {
+        const auto result = watcher->result();
+        watcher->deleteLater();
+        m_pdfRunning = false;
+        emit pdfExported(result.value("ok").toBool(), path, result.value("error").toString(), result.value("pages").toInt());
+    });
+    watcher->setFuture(promise.future());
+    m_pdfRunning = true;
+    QThreadPool::globalInstance()->start([snapshot = std::move(snapshot), promise = std::move(promise),
+                                        custom, paper, stride = m_pageStride, zoom = m_zoom,
+                                        path = localPath(QUrl(path)), options]() mutable {
+        promise.start();
+        snapshot->moveToThread(QThread::currentThread());
+        if (custom) snapshot->setDocumentLayout(new rt::RichTextLayout(snapshot.get()));
+        rt::installPrintImageHandler(snapshot.get());
+        snapshot->setLayoutEnabled(true);
+        auto *layout = snapshot->documentLayout();
+        const int pages = qMax(1, qCeil(layout->documentSize().height() / stride));
+        promise.setProgressRange(0, pages);
+        QString error;
+        const QSizeF points = paper * (72.0 / (96.0 * zoom));
+        QTemporaryFile file;
+        if (!file.open()) error = file.errorString();
+        else {
+            {
+                QPdfWriter writer(&file);
+                writer.setPdfVersion(QPagedPaintDevice::PdfVersion_1_4);
+                writer.setResolution(qBound(72, options.value("resolution", 96).toInt(), 2400));
+                writer.setPageSize(QPageSize(points, QPageSize::Point,
+                                            QString(), QPageSize::ExactMatch));
+                writer.setPageMargins(QMarginsF());
+                writer.setTitle(options.value("title").toString());
+                writer.setAuthor(options.value("author").toString());
+                writer.setCreator(QStringLiteral("office"));
+                QPainter painter;
+                if (!painter.begin(&writer)) error = QStringLiteral("Cannot start PDF painter");
+                QElapsedTimer progress;
+                progress.start();
+                for (int page = 0; error.isEmpty() && page < pages; ++page) {
+                    if (page && !writer.newPage()) { error = QStringLiteral("Cannot create PDF page"); break; }
+                    painter.save();
+                    // Preserve physical coordinates; integer paint-device extents
+                    // must not stretch the document to a rounded page size.
+                    painter.translate(0, (writer.pageLayout().fullRectPoints().height() - points.height()) * writer.resolution() / 72.0);
+                    painter.scale(writer.resolution() / (96.0 * zoom), writer.resolution() / (96.0 * zoom));
+                    painter.setClipRect(QRectF(QPointF(), paper));
+                    painter.translate(0, -page * stride);
+                    QAbstractTextDocumentLayout::PaintContext context;
+                    context.clip = QRectF(QPointF(0, page * stride), paper);
+                    context.cursorPosition = -1;
+                    context.palette.setColor(QPalette::Text, Qt::black);
+                    layout->draw(&painter, context);
+                    if (!custom) rt::drawPageBands(snapshot.get(), &painter, context.clip);
+                    painter.restore();
+                    if (progress.elapsed() >= 100) { progress.restart(); promise.setProgressValue(page + 1); }
+                }
+                if (painter.isActive() && !painter.end() && error.isEmpty()) error = QStringLiteral("Cannot finish PDF painter");
+            }
+            if (error.isEmpty() && !exactPdfPageBoxes(file, points, pages))
+                error = QStringLiteral("Cannot preserve exact PDF page dimensions (unsupported Qt PDF encoding)");
+            if (error.isEmpty()) {
+                QSaveFile output(path);
+                if (!output.open(QIODevice::WriteOnly)) error = output.errorString();
+                else if (!file.seek(0)) error = file.errorString();
+                else {
+                    while (!file.atEnd() && error.isEmpty()) {
+                        const auto bytes = file.read(1024 * 1024);
+                        if (bytes.isEmpty() && file.error() != QFileDevice::NoError) error = file.errorString();
+                        else if (output.write(bytes) != bytes.size()) error = output.errorString();
+                    }
+                    if (error.isEmpty() && !output.commit()) error = output.errorString();
+                }
+            }
+        }
+        snapshot.reset(); // destroy the document and its handlers on their owner thread
+        promise.addResult({{"ok", error.isEmpty()}, {"error", error}, {"pages", error.isEmpty() ? pages : 0}});
+        promise.finish();
+    });
     return true;
 }
 
