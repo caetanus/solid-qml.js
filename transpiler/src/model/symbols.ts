@@ -1,7 +1,7 @@
 import _traverse from "@babel/traverse";
 import * as t from "@babel/types";
 import { hParts, isHCall } from "../ast/h.ts";
-import { safeName } from "../names/safe.ts";
+import { safeName, memberName } from "../names/safe.ts";
 
 const traverse: typeof _traverse = (_traverse as any).default ?? _traverse;
 
@@ -728,7 +728,7 @@ export function effectDeps(body: t.Node, table: SymbolTable, extra: EffectDepsCo
         const name = path.node.name;
         if (shadowed.has(name)) return; // a helper-local shadows any same-named component state
         const sym = table.get(name);
-        if (sym && (sym.kind === "signal" || sym.kind === "memo" || sym.kind === "store")) add("__self", name);
+        if (sym && (sym.kind === "signal" || sym.kind === "memo" || sym.kind === "store")) add("__self", memberName(name));
         // A selector call `isSel(k)` reads its source.
         if (sym?.kind === "selector" && !visitedHelpers.has(`selector:${name}`)) {
           visitedHelpers.add(`selector:${name}`);
@@ -747,12 +747,12 @@ export function effectDeps(body: t.Node, table: SymbolTable, extra: EffectDepsCo
 
           // props.x / alias.x (one level — matches cellRef's resolution). Skip a CALL
           // (`props.onClick()`) — that's an action/callback prop, not a reactive value read.
-          if (objName === propsParam || propAliases?.has(objName)) { if (!calledAsFn) add("__self", prop); return; }
+          if (objName === propsParam || propAliases?.has(objName)) { if (!calledAsFn) add("__self", memberName(prop)); return; }
 
           // useContext member — skip pure-action members.
           if (ctxBindings && objName in ctxBindings) {
             const ctxName = ctxBindings[objName];
-            if (ctxValueShape?.[ctxName]?.[prop] !== "fn") add(`__ctx_${safeName(ctxName)}`, prop);
+            if (ctxValueShape?.[ctxName]?.[prop] !== "fn") add(`__ctx_${safeName(ctxName)}`, memberName(prop));
             return;
           }
 

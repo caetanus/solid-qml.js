@@ -193,7 +193,9 @@ test("effectDeps: props.x read routes to the self property x", async () => {
   const table = analyzeSignals(fn);
   const { effects } = analyzeSetup(fn);
   const deps = effectDeps(effects[0], table, { propsParam: "props" });
-  assert.deepEqual(deps, [{ target: "__self", prop: "x" }]);
+  // `x` is a reserved QML name: the prop property is `x_` (safeName), so the dep is too — not the
+  // Item's own geometry `x`.
+  assert.deepEqual(deps, [{ target: "__self", prop: "x_" }]);
 });
 
 test("effectDeps: a store field read tracks the whole store object (reassign-to-rebind)", async () => {

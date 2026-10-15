@@ -11,7 +11,7 @@ import * as t from "@babel/types";
 import { registerNativeTags } from "./index.ts";
 import { emitExpr, type Scope } from "../expr.ts";
 import { INDENT } from "../qml.ts";
-import { safeName } from "../../names/safe.ts";
+import { safeName, memberName } from "../../names/safe.ts";
 
 type Fn = t.ArrowFunctionExpression | t.FunctionExpression;
 
@@ -39,7 +39,7 @@ function handlerBody(node: t.Node, scope: Scope): string {
     }
     return emitExpr(fn.body, inner);
   }
-  if (t.isIdentifier(node) && scope.helpers?.has(node.name)) return `${safeName(node.name)}()`;
+  if (t.isIdentifier(node) && scope.helpers?.has(node.name)) return `${memberName(node.name)}()`;
   throw new Error("<Shortcut onActivated> takes an inline arrow/function or a helper reference");
 }
 

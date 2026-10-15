@@ -47,7 +47,9 @@ test("createEffect reading props.x gets a Connections on __self (the prop IS a s
     }
   `;
   const app = await generate(src, "props-eff.tsx");
-  assert.match(app.entry, /Connections \{\s*target: __self\s*function onXChanged\(\)/);
+  // `x` is reserved: the prop property is `x_`, and the handler must name IT, not the Item's own `x`.
+  assert.match(app.entry, /property var x_\b/);
+  assert.match(app.entry, /Connections \{\s*target: __self\s*function onX_Changed\(\)/);
 });
 
 test("createEffect reading a store field gets a Connections on __self for the whole store", async () => {

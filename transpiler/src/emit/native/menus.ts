@@ -23,7 +23,7 @@ import { emitExpr, type Scope } from "../expr.ts";
 import { boolAttrExpr, buildCssClassLine, emitChildren, enabledFromDisabled, guardLine, INDENT } from "../qml.ts";
 import { checkAttrs, rejectForKey } from "../attrs.ts";
 import { hParts, isHCall } from "../../ast/h.ts";
-import { safeName } from "../../names/safe.ts";
+import { safeName, memberName } from "../../names/safe.ts";
 
 type Fn = t.ArrowFunctionExpression | t.FunctionExpression;
 
@@ -87,7 +87,7 @@ function handlerBody(node: t.Node, scope: Scope, paramQml?: string): string {
     }
     return emitExpr(fn.body, inner);
   }
-  if (t.isIdentifier(node) && scope.helpers?.has(node.name)) return `${safeName(node.name)}()`;
+  if (t.isIdentifier(node) && scope.helpers?.has(node.name)) return `${memberName(node.name)}()`;
   throw new Error("native menus: only inline arrow/function handlers (or a helper reference) are supported");
 }
 
