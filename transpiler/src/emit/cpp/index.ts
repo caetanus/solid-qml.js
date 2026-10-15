@@ -270,6 +270,8 @@ function readProps(propsArg: t.Node | undefined): ElemProps {
     if (!t.isObjectProperty(p) || !t.isIdentifier(p.key)) continue;
     if (p.key.name === "class" && t.isStringLiteral(p.value)) out.classes = p.value.value.split(/\s+/).filter(Boolean);
     else if (p.key.name === "onClick") out.onClick = p.value;
+    // The QML back-end's inline style (emit/inlineStyle.ts) has no C++ counterpart yet: fail loud.
+    else if (p.key.name === "style") throw new Error("emit/cpp: inline `style` is not supported by the C++ emitter yet — use a class");
   }
   return out;
 }

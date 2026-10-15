@@ -8,6 +8,7 @@ import { translateArgsHandler } from "./native/inputs.ts";
 import { certifyForRow } from "./forCertify.ts";
 import { checkAttrs, checkElement, forKeyField, rejectForKey, warnOnce } from "./attrs.ts";
 import { propSources } from "../model/symbols.ts";
+import { buildInlineStyleLine } from "./inlineStyle.ts";
 
 export const INDENT = "    ";
 export const TEXT_TAGS = new Set(["text", "span", "h1", "h2", "h3", "h4", "h5", "h6", "p", "cite", "bio"]);
@@ -40,6 +41,7 @@ interface Props {
   ariaSelected?: t.Node; // aria-selected → Accessible.selected
   ariaHidden?: t.Node; // aria-hidden → Accessible.ignored
   ariaDisabled?: t.Node; // aria-disabled → enabled: !(…) (drives the standard disabled a11y state too)
+  style?: t.Node; // the inline style → the engine box's inlineStyle (div/text tags only — attrs.ts)
 }
 
 /** Build the cssClass property line(s) for a native element.
@@ -113,6 +115,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
   const pad = INDENT.repeat(level);
   const props = readProps(propsArg);
   const classLine = buildCssClassLine(props, scope, `${pad}${INDENT}`);
+  const styleLine = buildInlineStyleLine(props.style, scope, `${pad}${INDENT}`);
 
   if (tag === "button") return emitButton(props, children as t.Node[], scope, level, guard);
   if (tag === "img") return emitImage(propsArg, props, scope, level, guard);
@@ -132,6 +135,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
     return [
       `${pad}W.Text {`,
       ...classLine,
+      ...styleLine,
       ...stateLine,
       ...refLine,
       ...guardLine(guard, level),
@@ -151,6 +155,7 @@ export function emitQml(call: t.CallExpression, scope: Scope, level = 0, guard?:
   return [
     `${pad}W.Div {`,
     ...classLine,
+    ...styleLine,
     ...stateLine,
     ...refLine,
     ...guardLine(guard, level),
@@ -1945,6 +1950,7 @@ export function readProps(propsArg: t.Node | undefined): Props {
     if (key === "onScroll") props.onScroll = p.value;
     if (key === "onContextMenu") props.onContextMenu = p.value;
     if (key === "onKeyDown") props.onKeyDown = p.value;
+    if (key === "style") props.style = p.value;
     // Keyboard & accessibility (M5).
     if (key === "tabIndex" || key === "tabindex") {
       const n = t.isUnaryExpression(p.value) && p.value.operator === "-" ? p.value.argument : p.value;

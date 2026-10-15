@@ -1,0 +1,14 @@
+.inline-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background-color: #1e1e2e;
+  width: 480px;
+}
+.palette { display: flex; gap: 8px; }
+.swatch { width: 44px; height: 44px; border-radius: 6px; background-color: #585b70; }
+.bars { display: flex; flex-direction: column; gap: 6px; }
+.bar { height: 14px; width: 10px; background-color: #89b4fa; }
+.row { display: flex; gap: 8px; align-items: center; }
+.tinted { width: 110px; height: 40px; background-color: #585b70; color: #1e1e2e; }
