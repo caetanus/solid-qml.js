@@ -784,6 +784,11 @@ if sh_prog.found() and is_variable('loader_exe')
   test('inline-style', sh_prog,
     args: [files('tests/inline-style/run.sh'), loader_exe, meson.current_build_dir() / 'inline-style'],
     workdir: meson.project_source_root(), timeout: 120)
+  # A virtualized <For> of 2000 rows coloured by an inline style object: few rows materialized, recycled
+  # rows show their own colour, a component signal in the style updates live; frames equal the eager run's.
+  test('for-style-virtual', sh_prog,
+    args: [files('tests/for-style-virtual/run.sh'), loader_exe, meson.current_build_dir() / 'for-style-virtual'],
+    workdir: meson.project_source_root(), timeout: 180)
 endif
 
 # Accessibility of the CSS primitives (Text/Image): role/name semantics + the lazy cost contract

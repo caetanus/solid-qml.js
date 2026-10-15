@@ -35,7 +35,7 @@ engine ignores, below.)
   virtualized are, and methodology and raw numbers have not been published yet (release-plan M10).
   An eager list creates and lays out every row up front.
   *Workaround:* make long lists virtualizable. Keep the `<For>` rows passive (plain elements,
-  classes and text, with no handlers or refs on the row) and put them in a vertical scroll
+  classes, text and inline styles, with no handlers or refs on the row) and put them in a vertical scroll
   container (`overflow-y: auto`). `transpiler/src/emit/forCertify.ts` decides which rows qualify.
 - **Virtualization is switched off while an assistive technology is active**
   (`QAccessible::isActive()`, `vendor/qml-css-engine/src/qmlcss/cssrepeater.cpp`). With a screen

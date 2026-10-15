@@ -2193,11 +2193,17 @@ function emitFor(propsArg: t.Node | undefined, children: t.Node[], scope: Scope,
   const key = forKeyField(propsArg);
   const pad = INDENT.repeat(level);
   const delegate = children.find((c) => t.isArrowFunctionExpression(c) || t.isFunctionExpression(c)) as t.ArrowFunctionExpression | t.FunctionExpression | undefined;
-  // 5v-1 (virtualized CssRepeater): a certified row gets `virtualize: true` right after `model:`,
+  // 5v-1 (virtualized CssRepeater): a certified row (forCertify.ts) gets `virtualize: true` after `model:`,
   // automatically (owner rule: only transpiler-proven passive rows). The engine still windows the
   // list only when it is runtime-eligible (fixed-pitch rows in a vertical scroll column); otherwise it
   // stays eager. Uncertified rows emit exactly as before.
-  const virtualize = !!delegate && certifyForRow(delegate);
+  const virtualize = !!delegate && certifyForRow(delegate, {
+    // A component signal/memo read `x()` is a plain property read in QML — unless a row/loop
+    // local or an accessor shadows the name.
+    isReactiveRead: (name) => !(name in (scope.locals ?? {})) && !(name in (scope.accessors ?? {}))
+      && ["signal", "memo"].includes(scope.table.get(name)?.kind ?? ""),
+    isSetter: (name) => ["setter", "storeSetter"].includes(scope.table.get(name)?.kind ?? ""),
+  });
   const lines = [
     `${pad}Css.CssRepeater {`,
     ...guardLine(guard, level),
