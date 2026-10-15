@@ -85,6 +85,46 @@ test("createEffect that reads a signal and writes a DIFFERENT one does not loop 
   assert.doesNotMatch(app.entry, /function onOtherChanged/, "writing `other` must not itself be tracked as a read dep");
 });
 
+test("office app bug, 3rd case: a member only checked with typeof, or only called, is not a dependency", async () => {
+  // The office shape: a helper reached from an effect feature-checks a method on a ref before
+  // calling it. Before the fix this emitted `function onSetCursorPositionChanged()` on the ref and
+  // QML warned "no signal of the target matches".
+  const src = `
+    import { createEffect } from "solid-js";
+    export default function App(props) {
+      let doc;
+      function resetCursor() {
+        if (typeof doc.setCursorPosition === "function") doc.setCursorPosition(0);
+        doc.select?.(0, 0);
+        if (typeof office.reload === "function") office.reload();
+        if (typeof props.onReset === "function") props.onReset?.();
+      }
+      createEffect(() => { if (doc.documentPageMargins) resetCursor(); });
+      return <textarea ref={doc} />;
+    }
+  `;
+  const app = await generate(src, "typeof-dep.tsx");
+  assert.match(app.entry, /target: _ref_doc\s*function onDocumentPageMarginsChanged\(\) \{ __effect0\(\); \}/); // a real read still tracks
+  assert.doesNotMatch(app.entry, /onSetCursorPositionChanged/);
+  assert.doesNotMatch(app.entry, /onSelectChanged/);
+  assert.doesNotMatch(app.entry, /onReloadChanged/);
+  assert.doesNotMatch(app.entry, /onOnResetChanged/);
+  assert.equal([...app.entry.matchAll(/Connections \{/g)].length, 1, "only the documentPageMargins dependency");
+});
+
+test("a member read plainly is still a dependency even when it is also typeof-checked", async () => {
+  const src = `
+    import { createEffect } from "solid-js";
+    export default function App() {
+      function show(v) {}
+      createEffect(() => { if (typeof office.status === "string") show(office.status); });
+      return <div>s</div>;
+    }
+  `;
+  const app = await generate(src, "typeof-and-read.tsx");
+  assert.match(app.entry, /target: office\s*function onStatusChanged\(\)/);
+});
+
 test("a plain component-level value (let array mutated in place, const object, function-local) is never an effect dependency", async () => {
   const src = `
     import { createEffect } from "solid-js";

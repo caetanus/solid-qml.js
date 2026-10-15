@@ -689,6 +689,8 @@ export interface EffectDepsContext {
  *   - a call to a local helper (component.ts's `helpers`/`analyzeHelpers`) is followed into the
  *     helper's own body (one level of indirection, cycle-guarded) — the helper closes over the same
  *     component state, so a read inside it is exactly as live as one written inline.
+ *  A member that is only the operand of `typeof` (a feature check: `typeof x.m === "function"`)
+ *  is never a dependency, at any of the levels above; a call through `?.()` is a call too.
  *  NOT analyzable (documented, not attempted): a module-level helper function's body (a different,
  *  shared lexical scope — see component.ts's moduleFnDecls comment), a computed member (`obj[x]`),
  *  or a chain whose root isn't a plain identifier (`f().x`). */
@@ -739,7 +741,12 @@ export function effectDeps(body: t.Node, table: SymbolTable, extra: EffectDepsCo
         const { object, property, computed } = path.node;
         if (computed || !t.isIdentifier(property)) return;
         const prop = property.name;
-        const calledAsFn = t.isCallExpression(path.parent) && path.parent.callee === path.node;
+        const calledAsFn = (t.isCallExpression(path.parent) || t.isOptionalCallExpression(path.parent)) && path.parent.callee === path.node;
+        // `typeof doc.setCursorPosition === "function"` asks whether a member EXISTS (a feature
+        // check before calling a method): not a reactive read. Tracking it emitted
+        // `function onSetCursorPositionChanged()` — a method has no change signal, so QML warned
+        // "no signal of the target matches".
+        if (t.isUnaryExpression(path.parent, { operator: "typeof" })) return;
 
         if (t.isIdentifier(object)) {
           const objName = object.name;
