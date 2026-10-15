@@ -1549,6 +1549,99 @@ void RichTextHandler::selectEditorCursor(const QTextCursor &c)
     setSelectionEnd(c.selectionEnd());
 }
 
+namespace {
+QList<qreal> tableBoundaries(QTextTable *table)
+{
+    auto *layout = table->document()->documentLayout();
+    const auto bounds = layout->frameBoundingRect(table);
+    QList<qreal> result(table->columns()+1, std::numeric_limits<qreal>::quiet_NaN());
+    result.first() = bounds.left(); result.last() = bounds.right();
+    if (auto *custom = dynamic_cast<rt::RichTextLayout *>(layout)) {
+        for (const auto &fragment : custom->tableFragments()) {
+            if (fragment.table != table) continue;
+            const auto cell = table->cellAt(fragment.row, fragment.column);
+            result[cell.column()] = fragment.rect.left();
+            result[cell.column()+cell.columnSpan()] = fragment.rect.right();
+        }
+    } else {
+        for (int col=1; col<table->columns(); ++col) for (int row=0; row<table->rows(); ++row) {
+            const auto cell = table->cellAt(row,col);
+            if (cell.column()!=col) continue;
+            const auto block = cell.firstCursorPosition().block();
+            result[col] = layout->blockBoundingRect(block).left() - table->format().cellPadding() - table->format().border();
+            break;
+        }
+    }
+    for (int i=1; i<table->columns(); ++i) if (!qIsFinite(result[i]))
+        result[i] = bounds.left() + bounds.width()*i/table->columns();
+    return result;
+}
+}
+QVariantMap RichTextHandler::columnBorderAt(qreal x, qreal y) const
+{
+    if (!m_document) return {};
+    auto *doc = m_document->textDocument();
+    auto *layout = doc->documentLayout();
+    const int position = layout->hitTest({x,y}, Qt::FuzzyHit);
+    if (position < 0) return {};
+    QTextCursor c(doc); c.setPosition(position);
+    auto *table = c.currentTable();
+    if (!table || !layout->frameBoundingRect(table).adjusted(-3,0,3,0).contains({x,y})) return {};
+    const auto boundaries = tableBoundaries(table);
+    for (int col=1; col<table->columns(); ++col) if (qAbs(x-boundaries[col]) <= 3)
+        return {{QStringLiteral("tablePosition"), table->firstPosition()}, {QStringLiteral("border"), col}, {QStringLiteral("x"), boundaries[col]},
+            {QStringLiteral("top"), layout->frameBoundingRect(table).top()},
+            {QStringLiteral("height"), layout->frameBoundingRect(table).height()}};
+    return {};
+}
+bool RichTextHandler::beginColumnResize(int tablePosition, int border)
+{
+    endColumnResize();
+    if (!m_document) return false;
+    auto *doc = m_document->textDocument();
+    if (tablePosition < 0 || tablePosition >= doc->characterCount()) return false;
+    QTextCursor c(doc); c.setPosition(tablePosition);
+    auto *table = c.currentTable();
+    if (!table || border <= 0 || border >= table->columns()) return false;
+    m_resizeTable = table; m_resizeBorder = border; m_resizeDelta = 0;
+    m_resizeWidths = table->format().columnWidthConstraints();
+    bool fixed = m_resizeWidths.size() == table->columns();
+    for (const auto &width : m_resizeWidths) fixed = fixed && width.type() == QTextLength::FixedLength;
+    if (!fixed) {
+        const auto boundaries = tableBoundaries(table);
+        m_resizeWidths.clear();
+        for (int col=0; col<table->columns(); ++col)
+            m_resizeWidths.append(QTextLength(QTextLength::FixedLength, qMax(24. * m_zoom, boundaries[col+1]-boundaries[col])));
+    }
+    return true;
+}
+qreal RichTextHandler::resizeColumn(qreal delta)
+{
+    if (!m_resizeTable || !qIsFinite(delta)) return m_resizeDelta / m_zoom;
+    const qreal left = m_resizeWidths[m_resizeBorder-1].rawValue();
+    const qreal right = m_resizeWidths[m_resizeBorder].rawValue();
+    const qreal minimum = qMin(24. * m_zoom, (left + right)/2);
+    m_resizeDelta = qBound(minimum-left, delta * m_zoom, right-minimum);
+    return m_resizeDelta / m_zoom;
+}
+void RichTextHandler::endColumnResize(bool commit)
+{
+    if (commit && m_resizeTable && !qFuzzyIsNull(m_resizeDelta)) {
+        auto widths = m_resizeWidths;
+        widths[m_resizeBorder-1] = QTextLength(QTextLength::FixedLength,
+            widths[m_resizeBorder-1].rawValue() + m_resizeDelta);
+        widths[m_resizeBorder] = QTextLength(QTextLength::FixedLength,
+            widths[m_resizeBorder].rawValue() - m_resizeDelta);
+        auto format = m_resizeTable->format();
+        auto c = m_resizeTable->firstCursorPosition();
+        c.beginEditBlock();
+        format.setColumnWidthConstraints(widths);
+        m_resizeTable->setFormat(format);
+        c.endEditBlock();
+    }
+    m_resizeTable = nullptr; m_resizeWidths.clear(); m_resizeDelta = 0;
+}
+
 bool RichTextHandler::tableTab(bool backward)
 {
     auto c = insertionCursor();
@@ -2066,6 +2159,15 @@ void RichTextHandler::rescaleRange(int from, int to, qreal ratio, bool clipChars
         [&](QTextFrame::iterator it, const QTextFrame::iterator &end) {
             for (; it != end; ++it) {
                 if (QTextFrame *f = it.currentFrame()) {
+                    if (from < 0) if (auto *table = qobject_cast<QTextTable *>(f)) {
+                        auto format = table->format();
+                        auto widths = format.columnWidthConstraints();
+                        bool changed = false;
+                        for (auto &width : widths) if (width.type() == QTextLength::FixedLength) {
+                            width = QTextLength(QTextLength::FixedLength, width.rawValue() * ratio); changed = true;
+                        }
+                        if (changed) { format.setColumnWidthConstraints(widths); table->setFormat(format); }
+                    }
                     walk(f->begin(), f->end());
                 }
                 else if (const QTextBlock b = it.currentBlock(); b.isValid())

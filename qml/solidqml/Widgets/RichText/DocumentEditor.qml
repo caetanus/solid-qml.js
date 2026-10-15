@@ -65,6 +65,48 @@ RichText {
     readonly property int selectionCharCount: fmt ? fmt.selectionCharCount : 0
     readonly property string selectedText: fmt ? fmt.selectedText : ""
 
+    MouseArea {
+        id: columnHandle
+        objectName: "tableColumnHandle"
+        parent: root._editor
+        anchors.fill: parent
+        z: 10
+        hoverEnabled: true
+        acceptedButtons: Qt.LeftButton
+        property var border: ({})
+        property real startX: 0
+        property real previewDelta: 0
+        property bool resizing: false
+        cursorShape: resizing || border.border !== undefined ? Qt.SplitHCursor : Qt.IBeamCursor
+        preventStealing: resizing
+        onPositionChanged: (mouse) => {
+            if (!root.fmt) return
+            if (resizing) previewDelta = root.fmt.resizeColumn((mouse.x - startX) / root._pageZoom) * root._pageZoom
+            else border = root.fmt.columnBorderAt(mouse.x, mouse.y)
+        }
+        onPressed: (mouse) => {
+            border = root.fmt ? root.fmt.columnBorderAt(mouse.x, mouse.y) : ({})
+            if (border.border === undefined || !root.fmt.beginColumnResize(border.tablePosition, border.border)) {
+                mouse.accepted = false
+                return
+            }
+            startX = mouse.x
+            previewDelta = 0
+            resizing = true
+        }
+        onReleased: { if (resizing) root.fmt.endColumnResize(); resizing = false }
+        onCanceled: { if (resizing) root.fmt.endColumnResize(false); resizing = false }
+        Rectangle {
+            objectName: "tableColumnPreview"
+            visible: columnHandle.resizing
+            x: (columnHandle.border.x || 0) + columnHandle.previewDelta - width / 2
+            y: columnHandle.border.top || 0
+            width: 2
+            height: columnHandle.border.height || 0
+            color: "#3574ae"
+        }
+    }
+
     property bool ruler: false
     property string rulerUnit: "auto"
     readonly property string effectiveRulerUnit: rulerUnit === "cm" || rulerUnit === "in"

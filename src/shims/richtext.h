@@ -30,6 +30,8 @@
 // text run optionally in a character style; what Qt renders is the style chain plus direct
 // formatting. Redefining a style re-applies it everywhere (direct overrides kept) as one undo
 // step; Enter starts the style's next style.
+class QTextTable;
+
 class RichTextHandler : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(RichTextHandler)
@@ -269,6 +271,10 @@ public:
     Q_INVOKABLE bool find(const QString &text, const QVariantMap &options = {});
     Q_INVOKABLE bool replace(const QString &text);
     Q_INVOKABLE int replaceAll(const QString &text, const QString &replacement, const QVariantMap &options = {});
+    Q_INVOKABLE QVariantMap columnBorderAt(qreal x, qreal y) const;
+    Q_INVOKABLE bool beginColumnResize(int tablePosition, int border);
+    Q_INVOKABLE qreal resizeColumn(qreal delta);
+    Q_INVOKABLE void endColumnResize(bool commit = true);
     Q_INVOKABLE bool tableTab(bool backward = false);
     Q_INVOKABLE void insertTable(int rows, int cols);
     Q_INVOKABLE void addTableRow();
@@ -491,6 +497,10 @@ private:
     QString m_findText;
     QVariantMap m_findOptions;
     QTextCursor m_findMatch;
+    QPointer<QTextTable> m_resizeTable;
+    QList<QTextLength> m_resizeWidths;
+    int m_resizeBorder = 0;
+    qreal m_resizeDelta = 0;
     bool m_hasCopiedFormat = false;
     QTextCharFormat m_copiedCharFormat;
     QTextBlockFormat m_copiedBlockFormat;

@@ -692,3 +692,10 @@ hanging indent (keeping the first line fixed), and the right triangle for right
 indent. Changes commit on release to the selected paragraphs in one undo step.
 Click to add a left tab stop; drag a tab marker to move it, or off the ruler to
 remove it. The example application enables the ruler.
+
+Hover over an internal table-column border for a horizontal resize cursor.
+The grab zone is ±3 px. Dragging shows a preview line; release adjusts the
+adjacent columns with one layout update and a 24 px minimum width at zoom 1.
+One completed drag is one undo step; cancellation discards the preview. Column constraints
+are stored in the table format and serialized to ODF. Colors, highlighting,
+sub/superscript, indents, spacing and left tab stops also round-trip through ODF.
