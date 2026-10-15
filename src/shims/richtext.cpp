@@ -2967,6 +2967,12 @@ QString RichTextHandler::blockIdAt(int position) const
     return info ? info->id : QString();
 }
 
+int RichTextHandler::blockPosition(const QString &blockId) const
+{
+    const auto it = m_blocksById.constFind(blockId);
+    return it == m_blocksById.cend() ? -1 : it->position();
+}
+
 QString RichTextHandler::blockText(const QString &blockId) const
 {
     const auto it = m_blocksById.constFind(blockId);

@@ -129,6 +129,7 @@ Methods:
 | `undo()`, `redo()`, `focusEditor()` | | |
 | `cut()`, `copy()`, `paste()` | | HTML (formatting kept, rescaled to canonical zoom-1 sizes — see "Clipboard" below) and plain text on the SYSTEM clipboard; `cut()`/`copy()` are no-ops without a selection, `paste()` when `!canPaste`. Ctrl+C/X/V are routed to these (not the editor's own built-in handling) — these are also there for an app's own toolbar/menu. |
 | `insertHtml(html)` | | At the caret (replacing a selection), rescaled to the zoom in effect — the same choke point `paste()` uses for its HTML branch. |
+| `blockPosition(id)` | `number` | UTF-16 document position of the block's first character, or -1 for an unknown/deleted id. Uses the existing block index; includes table-cell paragraphs and tracks edits before the block. Consistent with `blockIdAt(pos)`. |
 | `blockIds()` | `string[]` | Every block's id, in document order (see "Blocks and marks"). |
 | `blockIdsInRange(from, to)` | `string[]` | Block ids intersecting inclusive `[from, to]`, in document order, including table-cell paragraphs. UTF-16 document positions, like `blockIdAt`; paragraph separators belong to the preceding block, and a collapsed range returns its containing block (including an empty paragraph). Clips to the document; reversed or wholly outside ranges return `[]`. Uses indexed lookup plus traversal of only the intersecting blocks, so small ranges stay cheap in large documents. |
 | `blockIdAt(pos)` | string | The id of the block holding document position `pos`; `""` outside the document. |

@@ -3586,6 +3586,30 @@ private slots:
     }
     // ── office item 3: stable block ids ─────────────────────────────────────────────────────────
 
+    void blockPositionsFollowEditsAndTableCells()
+    {
+        m_fmt->insertText("one\ntwo");
+        QTextCursor c(doc());
+        c.movePosition(QTextCursor::End);
+        c.insertTable(2, 2);
+        const auto verify = [&] {
+            for (auto b = doc()->begin(); b.isValid(); b = b.next()) {
+                QCOMPARE(m_fmt->blockPosition(m_fmt->blockIdAt(b.position())), b.position());
+                int position = -2;
+                QVERIFY(QMetaObject::invokeMethod(m_fmt, "blockPosition", Q_RETURN_ARG(int, position),
+                    Q_ARG(QString, m_fmt->blockIdAt(b.position()))));
+                QCOMPARE(position, b.position());
+            }
+        };
+        verify();
+        c.setPosition(0); c.insertText("prefix"); verify();
+        c.setPosition(0); c.deleteChar(); verify();
+        int position = -2;
+        QVERIFY(QMetaObject::invokeMethod(m_fmt, "blockPosition", Q_RETURN_ARG(int, position),
+            Q_ARG(QString, QString("unknown"))));
+        QCOMPARE(position, -1);
+    }
+
     void blockIdsAreUniqueAndStableWhileTyping()
     {
         m_fmt->insertText(QStringLiteral("one\ntwo\nthree"));

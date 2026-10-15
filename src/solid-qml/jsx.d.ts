@@ -444,6 +444,8 @@ declare global {
     blockIdsInRange(from: number, to: number): string[];
     /** The id of the block holding document position `pos` ("" outside the document). */
     blockIdAt(pos: number): string;
+    /** First character position, or -1 for an unknown id; uses the block index. */
+    blockPosition(blockId: string): number;
     /** The block's plain text (UTF-16 — mark offsets count in it; a soft line break reads "\n").
      *  "" for an unknown id. */
     blockText(blockId: string): string;

@@ -426,6 +426,7 @@ RichText {
 
     function blockIds() { return fmt ? fmt.blockIds() : [] }
     function blockIdsInRange(from, to) { return fmt ? fmt.blockIdsInRange(from, to) : [] }
+    function blockPosition(id) { return fmt ? fmt.blockPosition(id) : -1 }
     function blockIdAt(pos) { return fmt ? fmt.blockIdAt(pos) : "" }
     function blockText(blockId) { return fmt ? fmt.blockText(blockId) : "" }
     function blockLanguage(blockId) { return fmt ? fmt.blockLanguage(blockId) : "" }
